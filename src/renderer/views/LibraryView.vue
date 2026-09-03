@@ -60,22 +60,22 @@
                 <span class="text-xs font-mono text-steam-accent">
                   AppID: {{ appId }}
                 </span>
-                <!-- 清单状态徽章 -->
+                <!-- 清单状态徽章：支持本地清单与 OST 动态代理双轨就绪 -->
                 <span
                   v-if="manifestStatuses[appId]?.hasManifest"
-                  class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono flex items-center gap-0.5"
-                  title="清单文件已写入 depotcache，Steam 下载时不会报无许可"
+                  class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono flex items-center gap-1"
+                  title="本地 depotcache 清单文件已存在"
                 >
                   <span>📦</span>
-                  <span>清单已就绪 ({{ manifestStatuses[appId].manifestCount }})</span>
+                  <span>本地清单 ({{ manifestStatuses[appId].manifestCount }})</span>
                 </span>
                 <span
                   v-else
-                  class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono flex items-center gap-0.5"
-                  title="尚未检测到 depotcache 清单文件，可点击右侧「补全清单」"
+                  class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-mono flex items-center gap-1"
+                  title="OpenSteamTool 动态清单引擎就绪，在 Steam 点击下载时将由 DLL 自动拉取清单"
                 >
-                  <span>⚠️</span>
-                  <span>待补全清单</span>
+                  <span>⚡</span>
+                  <span>OST 动态清单就绪</span>
                 </span>
               </div>
             </div>
@@ -86,15 +86,15 @@
             <div class="flex items-center gap-2">
               <a
                 :href="`steam://install/${appId}`"
-                title="在 Steam 客户端直接触发下载 (已挂载清单，无许可报错已消除)"
-                class="px-3 py-1.5 bg-sky-600/20 hover:bg-sky-600/40 border border-sky-500/30 text-sky-300 text-xs font-bold rounded-lg transition flex items-center gap-1"
+                title="在 Steam 客户端直接触发下载 (由 OpenSteamTool 动态下发清单与密钥)"
+                class="px-3 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-lg transition flex items-center gap-1 shadow"
               >
-                <span>📥 下载</span>
+                <span>📥 Steam 下载</span>
               </a>
 
               <a
                 :href="`steam://rungameid/${appId}`"
-                title="在 Steam 客户端启动"
+                title="在 Steam 客户端启动游戏"
                 class="px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/30 text-emerald-300 text-xs rounded-lg transition"
               >
                 ▶ 运行
@@ -104,11 +104,11 @@
                 v-if="!manifestStatuses[appId]?.hasManifest"
                 @click="handleRepairManifest(appId)"
                 :disabled="repairingAppId === appId"
-                title="从云端/公共清单源下载 .manifest 文件到 depotcache"
-                class="px-2.5 py-1.5 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/30 text-amber-300 text-xs rounded-lg transition flex items-center gap-1"
+                title="可选：手动将清单预缓存到本地 Steam/depotcache 目录"
+                class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs rounded-lg transition flex items-center gap-1"
               >
                 <span v-if="repairingAppId === appId" class="animate-spin">⏳</span>
-                <span>{{ repairingAppId === appId ? '拉取中...' : '补全清单' }}</span>
+                <span>{{ repairingAppId === appId ? '拉取中...' : '离线预缓存' }}</span>
               </button>
             </div>
 
