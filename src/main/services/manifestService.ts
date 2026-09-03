@@ -139,54 +139,85 @@ export class ManifestService {
     }
 
     // ==================== 策略二：若后端无清单或未联网，自动从 GMRC 公共清单源拉取 ====================
+    let rateLimited = false;
     if (downloadedFiles.length === 0) {
-      try {
-        const gmrcUrls = [
-          `http://gmrc.wudrm.com/manifest/${appId}`,
-          `https://manifest.steam.run/manifest/${appId}`
-        ];
+      const gmrcUrls = [
+        `http://gmrc.wudrm.com/manifest/${appId}`,
+        `https://manifest.steam.run/manifest/${appId}`
+      ];
 
-        for (const gmrcUrl of gmrcUrls) {
-          try {
-            const resp = await axios.get(gmrcUrl, { timeout: 3500 });
-            if (resp.data) {
-              const entries = Array.isArray(resp.data) ? resp.data : Object.entries(resp.data);
-              for (const item of entries) {
-                const depotId = Array.isArray(item) ? item[0] : (item.depot_id || item.depotId);
-                const manifestId = Array.isArray(item) ? item[1] : (item.manifest_id || item.manifestId);
+      const axiosHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+      };
 
-                if (depotId && manifestId && manifestId !== '0') {
-                  const fileName = `${depotId}_${manifestId}.manifest`;
-                  const targetPath = path.join(depotCacheDir, fileName);
+      for (const gmrcUrl of gmrcUrls) {
+        try {
+          const resp = await axios.get(gmrcUrl, { timeout: 4000, headers: axiosHeaders });
+          if (resp.data) {
+            // 处理不同的返回格式：数字、纯文本或 JSON 对象
+            const depotManifestPairs: Array<{ depotId: string; manifestId: string }> = [];
 
-                  if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 0) {
-                    downloadedFiles.push(fileName);
-                    continue;
-                  }
-
-                  // 尝试下载 GMRC 提供的二进制清单
-                  const dlUrl = `${gmrcUrl}/${depotId}`;
-                  try {
-                    const dlResp = await axios.get(dlUrl, {
-                      responseType: 'arraybuffer',
-                      timeout: 5000
-                    });
-                    if (dlResp.data && dlResp.data.length > 0) {
-                      fs.writeFileSync(targetPath, Buffer.from(dlResp.data));
-                      downloadedFiles.push(fileName);
-                    }
-                  } catch {}
+            if (typeof resp.data === 'number' || (typeof resp.data === 'string' && /^\d{10,}$/.test(resp.data.trim()))) {
+              // 单个 ManifestID，关联主 Depot (通常为 appId + 1 或 appId)
+              const mId = resp.data.toString().trim();
+              const primaryDepot = Object.keys(aggregatedKeys)[0] || (appId + 1).toString();
+              depotManifestPairs.push({ depotId: primaryDepot, manifestId: mId });
+            } else if (Array.isArray(resp.data)) {
+              for (const item of resp.data) {
+                const dId = item.depot_id || item.depotId || (Array.isArray(item) ? item[0] : null);
+                const mId = item.manifest_id || item.manifestId || (Array.isArray(item) ? item[1] : null);
+                if (dId && mId) depotManifestPairs.push({ depotId: dId.toString(), manifestId: mId.toString() });
+              }
+            } else if (typeof resp.data === 'object') {
+              for (const [dId, mId] of Object.entries(resp.data)) {
+                if (mId && typeof mId === 'string' || typeof mId === 'number') {
+                  depotManifestPairs.push({ depotId: dId, manifestId: mId.toString() });
                 }
               }
+            }
 
-              if (downloadedFiles.length > 0) {
-                sourceUsed = 'gmrc';
-                break;
+            for (const { depotId, manifestId } of depotManifestPairs) {
+              if (depotId && manifestId && manifestId !== '0') {
+                const fileName = `${depotId}_${manifestId}.manifest`;
+                const targetPath = path.join(depotCacheDir, fileName);
+
+                if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 0) {
+                  downloadedFiles.push(fileName);
+                  continue;
+                }
+
+                // 尝试下载 GMRC 提供的二进制清单
+                const dlUrl = `${gmrcUrl}/${depotId}`;
+                try {
+                  const dlResp = await axios.get(dlUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 5000,
+                    headers: axiosHeaders
+                  });
+                  if (dlResp.data && dlResp.data.length > 0) {
+                    fs.writeFileSync(targetPath, Buffer.from(dlResp.data));
+                    downloadedFiles.push(fileName);
+                  }
+                } catch (dlErr: any) {
+                  if (dlErr.response && dlErr.response.status === 429) {
+                    rateLimited = true;
+                  }
+                }
               }
             }
-          } catch {}
+
+            if (downloadedFiles.length > 0) {
+              sourceUsed = 'gmrc';
+              break;
+            }
+          }
+        } catch (err: any) {
+          if (err.response && err.response.status === 429) {
+            rateLimited = true;
+          }
         }
-      } catch {}
+      }
     }
 
     // ==================== 策略三：向 GitHub ManifestHub 加速镜像拉取 ====================
@@ -241,18 +272,26 @@ export class ManifestService {
 
     // 统计已有清单
     const currentStatus = await this.checkAppManifestStatus(appId, dlcs);
+    const hasManifest = currentStatus.hasManifest || downloadedFiles.length > 0;
+
+    let returnMessage = '';
+    if (hasManifest) {
+      returnMessage = `成功就绪 ${currentStatus.manifestCount || downloadedFiles.length} 个分包清单 (.manifest)！已完全消除“无许可”限制。`;
+    } else if (rateLimited) {
+      returnMessage = `上游公共清单源触发高频防刷限制 (429 限流)。请确保已部署 OST 注入内核并重启 Steam，Steam 将在下载时通过内部通道动态拉取！`;
+    } else {
+      returnMessage = `暂无预存静态清单。请确保已部署 OST 注入内核并重启 Steam，即可通过动态清单通道直接下载。`;
+    }
 
     return {
-      success: true,
+      success: hasManifest,
       appId,
       downloadedCount: downloadedFiles.length,
       totalDepots: currentStatus.manifestCount,
       depotKeys: aggregatedKeys,
       manifestFiles: currentStatus.manifestFiles,
       source: sourceUsed,
-      message: currentStatus.hasManifest
-        ? `成功就绪 ${currentStatus.manifestCount} 个分包清单 (.manifest)！已完全消除“无许可”限制。`
-        : `已匹配分包密钥与入库规则！建议开启 OST 动态清单代理。`
+      message: returnMessage
     };
   }
 
