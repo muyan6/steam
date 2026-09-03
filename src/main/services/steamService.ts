@@ -109,11 +109,44 @@ export class SteamService {
   }
 
   /**
-   * 终止 Steam 进程
+   * 终止 Steam 进程（多重机制：官方安全关闭 -> taskkill -> 权限提升兜底）
    */
   public async killSteam(): Promise<boolean> {
     try {
-      await execAsync('taskkill /F /IM steam.exe /T');
+      // 1. 尝试调用 Steam 原生 -shutdown 退出
+      const steamPath = await this.detectSteamPath();
+      if (steamPath) {
+        const steamExe = path.join(steamPath, 'steam.exe');
+        if (fs.existsSync(steamExe)) {
+          try {
+            await execAsync(`"${steamExe}" -shutdown`);
+          } catch {}
+        }
+      }
+
+      // 2. 尝试标准 taskkill
+      try {
+        await execAsync('taskkill /F /IM steam.exe /T');
+      } catch {}
+
+      // 3. 尝试 PowerShell Stop-Process
+      try {
+        await execAsync('powershell -NoProfile -Command "Stop-Process -Name steam -Force -ErrorAction SilentlyContinue"');
+      } catch {}
+
+      // 4. 轮询检测是否已完全释放
+      for (let i = 0; i < 4; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        const running = await this.isSteamRunning();
+        if (!running) return true;
+      }
+
+      // 5. 若 Steam 以管理员权限运行导致普通权限无法直接 Kill，调用提权结束
+      try {
+        await execAsync('powershell -NoProfile -Command "Start-Process taskkill -ArgumentList \'/F /IM steam.exe /T\' -Verb RunAs -WindowStyle Hidden"');
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch {}
+
       return true;
     } catch {
       return false;
