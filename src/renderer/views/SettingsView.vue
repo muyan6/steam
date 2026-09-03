@@ -208,7 +208,14 @@
               @click="emit('relaunch-wizard')"
               class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-sky-300 font-medium transition flex items-center gap-1.5"
             >
-              <span>🚀 重新运行启动注入向导</span>
+              <span>🚀 重新运行注入向导</span>
+            </button>
+            <button
+              @click="handleUninstallOST"
+              :disabled="deploying"
+              class="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-medium transition flex items-center gap-1.5"
+            >
+              <span>🗑️ 卸载注入</span>
             </button>
           </div>
           <button
@@ -216,7 +223,7 @@
             :disabled="deploying"
             class="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center gap-1.5"
           >
-            <span>{{ deploying ? '正在写入...' : '⚡ 一键同步环境配置' }}</span>
+            <span>{{ deploying ? '正在写入...' : '⚡ 一键同步/重建环境' }}</span>
           </button>
         </div>
       </div>
@@ -402,6 +409,25 @@ const handleDeployOSTEnv = async () => {
     }
   } catch (e: any) {
     emit('notify', `配置异常: ${e.message}`, 'error');
+  } finally {
+    deploying.value = false;
+  }
+};
+
+const handleUninstallOST = async () => {
+  if (!confirm('确定要卸载 OpenSteamTool 核心注入组件吗？')) {
+    return;
+  }
+  deploying.value = true;
+  try {
+    const res = await window.electronAPI.uninstallInjection();
+    if (res.success) {
+      emit('notify', res.message, 'success');
+      await runEnvironmentHealthCheck();
+      emit('refresh-status');
+    }
+  } catch (e: any) {
+    emit('notify', `卸载异常: ${e.message}`, 'error');
   } finally {
     deploying.value = false;
   }

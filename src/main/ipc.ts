@@ -52,8 +52,20 @@ export function registerIpcHandlers() {
     return await ostService.getUnlockedAppIds();
   });
 
+  ipcMain.handle('ost:get-unlocked-details', async () => {
+    return await ostService.getUnlockedGames();
+  });
+
   ipcMain.handle('ost:remove-game', async (_, appId: number) => {
     return await ostService.removeUnlockedGame(appId);
+  });
+
+  ipcMain.handle('ost:uninstall-injection', async () => {
+    return await ostService.uninstallInjection();
+  });
+
+  ipcMain.handle('ost:clear-all', async () => {
+    return await ostService.clearAllScripts();
   });
 
   ipcMain.handle('ost:check-manifest', async (_, { appId, dlcs }) => {

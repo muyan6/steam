@@ -20,8 +20,13 @@ export const electronAPI = {
   unlockGame: (game: SteamGame): Promise<{ success: boolean; message: string; scriptPath?: string }> =>
     ipcRenderer.invoke('ost:unlock-game', JSON.parse(JSON.stringify(game))),
   getUnlockedGames: (): Promise<number[]> => ipcRenderer.invoke('ost:get-unlocked'),
+  getUnlockedDetails: (): Promise<any[]> => ipcRenderer.invoke('ost:get-unlocked-details'),
   removeUnlockedGame: (appId: number): Promise<{ success: boolean; message: string }> =>
     ipcRenderer.invoke('ost:remove-game', appId),
+  uninstallInjection: (): Promise<{ success: boolean; message: string }> =>
+    ipcRenderer.invoke('ost:uninstall-injection'),
+  clearAllGames: (): Promise<{ success: boolean; count: number; message: string }> =>
+    ipcRenderer.invoke('ost:clear-all'),
   checkManifestStatus: (appId: number, dlcs?: number[]): Promise<any> =>
     ipcRenderer.invoke('ost:check-manifest', { appId, dlcs }),
   downloadManifest: (appId: number, dlcs?: number[]): Promise<any> =>

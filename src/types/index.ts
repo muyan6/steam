@@ -13,6 +13,35 @@ export interface SteamGame {
   type?: 'game' | 'dlc' | 'tool';
 }
 
+export interface DepotInfo {
+  depotId: string;
+  manifestGid?: string;
+  size?: number;
+  depotKey?: string;
+}
+
+export interface GameMetadata {
+  appId: string;
+  name: string;
+  depots: DepotInfo[];
+  dlcIds: string[];
+  dlcDepots: Array<{ dlcAppId: string; depot: DepotInfo }>;
+  accessToken?: string;
+  workshopKey?: string;
+  appLevelKey?: string;
+}
+
+export interface LuaGameInfo {
+  appId: number;
+  name: string;
+  hasToken: boolean;
+  hasManifest: boolean;
+  hasDepotKeys: boolean;
+  depotsCount: number;
+  dlcCount: number;
+  luaPath: string;
+}
+
 export interface SteamEnvironmentInfo {
   steamPath: string | null;
   isRunning: boolean;
@@ -69,7 +98,7 @@ export interface ManifestInstallResult {
   totalDepots: number;
   depotKeys: { [depotId: string]: string };
   manifestFiles: string[];
-  source: 'backend' | 'gmrc' | 'manifesthub' | 'none';
+  source: 'backend' | 'gmrc' | 'manifesthub' | 'cdn' | 'none';
   message: string;
 }
 

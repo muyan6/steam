@@ -249,30 +249,17 @@ export class SteamService {
     let scriptsCount = 0;
 
     if (steamPath) {
-      if (steamBitness === 'x86') {
-        const versionDll = path.join(steamPath, 'version.dll');
-        ostInstalled = fs.existsSync(versionDll) && getExecutableBitness(versionDll) === 'x86';
-      } else if (steamBitness === 'x64') {
-        const x64Candidates = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll', 'hid.dll'];
-        ostInstalled = x64Candidates.some((f) => fs.existsSync(path.join(steamPath, f)));
-      } else {
-        const ostIndicators = [
-          'dwmapi.dll',
-          'OpenSteamTool.dll',
-          'OpenSteamClient.dll',
-          'hid.dll',
-          'version.dll',
-          'st64.dll',
-          'opensteamtool.toml'
-        ];
-        ostInstalled = ostIndicators.some((file) => fs.existsSync(path.join(steamPath, file)));
-      }
+      // 检查 64 位核心 DLL (OpenSteamTool.dll + dwmapi.dll / xinput1_4.dll)
+      const hasCore = fs.existsSync(path.join(steamPath, 'OpenSteamTool.dll'));
+      const hasHijack = fs.existsSync(path.join(steamPath, 'dwmapi.dll')) || fs.existsSync(path.join(steamPath, 'xinput1_4.dll'));
+      ostInstalled = hasCore && hasHijack;
 
-      const scriptsDir = path.join(steamPath, 'st_scripts');
-      if (fs.existsSync(scriptsDir)) {
+      // 统计 config/lua/ 下所有 <appid>.lua 规则
+      const luaDir = path.join(steamPath, 'config', 'lua');
+      if (fs.existsSync(luaDir)) {
         try {
-          const files = fs.readdirSync(scriptsDir);
-          scriptsCount = files.filter((f) => f.endsWith('.lua')).length;
+          const files = fs.readdirSync(luaDir);
+          scriptsCount = files.filter((f) => /^\d+\.lua$/i.test(f)).length;
         } catch {
           scriptsCount = 0;
         }
