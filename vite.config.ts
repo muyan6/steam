@@ -6,16 +6,29 @@ import path from 'path'
 import { build as esbuildBuild } from 'esbuild'
 
 function preloadPlugin() {
+  const buildPreload = async () => {
+    await esbuildBuild({
+      entryPoints: ['src/preload.ts'],
+      outfile: 'dist-electron/preload.cjs',
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      external: ['electron']
+    })
+  }
+
   return {
     name: 'custom-preload-builder',
     async buildStart() {
-      await esbuildBuild({
-        entryPoints: ['src/preload.ts'],
-        outfile: 'dist-electron/preload.js',
-        bundle: true,
-        platform: 'node',
-        format: 'cjs',
-        external: ['electron']
+      await buildPreload()
+    },
+    async configureServer(server: any) {
+      await buildPreload()
+      server.watcher.add(path.resolve(__dirname, 'src/preload.ts'))
+      server.watcher.on('change', async (file: string) => {
+        if (file.includes('preload.ts')) {
+          await buildPreload()
+        }
       })
     }
   }

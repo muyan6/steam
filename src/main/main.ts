@@ -10,9 +10,9 @@ const __dirname = path.dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
-  let preloadPath = path.join(__dirname, 'preload.js');
+  let preloadPath = path.join(__dirname, 'preload.cjs');
   if (!fs.existsSync(preloadPath)) {
-    preloadPath = path.join(__dirname, 'preload.cjs');
+    preloadPath = path.join(__dirname, 'preload.js');
   }
   if (!fs.existsSync(preloadPath)) {
     preloadPath = path.join(__dirname, 'preload.mjs');

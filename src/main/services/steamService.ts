@@ -16,15 +16,29 @@ export class SteamService {
   }
 
   /**
-   * 自动探测 Steam 安装路径（通过 Windows 注册表）
+   * 自动探测 Steam 安装路径（支持进程探测、注册表查询及全盘常见路径扫描）
    */
   public async detectSteamPath(): Promise<string | null> {
     if (this.customSteamPath && fs.existsSync(this.customSteamPath)) {
       return this.customSteamPath;
     }
 
+    // 0. 优先尝试从当前正在运行的 steam.exe 进程获取精确路径
     try {
-      // 1. 尝试从当前用户注册表查询
+      const { stdout } = await execAsync('powershell -NoProfile -Command "Get-Process -Name steam -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path"');
+      const runningExe = stdout.trim();
+      if (runningExe && fs.existsSync(runningExe)) {
+        const dir = path.dirname(runningExe);
+        if (fs.existsSync(dir)) {
+          return dir;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      // 1. 尝试从当前用户注册表查询 (HKCU\Software\Valve\Steam\SteamPath)
       const { stdout } = await execAsync('reg query "HKCU\\Software\\Valve\\Steam" /v SteamPath');
       const match = stdout.match(/SteamPath\s+REG_SZ\s+(.*)/i);
       if (match && match[1]) {
@@ -38,31 +52,44 @@ export class SteamService {
     }
 
     try {
-      // 2. 尝试从 64 位机器注册表查询
-      const { stdout } = await execAsync('reg query "HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam" /v InstallPath');
-      const match = stdout.match(/InstallPath\s+REG_SZ\s+(.*)/i);
-      if (match && match[1]) {
-        const foundPath = match[1].trim().replace(/\//g, '\\');
-        if (fs.existsSync(foundPath)) {
-          return foundPath;
-        }
+      // 2. 尝试从 64 位及 32 位机器注册表查询 InstallPath
+      const regKeys = [
+        'HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam',
+        'HKLM\\SOFTWARE\\Valve\\Steam',
+        'HKCU\\Software\\Valve\\Steam'
+      ];
+      for (const regKey of regKeys) {
+        try {
+          const { stdout } = await execAsync(`reg query "${regKey}" /v InstallPath`);
+          const match = stdout.match(/InstallPath\s+REG_SZ\s+(.*)/i);
+          if (match && match[1]) {
+            const foundPath = match[1].trim().replace(/\//g, '\\');
+            if (fs.existsSync(foundPath)) {
+              return foundPath;
+            }
+          }
+        } catch {}
       }
     } catch {
       // 忽略错误
     }
 
-    // 3. 常见默认路径兜底
-    const defaultPaths = [
-      'C:\\Program Files (x86)\\Steam',
-      'C:\\Program Files\\Steam',
-      'D:\\Steam',
-      'E:\\Steam',
-      'F:\\Steam'
+    // 3. 常见盘符与默认路径遍历扫描
+    const drives = ['C', 'D', 'E', 'F', 'G'];
+    const subDirs = [
+      'Steam',
+      'steam',
+      'Program Files (x86)\\Steam',
+      'Program Files\\Steam',
+      'Games\\Steam'
     ];
 
-    for (const p of defaultPaths) {
-      if (fs.existsSync(p)) {
-        return p;
+    for (const drive of drives) {
+      for (const sub of subDirs) {
+        const candidate = `${drive}:\\${sub}`;
+        if (fs.existsSync(candidate) && fs.existsSync(path.join(candidate, 'steam.exe'))) {
+          return candidate;
+        }
       }
     }
 
