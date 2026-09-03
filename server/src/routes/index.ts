@@ -1,0 +1,48 @@
+import { Router } from 'express';
+import { getPopularGames, searchGames, getGameDetail, getGameHeaderImage } from '../controllers/gameController.js';
+import { getDepotsForGame, getSingleDepotKey } from '../controllers/depotController.js';
+import { getLatestNotice } from '../controllers/noticeController.js';
+import { checkVersion, getLatestVersionInfo } from '../controllers/versionController.js';
+import {
+  requireAdmin,
+  updateNotice,
+  updateVersion,
+  triggerSyncGames,
+  triggerSyncDepots,
+  getServerStats
+} from '../controllers/adminController.js';
+
+const router = Router();
+
+// ==================== 1. 公开客户端 API ====================
+
+// 健康与统计
+router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+
+// 商业版：公告通知
+router.get('/notice/latest', getLatestNotice);
+
+// 商业版：版本检测与自动更新
+router.get('/version/check', checkVersion);
+router.get('/version/latest', getLatestVersionInfo);
+
+// 游戏库检索与详情
+router.get('/games/popular', getPopularGames);
+router.get('/games/search', searchGames);
+router.get('/games/:appId/header', getGameHeaderImage);
+router.get('/games/:appId', getGameDetail);
+
+// DepotKey 密钥查询
+router.get('/depots/:appId', getDepotsForGame);
+router.get('/depots/key/:depotId', getSingleDepotKey);
+
+// ==================== 2. 运营管理 API (需要 x-admin-key) ====================
+
+router.use('/admin', requireAdmin);
+router.get('/admin/stats', getServerStats);
+router.post('/admin/notice', updateNotice);
+router.post('/admin/version', updateVersion);
+router.post('/admin/sync/games', triggerSyncGames);
+router.post('/admin/sync/depots', triggerSyncDepots);
+
+export default router;

@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  steammaster-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: steammaster-backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - ADMIN_SECRET=steammaster_admin_8888
+    volumes:
+      - ./data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 300M

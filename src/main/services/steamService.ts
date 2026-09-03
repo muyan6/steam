@@ -1,0 +1,355 @@
+import { exec, spawn } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
+import { SteamEnvironmentInfo, EnvironmentDiagnosticResult, EnvironmentCheckItem } from '../../types';
+
+const execAsync = promisify(exec);
+
+export class SteamService {
+  private customSteamPath: string | null = null;
+
+  public setCustomSteamPath(customPath: string) {
+    if (fs.existsSync(customPath)) {
+      this.customSteamPath = customPath;
+    }
+  }
+
+  /**
+   * 自动探测 Steam 安装路径（通过 Windows 注册表）
+   */
+  public async detectSteamPath(): Promise<string | null> {
+    if (this.customSteamPath && fs.existsSync(this.customSteamPath)) {
+      return this.customSteamPath;
+    }
+
+    try {
+      // 1. 尝试从当前用户注册表查询
+      const { stdout } = await execAsync('reg query "HKCU\\Software\\Valve\\Steam" /v SteamPath');
+      const match = stdout.match(/SteamPath\s+REG_SZ\s+(.*)/i);
+      if (match && match[1]) {
+        const foundPath = match[1].trim().replace(/\//g, '\\');
+        if (fs.existsSync(foundPath)) {
+          return foundPath;
+        }
+      }
+    } catch {
+      // 忽略错误，尝试下一个
+    }
+
+    try {
+      // 2. 尝试从 64 位机器注册表查询
+      const { stdout } = await execAsync('reg query "HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam" /v InstallPath');
+      const match = stdout.match(/InstallPath\s+REG_SZ\s+(.*)/i);
+      if (match && match[1]) {
+        const foundPath = match[1].trim().replace(/\//g, '\\');
+        if (fs.existsSync(foundPath)) {
+          return foundPath;
+        }
+      }
+    } catch {
+      // 忽略错误
+    }
+
+    // 3. 常见默认路径兜底
+    const defaultPaths = [
+      'C:\\Program Files (x86)\\Steam',
+      'C:\\Program Files\\Steam',
+      'D:\\Steam',
+      'E:\\Steam',
+      'F:\\Steam'
+    ];
+
+    for (const p of defaultPaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 检查 Steam 客户端是否正在运行
+   */
+  public async isSteamRunning(): Promise<boolean> {
+    try {
+      const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq steam.exe" /NH');
+      return stdout.toLowerCase().includes('steam.exe');
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 终止 Steam 进程
+   */
+  public async killSteam(): Promise<boolean> {
+    try {
+      await execAsync('taskkill /F /IM steam.exe /T');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 启动 Steam 客户端 (支持附加参数如 -onlinefix)
+   */
+  public async launchSteam(extraArgs: string[] = []): Promise<boolean> {
+    const steamPath = await this.detectSteamPath();
+    if (!steamPath) return false;
+
+    const steamExe = path.join(steamPath, 'steam.exe');
+    if (!fs.existsSync(steamExe)) return false;
+
+    try {
+      spawn(steamExe, extraArgs, {
+        detached: true,
+        stdio: 'ignore'
+      }).unref();
+      return true;
+    } catch (e) {
+      console.error('启动 Steam 失败:', e);
+      return false;
+    }
+  }
+
+  /**
+   * 重启 Steam 客户端
+   */
+  public async restartSteam(extraArgs: string[] = []): Promise<boolean> {
+    const isRunning = await this.isSteamRunning();
+    if (isRunning) {
+      await this.killSteam();
+      // 等待 1.5 秒确保端口和文件锁释放
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    return this.launchSteam(extraArgs);
+  }
+
+  /**
+   * 获取 Steam 环境完整信息
+   */
+  public async getEnvironmentInfo(): Promise<SteamEnvironmentInfo> {
+    const steamPath = await this.detectSteamPath();
+    const isRunning = await this.isSteamRunning();
+
+    let ostInstalled = false;
+    let scriptsCount = 0;
+
+    if (steamPath) {
+      const ostIndicators = [
+        'dwmapi.dll',
+        'OpenSteamTool.dll',
+        'OpenSteamClient.dll',
+        'hid.dll',
+        'version.dll',
+        'st64.dll',
+        'opensteamtool.toml'
+      ];
+      ostInstalled = ostIndicators.some((file) => fs.existsSync(path.join(steamPath, file)));
+
+      const scriptsDir = path.join(steamPath, 'st_scripts');
+      if (fs.existsSync(scriptsDir)) {
+        try {
+          const files = fs.readdirSync(scriptsDir);
+          scriptsCount = files.filter((f) => f.endsWith('.lua')).length;
+        } catch {
+          scriptsCount = 0;
+        }
+      }
+    }
+
+    return {
+      steamPath,
+      isRunning,
+      ostInstalled,
+      scriptsCount,
+      globalOnlineFixEnabled: false
+    };
+  }
+
+  /**
+   * 深度环境诊断检测：检测 Steam 目录、Hook DLL、toml 配置、st_scripts 规则引擎与运行状态
+   */
+  public async checkEnvironmentHealth(): Promise<EnvironmentDiagnosticResult> {
+    const items: EnvironmentCheckItem[] = [];
+    const steamPath = await this.detectSteamPath();
+
+    // 1. Steam 安装路径校验
+    if (!steamPath) {
+      items.push({
+        name: 'Steam 安装路径',
+        category: 'path',
+        status: 'error',
+        message: '未检测到 Steam 安装路径',
+        detail: '请在设置中手动浏览并指定 Steam 安装根目录。'
+      });
+    } else {
+      const steamExe = path.join(steamPath, 'steam.exe');
+      if (fs.existsSync(steamExe)) {
+        items.push({
+          name: 'Steam 核心主程序',
+          category: 'path',
+          status: 'success',
+          message: '路径有效，steam.exe 就绪',
+          detail: steamPath
+        });
+      } else {
+        items.push({
+          name: 'Steam 核心主程序',
+          category: 'path',
+          status: 'error',
+          message: '指定目录下未找到 steam.exe',
+          detail: steamPath
+        });
+      }
+    }
+
+    // 2. OpenSteam 核心 Hook DLL 模块检测
+    let hasHookDll = false;
+    let hookDllName = '';
+    if (steamPath) {
+      const hookDllCandidates = ['version.dll', 'dwmapi.dll', 'hid.dll', 'OpenSteamTool.dll', 'st64.dll'];
+      for (const dll of hookDllCandidates) {
+        if (fs.existsSync(path.join(steamPath, dll))) {
+          hasHookDll = true;
+          hookDllName = dll;
+          break;
+        }
+      }
+
+      const versionBak = path.join(steamPath, 'version.bak.dll');
+      if (hasHookDll) {
+        items.push({
+          name: 'OpenSteam 注入模块 (DLL)',
+          category: 'hook',
+          status: 'success',
+          message: `核心 Hook DLL 已就绪 (${hookDllName})`,
+          detail: `检测到模块文件: ${path.join(steamPath, hookDllName)}`
+        });
+      } else if (fs.existsSync(versionBak)) {
+        items.push({
+          name: 'OpenSteam 注入模块 (DLL)',
+          category: 'hook',
+          status: 'warning',
+          message: '发现备份模块 (version.bak.dll)，待激活恢复',
+          detail: '点击上方「一键同步环境配置」或「重新运行注入向导」可自动恢复并激活 version.dll'
+        });
+      } else {
+        items.push({
+          name: 'OpenSteam 注入模块 (DLL)',
+          category: 'hook',
+          status: 'error',
+          message: '未检测到 OpenSteam 核心 Hook 模块',
+          detail: 'Steam 根目录下缺少 version.dll / dwmapi.dll / hid.dll 等劫持模块'
+        });
+      }
+    }
+
+    // 3. 配置文件 opensteamtool.toml 与规则目录 st_scripts
+    if (steamPath) {
+      const tomlPath = path.join(steamPath, 'opensteamtool.toml');
+      if (fs.existsSync(tomlPath)) {
+        try {
+          const tomlContent = fs.readFileSync(tomlPath, 'utf-8');
+          const isInjectEnabled = tomlContent.includes('enabled = true');
+          items.push({
+            name: '配置文件 opensteamtool.toml',
+            category: 'config',
+            status: isInjectEnabled ? 'success' : 'warning',
+            message: isInjectEnabled ? '配置完整且注入已开启 ([inject] enabled = true)' : '配置文件存在，但注入选项未开启',
+            detail: tomlPath
+          });
+        } catch {
+          items.push({
+            name: '配置文件 opensteamtool.toml',
+            category: 'config',
+            status: 'warning',
+            message: '配置文件读取异常',
+            detail: tomlPath
+          });
+        }
+      } else {
+        items.push({
+          name: '配置文件 opensteamtool.toml',
+          category: 'config',
+          status: 'warning',
+          message: '尚未生成 opensteamtool.toml',
+          detail: '请点击「一键同步环境配置」以自动生成'
+        });
+      }
+
+      const scriptsDir = path.join(steamPath, 'st_scripts');
+      if (fs.existsSync(scriptsDir)) {
+        try {
+          const files = fs.readdirSync(scriptsDir);
+          const count = files.filter(f => f.endsWith('.lua')).length;
+          items.push({
+            name: '规则引擎目录 st_scripts/',
+            category: 'scripts',
+            status: 'success',
+            message: `规则目录正常，已收录 ${count} 款应用自动化解锁规则`,
+            detail: scriptsDir
+          });
+        } catch {
+          items.push({
+            name: '规则引擎目录 st_scripts/',
+            category: 'scripts',
+            status: 'warning',
+            message: '目录访问受限或读取异常',
+            detail: scriptsDir
+          });
+        }
+      } else {
+        items.push({
+          name: '规则引擎目录 st_scripts/',
+          category: 'scripts',
+          status: 'warning',
+          message: 'st_scripts 目录尚未创建',
+          detail: '一键入库或同步环境配置时将自动创建'
+        });
+      }
+    }
+
+    // 4. Steam 运行时状态检测
+    const isRunning = await this.isSteamRunning();
+    if (isRunning) {
+      items.push({
+        name: 'Steam 客户端运行状态',
+        category: 'process',
+        status: hasHookDll ? 'success' : 'warning',
+        message: hasHookDll ? 'Steam 正在运行，注入内核处于活跃状态' : 'Steam 正在运行，但缺少核心 Hook DLL',
+        detail: hasHookDll ? '当前可直接免重启添加入库规则并秒级生效' : '请先同步配置并重启 Steam'
+      });
+    } else {
+      items.push({
+        name: 'Steam 客户端运行状态',
+        category: 'process',
+        status: 'warning',
+        message: 'Steam 客户端当前未运行',
+        detail: '可通过点击「⚡ 启动 / 重启 Steam」拉起客户端'
+      });
+    }
+
+    // 综合判定
+    const hasError = items.some(i => i.status === 'error');
+    const hasWarning = items.some(i => i.status === 'warning');
+    const overallStatus = hasError ? 'error' : hasWarning ? 'partial' : 'ready';
+    const summary = overallStatus === 'ready'
+      ? '所有环境组件均已完美配置，OpenSteam 运行环境已就绪！'
+      : overallStatus === 'partial'
+      ? '环境基础项已配置，部分状态建议点击同步或重启优化。'
+      : '检测到影响正常解锁的核心项异常，请根据提示进行修复。';
+
+    return {
+      overallStatus,
+      summary,
+      items,
+      checkedAt: new Date().toLocaleTimeString()
+    };
+  }
+}
+
+export const steamService = new SteamService();
