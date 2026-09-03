@@ -36,10 +36,18 @@
       <div class="p-4 m-3 rounded-xl bg-slate-900/60 border border-slate-800/80 text-xs">
         <div class="flex items-center justify-between mb-2">
           <span class="text-slate-400">Steam 状态:</span>
-          <span class="flex items-center gap-1.5 font-bold" :class="steamInfo.isRunning ? 'text-emerald-400' : 'text-slate-400'">
-            <span class="w-2 h-2 rounded-full" :class="steamInfo.isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'"></span>
-            {{ steamInfo.isRunning ? '运行中' : '已停止' }}
-          </span>
+          <div class="flex items-center gap-1.5">
+            <span
+              v-if="steamInfo.steamBitness && steamInfo.steamBitness !== 'unknown'"
+              class="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-300 font-mono"
+            >
+              {{ steamInfo.steamBitness === 'x86' ? '32位' : '64位' }}
+            </span>
+            <span class="flex items-center gap-1.5 font-bold" :class="steamInfo.isRunning ? 'text-emerald-400' : 'text-slate-400'">
+              <span class="w-2 h-2 rounded-full" :class="steamInfo.isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'"></span>
+              {{ steamInfo.isRunning ? '运行中' : '已停止' }}
+            </span>
+          </div>
         </div>
 
         <div class="flex items-center justify-between mb-3 text-[11px]">
@@ -68,6 +76,12 @@
         </div>
 
         <div class="flex items-center gap-3 text-xs">
+          <span
+            v-if="steamInfo.steamBitness && steamInfo.steamBitness !== 'unknown'"
+            class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono text-[11px] border border-sky-500/30"
+          >
+            {{ steamInfo.steamBitness === 'x86' ? 'Steam: 32位 (x86)' : 'Steam: 64位 (x64)' }}
+          </span>
           <span class="text-slate-400">云端引擎:</span>
           <span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono text-[11px]">
             ☁️ 18万+ 实时云端库

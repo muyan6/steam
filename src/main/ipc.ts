@@ -1,6 +1,7 @@
 import { app, ipcMain, dialog } from 'electron';
 import { steamService } from './services/steamService';
 import { ostService } from './services/ostService';
+import { manifestService } from './services/manifestService';
 import { searchService } from './services/searchService';
 import { onlineFixService } from './services/onlineFixService';
 import { updateService } from './services/updateService';
@@ -53,6 +54,14 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('ost:remove-game', async (_, appId: number) => {
     return await ostService.removeUnlockedGame(appId);
+  });
+
+  ipcMain.handle('ost:check-manifest', async (_, { appId, dlcs }) => {
+    return await manifestService.checkAppManifestStatus(appId, dlcs || []);
+  });
+
+  ipcMain.handle('ost:download-manifest', async (_, { appId, dlcs }) => {
+    return await manifestService.fetchAndInstallManifests(appId, dlcs || []);
   });
 
   // 3. 搜索服务

@@ -175,20 +175,11 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <div
-            @click="manifestApi = 'opensteamtool'"
-            class="p-3.5 rounded-xl border transition cursor-pointer"
-            :class="manifestApi === 'opensteamtool' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
-          >
-            <div class="font-bold text-xs text-slate-200 mb-1">OpenSteamTool 官方源 (推荐)</div>
-            <div class="text-[11px] text-slate-400 font-mono break-all">manifest.opensteamtool.com</div>
-          </div>
-
-          <div
             @click="manifestApi = 'steamrun'"
             class="p-3.5 rounded-xl border transition cursor-pointer"
             :class="manifestApi === 'steamrun' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
           >
-            <div class="font-bold text-xs text-slate-200 mb-1">SteamRun 镜像源</div>
+            <div class="font-bold text-xs text-slate-200 mb-1">SteamRun 镜像源 (推荐)</div>
             <div class="text-[11px] text-slate-400 font-mono break-all">manifest.steam.run</div>
           </div>
 
@@ -197,8 +188,17 @@
             class="p-3.5 rounded-xl border transition cursor-pointer"
             :class="manifestApi === 'wudrm' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
           >
-            <div class="font-bold text-xs text-slate-200 mb-1">WUDRM 校验源</div>
+            <div class="font-bold text-xs text-slate-200 mb-1">WUDRM 国内高速源</div>
             <div class="text-[11px] text-slate-400 font-mono break-all">gmrc.wudrm.com</div>
+          </div>
+
+          <div
+            @click="manifestApi = 'opensteamtool'"
+            class="p-3.5 rounded-xl border transition cursor-pointer"
+            :class="manifestApi === 'opensteamtool' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
+          >
+            <div class="font-bold text-xs text-slate-200 mb-1">OpenSteamTool 备用源</div>
+            <div class="text-[11px] text-slate-400 font-mono break-all">opensteamtool.com</div>
           </div>
         </div>
 
@@ -247,7 +247,7 @@ const emit = defineEmits<{
 }>();
 
 const steamPathInput = ref('');
-const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>('opensteamtool');
+const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>('steamrun');
 const deploying = ref(false);
 const refreshing = ref(false);
 const checkingHealth = ref(false);

@@ -38,18 +38,26 @@
               <span>📁 步骤 1：检测 Steam 文件夹</span>
               <span v-if="checkingPath" class="text-sky-400 animate-spin text-xs">🔄</span>
             </div>
-            <span
-              v-if="steamPath"
-              class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 flex items-center gap-1"
-            >
-              <span>●</span> 已定位路径
-            </span>
-            <span
-              v-else-if="!checkingPath"
-              class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 flex items-center gap-1"
-            >
-              <span>●</span> 未找到路径
-            </span>
+            <div class="flex items-center gap-2">
+              <span
+                v-if="steamBitness !== 'unknown'"
+                class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-sky-500/20 text-sky-300 border border-sky-500/30"
+              >
+                {{ steamBitness === 'x86' ? '32 位 (x86)' : '64 位 (x64)' }}
+              </span>
+              <span
+                v-if="steamPath"
+                class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 flex items-center gap-1"
+              >
+                <span>●</span> 已定位路径
+              </span>
+              <span
+                v-else-if="!checkingPath"
+                class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 flex items-center gap-1"
+              >
+                <span>●</span> 未找到路径
+              </span>
+            </div>
           </div>
 
           <!-- 路径展示 / 选择 -->
@@ -89,7 +97,16 @@
             是否立即向当前 Steam 目录激活 OpenSteam 解锁运行环境？
           </p>
           <ul class="text-[11px] text-slate-400 space-y-1 list-disc list-inside bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
-            <li>自动部署并配置 <code class="text-sky-300 font-mono">st_scripts/</code> 自动化解锁引擎</li>
+            <li v-if="steamBitness === 'x86'">
+              🎯 <strong>智能架构匹配</strong>：已自动识别为 <span class="text-sky-300 font-bold font-mono">32 位 (x86) Steam</span>，将部署 32 位专用 Hook 核心 (<code class="text-sky-300 font-mono">version.dll</code>)
+            </li>
+            <li v-else-if="steamBitness === 'x64'">
+              🎯 <strong>智能架构匹配</strong>：已自动识别为 <span class="text-sky-300 font-bold font-mono">64 位 (x64) Steam</span>，将部署 64 位 OpenSteamTool 核心组件
+            </li>
+            <li v-else>
+              🎯 <strong>智能架构匹配</strong>：自动检测 Steam 位数并智能部署匹配的 Hook 注入核心
+            </li>
+            <li>自动部署并配置 <code class="text-sky-300 font-mono">st_scripts/</code> 自动化解锁规则引擎</li>
             <li>配置 <code class="text-sky-300 font-mono">opensteamtool.toml</code> 公共清单端点与分包解密</li>
             <li>若选择 <strong>“否”</strong>，程序将直接退出关闭</li>
           </ul>
@@ -130,7 +147,7 @@
           <div class="flex items-center justify-between">
             <span class="text-slate-300 flex items-center gap-2">
               <span :class="activationPhase >= 1 ? 'text-emerald-400' : 'text-slate-600'">●</span>
-              <span>1. 校验 Steam 安装路径及文件系统写入权限</span>
+              <span>1. 校验 Steam 安装路径及位数架构 ({{ steamBitness === 'x86' ? '32位 x86' : '64位 x64' }})</span>
             </span>
             <span v-if="activationPhase > 1" class="text-emerald-400 font-bold">✓ 完成</span>
             <span v-else-if="activationPhase === 1" class="text-sky-400 animate-spin">🔄</span>
@@ -139,7 +156,7 @@
           <div class="flex items-center justify-between">
             <span class="text-slate-300 flex items-center gap-2">
               <span :class="activationPhase >= 2 ? 'text-emerald-400' : 'text-slate-600'">●</span>
-              <span>2. 初始化 st_scripts/ 目录与 opensteamtool.toml 注入配置</span>
+              <span>2. 自适应部署 {{ steamBitness === 'x86' ? '32位专用 Hook 内核' : '64位 Hook 内核' }} 与规则引擎</span>
             </span>
             <span v-if="activationPhase > 2" class="text-emerald-400 font-bold">✓ 完成</span>
             <span v-else-if="activationPhase === 2" class="text-sky-400 animate-spin">🔄</span>
@@ -173,12 +190,12 @@
         <div>
           <h3 class="font-bold text-lg text-slate-100">Steam 注入环境激活完成！</h3>
           <p class="text-xs text-slate-300 mt-2 max-w-md mx-auto leading-relaxed">
-            环境已全部就绪。您可以开始搜索收录的 18 万+ 游戏，一键生成解锁规则与分包密钥。
+            已成功为您的 {{ steamBitness === 'x86' ? '32 位' : '64 位' }} Steam 挂载专用注入核心。您可以开始搜索收录的 18 万+ 游戏，一键生成解锁规则与分包密钥。
           </p>
         </div>
 
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 font-mono inline-block">
-          Steam 目录：{{ steamPath }}
+          Steam 目录：{{ steamPath }} ({{ steamBitness === 'x86' ? '32位 x86' : '64位 x64' }})
         </div>
 
         <div>
@@ -205,6 +222,7 @@ const emit = defineEmits<{
 
 const step = ref<1 | 2 | 3 | 4>(1);
 const steamPath = ref<string>('');
+const steamBitness = ref<'x86' | 'x64' | 'unknown'>('unknown');
 const isSteamRunning = ref<boolean>(false);
 const checkingPath = ref<boolean>(true);
 
@@ -223,6 +241,7 @@ const checkSteamPath = async () => {
     if (info && info.steamPath) {
       steamPath.value = info.steamPath;
       isSteamRunning.value = info.isRunning;
+      steamBitness.value = info.steamBitness || 'unknown';
       step.value = 2; // 进入第2步：确认注入
     } else {
       step.value = 1; // 未检测到，停留在第1步提示选择
@@ -244,6 +263,7 @@ const browseSteamPath = async () => {
       await window.electronAPI.setSteamPath(selected);
       const info = await window.electronAPI.getSteamInfo();
       isSteamRunning.value = info.isRunning;
+      steamBitness.value = info.steamBitness || 'unknown';
       step.value = 2;
     }
   } catch (e: any) {
@@ -261,6 +281,7 @@ const onPathInputChange = async () => {
     if (info && info.steamPath) {
       steamPath.value = info.steamPath;
       isSteamRunning.value = info.isRunning;
+      steamBitness.value = info.steamBitness || 'unknown';
       step.value = 2;
     }
   } catch (e: any) {
@@ -294,7 +315,7 @@ const startActivation = async () => {
     activationPhase.value = 2;
     progressPercent.value = 60;
     const activateRes = await window.electronAPI.activateInjection({
-      manifestApi: 'opensteamtool',
+      manifestApi: 'steamrun',
       restartSteam: true
     });
 

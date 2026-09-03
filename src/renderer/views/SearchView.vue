@@ -151,16 +151,27 @@
               >
                 <span v-if="unlockingId === game.appId" class="animate-spin">⏳</span>
                 <span v-else>➕</span>
-                <span>{{ unlockingId === game.appId ? '正在生成规则...' : '一键入库' }}</span>
+                <span>{{ unlockingId === game.appId ? '正在匹配清单与密钥...' : '一键入库 (含清单)' }}</span>
               </button>
 
-              <button
-                v-else
-                @click="removeGame(game.appId)"
-                class="flex-1 py-2 bg-slate-800 hover:bg-rose-900/60 border border-slate-700/60 hover:border-rose-500/40 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-lg transition"
-              >
-                移除入库
-              </button>
+              <template v-else>
+                <a
+                  :href="`steam://install/${game.appId}`"
+                  title="在 Steam 中启动直接下载 (清单已挂载，无许可报错已消除)"
+                  class="flex-1 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-lg shadow transition flex items-center justify-center gap-1"
+                >
+                  <span>🚀</span>
+                  <span>Steam 下载</span>
+                </a>
+
+                <button
+                  @click="removeGame(game.appId)"
+                  title="从入库规则中移除"
+                  class="px-2.5 py-2 bg-slate-800 hover:bg-rose-900/60 border border-slate-700/60 hover:border-rose-500/40 text-slate-400 hover:text-rose-200 text-xs font-medium rounded-lg transition"
+                >
+                  移除
+                </button>
+              </template>
 
               <a
                 :href="`https://store.steampowered.com/app/${game.appId}`"

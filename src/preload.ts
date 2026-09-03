@@ -22,6 +22,10 @@ export const electronAPI = {
   getUnlockedGames: (): Promise<number[]> => ipcRenderer.invoke('ost:get-unlocked'),
   removeUnlockedGame: (appId: number): Promise<{ success: boolean; message: string }> =>
     ipcRenderer.invoke('ost:remove-game', appId),
+  checkManifestStatus: (appId: number, dlcs?: number[]): Promise<any> =>
+    ipcRenderer.invoke('ost:check-manifest', { appId, dlcs }),
+  downloadManifest: (appId: number, dlcs?: number[]): Promise<any> =>
+    ipcRenderer.invoke('ost:download-manifest', { appId, dlcs }),
 
   // 搜索服务
   searchGames: (query: string): Promise<SteamGame[]> => ipcRenderer.invoke('games:search', query),

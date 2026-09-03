@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getPopularGames, searchGames, getGameDetail, getGameHeaderImage } from '../controllers/gameController.js';
 import { getDepotsForGame, getSingleDepotKey } from '../controllers/depotController.js';
+import { getManifestsForApp, downloadManifestFile } from '../controllers/manifestController.js';
 import { getLatestNotice } from '../controllers/noticeController.js';
 import { checkVersion, getLatestVersionInfo } from '../controllers/versionController.js';
 import {
@@ -35,6 +36,10 @@ router.get('/games/:appId', getGameDetail);
 // DepotKey 密钥查询
 router.get('/depots/:appId', getDepotsForGame);
 router.get('/depots/key/:depotId', getSingleDepotKey);
+
+// Manifest 清单检索与下载
+router.get('/manifests/:appId', getManifestsForApp);
+router.get('/manifests/download/:depotId/:manifestId', downloadManifestFile);
 
 // ==================== 2. 运营管理 API (需要 x-admin-key) ====================
 

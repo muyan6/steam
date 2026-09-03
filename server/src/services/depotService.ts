@@ -33,36 +33,43 @@ export class DepotService {
     }
 
     const matchedKeys: { [depotId: string]: string } = {};
+    const isValidKey = (k?: string) => k && k.length >= 32 && !/^0+$/.test(k);
 
-    // 1. 尝试从预设热门库中提取预设好的 depot keys
+    // 1. 尝试从预设热门库中提取预设好的有效 depot keys 及 DLC 列表
     const presetGame = await gameService.getGameByAppId(appId);
     if (presetGame && presetGame.depots) {
-      Object.assign(matchedKeys, presetGame.depots);
+      for (const [dId, key] of Object.entries(presetGame.depots)) {
+        if (isValidKey(key)) {
+          matchedKeys[dId] = key;
+        }
+      }
     }
 
-    // 2. 候选 DepotID 集合：主游戏本体及常见分包
-    const candidateDepotIds = [
-      appId,
-      appId + 1,
-      appId + 2,
-      appId + 3,
-      appId + 4,
-      appId + 5,
-      appId + 10,
-      appId + 20,
-      appId + 30
-    ];
-
-    // 3. 将 DLC 也作为候选 Depot 包含进来
-    for (const dlcId of dlcs) {
-      candidateDepotIds.push(dlcId, dlcId + 1, dlcId + 2);
+    const effectiveDlcs = new Set<number>(dlcs);
+    if (presetGame && presetGame.dlcs) {
+      presetGame.dlcs.forEach((d) => effectiveDlcs.add(d));
     }
 
-    // 4. 遍历并在 28.8万条密钥库中匹配
+    // 2. 候选 DepotID 集合：全面覆盖主游戏本体 0~100 连续分包范围
+    const candidateDepotIds = new Set<number>();
+    for (let i = 0; i <= 100; i++) {
+      candidateDepotIds.add(appId + i);
+    }
+
+    // 3. 全面覆盖各 DLC 0~30 分包范围
+    for (const dlcId of effectiveDlcs) {
+      for (let j = 0; j <= 30; j++) {
+        candidateDepotIds.add(dlcId + j);
+      }
+    }
+
+    // 4. 遍历并在 28.8万条密钥库中高精度匹配
     for (const dId of candidateDepotIds) {
       const key = this.depotKeysDb[dId.toString()];
-      if (key && !matchedKeys[dId]) {
-        matchedKeys[dId] = key;
+      if (isValidKey(key)) {
+        if (!matchedKeys[dId] || !isValidKey(matchedKeys[dId])) {
+          matchedKeys[dId] = key;
+        }
       }
     }
 

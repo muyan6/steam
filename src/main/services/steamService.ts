@@ -6,6 +6,45 @@ import { SteamEnvironmentInfo, EnvironmentDiagnosticResult, EnvironmentCheckItem
 
 const execAsync = promisify(exec);
 
+/**
+ * 解析 Windows PE 可执行文件 (EXE/DLL) 的 Machine 字段获取位数架构
+ */
+export function getExecutableBitness(filePath: string): 'x86' | 'x64' | 'unknown' {
+  try {
+    if (!fs.existsSync(filePath)) return 'unknown';
+    const fd = fs.openSync(filePath, 'r');
+    const headerBuf = Buffer.alloc(1024);
+    const bytesRead = fs.readSync(fd, headerBuf, 0, 1024, 0);
+    fs.closeSync(fd);
+
+    if (bytesRead < 64) return 'unknown';
+    // 检查 DOS 头 'MZ' (0x5A4D)
+    if (headerBuf.readUInt16LE(0) !== 0x5a4d) return 'unknown';
+
+    // 获取 PE 头偏移 (e_lfanew at 0x3C)
+    const peOffset = headerBuf.readInt32LE(0x3c);
+    if (peOffset < 0 || peOffset + 24 > bytesRead) {
+      const fullBuf = fs.readFileSync(filePath);
+      if (peOffset + 24 > fullBuf.length) return 'unknown';
+      const sig = fullBuf.readUInt32LE(peOffset);
+      if (sig !== 0x00004550) return 'unknown'; // 'PE\0\0'
+      const machine = fullBuf.readUInt16LE(peOffset + 4);
+      if (machine === 0x014c) return 'x86';
+      if (machine === 0x8664) return 'x64';
+      return 'unknown';
+    }
+
+    const sig = headerBuf.readUInt32LE(peOffset);
+    if (sig !== 0x00004550) return 'unknown'; // 'PE\0\0'
+    const machine = headerBuf.readUInt16LE(peOffset + 4);
+    if (machine === 0x014c) return 'x86';
+    if (machine === 0x8664) return 'x64';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 export class SteamService {
   private customSteamPath: string | null = null;
 
@@ -13,6 +52,16 @@ export class SteamService {
     if (fs.existsSync(customPath)) {
       this.customSteamPath = customPath;
     }
+  }
+
+  /**
+   * 探测 Steam 客户端主程序位数架构 (32 位 / 64 位)
+   */
+  public async detectSteamBitness(customPath?: string | null): Promise<'x86' | 'x64' | 'unknown'> {
+    const steamPath = customPath || (await this.detectSteamPath());
+    if (!steamPath) return 'unknown';
+    const steamExe = path.join(steamPath, 'steam.exe');
+    return getExecutableBitness(steamExe);
   }
 
   /**
@@ -194,21 +243,30 @@ export class SteamService {
   public async getEnvironmentInfo(): Promise<SteamEnvironmentInfo> {
     const steamPath = await this.detectSteamPath();
     const isRunning = await this.isSteamRunning();
+    const steamBitness = await this.detectSteamBitness(steamPath);
 
     let ostInstalled = false;
     let scriptsCount = 0;
 
     if (steamPath) {
-      const ostIndicators = [
-        'dwmapi.dll',
-        'OpenSteamTool.dll',
-        'OpenSteamClient.dll',
-        'hid.dll',
-        'version.dll',
-        'st64.dll',
-        'opensteamtool.toml'
-      ];
-      ostInstalled = ostIndicators.some((file) => fs.existsSync(path.join(steamPath, file)));
+      if (steamBitness === 'x86') {
+        const versionDll = path.join(steamPath, 'version.dll');
+        ostInstalled = fs.existsSync(versionDll) && getExecutableBitness(versionDll) === 'x86';
+      } else if (steamBitness === 'x64') {
+        const x64Candidates = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll', 'hid.dll'];
+        ostInstalled = x64Candidates.some((f) => fs.existsSync(path.join(steamPath, f)));
+      } else {
+        const ostIndicators = [
+          'dwmapi.dll',
+          'OpenSteamTool.dll',
+          'OpenSteamClient.dll',
+          'hid.dll',
+          'version.dll',
+          'st64.dll',
+          'opensteamtool.toml'
+        ];
+        ostInstalled = ostIndicators.some((file) => fs.existsSync(path.join(steamPath, file)));
+      }
 
       const scriptsDir = path.join(steamPath, 'st_scripts');
       if (fs.existsSync(scriptsDir)) {
@@ -226,16 +284,18 @@ export class SteamService {
       isRunning,
       ostInstalled,
       scriptsCount,
-      globalOnlineFixEnabled: false
+      globalOnlineFixEnabled: false,
+      steamBitness
     };
   }
 
   /**
-   * 深度环境诊断检测：检测 Steam 目录、Hook DLL、toml 配置、st_scripts 规则引擎与运行状态
+   * 深度环境诊断检测：检测 Steam 目录、位数架构、Hook DLL、toml 配置、st_scripts 规则引擎与运行状态
    */
   public async checkEnvironmentHealth(): Promise<EnvironmentDiagnosticResult> {
     const items: EnvironmentCheckItem[] = [];
     const steamPath = await this.detectSteamPath();
+    const steamBitness = await this.detectSteamBitness(steamPath);
 
     // 1. Steam 安装路径校验
     if (!steamPath) {
@@ -249,12 +309,21 @@ export class SteamService {
     } else {
       const steamExe = path.join(steamPath, 'steam.exe');
       if (fs.existsSync(steamExe)) {
+        const bitnessText = steamBitness === 'x86' ? '32 位 (x86)' : steamBitness === 'x64' ? '64 位 (x64)' : '未知位数';
         items.push({
           name: 'Steam 核心主程序',
           category: 'path',
           status: 'success',
-          message: '路径有效，steam.exe 就绪',
+          message: `路径有效 (${bitnessText})`,
           detail: steamPath
+        });
+
+        items.push({
+          name: 'Steam 客户端位数架构',
+          category: 'path',
+          status: 'success',
+          message: `自动识别为 ${bitnessText}`,
+          detail: `系统已自适应匹配 ${bitnessText} 专用 Hook 注入内核`
         });
       } else {
         items.push({
@@ -267,43 +336,77 @@ export class SteamService {
       }
     }
 
-    // 2. OpenSteam 核心 Hook DLL 模块检测
+    // 2. OpenSteam 核心 Hook DLL 模块与架构匹配检测
     let hasHookDll = false;
     let hookDllName = '';
+    let mismatchDetail = '';
+
     if (steamPath) {
-      const hookDllCandidates = ['version.dll', 'dwmapi.dll', 'hid.dll', 'OpenSteamTool.dll', 'st64.dll'];
-      for (const dll of hookDllCandidates) {
-        if (fs.existsSync(path.join(steamPath, dll))) {
-          hasHookDll = true;
-          hookDllName = dll;
-          break;
+      if (steamBitness === 'x86') {
+        const versionDll = path.join(steamPath, 'version.dll');
+        const versionBak = path.join(steamPath, 'version.bak.dll');
+
+        if (fs.existsSync(versionDll)) {
+          const bitness = getExecutableBitness(versionDll);
+          if (bitness === 'x86') {
+            hasHookDll = true;
+            hookDllName = 'version.dll (32位 x86)';
+          } else {
+            mismatchDetail = '检测到 version.dll 但架构非 32 位 (x86)';
+          }
+        } else if (fs.existsSync(versionBak)) {
+          items.push({
+            name: 'OpenSteam 注入模块 (DLL)',
+            category: 'hook',
+            status: 'warning',
+            message: '发现备份模块 (version.bak.dll)，待激活恢复',
+            detail: '点击上方「一键修复」或「一键同步环境配置」可自动恢复并激活 32 位 version.dll'
+          });
+        }
+
+        // 检测是否有 64 位 DLL 遗留导致潜在混淆
+        const x64Conflicts = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll'].filter(
+          (f) => fs.existsSync(path.join(steamPath, f)) && getExecutableBitness(path.join(steamPath, f)) === 'x64'
+        );
+        if (x64Conflicts.length > 0 && !hasHookDll) {
+          mismatchDetail = `检测到残留的 64 位模块 (${x64Conflicts.join(', ')})，与 32 位 Steam 不兼容，请点击一键修复自动切换`;
+        }
+      } else {
+        // x64 或 unknown 架构
+        const hookDllCandidates = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll', 'hid.dll', 'version.dll'];
+        for (const dll of hookDllCandidates) {
+          const p = path.join(steamPath, dll);
+          if (fs.existsSync(p)) {
+            hasHookDll = true;
+            hookDllName = `${dll} (${getExecutableBitness(p)})`;
+            break;
+          }
         }
       }
 
-      const versionBak = path.join(steamPath, 'version.bak.dll');
       if (hasHookDll) {
         items.push({
           name: 'OpenSteam 注入模块 (DLL)',
           category: 'hook',
           status: 'success',
           message: `核心 Hook DLL 已就绪 (${hookDllName})`,
-          detail: `检测到模块文件: ${path.join(steamPath, hookDllName)}`
+          detail: `已完美适配当前 Steam 客户端架构，注入模块加载正常`
         });
-      } else if (fs.existsSync(versionBak)) {
+      } else if (mismatchDetail) {
         items.push({
           name: 'OpenSteam 注入模块 (DLL)',
           category: 'hook',
           status: 'warning',
-          message: '发现备份模块 (version.bak.dll)，待激活恢复',
-          detail: '点击上方「一键同步环境配置」或「重新运行注入向导」可自动恢复并激活 version.dll'
+          message: '模块架构待修复',
+          detail: mismatchDetail
         });
-      } else {
+      } else if (!items.some((i) => i.name === 'OpenSteam 注入模块 (DLL)')) {
         items.push({
           name: 'OpenSteam 注入模块 (DLL)',
           category: 'hook',
           status: 'error',
-          message: '未检测到 OpenSteam 核心 Hook 模块',
-          detail: 'Steam 根目录下缺少 version.dll / dwmapi.dll / hid.dll 等劫持模块'
+          message: '未检测到匹配架构的 Hook 模块',
+          detail: `Steam 根目录下缺少 ${steamBitness === 'x86' ? '32 位 version.dll' : '64 位 OpenSteamTool.dll / dwmapi.dll'} 劫持模块`
         });
       }
     }

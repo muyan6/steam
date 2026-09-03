@@ -20,6 +20,7 @@ export interface SteamEnvironmentInfo {
   ostVersion?: string;
   scriptsCount: number;
   globalOnlineFixEnabled: boolean;
+  steamBitness?: 'x86' | 'x64' | 'unknown';
 }
 
 export interface OnlineFixStatus {
@@ -53,8 +54,28 @@ export interface EnvironmentDiagnosticResult {
   checkedAt: string;
 }
 
+export interface AppManifestStatus {
+  appId: number;
+  hasManifest: boolean;
+  manifestCount: number;
+  matchedDepots: string[];
+  manifestFiles: string[];
+}
+
+export interface ManifestInstallResult {
+  success: boolean;
+  appId: number;
+  downloadedCount: number;
+  totalDepots: number;
+  depotKeys: { [depotId: string]: string };
+  manifestFiles: string[];
+  source: 'backend' | 'gmrc' | 'manifesthub' | 'none';
+  message: string;
+}
+
 export interface IpcResponse<T = any> {
   success: boolean;
   data?: T;
   message?: string;
 }
+

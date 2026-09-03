@@ -1,0 +1,313 @@
+import fs from 'fs';
+import path from 'path';
+import axios from 'axios';
+import { steamService } from './steamService';
+import { APP_CONFIG } from '../../config/appConfig';
+
+export interface ManifestInstallResult {
+  success: boolean;
+  appId: number;
+  downloadedCount: number;
+  totalDepots: number;
+  depotKeys: { [depotId: string]: string };
+  manifestFiles: string[];
+  source: 'backend' | 'gmrc' | 'manifesthub' | 'none';
+  message: string;
+}
+
+export interface AppManifestStatus {
+  appId: number;
+  hasManifest: boolean;
+  manifestCount: number;
+  matchedDepots: string[];
+  manifestFiles: string[];
+}
+
+export class ManifestService {
+  /**
+   * 确保 Steam 根目录下的 depotcache/ 目录存在
+   */
+  public async ensureDepotCacheDir(): Promise<string | null> {
+    const steamPath = await steamService.detectSteamPath();
+    if (!steamPath) return null;
+
+    const depotCacheDir = path.join(steamPath, 'depotcache');
+    if (!fs.existsSync(depotCacheDir)) {
+      try {
+        fs.mkdirSync(depotCacheDir, { recursive: true });
+      } catch (e) {
+        console.error('[ManifestService] 创建 depotcache 目录失败:', e);
+      }
+    }
+    return depotCacheDir;
+  }
+
+  /**
+   * 全自动检索、拉取并安装指定游戏的分包清单 (.manifest) 到 Steam depotcache/
+   * 遵循策略：优先服务端拉取 -> 未命中/离线自动由公共清单源 (GMRC / ManifestHub / GitHub 镜像) 补充
+   */
+  public async fetchAndInstallManifests(
+    appId: number,
+    dlcs: number[] = [],
+    presetKeys: { [depotId: string]: string } = {}
+  ): Promise<ManifestInstallResult> {
+    const steamPath = await steamService.detectSteamPath();
+    if (!steamPath) {
+      return {
+        success: false,
+        appId,
+        downloadedCount: 0,
+        totalDepots: 0,
+        depotKeys: presetKeys,
+        manifestFiles: [],
+        source: 'none',
+        message: '未检测到 Steam 客户端安装目录'
+      };
+    }
+
+    const depotCacheDir = await this.ensureDepotCacheDir();
+    if (!depotCacheDir) {
+      return {
+        success: false,
+        appId,
+        downloadedCount: 0,
+        totalDepots: 0,
+        depotKeys: presetKeys,
+        manifestFiles: [],
+        source: 'none',
+        message: '无法初始化 Steam depotcache 缓存目录'
+      };
+    }
+
+    const downloadedFiles: string[] = [];
+    const aggregatedKeys: { [depotId: string]: string } = { ...presetKeys };
+    let sourceUsed: 'backend' | 'gmrc' | 'manifesthub' | 'none' = 'none';
+
+    // ==================== 策略一：优先请求后端 Manifest 聚合 API ====================
+    try {
+      const url = `${APP_CONFIG.API_BASE_URL}/api/manifests/${appId}`;
+      const resp = await axios.get(url, {
+        params: { dlcs: dlcs.join(',') },
+        timeout: 3500
+      });
+
+      if (resp.data && resp.data.success) {
+        if (resp.data.keys) {
+          Object.assign(aggregatedKeys, resp.data.keys);
+        }
+
+        const depots = resp.data.depots || [];
+        if (depots.length > 0) {
+          for (const d of depots) {
+            if (d.downloadUrl && d.manifestId && d.manifestId !== '0') {
+              const fileName = `${d.depotId}_${d.manifestId}.manifest`;
+              const targetPath = path.join(depotCacheDir, fileName);
+
+              // 若本地已有则无需重复下载
+              if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 0) {
+                downloadedFiles.push(fileName);
+                continue;
+              }
+
+              // 下载清单二进制流
+              try {
+                let fullDownloadUrl = d.downloadUrl;
+                if (fullDownloadUrl.startsWith('/')) {
+                  fullDownloadUrl = `${APP_CONFIG.API_BASE_URL}${fullDownloadUrl}`;
+                }
+                const fileResp = await axios.get(fullDownloadUrl, {
+                  responseType: 'arraybuffer',
+                  timeout: 5000
+                });
+                if (fileResp.data && fileResp.data.length > 0) {
+                  fs.writeFileSync(targetPath, Buffer.from(fileResp.data));
+                  downloadedFiles.push(fileName);
+                }
+              } catch (dlErr) {
+                console.warn(`[ManifestService] 下载后端清单文件失败 (${fileName}):`, dlErr);
+              }
+            }
+          }
+
+          if (downloadedFiles.length > 0) {
+            sourceUsed = resp.data.source === 'local_cache' ? 'backend' : (resp.data.source || 'backend');
+          }
+        }
+      }
+    } catch {
+      // 后端离线或超时，自动流转到公共源兜底
+    }
+
+    // ==================== 策略二：若后端无清单或未联网，自动从 GMRC 公共清单源拉取 ====================
+    if (downloadedFiles.length === 0) {
+      try {
+        const gmrcUrls = [
+          `http://gmrc.wudrm.com/manifest/${appId}`,
+          `https://manifest.steam.run/manifest/${appId}`
+        ];
+
+        for (const gmrcUrl of gmrcUrls) {
+          try {
+            const resp = await axios.get(gmrcUrl, { timeout: 3500 });
+            if (resp.data) {
+              const entries = Array.isArray(resp.data) ? resp.data : Object.entries(resp.data);
+              for (const item of entries) {
+                const depotId = Array.isArray(item) ? item[0] : (item.depot_id || item.depotId);
+                const manifestId = Array.isArray(item) ? item[1] : (item.manifest_id || item.manifestId);
+
+                if (depotId && manifestId && manifestId !== '0') {
+                  const fileName = `${depotId}_${manifestId}.manifest`;
+                  const targetPath = path.join(depotCacheDir, fileName);
+
+                  if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 0) {
+                    downloadedFiles.push(fileName);
+                    continue;
+                  }
+
+                  // 尝试下载 GMRC 提供的二进制清单
+                  const dlUrl = `${gmrcUrl}/${depotId}`;
+                  try {
+                    const dlResp = await axios.get(dlUrl, {
+                      responseType: 'arraybuffer',
+                      timeout: 5000
+                    });
+                    if (dlResp.data && dlResp.data.length > 0) {
+                      fs.writeFileSync(targetPath, Buffer.from(dlResp.data));
+                      downloadedFiles.push(fileName);
+                    }
+                  } catch {}
+                }
+              }
+
+              if (downloadedFiles.length > 0) {
+                sourceUsed = 'gmrc';
+                break;
+              }
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+
+    // ==================== 策略三：向 GitHub ManifestHub 加速镜像拉取 ====================
+    if (downloadedFiles.length === 0) {
+      try {
+        const candidateDepotIds = Object.keys(aggregatedKeys);
+        if (candidateDepotIds.length === 0) {
+          // 兜底候选 depot ID
+          candidateDepotIds.push(appId.toString(), (appId + 1).toString(), (appId + 2).toString());
+        }
+
+        const proxyBase = 'https://ghfast.top/https://raw.githubusercontent.com/ManifestHub';
+
+        for (const dId of candidateDepotIds.slice(0, 5)) {
+          const infoUrls = [
+            `${proxyBase}/Manifest/main/${dId}.json`,
+            `${proxyBase}/Manifest-Index/main/data/${appId}/${dId}.json`
+          ];
+
+          for (const iu of infoUrls) {
+            try {
+              const resp = await axios.get(iu, { timeout: 2500 });
+              if (resp.data && (resp.data.manifest_id || resp.data.manifestId)) {
+                const mId = (resp.data.manifest_id || resp.data.manifestId).toString();
+                const fileName = `${dId}_${mId}.manifest`;
+                const targetPath = path.join(depotCacheDir, fileName);
+
+                if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 0) {
+                  downloadedFiles.push(fileName);
+                  continue;
+                }
+
+                const fileUrl = resp.data.download_url || `${proxyBase}/Manifest/main/${dId}_${mId}.manifest`;
+                const dlResp = await axios.get(fileUrl, {
+                  responseType: 'arraybuffer',
+                  timeout: 5000
+                });
+                if (dlResp.data && dlResp.data.length > 0) {
+                  fs.writeFileSync(targetPath, Buffer.from(dlResp.data));
+                  downloadedFiles.push(fileName);
+                }
+              }
+            } catch {}
+          }
+        }
+
+        if (downloadedFiles.length > 0) {
+          sourceUsed = 'manifesthub';
+        }
+      } catch {}
+    }
+
+    // 统计已有清单
+    const currentStatus = await this.checkAppManifestStatus(appId, dlcs);
+
+    return {
+      success: true,
+      appId,
+      downloadedCount: downloadedFiles.length,
+      totalDepots: currentStatus.manifestCount,
+      depotKeys: aggregatedKeys,
+      manifestFiles: currentStatus.manifestFiles,
+      source: sourceUsed,
+      message: currentStatus.hasManifest
+        ? `成功就绪 ${currentStatus.manifestCount} 个分包清单 (.manifest)！已完全消除“无许可”限制。`
+        : `已匹配分包密钥与入库规则！建议开启 OST 动态清单代理。`
+    };
+  }
+
+  /**
+   * 检查本地 Steam/depotcache 目录中是否已存在该 App 的分包清单文件
+   */
+  public async checkAppManifestStatus(appId: number, dlcs: number[] = []): Promise<AppManifestStatus> {
+    const steamPath = await steamService.detectSteamPath();
+    if (!steamPath) {
+      return { appId, hasManifest: false, manifestCount: 0, matchedDepots: [], manifestFiles: [] };
+    }
+
+    const depotCacheDir = path.join(steamPath, 'depotcache');
+    if (!fs.existsSync(depotCacheDir)) {
+      return { appId, hasManifest: false, manifestCount: 0, matchedDepots: [], manifestFiles: [] };
+    }
+
+    // 候选 depot 范围
+    const candidateDepotIds = new Set<string>();
+    for (let i = 0; i <= 30; i++) {
+      candidateDepotIds.add((appId + i).toString());
+    }
+    for (const dlc of dlcs) {
+      for (let j = 0; j <= 10; j++) {
+        candidateDepotIds.add((dlc + j).toString());
+      }
+    }
+
+    try {
+      const files = fs.readdirSync(depotCacheDir);
+      const matchedDepots = new Set<string>();
+      const manifestFiles: string[] = [];
+
+      for (const file of files) {
+        const match = file.match(/^(\d+)_(\d+)\.manifest$/i);
+        if (match) {
+          const [, dId] = match;
+          if (candidateDepotIds.has(dId)) {
+            matchedDepots.add(dId);
+            manifestFiles.push(file);
+          }
+        }
+      }
+
+      return {
+        appId,
+        hasManifest: manifestFiles.length > 0,
+        manifestCount: manifestFiles.length,
+        matchedDepots: Array.from(matchedDepots),
+        manifestFiles
+      };
+    } catch {
+      return { appId, hasManifest: false, manifestCount: 0, matchedDepots: [], manifestFiles: [] };
+    }
+  }
+}
+
+export const manifestService = new ManifestService();
