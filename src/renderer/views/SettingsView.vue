@@ -2,31 +2,103 @@
   <div class="h-full flex flex-col p-6 overflow-y-auto">
     <!-- 标题 -->
     <div class="mb-6">
-      <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
-        <span>⚙️ 系统设置与运行环境体检</span>
+      <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2.5">
+        <Settings2 class="w-6 h-6 theme-text-accent" />
+        <span>系统设置与运行环境体检</span>
       </h2>
       <p class="text-xs text-slate-400 mt-1">
-        深度体检 Steam 客户端环境、OpenSteamTool 注入内核、配置文件及云端数据引擎连接状态
+        自定义软件主题外观、深度体检 Steam 客户端环境、OpenSteamTool 注入内核及云端数据引擎连接状态
       </p>
     </div>
 
-    <div class="space-y-6 max-w-4xl pb-8">
-      <!-- 0. 运行环境完整度与注入健康体检面板 (可缩放收折交互) -->
-      <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 shadow-lg transition-all duration-300">
+    <div class="space-y-6 max-w-4xl pb-10">
+      <!-- 0. 界面外观与主题配色 (专属全新面板) -->
+      <div class="theme-card-static rounded-2xl p-5 shadow-lg border">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <Palette class="w-4 h-4 theme-text-accent" />
+            <h3 class="font-bold text-sm text-slate-200">界面外观与主题配色</h3>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono border border-slate-700">3 种精选配色</span>
+          </div>
+          <span class="text-xs text-slate-400 font-medium">即时切换 · 自动保存</span>
+        </div>
+
+        <p class="text-xs text-slate-400 mb-4 leading-relaxed">
+          提供 3 套针对现代游戏桌面端设计的专属高质感主题，随心切换沉浸视觉风格：
+        </p>
+
+        <!-- 3 款主题选择卡片网格 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          <div
+            v-for="theme in THEME_LIST"
+            :key="theme.id"
+            @click="handleSelectTheme(theme.id)"
+            class="p-4 rounded-xl border transition-all duration-200 cursor-pointer relative overflow-hidden group flex flex-col justify-between"
+            :class="currentTheme === theme.id 
+              ? 'ring-2 ring-offset-2 ring-offset-slate-950 shadow-lg' 
+              : 'bg-slate-900/50 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/80'"
+            :style="currentTheme === theme.id ? { borderColor: theme.accentHex, backgroundColor: theme.cardHex } : {}"
+          >
+            <!-- 激活标记徽章 -->
+            <div 
+              v-if="currentTheme === theme.id"
+              class="absolute top-2.5 right-2.5 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shadow"
+              :style="{ backgroundColor: theme.accentHex, color: '#000000' }"
+            >
+              <Check class="w-3 h-3 stroke-[3]" />
+              <span>当前使用</span>
+            </div>
+
+            <div>
+              <!-- 色彩调色板预览圆点 -->
+              <div class="flex items-center gap-1.5 mb-3">
+                <span class="w-4 h-4 rounded-full border border-white/20 shadow-sm" :style="{ backgroundColor: theme.bgHex }" title="背景色"></span>
+                <span class="w-4 h-4 rounded-full border border-white/20 shadow-sm" :style="{ backgroundColor: theme.cardHex }" title="卡片色"></span>
+                <span class="w-4 h-4 rounded-full border border-white/20 shadow-sm" :style="{ backgroundColor: theme.accentHex }" title="高亮主色"></span>
+                <span class="w-4 h-4 rounded-full border border-white/20 shadow-sm" :style="{ backgroundColor: theme.secondaryHex }" title="辅助渐变色"></span>
+              </div>
+
+              <!-- 主题名称 -->
+              <div class="font-bold text-sm text-slate-100 flex items-center gap-1.5 mb-1">
+                <span>{{ theme.name }}</span>
+                <span class="text-[10px] font-mono text-slate-400 font-normal">({{ theme.nameEn }})</span>
+              </div>
+
+              <!-- 主题描述 -->
+              <p class="text-[11px] text-slate-400 leading-relaxed">
+                {{ theme.description }}
+              </p>
+            </div>
+
+            <div class="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+              <span class="font-mono text-slate-400">#{{ theme.id }}</span>
+              <span 
+                class="font-medium group-hover:underline flex items-center gap-1"
+                :style="{ color: theme.accentHex }"
+              >
+                {{ currentTheme === theme.id ? '已应用' : '点击切换 ➔' }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. 运行环境完整度与注入健康体检面板 -->
+      <div class="theme-card-static rounded-2xl p-5 shadow-lg border transition-all duration-300">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2.5 flex-wrap">
-            <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
-              <span>🩺 运行环境健康度体检</span>
-            </h3>
+            <Activity class="w-4 h-4 theme-text-accent" />
+            <h3 class="font-bold text-sm text-slate-200">运行环境健康度体检</h3>
             <span
               v-if="healthResult"
-              class="px-2.5 py-0.5 rounded text-[11px] font-bold transition"
+              class="px-2.5 py-0.5 rounded-full text-[11px] font-bold transition"
               :class="getOverallStatusBadgeClass(healthResult.overallStatus)"
             >
               {{ getOverallStatusText(healthResult.overallStatus) }}
             </span>
-            <span v-if="abnormalItemsCount > 0 && filterMode === 'issues_only'" class="text-[11px] text-amber-400 font-medium">
-              (发现 {{ abnormalItemsCount }} 项异常待处理)
+            <span v-if="abnormalItemsCount > 0 && filterMode === 'issues_only'" class="text-[11px] text-amber-400 font-medium flex items-center gap-1">
+              <AlertTriangle class="w-3.5 h-3.5" />
+              <span>发现 {{ abnormalItemsCount }} 项异常待处理</span>
             </span>
           </div>
 
@@ -44,9 +116,9 @@
             <button
               @click="handleStartHealthCheck"
               :disabled="checkingHealth"
-              class="px-3.5 py-1.5 bg-sky-600/30 hover:bg-sky-600/50 border border-sky-500/40 text-sky-200 text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow"
+              class="theme-btn-primary px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow"
             >
-              <span :class="{ 'animate-spin': checkingHealth }">🔄</span>
+              <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': checkingHealth }" />
               <span>{{ checkingHealth ? '正在全面体检...' : '开始全面检测' }}</span>
             </button>
           </div>
@@ -59,10 +131,10 @@
         <!-- 正常折叠时的清爽简报卡片 -->
         <div
           v-if="healthResult && !isExpandedView && healthResult.overallStatus === 'ready'"
-          class="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between mb-3 text-xs"
+          class="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between mb-3 text-xs"
         >
           <div class="flex items-center gap-2 text-emerald-300">
-            <span>✅</span>
+            <CheckCircle2 class="w-4 h-4 shrink-0 text-emerald-400" />
             <span class="font-medium">各项指标检测完毕：Steam 路径、64位架构、Hook DLL、配置文件及规则引擎全部正常就绪。</span>
           </div>
           <button @click="toggleManualExpand" class="text-[11px] text-sky-400 hover:text-sky-300 underline font-mono shrink-0 ml-2">
@@ -75,13 +147,16 @@
           v-if="healthResult && isExpandedView && filterMode === 'issues_only' && abnormalItemsCount > 0"
           class="p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/30 flex items-center justify-between mb-3 text-xs"
         >
-          <span class="text-amber-300 font-medium">⚠️ 以下是检测到需要处理的异常项目（已自动精简展示）：</span>
+          <span class="text-amber-300 font-medium flex items-center gap-1.5">
+            <AlertTriangle class="w-3.5 h-3.5" />
+            <span>以下是检测到需要处理的异常项目（已自动精简展示）：</span>
+          </span>
           <button @click="filterMode = 'all'" class="text-[11px] text-sky-400 hover:text-sky-300 underline shrink-0 ml-2">
             查看全部项目 (含正常项)
           </button>
         </div>
 
-        <!-- 展开时的检测项目列表 (全面检测中全部显示 / 检测完成如果正常自动折叠 / 不正常仅保留不正常) -->
+        <!-- 展开时的检测项目列表 -->
         <div v-if="isExpandedView && displayedItems.length > 0" class="space-y-2.5 mb-3 transition-all">
           <div
             v-for="(item, idx) in displayedItems"
@@ -90,11 +165,15 @@
             :class="getItemBorderClass(item.status)"
           >
             <div class="flex items-start gap-3 min-w-0">
-              <span class="text-lg leading-none mt-0.5">{{ getStatusIcon(item.status) }}</span>
+              <component 
+                :is="getStatusIconComponent(item.status)" 
+                class="w-4 h-4 mt-0.5 shrink-0" 
+                :class="getStatusColorClass(item.status)" 
+              />
               <div class="min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="font-bold text-xs text-slate-200">{{ item.name }}</span>
-                  <span class="text-[10px] px-2 py-0.5 rounded font-mono" :class="getStatusBadgeClass(item.status)">
+                  <span class="text-[10px] px-2 py-0.5 rounded-full font-mono" :class="getStatusBadgeClass(item.status)">
                     {{ item.message }}
                   </span>
                 </div>
@@ -112,34 +191,37 @@
                 :disabled="deploying"
                 class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-lg transition shadow flex items-center gap-1"
               >
-                <span>⚡ 一键修复</span>
+                <Zap class="w-3 h-3" />
+                <span>一键修复</span>
               </button>
               <button
                 v-else-if="item.category === 'process'"
                 @click="handleRestartSteamQuick"
                 class="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold rounded-lg transition shadow flex items-center gap-1"
               >
-                <span>⚡ 重启 Steam</span>
+                <RotateCw class="w-3 h-3" />
+                <span>重启 Steam</span>
               </button>
             </div>
           </div>
         </div>
 
-        <div v-if="healthResult" class="text-[11px] text-slate-400 flex items-center justify-between pt-2.5 border-t border-slate-800">
+        <div v-if="healthResult" class="text-[11px] text-slate-400 flex items-center justify-between pt-2.5 border-t border-slate-800/80">
           <span>体检结论：<strong class="text-slate-300">{{ healthResult.summary }}</strong></span>
           <span class="font-mono text-slate-400">检测时间：{{ healthResult.checkedAt }}</span>
         </div>
       </div>
 
-      <!-- 1. 云端数据库连接面板 -->
-      <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 shadow-lg">
+      <!-- 2. 云端数据库连接面板 -->
+      <div class="theme-card-static rounded-2xl p-5 shadow-lg border">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
-            <span>☁️ 云端高速数据引擎</span>
-            <span class="px-2 py-0.5 rounded text-[10px] font-bold" :class="dbStats.serverStatus === 'online' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'">
-              {{ dbStats.serverStatus === 'online' ? '● 云端已连接' : '● 本地基础模式' }}
+          <div class="flex items-center gap-2">
+            <Cloud class="w-4 h-4 theme-text-accent" />
+            <h3 class="font-bold text-sm text-slate-200">云端高速数据引擎</h3>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border" :class="dbStats.serverStatus === 'online' ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'">
+              {{ dbStats.serverStatus === 'online' ? '● 云端已连接' : '● 本地离线模式' }}
             </span>
-          </h3>
+          </div>
           <span class="text-xs text-slate-400">{{ dbStats.lastUpdated }}</span>
         </div>
 
@@ -148,10 +230,13 @@
         </p>
 
         <!-- 统计指标卡片 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
           <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
             <div>
-              <div class="text-xs text-slate-400">云端已收录游戏总量</div>
+              <div class="text-xs text-slate-400 flex items-center gap-1.5">
+                <Database class="w-3.5 h-3.5 text-sky-400" />
+                <span>云端已收录游戏总量</span>
+              </div>
               <div class="text-xl font-mono font-bold text-sky-400 mt-1">
                 {{ dbStats.gamesCount > 0 ? dbStats.gamesCount.toLocaleString() + ' 款' : '180,000+ 款' }}
               </div>
@@ -159,59 +244,67 @@
             <button
               @click="loadDbStats"
               :disabled="refreshing"
-              class="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow"
+              class="theme-btn-primary px-3.5 py-2 disabled:opacity-50 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow"
             >
-              <span v-if="refreshing" class="animate-spin">🔄</span>
-              <span>{{ refreshing ? '正在检测...' : '刷新云端状态' }}</span>
+              <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': refreshing }" />
+              <span>{{ refreshing ? '检测中...' : '刷新云端状态' }}</span>
             </button>
           </div>
 
           <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
             <div>
-              <div class="text-xs text-slate-400">云端收录 DepotKey 密钥</div>
+              <div class="text-xs text-slate-400 flex items-center gap-1.5">
+                <Key class="w-3.5 h-3.5 text-emerald-400" />
+                <span>云端收录 DepotKey 密钥</span>
+              </div>
               <div class="text-xl font-mono font-bold text-emerald-400 mt-1">
                 {{ dbStats.keysCount > 0 ? dbStats.keysCount.toLocaleString() + ' 条' : '288,000+ 条' }}
               </div>
             </div>
-            <div class="text-xs text-emerald-400 flex items-center gap-1">
-              <span>⚡ 云端实时分发</span>
+            <div class="text-xs text-emerald-400 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <Zap class="w-3.5 h-3.5" />
+              <span>实时云端下发</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 2. Steam 安装路径设置 -->
-      <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 shadow-lg">
-        <h3 class="font-bold text-sm text-slate-200 mb-3 flex items-center gap-2">
-          <span>📁 Steam 本地客户端路径</span>
-        </h3>
+      <!-- 3. Steam 安装路径设置 -->
+      <div class="theme-card-static rounded-2xl p-5 shadow-lg border">
+        <div class="flex items-center gap-2 mb-3">
+          <Folder class="w-4 h-4 theme-text-accent" />
+          <h3 class="font-bold text-sm text-slate-200">Steam 本地客户端路径</h3>
+        </div>
         <div class="flex items-center gap-3">
           <input
             v-model="steamPathInput"
             type="text"
             placeholder="自动从注册表探测，或点击右侧浏览手动选择..."
-            class="flex-1 bg-slate-900/80 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-steam-accent"
+            class="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50"
           />
           <button
             @click="handleBrowseSteamPath"
-            class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-200 font-medium transition"
+            class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-200 font-medium transition flex items-center gap-1.5"
           >
-            📂 浏览路径
+            <FolderOpen class="w-3.5 h-3.5 text-slate-300" />
+            <span>浏览路径</span>
           </button>
           <button
             @click="handleSaveSteamPath"
-            class="px-4 py-2.5 bg-steam-blue hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition"
+            class="theme-btn-primary px-4 py-2.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
           >
-            保存并检测
+            <Save class="w-3.5 h-3.5" />
+            <span>保存并检测</span>
           </button>
         </div>
       </div>
 
       <!-- 4. OpenSteamTool 内核与公共清单源设置 -->
-      <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 shadow-lg">
-        <h3 class="font-bold text-sm text-slate-200 mb-3 flex items-center gap-2">
-          <span>🌐 公共清单 (Manifest) 上游 API 端点配置</span>
-        </h3>
+      <div class="theme-card-static rounded-2xl p-5 shadow-lg border">
+        <div class="flex items-center gap-2 mb-3">
+          <Globe class="w-4 h-4 theme-text-accent" />
+          <h3 class="font-bold text-sm text-slate-200">公共清单 (Manifest) 上游 API 端点配置</h3>
+        </div>
         <p class="text-xs text-slate-400 mb-4 leading-relaxed">
           OpenSteamTool 会在入库未拥有游戏时，自动向以下公用端点获取加密清单请求码 (GMRC)，解决个人服务器带宽限制。
         </p>
@@ -222,7 +315,10 @@
             class="p-3.5 rounded-xl border transition cursor-pointer"
             :class="manifestApi === 'steamrun' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
           >
-            <div class="font-bold text-xs text-slate-200 mb-1">SteamRun 镜像源 (推荐)</div>
+            <div class="font-bold text-xs text-slate-200 mb-1 flex items-center gap-1.5">
+              <span>SteamRun 镜像源</span>
+              <span class="text-[9px] px-1 py-0.2 rounded bg-sky-500/20 text-sky-300">推荐</span>
+            </div>
             <div class="text-[11px] text-slate-400 font-mono break-all">manifest.steam.run</div>
           </div>
 
@@ -245,36 +341,40 @@
           </div>
         </div>
 
-        <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+        <div class="flex items-center justify-between pt-3 border-t border-slate-800">
           <div class="flex items-center gap-2">
             <button
               @click="emit('relaunch-wizard')"
               class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-sky-300 font-medium transition flex items-center gap-1.5"
             >
-              <span>🚀 重新运行注入向导</span>
+              <Sparkles class="w-3.5 h-3.5" />
+              <span>重新运行注入向导</span>
             </button>
             <button
               @click="handleUninstallOST"
               :disabled="deploying"
               class="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-medium transition flex items-center gap-1.5"
             >
-              <span>🗑️ 卸载注入</span>
+              <Trash2 class="w-3.5 h-3.5" />
+              <span>卸载注入</span>
             </button>
           </div>
           <button
             @click="handleDeployOSTEnv"
             :disabled="deploying"
-            class="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center gap-1.5"
+            class="theme-btn-primary px-4 py-2 disabled:opacity-50 text-xs font-bold rounded-xl shadow transition flex items-center gap-1.5"
           >
-            <span>{{ deploying ? '正在写入...' : '⚡ 一键同步/重建环境' }}</span>
+            <Zap class="w-3.5 h-3.5" />
+            <span>{{ deploying ? '正在写入...' : '一键同步/重建环境' }}</span>
           </button>
         </div>
       </div>
 
       <!-- 5. 安全免责与防杀软提示 -->
-      <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
+      <div class="rounded-2xl p-5 bg-slate-900/40 border border-slate-800">
         <h3 class="font-bold text-xs text-amber-400 mb-2 flex items-center gap-1.5">
-          <span>🛡️ 安全提示与杀毒软件白名单说明</span>
+          <ShieldAlert class="w-4 h-4 text-amber-400" />
+          <span>安全提示与杀毒软件白名单说明</span>
         </h3>
         <ul class="text-xs text-slate-400 space-y-1.5 list-disc list-inside leading-relaxed">
           <li>本工具为商业级辅助软件，代码逻辑严谨，仅用于合法评测与游戏联机管理。</li>
@@ -288,13 +388,37 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { EnvironmentDiagnosticResult, EnvironmentCheckItem } from '../../types';
+import { 
+  Settings2, 
+  Palette, 
+  Check, 
+  Activity, 
+  CheckCircle2, 
+  AlertTriangle, 
+  XCircle, 
+  RotateCw, 
+  Cloud, 
+  Database, 
+  Key, 
+  Zap, 
+  Folder, 
+  FolderOpen, 
+  Save, 
+  Globe, 
+  Sparkles, 
+  Trash2, 
+  ShieldAlert 
+} from 'lucide-vue-next';
+import { EnvironmentDiagnosticResult, EnvironmentCheckItem, AppThemeId } from '../../types';
+import { useTheme } from '../composables/useTheme';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
   (e: 'refresh-status'): void;
   (e: 'relaunch-wizard'): void;
 }>();
+
+const { currentTheme, THEME_LIST, setTheme } = useTheme();
 
 const steamPathInput = ref('');
 const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>('steamrun');
@@ -313,6 +437,12 @@ const dbStats = ref({
   lastUpdated: '连接中...',
   serverStatus: 'offline'
 });
+
+const handleSelectTheme = (themeId: AppThemeId) => {
+  setTheme(themeId);
+  const matched = THEME_LIST.find(t => t.id === themeId);
+  emit('notify', `已切换至「${matched?.name || themeId}」主题配色！`, 'success');
+};
 
 const abnormalItemsCount = computed(() => {
   if (!healthResult.value) return 0;
@@ -338,27 +468,33 @@ const toggleManualExpand = () => {
 };
 
 const getOverallStatusBadgeClass = (status: 'ready' | 'partial' | 'error') => {
-  if (status === 'ready') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
-  if (status === 'partial') return 'bg-amber-500/20 text-amber-300 border border-amber-500/40';
-  return 'bg-rose-500/20 text-rose-300 border border-rose-500/40';
+  if (status === 'ready') return 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30';
+  if (status === 'partial') return 'bg-amber-500/10 text-amber-300 border border-amber-500/30';
+  return 'bg-rose-500/10 text-rose-300 border border-rose-500/30';
 };
 
 const getOverallStatusText = (status: 'ready' | 'partial' | 'error') => {
-  if (status === 'ready') return '● 环境配置完美就绪';
-  if (status === 'partial') return '● 部分项目待优化';
+  if (status === 'ready') return '● 环境配置就绪';
+  if (status === 'partial') return '● 部分待优化';
   return '● 存在配置异常';
 };
 
 const getItemBorderClass = (status: 'success' | 'warning' | 'error') => {
-  if (status === 'success') return 'border-emerald-500/30 hover:border-emerald-500/50';
+  if (status === 'success') return 'border-emerald-500/20 hover:border-emerald-500/40';
   if (status === 'warning') return 'border-amber-500/30 hover:border-amber-500/50';
-  return 'border-rose-500/40 hover:border-rose-500/60';
+  return 'border-rose-500/30 hover:border-rose-500/50';
 };
 
-const getStatusIcon = (status: 'success' | 'warning' | 'error') => {
-  if (status === 'success') return '✅';
-  if (status === 'warning') return '⚠️';
-  return '❌';
+const getStatusIconComponent = (status: 'success' | 'warning' | 'error') => {
+  if (status === 'success') return CheckCircle2;
+  if (status === 'warning') return AlertTriangle;
+  return XCircle;
+};
+
+const getStatusColorClass = (status: 'success' | 'warning' | 'error') => {
+  if (status === 'success') return 'text-emerald-400';
+  if (status === 'warning') return 'text-amber-400';
+  return 'text-rose-400';
 };
 
 const getStatusBadgeClass = (status: 'success' | 'warning' | 'error') => {
@@ -367,11 +503,6 @@ const getStatusBadgeClass = (status: 'success' | 'warning' | 'error') => {
   return 'bg-rose-500/10 text-rose-300 border border-rose-500/20';
 };
 
-/**
- * 点击「开始全面检测」交互流程：
- * 1. 立即展开并展示所有检测项目
- * 2. 扫描检测完成后：若全部正常则 800ms 后自动优雅折叠；若存在异常则仅保留异常项
- */
 const handleStartHealthCheck = async () => {
   checkingHealth.value = true;
   isExpandedView.value = true;
@@ -381,7 +512,6 @@ const handleStartHealthCheck = async () => {
     const startTime = Date.now();
     const res = await window.electronAPI.checkEnvironmentHealth();
     
-    // 确保平滑展示检测过渡
     const elapsed = Date.now() - startTime;
     if (elapsed < 500) {
       await new Promise(r => setTimeout(r, 500 - elapsed));
@@ -392,12 +522,10 @@ const handleStartHealthCheck = async () => {
       const hasIssues = res.overallStatus !== 'ready' || res.items.some((i: EnvironmentCheckItem) => i.status !== 'success');
 
       if (hasIssues) {
-        // 不正常：仅保留不正常的项
         filterMode.value = 'issues_only';
         isExpandedView.value = true;
         emit('notify', `体检完成：检测到 ${abnormalItemsCount.value} 项待优化配置`, 'warning');
       } else {
-        // 正常：全绿展示 800ms 后自动优雅缩回
         await new Promise(r => setTimeout(r, 800));
         isExpandedView.value = false;
         filterMode.value = 'collapsed';

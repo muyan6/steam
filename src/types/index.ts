@@ -1,3 +1,16 @@
+export type AppThemeId = 'midnight' | 'neon' | 'emerald';
+
+export interface ThemeConfig {
+  id: AppThemeId;
+  name: string;
+  nameEn: string;
+  description: string;
+  bgHex: string;
+  cardHex: string;
+  accentHex: string;
+  secondaryHex: string;
+}
+
 export interface SteamGame {
   appId: number;
   name: string;
@@ -65,7 +78,7 @@ export interface AppSettings {
   manifestApi: 'opensteamtool' | 'steamrun' | 'wudrm' | 'custom';
   customManifestApiUrl?: string;
   autoRestartSteam: boolean;
-  theme: 'dark' | 'light';
+  theme: AppThemeId | 'dark' | 'light';
 }
 
 export interface EnvironmentCheckItem {

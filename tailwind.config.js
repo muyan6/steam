@@ -8,6 +8,19 @@ export default {
   theme: {
     extend: {
       colors: {
+        theme: {
+          base: 'var(--color-bg-base)',
+          subtle: 'var(--color-bg-subtle)',
+          card: 'var(--color-bg-card)',
+          cardHover: 'var(--color-bg-card-hover)',
+          cardSolid: 'var(--color-bg-card-solid)',
+          elevated: 'var(--color-bg-elevated)',
+          accent: 'var(--color-accent-primary)',
+          accentHover: 'var(--color-accent-primary-hover)',
+          accentSecondary: 'var(--color-accent-secondary)',
+          border: 'var(--color-border)',
+          borderSubtle: 'var(--color-border-subtle)',
+        },
         brand: {
           50: '#f0fdfa',
           100: '#ccfbf1',

@@ -1,16 +1,16 @@
 <template>
-  <div class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 select-none">
-    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-      <!-- 顶部品牌 Header -->
-      <div class="px-6 py-4 bg-gradient-to-r from-sky-900/50 via-slate-800/60 to-slate-900 border-b border-slate-800 flex items-center justify-between">
+  <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 select-none">
+    <div class="theme-card-static rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border">
+      <!-- 顶部 Header -->
+      <div class="px-6 py-4 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-teal-400 flex items-center justify-center text-slate-950 font-black text-lg shadow-lg">
-            ⚡
+          <div class="w-9 h-9 rounded-xl theme-btn-primary flex items-center justify-center text-slate-950 font-black text-lg shadow-lg">
+            <Zap class="w-5 h-5 text-slate-950 fill-slate-950" />
           </div>
           <div>
             <h2 class="font-bold text-sm text-slate-100 flex items-center gap-2">
               <span>SteamMaster 启动引导</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono">环境准备</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 font-mono border border-sky-500/20">环境准备</span>
             </h2>
             <p class="text-[11px] text-slate-400">Steam 客户端环境检测与一键注入激活</p>
           </div>
@@ -22,7 +22,7 @@
             v-for="s in 4"
             :key="s"
             class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all"
-            :class="step >= s ? 'bg-sky-500 text-slate-950 ring-2 ring-sky-500/30' : 'bg-slate-800 text-slate-500'"
+            :class="step >= s ? 'theme-btn-primary font-bold shadow' : 'bg-slate-800 text-slate-500'"
           >
             {{ s }}
           </span>
@@ -32,29 +32,30 @@
       <!-- 步骤 1 & 2: 检测 Steam 路径并校验位数 / 询问是否注入 -->
       <div v-if="step === 1 || step === 2" class="p-6 space-y-5">
         <!-- 步骤 1: 路径检测结果展示 -->
-        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+        <div class="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4">
           <div class="flex items-center justify-between mb-2">
             <div class="text-xs font-bold text-slate-300 flex items-center gap-2">
-              <span>📁 步骤 1：检测 Steam 文件夹</span>
-              <span v-if="checkingPath" class="text-sky-400 animate-spin text-xs">🔄</span>
+              <Folder class="w-3.5 h-3.5 theme-text-accent" />
+              <span>步骤 1：检测 Steam 文件夹</span>
+              <RotateCw v-if="checkingPath" class="w-3.5 h-3.5 text-sky-400 animate-spin" />
             </div>
             <div class="flex items-center gap-2">
               <span
                 v-if="steamBitness !== 'unknown'"
-                class="px-2 py-0.5 rounded text-[10px] font-bold font-mono border"
-                :class="steamBitness === 'x86' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-sky-500/20 text-sky-300 border-sky-500/30'"
+                class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono border"
+                :class="steamBitness === 'x86' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-sky-500/10 text-sky-300 border-sky-500/30'"
               >
                 {{ steamBitness === 'x86' ? '32 位 (x86) ⚠️' : '64 位 (x64) ✓' }}
               </span>
               <span
                 v-if="steamPath"
-                class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 flex items-center gap-1"
+                class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1"
               >
                 <span>●</span> 已定位路径
               </span>
               <span
                 v-else-if="!checkingPath"
-                class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 flex items-center gap-1"
+                class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-300 border border-rose-500/20 flex items-center gap-1"
               >
                 <span>●</span> 未找到路径
               </span>
@@ -62,7 +63,7 @@
           </div>
 
           <!-- 路径展示 / 选择 -->
-          <div class="space-y-2 mt-3">
+          <div class="space-y-2.5 mt-3">
             <div class="flex items-center gap-2">
               <input
                 v-model="steamPath"
@@ -70,13 +71,14 @@
                 @blur="onPathInputChange"
                 type="text"
                 placeholder="自动探测中，或点击右侧手动选择 Steam 根目录 (如 E:\Steam)..."
-                class="flex-1 bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-500"
+                class="flex-1 bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-400"
               />
               <button
                 @click="browseSteamPath"
-                class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs text-slate-300 font-medium transition shrink-0 flex items-center gap-1"
+                class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-300 font-medium transition shrink-0 flex items-center gap-1.5"
               >
-                <span>📂 浏览</span>
+                <FolderOpen class="w-3.5 h-3.5" />
+                <span>浏览</span>
               </button>
             </div>
 
@@ -90,27 +92,28 @@
         </div>
 
         <!-- 场景 A：检测到 32 位 Steam (x86) -> 阻止激活，提示更新并只提供退出按钮 -->
-        <div v-if="steamBitness === 'x86'" class="bg-rose-950/40 border border-rose-500/50 rounded-xl p-4 animate-in fade-in duration-200">
+        <div v-if="steamBitness === 'x86'" class="bg-rose-950/40 border border-rose-500/50 rounded-2xl p-4 animate-in fade-in duration-200">
           <div class="text-xs font-bold text-rose-300 flex items-center gap-2 mb-2">
-            <span>🚫 提示：检测到 32 位 (x86) Steam 客户端</span>
+            <AlertTriangle class="w-4 h-4 text-rose-400" />
+            <span>提示：检测到 32 位 (x86) Steam 客户端</span>
           </div>
           <p class="text-xs text-rose-200 leading-relaxed mb-3">
             <strong>OpenSteamTool 内核仅支持 64 位 (x64) 现代 Steam 客户端。</strong>
             检测到您当前的 Steam 客户端为 32 位老旧版本，无法正常加载 64 位注入核心与解锁规则。
           </p>
 
-          <div class="bg-slate-950/70 p-3 rounded-lg border border-rose-800/40 space-y-1.5 text-[11px] text-slate-300">
+          <div class="bg-slate-950/70 p-3.5 rounded-xl border border-rose-800/40 space-y-1.5 text-[11px] text-slate-300">
             <div class="font-bold text-slate-200">💡 升级解决方案：</div>
             <div class="flex items-start gap-1.5">
-              <span class="text-sky-400 font-mono">1.</span>
+              <span class="theme-text-accent font-mono">1.</span>
               <span>打开 Steam 客户端，点击顶部菜单 <strong>「Steam」➔「检查 Steam 客户端更新...」</strong> 进行在线升级。</span>
             </div>
             <div class="flex items-start gap-1.5">
-              <span class="text-sky-400 font-mono">2.</span>
+              <span class="theme-text-accent font-mono">2.</span>
               <span>或前往 Steam 官方网站 (<strong>store.steampowered.com</strong>) 下载最新安装包覆盖安装（不会丢失游戏）。</span>
             </div>
             <div class="flex items-start gap-1.5">
-              <span class="text-sky-400 font-mono">3.</span>
+              <span class="theme-text-accent font-mono">3.</span>
               <span>升级至 64 位版本后，点击下方「重新检测」或重新启动本程序。</span>
             </div>
           </div>
@@ -122,7 +125,7 @@
               :disabled="checkingPath"
               class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
             >
-              <span :class="{ 'animate-spin': checkingPath }">🔄</span>
+              <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': checkingPath }" />
               <span>重新检测</span>
             </button>
 
@@ -130,25 +133,27 @@
               @click="handleExitApp"
               class="px-6 py-2.5 bg-gradient-to-r from-rose-700 to-rose-600 hover:from-rose-600 hover:to-rose-500 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-1.5"
             >
-              <span>✕ 退出程序</span>
+              <X class="w-3.5 h-3.5" />
+              <span>退出程序</span>
             </button>
           </div>
         </div>
 
         <!-- 场景 B：正常 64 位 Steam (x64) 或未知路径 -> 步骤 2 正常询问注入 -->
         <div v-else class="space-y-4">
-          <div class="bg-gradient-to-br from-sky-950/40 via-slate-950/60 to-slate-950/80 border border-sky-500/30 rounded-xl p-4">
-            <div class="text-xs font-bold text-sky-300 flex items-center gap-2 mb-2">
-              <span>💉 步骤 2：是否注入 Steam 环境？</span>
+          <div class="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4">
+            <div class="text-xs font-bold theme-text-accent flex items-center gap-2 mb-2">
+              <Zap class="w-3.5 h-3.5" />
+              <span>步骤 2：是否注入 Steam 环境？</span>
             </div>
             <p class="text-xs text-slate-300 leading-relaxed mb-2">
               是否立即向当前 Steam 目录激活 OpenSteam 解锁运行环境？
             </p>
-            <ul class="text-[11px] text-slate-400 space-y-1 list-disc list-inside bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
+            <ul class="text-[11px] text-slate-400 space-y-1 list-disc list-inside bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
               <li>
-                🎯 <strong>64 位架构匹配</strong>：已自动识别为 <span class="text-sky-300 font-bold font-mono">64 位 (x64) Steam</span>，将部署 64 位 OpenSteamTool 核心组件
+                🎯 <strong>64 位架构匹配</strong>：已自动识别为 <span class="theme-text-accent font-bold font-mono">64 位 (x64) Steam</span>，将部署 64 位 OpenSteamTool 核心组件
               </li>
-              <li>自动部署并配置 <code class="text-sky-300 font-mono">config/lua/</code> 与 <code class="text-sky-300 font-mono">st_scripts/</code> 自动化解锁规则引擎</li>
+              <li>自动部署并配置 <code class="theme-text-accent font-mono">config/lua/</code> 自动化解锁规则引擎</li>
               <li>配置公共清单端点与分包解密</li>
               <li>若选择 <strong>“否”</strong>，程序将直接退出关闭</li>
             </ul>
@@ -160,15 +165,16 @@
               @click="handleExitApp"
               class="px-5 py-2.5 bg-slate-800/80 hover:bg-rose-900/60 border border-slate-700/80 hover:border-rose-500/40 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
             >
-              <span>✕ 否，退出程序</span>
+              <X class="w-3.5 h-3.5" />
+              <span>否，退出程序</span>
             </button>
 
             <button
               @click="startActivation"
               :disabled="!steamPath || checkingPath"
-              class="px-6 py-2.5 bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"
+              class="theme-btn-primary px-6 py-2.5 disabled:opacity-50 text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"
             >
-              <span>⚡ 是，进入下一步激活</span>
+              <span>是，进入下一步激活</span>
               <span>➔</span>
             </button>
           </div>
@@ -178,22 +184,22 @@
       <!-- 步骤 3: 激活注入中与进度动画 -->
       <div v-else-if="step === 3" class="p-8 space-y-6">
         <div class="text-center">
-          <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-sky-500/20 text-sky-400 text-2xl mb-3 animate-pulse border border-sky-500/30">
-            ⚙️
+          <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-sky-500/10 theme-text-accent text-2xl mb-3 animate-pulse border border-sky-500/20">
+            <RotateCw class="w-8 h-8 animate-spin" />
           </div>
           <h3 class="font-bold text-base text-slate-100">正在激活 Steam 注入环境</h3>
           <p class="text-xs text-slate-400 mt-1">请稍候，系统正在为 Steam 部署自动化规则引擎...</p>
         </div>
 
         <!-- 激活步骤清单 -->
-        <div class="space-y-3 bg-slate-950/70 border border-slate-800 rounded-xl p-4 text-xs">
+        <div class="space-y-3 bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-xs">
           <div class="flex items-center justify-between">
             <span class="text-slate-300 flex items-center gap-2">
               <span :class="activationPhase >= 1 ? 'text-emerald-400' : 'text-slate-600'">●</span>
               <span>1. 校验 Steam 安装路径及 64 位架构 (x64)</span>
             </span>
-            <span v-if="activationPhase > 1" class="text-emerald-400 font-bold">✓ 完成</span>
-            <span v-else-if="activationPhase === 1" class="text-sky-400 animate-spin">🔄</span>
+            <span v-if="activationPhase > 1" class="text-emerald-400 font-bold flex items-center gap-1"><CheckCircle2 class="w-3.5 h-3.5" /> 完成</span>
+            <span v-else-if="activationPhase === 1" class="theme-text-accent animate-spin"><RotateCw class="w-3.5 h-3.5" /></span>
           </div>
 
           <div class="flex items-center justify-between">
@@ -201,8 +207,8 @@
               <span :class="activationPhase >= 2 ? 'text-emerald-400' : 'text-slate-600'">●</span>
               <span>2. 部署 64 位 OpenSteamTool 核心组件与规则引擎</span>
             </span>
-            <span v-if="activationPhase > 2" class="text-emerald-400 font-bold">✓ 完成</span>
-            <span v-else-if="activationPhase === 2" class="text-sky-400 animate-spin">🔄</span>
+            <span v-if="activationPhase > 2" class="text-emerald-400 font-bold flex items-center gap-1"><CheckCircle2 class="w-3.5 h-3.5" /> 完成</span>
+            <span v-else-if="activationPhase === 2" class="theme-text-accent animate-spin"><RotateCw class="w-3.5 h-3.5" /></span>
           </div>
 
           <div class="flex items-center justify-between">
@@ -210,15 +216,15 @@
               <span :class="activationPhase >= 3 ? 'text-emerald-400' : 'text-slate-600'">●</span>
               <span>3. 自动安全重启 Steam 客户端加载注入内核</span>
             </span>
-            <span v-if="activationPhase >= 3 && activationDone" class="text-emerald-400 font-bold">✓ 完成</span>
-            <span v-else-if="activationPhase === 3" class="text-sky-400 animate-spin">🔄</span>
+            <span v-if="activationPhase >= 3 && activationDone" class="text-emerald-400 font-bold flex items-center gap-1"><CheckCircle2 class="w-3.5 h-3.5" /> 完成</span>
+            <span v-else-if="activationPhase === 3" class="theme-text-accent animate-spin"><RotateCw class="w-3.5 h-3.5" /></span>
           </div>
         </div>
 
         <!-- 进度条 -->
         <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
           <div
-            class="bg-gradient-to-r from-sky-500 to-teal-400 h-2 transition-all duration-500 ease-out"
+            class="theme-btn-primary h-2 transition-all duration-500 ease-out"
             :style="{ width: `${progressPercent}%` }"
           ></div>
         </div>
@@ -226,8 +232,8 @@
 
       <!-- 步骤 4: 激活成功，准备进入正常界面 -->
       <div v-else-if="step === 4" class="p-8 text-center space-y-6 animate-in fade-in duration-300">
-        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-400 text-3xl border border-emerald-500/30">
-          ✓
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 text-3xl border border-emerald-500/20">
+          <CheckCircle2 class="w-8 h-8" />
         </div>
 
         <div>
@@ -244,7 +250,7 @@
         <div>
           <button
             @click="enterMainInterface"
-            class="px-8 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-xl transition flex items-center gap-2 mx-auto"
+            class="theme-btn-primary px-8 py-3 text-xs font-bold rounded-xl shadow-xl transition flex items-center gap-2 mx-auto"
           >
             <span>进入软件主界面 ({{ countdown }}s)</span>
             <span>➔</span>
@@ -257,6 +263,15 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
+import { 
+  Zap, 
+  Folder, 
+  FolderOpen, 
+  RotateCw, 
+  CheckCircle2, 
+  AlertTriangle, 
+  X 
+} from 'lucide-vue-next';
 
 const emit = defineEmits<{
   (e: 'completed'): void;
@@ -276,7 +291,6 @@ const activationDone = ref<boolean>(false);
 const countdown = ref<number>(3);
 let countdownTimer: any = null;
 
-// 1. 初始化检测 Steam 文件夹
 const checkSteamPath = async () => {
   checkingPath.value = true;
   try {
@@ -285,9 +299,9 @@ const checkSteamPath = async () => {
       steamPath.value = info.steamPath;
       isSteamRunning.value = info.isRunning;
       steamBitness.value = info.steamBitness || 'unknown';
-      step.value = 2; // 进入第2步：确认注入或拦截32位
+      step.value = 2;
     } else {
-      step.value = 1; // 未检测到，停留在第1步提示选择
+      step.value = 1;
     }
   } catch (e: any) {
     console.error('检测 Steam 路径异常:', e);
@@ -297,7 +311,6 @@ const checkSteamPath = async () => {
   }
 };
 
-// 浏览选择 Steam 路径
 const browseSteamPath = async () => {
   try {
     const selected = await window.electronAPI.selectDirectory();
@@ -314,7 +327,6 @@ const browseSteamPath = async () => {
   }
 };
 
-// 手动输入或修改路径时的校验
 const onPathInputChange = async () => {
   if (!steamPath.value || !steamPath.value.trim()) return;
   try {
@@ -332,7 +344,6 @@ const onPathInputChange = async () => {
   }
 };
 
-// 步骤 2 选项：点击“退出程序”
 const handleExitApp = async () => {
   try {
     await window.electronAPI.quitApp();
@@ -341,7 +352,6 @@ const handleExitApp = async () => {
   }
 };
 
-// 步骤 2 选项：点击“是”，启动步骤 3 激活注入流程
 const startActivation = async () => {
   if (steamBitness.value === 'x86') {
     emit('notify', 'OpenSteamTool 仅支持 64 位 Steam，请先更新 Steam！', 'error');
@@ -353,13 +363,11 @@ const startActivation = async () => {
   progressPercent.value = 25;
 
   try {
-    // 阶段 1: 保存并确认路径
     if (steamPath.value) {
       await window.electronAPI.setSteamPath(steamPath.value);
     }
     await new Promise((r) => setTimeout(r, 600));
 
-    // 阶段 2: 部署 OpenSteamTool 64位核心 DLL 与规则引擎
     activationPhase.value = 2;
     progressPercent.value = 60;
     const activateRes = await window.electronAPI.activateInjection({
@@ -375,7 +383,6 @@ const startActivation = async () => {
 
     await new Promise((r) => setTimeout(r, 600));
 
-    // 阶段 3: 自动重启 Steam 客户端并加载注入内核
     activationPhase.value = 3;
     progressPercent.value = 100;
     activationDone.value = true;
@@ -385,7 +392,6 @@ const startActivation = async () => {
 
     await new Promise((r) => setTimeout(r, 500));
 
-    // 进入第 4 步：激活成功
     step.value = 4;
     startCountdown();
   } catch (e: any) {
@@ -394,7 +400,6 @@ const startActivation = async () => {
   }
 };
 
-// 步骤 4 倒计时自动进入
 const startCountdown = () => {
   countdown.value = 3;
   countdownTimer = setInterval(() => {
@@ -406,7 +411,6 @@ const startCountdown = () => {
   }, 1000);
 };
 
-// 步骤 4: 进入正常主界面
 const enterMainInterface = () => {
   if (countdownTimer) {
     clearInterval(countdownTimer);
