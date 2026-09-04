@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { CONFIG } from './config/index.js';
 import apiRouter from './routes/index.js';
+import { tokenService } from './services/tokenService.js';
+import { syncService } from './services/syncService.js';
 
 const app = express();
 
@@ -55,4 +57,8 @@ app.listen(CONFIG.PORT, CONFIG.HOST, () => {
 🔑 管理密钥: ${CONFIG.ADMIN_SECRET}
 ======================================================
   `);
+
+  // 初始化 Token 数据库与定时自动抓取引擎
+  tokenService.loadTokensDb();
+  syncService.startScheduledDailySync();
 });

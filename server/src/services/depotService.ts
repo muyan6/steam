@@ -21,9 +21,13 @@ export class DepotService {
         console.log(`[DepotService] 成功加载 DepotKey 数据库，共收录 ${Object.keys(this.depotKeysDb).length} 条解密密钥！`);
       } else {
         console.warn(`[DepotService] 未找到 DepotKey 数据库文件: ${dbPath}`);
+        this.depotKeysDb = {};
+        this.isLoaded = true;
       }
     } catch (e) {
       console.error('[DepotService] 加载 DepotKey 数据库失败:', e);
+      this.depotKeysDb = {};
+      this.isLoaded = true;
     }
   }
 
@@ -81,7 +85,23 @@ export class DepotService {
     return this.depotKeysDb[depotId] || null;
   }
 
+  public saveDepotKeys(newKeys: Record<string, string>): boolean {
+    try {
+      // 增量合并，保留已有有效密钥
+      this.depotKeysDb = { ...this.depotKeysDb, ...newKeys };
+      const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json');
+      fs.writeFileSync(dbPath, JSON.stringify(this.depotKeysDb, null, 2), 'utf-8');
+      this.isLoaded = true;
+      console.log(`[DepotService] 已成功保存 ${Object.keys(this.depotKeysDb).length} 条 DepotKey 到 ${dbPath}`);
+      return true;
+    } catch (e: any) {
+      console.error('[DepotService] 保存 DepotKey 数据库失败:', e.message);
+      return false;
+    }
+  }
+
   public getTotalKeysCount(): number {
+    if (!this.isLoaded) this.loadDepotKeysDb();
     return Object.keys(this.depotKeysDb).length;
   }
 }

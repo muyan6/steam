@@ -5,6 +5,7 @@ import { versionService } from '../services/versionService.js';
 import { syncService } from '../services/syncService.js';
 import { gameService } from '../services/gameService.js';
 import { depotService } from '../services/depotService.js';
+import { tokenService } from '../services/tokenService.js';
 import { ServerStats } from '../types/index.js';
 
 /**
@@ -54,6 +55,24 @@ export const triggerSyncDepots = async (req: Request, res: Response) => {
   }
 };
 
+export const triggerSyncTokens = async (req: Request, res: Response) => {
+  try {
+    const result = await syncService.syncTokens();
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+export const triggerSyncAll = async (req: Request, res: Response) => {
+  try {
+    const result = await syncService.syncAll();
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
 export const getServerStats = (req: Request, res: Response) => {
   try {
     const mem = process.memoryUsage();
@@ -62,6 +81,7 @@ export const getServerStats = (req: Request, res: Response) => {
       uptimeSeconds: Math.floor(process.uptime()),
       gamesCount: gameService.getTotalGamesCount(),
       depotKeysCount: depotService.getTotalKeysCount(),
+      tokensCount: tokenService.getTotalTokensCount(),
       memoryUsageMb: Math.round(mem.rss / 1024 / 1024),
       nodeVersion: process.version
     };

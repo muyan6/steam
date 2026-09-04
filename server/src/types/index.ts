@@ -45,6 +45,7 @@ export interface ServerStats {
   uptimeSeconds: number;
   gamesCount: number;
   depotKeysCount: number;
+  tokensCount?: number;
   memoryUsageMb: number;
   nodeVersion: string;
 }
