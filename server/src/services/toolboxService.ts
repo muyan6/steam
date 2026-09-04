@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
 import { ManifestServerNode, ToolboxRepairLog, ToolboxStatsResponse } from '../types/index.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export class ToolboxService {
   private logFilePath: string;
@@ -58,7 +59,7 @@ export class ToolboxService {
     }
     if (!fs.existsSync(this.logFilePath)) {
       try {
-        fs.writeFileSync(this.logFilePath, JSON.stringify([], null, 2), 'utf-8');
+        writeJsonAtomic(this.logFilePath, []);
       } catch {}
     }
   }
@@ -120,7 +121,7 @@ export class ToolboxService {
       if (logs.length > 1000) {
         logs = logs.slice(0, 1000);
       }
-      fs.writeFileSync(this.logFilePath, JSON.stringify(logs, null, 2), 'utf-8');
+      writeJsonAtomic(this.logFilePath, logs);
     } catch (e: any) {
       console.warn('[ToolboxService] 写入修复日志失败:', e.message);
     }

@@ -15,8 +15,7 @@ function getHeaders() {
   return {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer ' + t,
-    'x-admin-token': t,
-    'x-admin-key': 'steammaster_admin_8888'
+    'x-admin-token': t
   };
 }
 
@@ -92,7 +91,7 @@ async function handleLoginSubmit() {
       if (dashSec) { dashSec.classList.remove('d-none'); dashSec.style.cssText = 'display: block !important;'; }
       loadAllData();
     } else {
-      showNotice('error', (data && data.message) ? data.message : '账号或密码错误 (默认密码: admin123)');
+      showNotice('error', (data && data.message) ? data.message : '账号或密码错误');
     }
   } catch (err) {
     showNotice('error', '连接服务器失败: ' + err.message);

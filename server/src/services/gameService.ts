@@ -6,6 +6,7 @@ import { POPULAR_GAMES_DATABASE } from '../data/popularGames.js';
 import { CHINESE_KEYWORD_MAP } from '../data/chineseDictionary.js';
 import { CompactGame, SteamGame, SearchSourceId, SearchPaginationResult } from '../types/index.js';
 import { CONFIG } from '../config/index.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export class GameService {
   private popularGames: SteamGame[] = [...POPULAR_GAMES_DATABASE];
@@ -50,7 +51,7 @@ export class GameService {
   private saveChineseCache(): void {
     try {
       const list = Array.from(this.chineseGamesCache.values());
-      fs.writeFileSync(this.cacheFilePath, JSON.stringify(list, null, 2), 'utf-8');
+      writeJsonAtomic(this.cacheFilePath, list);
       console.log(`[GameService] 已将最新中文游戏沉淀入库，当前持久化总数: ${list.length} 款`);
     } catch (e) {
       console.error('[GameService] 保存中文游戏缓存失败:', e);
@@ -182,6 +183,11 @@ export class GameService {
           newResults.push(gameObj);
 
           if (!this.chineseGamesCache.has(appId)) {
+            // 持久缓存容量上限：公开搜索接口可被脚本灌词，防止缓存文件无限膨胀
+            if (this.chineseGamesCache.size >= 500000) {
+              newResults.push(gameObj);
+              continue;
+            }
             this.chineseGamesCache.set(appId, gameObj);
             hasNewGames = true;
           }
@@ -216,7 +222,8 @@ export class GameService {
 
     // 2. 复合词与子串匹配（例如“黑神话悟空”自动命中“黑神话”与“悟空”映射词）
     for (const [dictKey, englishList] of Object.entries(CHINESE_KEYWORD_MAP)) {
-      if (dictKey.length >= 2 && (q.includes(dictKey) || dictKey.includes(q))) {
+      // 双向子串扩展需要最短长度限制，避免单字符查询命中几乎全部词条
+      if (dictKey.length >= 2 && q.length >= 2 && (q.includes(dictKey) || (dictKey.includes(q) && q.length >= 2))) {
         for (const kw of englishList) {
           keywords.add(kw.toLowerCase());
         }
@@ -365,6 +372,8 @@ export class GameService {
             description: `Steam 官方收录应用 (AppID: ${g.appId})`
           });
           seenAppIds.add(g.appId);
+          // 匹配集上限，防止全量线性扫描返回超大响应
+          if (allMatched.length >= 200) break;
         }
       }
     }

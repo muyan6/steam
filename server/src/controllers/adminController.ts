@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { CONFIG } from '../config/index.js';
 import { noticeService } from '../services/noticeService.js';
 import { versionService } from '../services/versionService.js';
 import { syncService } from '../services/syncService.js';
@@ -9,18 +8,16 @@ import { tokenService } from '../services/tokenService.js';
 import { authService } from '../services/authService.js';
 import { ServerStats } from '../types/index.js';
 
+// 客户端 IP 只取 socket 真实地址；X-Forwarded-For 可被任意伪造，仅当部署在可信反代之后才可用
 const getClientIp = (req: Request): string => {
-  const raw = req.headers['x-forwarded-for'];
-  if (Array.isArray(raw)) return raw[0];
-  if (typeof raw === 'string') return raw.split(',')[0].trim();
   return req.socket.remoteAddress || '127.0.0.1';
 };
 
 /**
- * 管理员安全鉴权中间件：支持 JWT 令牌与系统密钥双重验证
+ * 管理员安全鉴权中间件：仅接受 JWT 令牌验证。
+ * 安全策略：已移除 x-admin-key 静态密钥后门与 ?token=/adminKey 查询参数通道。
  */
 export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
-  // 1. 尝试从 Authorization: Bearer <token> 提取
   const authHeader = req.headers['authorization'];
   let token: string | undefined;
 
@@ -28,8 +25,6 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction) =>
     token = authHeader.substring(7).trim();
   } else if (req.headers['x-admin-token']) {
     token = req.headers['x-admin-token'] as string;
-  } else if (req.query.token) {
-    token = req.query.token as string;
   }
 
   if (token) {
@@ -40,16 +35,9 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction) =>
     }
   }
 
-  // 2. 兼容旧版系统密钥 (x-admin-key)
-  const adminKey = req.headers['x-admin-key'] || req.query.adminKey;
-  if (adminKey && adminKey === CONFIG.ADMIN_SECRET) {
-    (req as any).adminUser = { username: 'api_admin', role: 'superadmin' };
-    return next();
-  }
-
   return res.status(401).json({
     success: false,
-    message: '访问被拒绝：未提供有效的管理员身份认证令牌 (Token) 或密钥'
+    message: '访问被拒绝：未提供有效的管理员身份认证令牌 (Token)'
   });
 };
 

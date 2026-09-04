@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
 import { VersionRelease, PushUpdateRecord } from '../types/index.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export class VersionService {
   private versionsFilePath: string;
@@ -74,7 +75,7 @@ export class VersionService {
           }
         ];
       }
-      fs.writeFileSync(this.versionsFilePath, JSON.stringify(initialVersions, null, 2), 'utf-8');
+      writeJsonAtomic(this.versionsFilePath, initialVersions);
     }
 
     this.syncLegacyFile();
@@ -95,7 +96,7 @@ export class VersionService {
 
   private saveAll(versions: VersionRelease[]) {
     try {
-      fs.writeFileSync(this.versionsFilePath, JSON.stringify(versions, null, 2), 'utf-8');
+      writeJsonAtomic(this.versionsFilePath, versions);
       this.syncLegacyFile();
     } catch (e) {
       console.error('[VersionService] 保存版本列表失败:', e);
@@ -105,7 +106,7 @@ export class VersionService {
   private syncLegacyFile() {
     try {
       const latest = this.getLatestVersion();
-      fs.writeFileSync(this.legacyVersionFilePath, JSON.stringify(latest, null, 2), 'utf-8');
+      writeJsonAtomic(this.legacyVersionFilePath, latest);
     } catch (e) {
       console.error('[VersionService] 同步 legacyVersionFile 失败:', e);
     }
@@ -304,7 +305,7 @@ export class VersionService {
       }
       logs.unshift(record);
       if (logs.length > 100) logs = logs.slice(0, 100);
-      fs.writeFileSync(this.pushLogsFilePath, JSON.stringify(logs, null, 2), 'utf-8');
+      writeJsonAtomic(this.pushLogsFilePath, logs);
     } catch (e) {
       console.error('[VersionService] 保存推送记录失败:', e);
     }

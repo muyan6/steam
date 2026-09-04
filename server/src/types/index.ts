@@ -102,6 +102,8 @@ export interface AdminCredentials {
   passwordHash: string;
   salt: string;
   updatedAt: string;
+  /** 递增后使所有旧 JWT 失效（修改密码时递增） */
+  tokenVersion?: number;
 }
 
 export interface AdminUser {
@@ -116,6 +118,8 @@ export interface AuthTokenPayload {
   role: string;
   iat: number;
   exp: number;
+  /** tokenVersion：修改密码后递增，使旧 token 失效 */
+  tv?: number;
 }
 
 export interface AuditLog {

@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { CONFIG } from '../config/index.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 let baseDir = process.cwd();
 try {
@@ -84,9 +86,29 @@ export class LicenseService {
   private initialized: boolean = false;
 
   constructor() {
-    this.dataFilePath = path.join(process.cwd(), 'server', 'data', 'license_keys.json');
+    this.dataFilePath = path.join(CONFIG.DATA_DIR, 'license_keys.json');
     this.resolveDataPath();
+    this.migrateLegacyFile();
     this.loadKeys();
+  }
+
+  /**
+   * 旧版本把卡密文件散落在 cwd/baseDir 等位置；
+   * 统一迁移到 CONFIG.DATA_DIR（支持 DATA_DIR 环境变量部署）。
+   */
+  private migrateLegacyFile(): void {
+    const canonical = path.join(CONFIG.DATA_DIR, 'license_keys.json');
+    if (this.dataFilePath === canonical) return;
+    if (fs.existsSync(this.dataFilePath) && !fs.existsSync(canonical)) {
+      try {
+        fs.mkdirSync(CONFIG.DATA_DIR, { recursive: true });
+        fs.copyFileSync(this.dataFilePath, canonical);
+        console.log(`[LicenseService] 已迁移旧位置卡密库: ${this.dataFilePath} -> ${canonical}`);
+        this.dataFilePath = canonical;
+      } catch (e) {
+        console.warn('[LicenseService] 迁移旧卡密库失败:', (e as Error).message);
+      }
+    }
   }
 
   private resolveDataPath(): void {
@@ -143,7 +165,7 @@ export class LicenseService {
         fs.mkdirSync(targetDir, { recursive: true });
       }
       const list = Array.from(this.keysCache.values());
-      fs.writeFileSync(this.dataFilePath, JSON.stringify(list, null, 2), 'utf-8');
+      writeJsonAtomic(this.dataFilePath, list);
     } catch (e: any) {
       console.error('[LicenseService] 保存激活码数据失败:', e.message);
     }
@@ -554,6 +576,15 @@ export class LicenseService {
     if (!key) return { success: false, message: '激活码不存在' };
     if (key.type === 'lifetime') {
       return { success: true, message: '永久卡无需延期', key };
+    }
+    // 未绑定的卡密只能改"可用时长"，已冻结的卡密须先解冻，防止凭空激活
+    if (key.status === 'unused') {
+      key.durationDays = (key.durationDays || 0) + Math.max(1, additionalDays || 30);
+      this.saveKeys();
+      return { success: true, message: `卡密尚未绑定设备，已将可用时长增加 ${Math.max(1, additionalDays || 30)} 天`, key };
+    }
+    if (key.status === 'disabled') {
+      return { success: false, message: '卡密已冻结，请先解冻再延期', key };
     }
 
     const days = Math.max(1, additionalDays || 30);

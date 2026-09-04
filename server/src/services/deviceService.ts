@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export interface DeviceRecord {
   deviceId: string;
@@ -55,7 +56,7 @@ export class DeviceService {
   private saveDevices(): void {
     try {
       const list = Array.from(this.devicesMap.values());
-      fs.writeFileSync(this.filePath, JSON.stringify(list, null, 2), 'utf-8');
+      writeJsonAtomic(this.filePath, list);
     } catch (e) {
       console.error('[DeviceService] 保存设备数据失败:', e);
     }
@@ -152,12 +153,13 @@ export class DeviceService {
       );
     }
 
-    // 状态过滤
-    if (status === 'activated') {
+    // 状态过滤（兼容旧版 Dashboard 发送的 active/inactive 过滤值）
+    const normalizedStatus = status === 'active' ? 'activated' : status === 'inactive' ? 'unactivated' : status;
+    if (normalizedStatus === 'activated') {
       all = all.filter(d => d.isActivated);
-    } else if (status === 'unactivated') {
+    } else if (normalizedStatus === 'unactivated') {
       all = all.filter(d => !d.isActivated);
-    } else if (status === 'today') {
+    } else if (normalizedStatus === 'today') {
       const oneDayAgo = Date.now() - 24 * 3600 * 1000;
       all = all.filter(d => new Date(d.lastSeenAt).getTime() >= oneDayAgo);
     }

@@ -4,7 +4,7 @@ import { authService } from '../services/authService.js';
 export const login = (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+    const ip = req.socket.remoteAddress || '127.0.0.1';
     const userAgent = req.headers['user-agent'] || '';
 
     if (!username || !password) {
@@ -42,7 +42,7 @@ export const changePassword = (req: Request, res: Response) => {
   try {
     const { currentPassword, newUsername, newPassword } = req.body;
     const operator = (req as any).adminUser?.username || 'admin';
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+    const ip = req.socket.remoteAddress || '127.0.0.1';
     const userAgent = req.headers['user-agent'] || '';
 
     if (!currentPassword || !newPassword) {
@@ -70,7 +70,7 @@ export const changePassword = (req: Request, res: Response) => {
 
 export const logout = (req: Request, res: Response) => {
   const operator = (req as any).adminUser?.username || 'admin';
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const ip = req.socket.remoteAddress || '127.0.0.1';
   authService.recordAuditLog({
     action: 'LOGOUT',
     operator,

@@ -121,7 +121,8 @@ export class ManifestService {
         const match = file.match(/^(\d+)_(\d+)\.manifest$/i);
         if (match) {
           const [, dId, mId] = match;
-          if (depotIds.includes(dId) || depotIds.length === 0) {
+          // depotIds 为空视为未提供有效查询条件，不返回全部清单
+          if (depotIds.includes(dId)) {
             results.push({
               depotId: dId,
               manifestId: mId,

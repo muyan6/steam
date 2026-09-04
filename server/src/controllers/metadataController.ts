@@ -5,7 +5,8 @@ import { gameService } from '../services/gameService.js';
 import { depotService } from '../services/depotService.js';
 import { tokenService } from '../services/tokenService.js';
 
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+// 安全策略：不再关闭上游 HTTPS 证书校验（原 rejectUnauthorized:false 存在 MITM 注入密钥风险）
+const httpsAgent = new https.Agent();
 
 export const getGameMetadata = async (req: Request, res: Response) => {
   try {

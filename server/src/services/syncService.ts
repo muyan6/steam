@@ -7,9 +7,11 @@ import { gameService } from './gameService.js';
 import { depotService } from './depotService.js';
 import { tokenService } from './tokenService.js';
 import { sourceRegistryService } from './sourceRegistryService.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export class SyncService {
-  private readonly httpsAgent = new https.Agent({ rejectUnauthorized: false });
+  // 安全策略：不再关闭上游 HTTPS 证书校验
+  private readonly httpsAgent = new https.Agent();
   private isSyncing = false;
   private timer: NodeJS.Timeout | null = null;
 
@@ -67,7 +69,7 @@ export class SyncService {
       }
 
       const outPath = path.join(CONFIG.DATA_DIR, 'steam_all_games.json');
-      fs.writeFileSync(outPath, JSON.stringify(compactGames), 'utf-8');
+      writeJsonAtomic(outPath, compactGames);
 
       // 重新加载内存索引
       await gameService.loadAllGamesDatabase();

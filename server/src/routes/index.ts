@@ -1,4 +1,7 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
+import { depotService } from '../services/depotService.js';
+import { gameService } from '../services/gameService.js';
 import { getPopularGames, searchGames, getGameDetail, getGameHeaderImage } from '../controllers/gameController.js';
 import { getDepotsForGame, getSingleDepotKey } from '../controllers/depotController.js';
 import { getGameMetadata } from '../controllers/metadataController.js';
@@ -75,29 +78,48 @@ const router = Router();
 // 健康与统计
 router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 
-// 客户端设备心跳与活跃度上报 (公开接口)
-router.post('/telemetry/heartbeat', (req, res) => {
-  const { deviceId, clientVersion, osVersion, licenseCode, licenseType, isActivated, unlockedCount, steamPath } = req.body || {};
-  if (!deviceId) {
-    return res.status(400).json({ success: false, message: '缺少 deviceId' });
+// 客户端设备心跳与活跃度上报 (公开接口，限流防刷)
+const heartbeatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 4,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '心跳上报过于频繁' }
+});
+
+router.post('/telemetry/heartbeat', heartbeatLimiter, (req: Request, res: Response) => {
+  const { deviceId, clientVersion, osVersion, os, licenseCode, licenseType, isActivated, unlockedCount, steamPath } = req.body || {};
+  // 字段校验：类型与长度受限，防止刷超大 payload 撑爆数据文件
+  if (!deviceId || typeof deviceId !== 'string' || deviceId.length > 128) {
+    return res.status(400).json({ success: false, message: '缺少或非法的 deviceId' });
   }
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const clean = (v: unknown, max: number): string | undefined =>
+    typeof v === 'string' && v.length > 0 ? v.slice(0, max) : undefined;
+  const ip = req.socket.remoteAddress || '127.0.0.1';
   const record = deviceService.recordHeartbeat({
     deviceId,
     ip,
-    clientVersion,
-    osVersion,
-    licenseCode,
-    licenseType,
-    isActivated,
-    unlockedCount,
-    steamPath
+    clientVersion: clean(clientVersion, 32),
+    // 兼容旧客户端的 os 字段
+    osVersion: clean(osVersion, 64) ?? clean(os, 64),
+    licenseCode: clean(licenseCode, 64),
+    licenseType: clean(licenseType, 32),
+    isActivated: typeof isActivated === 'boolean' ? isActivated : undefined,
+    unlockedCount: typeof unlockedCount === 'number' ? unlockedCount : undefined,
+    steamPath: clean(steamPath, 260)
   });
   res.json({ success: true, data: record });
 });
 
-// 管理员登录（公开接口，带防爆破保护）
-router.post('/auth/login', login);
+// 管理员登录（公开接口，限流 + 服务端 IP 锁定双重防爆破）
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '登录尝试过于频繁，请稍后再试' }
+});
+router.post('/auth/login', loginLimiter, login);
 
 // 溯源与上游引用清单只读查看
 router.get('/sources', getSourcesList);
@@ -118,6 +140,21 @@ router.get('/games/:appId', getGameDetail);
 
 // 一站式元数据与密钥聚合查询
 router.get('/metadata/:appId', getGameMetadata);
+
+// 公开只读统计数据 (客户端数据库统计使用，不暴露管理能力)
+router.get('/stats', (req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      data: {
+        gamesCount: gameService.getTotalGamesCount(),
+        keysCount: depotService.getTotalKeysCount()
+      }
+    });
+  } catch (e: any) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
 
 // DepotKey 密钥查询
 router.get('/depots/:appId', getDepotsForGame);

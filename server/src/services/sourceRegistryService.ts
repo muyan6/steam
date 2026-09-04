@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export interface DataSourceInfo {
   id: string;
@@ -143,7 +144,7 @@ export class SourceRegistryService {
 
   private saveRegistry(): void {
     try {
-      fs.writeFileSync(this.registryFilePath, JSON.stringify(this.sources, null, 2), 'utf-8');
+      writeJsonAtomic(this.registryFilePath, this.sources);
     } catch {}
   }
 

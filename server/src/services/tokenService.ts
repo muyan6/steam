@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export class TokenService {
   private tokensDb: Record<string, string> = {};
@@ -40,9 +41,10 @@ export class TokenService {
 
   public saveTokens(tokens: Record<string, string>): boolean {
     try {
-      this.tokensDb = tokens;
+      // 合并而非整库替换：上游返回子集/截断数据时不会丢掉本地已有 token
+      this.tokensDb = { ...this.tokensDb, ...tokens };
       const dbPath = path.join(CONFIG.DATA_DIR, 'steam_tokens.json');
-      fs.writeFileSync(dbPath, JSON.stringify(tokens, null, 2), 'utf-8');
+      writeJsonAtomic(dbPath, tokens);
       this.isLoaded = true;
       console.log(`[TokenService] 已成功持久化保存 ${Object.keys(tokens).length} 条 AccessToken 到 ${dbPath}`);
       return true;

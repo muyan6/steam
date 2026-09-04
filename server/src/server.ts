@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { CONFIG } from './config/index.js';
 import apiRouter from './routes/index.js';
 import { tokenService } from './services/tokenService.js';
@@ -16,9 +17,32 @@ import { LANDING_HTML } from './static/landingPage.js';
 const app = express();
 
 // 基础中间件
-app.use(cors({ origin: CONFIG.CORS_ORIGIN }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.disable('x-powered-by');
+const corsOrigin = CONFIG.CORS_ORIGIN === '' ? false : CONFIG.CORS_ORIGIN;
+if (corsOrigin) {
+  app.use(cors({ origin: corsOrigin as any }));
+}
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// 全局限流：保护公开接口不被滥用（登录与心跳另有专门限流）
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '请求过于频繁，请稍后再试' }
+});
+app.use('/api', globalLimiter);
+
+// 登录接口限流：配合服务端 IP 锁定进一步抬高爆破成本
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '登录尝试过于频繁，请稍后再试' }
+});
 
 // 简易请求日志
 app.use((req, res, next) => {
@@ -368,12 +392,12 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <div id="loginFormContainer">
         <div class="form-group" style="text-align: left;">
           <label>管理员账号 (Username)</label>
-          <input type="text" id="loginUser" class="input-ctrl" value="admin" placeholder="请输入管理员账号 (默认: admin)" autocomplete="username" onkeydown="if(event.key==='Enter') handleLoginSubmit();" />
+          <input type="text" id="loginUser" class="input-ctrl" placeholder="请输入管理员账号" autocomplete="username" onkeydown="if(event.key==='Enter') handleLoginSubmit();" />
         </div>
 
         <div class="form-group" style="text-align: left;">
           <label>管理员密码 (Password)</label>
-          <input type="password" id="loginPass" class="input-ctrl" placeholder="请输入管理员密码 (默认: admin123)" autocomplete="current-password" onkeydown="if(event.key==='Enter') handleLoginSubmit();" />
+          <input type="password" id="loginPass" class="input-ctrl" placeholder="请输入管理员密码" autocomplete="current-password" onkeydown="if(event.key==='Enter') handleLoginSubmit();" />
         </div>
 
         <button type="button" id="loginBtn" onclick="handleLoginSubmit()" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 12px; margin-top: 10px; font-size: 15px; border-radius: 12px;">
@@ -382,8 +406,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       </div>
 
       <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #64748b; line-height: 1.6;">
-        <div>默认账号: <code style="color: #38bdf8; font-weight: bold; background: rgba(56,189,248,0.1); padding: 2px 6px; border-radius: 4px;">admin</code> · 默认密码: <code style="color: #38bdf8; font-weight: bold; background: rgba(56,189,248,0.1); padding: 2px 6px; border-radius: 4px;">admin123</code></div>
-        <div style="color: #475569; margin-top: 4px;">超级主密钥: <code style="color: #94a3b8;">steammaster_admin_8888</code></div>
+        <div>请使用管理员账号登录。首次部署后请立即在「安全配置」中修改默认密码。</div>
       </div>
     </div>
   </div>
@@ -599,8 +622,8 @@ app.get(['/admin', '/dashboard'], (req, res) => {
               <input type="text" id="devSearchInput" class="input-ctrl" style="max-width: 340px;" placeholder="🔍 搜索设备码 / 客户端版本 / 操作系统 / IP..." onkeydown="if(event.key==='Enter') loadDevicesData(1);" />
               <select id="devStatusFilter" class="input-ctrl" style="max-width: 160px;" onchange="loadDevicesData(1);">
                 <option value="all">全部设备状态</option>
-                <option value="active">仅看会员已激活</option>
-                <option value="inactive">仅看普通未激活</option>
+                <option value="activated">仅看会员已激活</option>
+                <option value="unactivated">仅看普通未激活</option>
               </select>
               <button onclick="loadDevicesData(1)" class="btn btn-secondary">🔍 筛选检索</button>
             </div>
@@ -1023,19 +1046,35 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ success: false, message: '服务器内部错误' });
 });
 
-app.listen(CONFIG.PORT, CONFIG.HOST, () => {
+// 进程级异常保护：避免未捕获异常静默带崩整个服务
+process.on('uncaughtException', (err) => {
+  console.error('[UncaughtException]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UnhandledRejection]', reason);
+});
+
+const server = app.listen(CONFIG.PORT, CONFIG.HOST, () => {
   console.log(`
 ======================================================
 🚀 春风渡 云端后端已成功启动！
 🌐 前台宣传下载页: http://${CONFIG.HOST}:${CONFIG.PORT}
 💻 Web 管控控制台: http://${CONFIG.HOST}:${CONFIG.PORT}/admin
 📊 健康检查: http://localhost:${CONFIG.PORT}/api/health
-🔑 默认管理账号: ${CONFIG.DEFAULT_ADMIN_USER}
-🔑 默认管理密码: ${CONFIG.DEFAULT_ADMIN_PASS}
 ======================================================
   `);
 
   // 初始化 Token 数据库与定时自动抓取引擎
   tokenService.loadTokensDb();
   syncService.startScheduledDailySync();
+});
+
+// 端口占用等启动错误给出友好提示
+server.on('error', (err: any) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[启动失败] 端口 ${CONFIG.PORT} 已被占用，请更换 PORT 环境变量或释放端口后重试`);
+  } else {
+    console.error('[启动失败]', err);
+  }
+  process.exit(1);
 });

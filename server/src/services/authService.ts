@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { CONFIG } from '../config/index.js';
 import { AdminCredentials, AdminUser, AuthTokenPayload, AuditLog } from '../types/index.js';
+import { writeJsonAtomic, readJsonOrThrow } from '../utils/atomicJson.js';
 
 export class AuthService {
   private credFilePath: string;
@@ -31,35 +32,29 @@ export class AuthService {
         username: CONFIG.DEFAULT_ADMIN_USER,
         passwordHash,
         salt,
+        tokenVersion: 1,
         updatedAt: new Date().toISOString()
       };
-      fs.writeFileSync(this.credFilePath, JSON.stringify(defaultCreds, null, 2), 'utf-8');
-      console.log(`[AuthService] 已初始化默认管理员账号: ${defaultCreds.username}`);
+      writeJsonAtomic(this.credFilePath, defaultCreds);
+      console.log(`[AuthService] 已初始化管理员账号: ${defaultCreds.username}（首次登录请立即在「安全配置」中修改密码）`);
     }
   }
 
   private getCredentials(): AdminCredentials {
     this.ensureCredentials();
-    try {
-      const content = fs.readFileSync(this.credFilePath, 'utf-8');
-      return JSON.parse(content);
-    } catch {
-      const salt = crypto.randomBytes(16).toString('hex');
-      const passwordHash = this.hashPassword(CONFIG.DEFAULT_ADMIN_PASS, salt);
-      return {
-        username: CONFIG.DEFAULT_ADMIN_USER,
-        passwordHash,
-        salt,
-        updatedAt: new Date().toISOString()
-      };
-    }
+    // 凭据文件损坏时抛出错误拒绝服务，绝不静默重置为默认弱口令
+    return readJsonOrThrow<AdminCredentials>(this.credFilePath, '管理员凭据');
   }
 
   public recordAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {
     try {
       let logs: AuditLog[] = [];
       if (fs.existsSync(this.auditFilePath)) {
-        logs = JSON.parse(fs.readFileSync(this.auditFilePath, 'utf-8'));
+        try {
+          logs = JSON.parse(fs.readFileSync(this.auditFilePath, 'utf-8'));
+        } catch {
+          logs = [];
+        }
       }
       const entry: AuditLog = {
         id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -71,7 +66,7 @@ export class AuthService {
       if (logs.length > 200) {
         logs = logs.slice(0, 200);
       }
-      fs.writeFileSync(this.auditFilePath, JSON.stringify(logs, null, 2), 'utf-8');
+      writeJsonAtomic(this.auditFilePath, logs);
     } catch (e) {
       console.error('[AuthService] 记录审计日志失败:', e);
     }
@@ -91,12 +86,14 @@ export class AuthService {
 
   public generateToken(username: string, role: string = 'superadmin'): string {
     const now = Math.floor(Date.now() / 1000);
+    const creds = this.getCredentials();
     const payload: AuthTokenPayload = {
       username,
       role,
       iat: now,
-      exp: now + CONFIG.TOKEN_EXPIRES_SECONDS
-    };
+      exp: now + CONFIG.TOKEN_EXPIRES_SECONDS,
+      tv: creds.tokenVersion ?? 1
+    } as AuthTokenPayload;
 
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -120,7 +117,9 @@ export class AuthService {
         .update(`${header}.${body}`)
         .digest('base64url');
 
-      if (signature !== expectedSignature) {
+      const sigBuf = Buffer.from(signature);
+      const expectedBuf = Buffer.from(expectedSignature);
+      if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
         return null;
       }
 
@@ -128,6 +127,13 @@ export class AuthService {
       const now = Math.floor(Date.now() / 1000);
       if (payload.exp && payload.exp < now) {
         return null; // 过期
+      }
+
+      // tokenVersion 吊销：修改密码后旧 token 一律失效
+      const creds = this.getCredentials();
+      const currentVersion = (payload as any).tv ?? 1;
+      if (currentVersion < (creds.tokenVersion ?? 1)) {
+        return null;
       }
 
       return payload;
@@ -145,24 +151,35 @@ export class AuthService {
     const now = Date.now();
     const cleanUser = (username || '').trim();
     const cleanPass = (pass || '').trim();
-    const attempt = this.loginAttempts.get(ip);
 
+    // 锁定检查必须先于凭据校验，防止爆破
+    const attempt = this.loginAttempts.get(ip);
+    if (attempt && attempt.lockedUntil > now) {
+      const remainMinutes = Math.ceil((attempt.lockedUntil - now) / 60000);
+      this.recordAuditLog({
+        action: 'LOGIN_LOCKED',
+        operator: cleanUser,
+        ip,
+        userAgent,
+        details: `IP 处于锁定状态，剩余 ${remainMinutes} 分钟`,
+        success: false
+      });
+      return {
+        success: false,
+        message: `安全锁定：连续输错密码已超限，请 ${remainMinutes} 分钟后再试`
+      };
+    }
+
+    // 安全策略：只接受 PBKDF2 哈希匹配，不存在默认密码/主密钥等任何回退通道
     const creds = this.getCredentials();
     const computedHash = this.hashPassword(cleanPass, creds.salt);
-
-    // 允许通过：1. 持久化密码哈希匹配 2. 初始默认密码 3. 系统管理员主密钥
-    const isUserValid =
-      cleanUser.toLowerCase() === creds.username.toLowerCase() ||
-      cleanUser.toLowerCase() === CONFIG.DEFAULT_ADMIN_USER.toLowerCase() ||
-      cleanUser.toLowerCase() === 'admin' ||
-      cleanPass === CONFIG.ADMIN_SECRET;
-
+    const hashBuf = Buffer.from(computedHash);
+    const storedBuf = Buffer.from(creds.passwordHash);
     const isPassValid =
-      computedHash === creds.passwordHash ||
-      cleanPass === CONFIG.DEFAULT_ADMIN_PASS ||
-      cleanPass === CONFIG.ADMIN_SECRET;
+      hashBuf.length === storedBuf.length && crypto.timingSafeEqual(hashBuf, storedBuf);
+    const isUserValid =
+      cleanUser.toLowerCase() === creds.username.toLowerCase();
 
-    // 如果密码正确，自动解除锁定并允许登录
     if (isUserValid && isPassValid) {
       this.loginAttempts.delete(ip);
       const token = this.generateToken(creds.username, 'superadmin');
@@ -187,23 +204,6 @@ export class AuthService {
         message: '登录成功',
         token,
         user
-      };
-    }
-
-    // 检查锁定状态
-    if (attempt && attempt.lockedUntil > now) {
-      const remainMinutes = Math.ceil((attempt.lockedUntil - now) / 60000);
-      this.recordAuditLog({
-        action: 'LOGIN_LOCKED',
-        operator: cleanUser,
-        ip,
-        userAgent,
-        details: `IP 处于锁定状态，剩余 ${remainMinutes} 分钟`,
-        success: false
-      });
-      return {
-        success: false,
-        message: `安全锁定：连续输错密码已超限，请 ${remainMinutes} 分钟后再试`
       };
     }
 
@@ -244,11 +244,10 @@ export class AuthService {
     const creds = this.getCredentials();
     const cleanCurrent = (currentPass || '').trim();
     const currentHash = this.hashPassword(cleanCurrent, creds.salt);
-
+    const curBuf = Buffer.from(currentHash);
+    const storedBuf = Buffer.from(creds.passwordHash);
     const isCurrentValid =
-      currentHash === creds.passwordHash ||
-      cleanCurrent === CONFIG.DEFAULT_ADMIN_PASS ||
-      cleanCurrent === CONFIG.ADMIN_SECRET;
+      curBuf.length === storedBuf.length && crypto.timingSafeEqual(curBuf, storedBuf);
 
     if (!isCurrentValid) {
       this.recordAuditLog({
@@ -275,17 +274,18 @@ export class AuthService {
       username: finalUsername,
       passwordHash: newPasswordHash,
       salt: newSalt,
+      tokenVersion: (creds.tokenVersion ?? 1) + 1,
       updatedAt: new Date().toISOString()
     };
 
-    fs.writeFileSync(this.credFilePath, JSON.stringify(updatedCreds, null, 2), 'utf-8');
+    writeJsonAtomic(this.credFilePath, updatedCreds);
 
     this.recordAuditLog({
       action: 'CHANGE_PASSWORD_SUCCESS',
       operator: finalUsername,
       ip,
       userAgent,
-      details: `管理员账号/密码已成功更新 (账号: ${finalUsername})`,
+      details: `管理员账号/密码已成功更新 (账号: ${finalUsername})，旧会话已全部失效`,
       success: true
     });
 
@@ -293,7 +293,7 @@ export class AuthService {
 
     return {
       success: true,
-      message: '管理员账号及密码修改成功，请妥善保存新凭证',
+      message: '管理员账号及密码修改成功，所有旧登录会话已失效，请使用新凭证重新登录',
       token: newToken
     };
   }

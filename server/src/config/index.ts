@@ -40,16 +40,30 @@ function resolveDataDir(): string {
   return serverData;
 }
 
+function requireSecret(name: string): string {
+  const value = process.env[name];
+  if (!value || !value.trim()) {
+    console.error(`[配置错误] 缺少必需的环境变量 ${name}。`);
+    console.error(`安全策略：服务端不再内置任何默认密钥。请在部署环境中设置：`);
+    console.error(`  export ${name}=<随机强密钥>`);
+    console.error(`推荐生成方式：node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`);
+    process.exit(1);
+  }
+  return value.trim();
+}
+
 export const CONFIG = {
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 1257,
   HOST: process.env.HOST || '0.0.0.0',
-  ADMIN_SECRET: process.env.ADMIN_SECRET || 'steammaster_admin_8888',
+  // 安全策略：管理密钥/JWT 密钥必须显式配置，无任何代码内默认值
+  ADMIN_SECRET: requireSecret('ADMIN_SECRET'),
   DEFAULT_ADMIN_USER: process.env.ADMIN_USER || 'admin',
+  // 仅用于首次初始化凭据文件；登录校验只走 PBKDF2 哈希，不存在密码回退
   DEFAULT_ADMIN_PASS: process.env.ADMIN_PASS || 'admin123',
-  JWT_SECRET: process.env.JWT_SECRET || 'steammaster_jwt_secret_key_2026',
+  JWT_SECRET: requireSecret('JWT_SECRET'),
   TOKEN_EXPIRES_SECONDS: 7 * 24 * 3600, // 7天有效
   MAX_LOGIN_ATTEMPTS: 5,
   LOCKOUT_TIME_MS: 15 * 60 * 1000, // 输错5次锁定15分钟
   DATA_DIR: resolveDataDir(),
-  CORS_ORIGIN: process.env.CORS_ORIGIN || '*'
+  CORS_ORIGIN: process.env.CORS_ORIGIN || ''
 };

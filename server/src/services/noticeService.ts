@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
 import { Announcement } from '../types/index.js';
+import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export class NoticeService {
   private noticesFilePath: string;
@@ -78,7 +79,7 @@ export class NoticeService {
           }
         ];
       }
-      fs.writeFileSync(this.noticesFilePath, JSON.stringify(initialNotices, null, 2), 'utf-8');
+      writeJsonAtomic(this.noticesFilePath, initialNotices);
     }
 
     this.syncLegacyFile();
@@ -99,7 +100,7 @@ export class NoticeService {
 
   private saveAll(notices: Announcement[]) {
     try {
-      fs.writeFileSync(this.noticesFilePath, JSON.stringify(notices, null, 2), 'utf-8');
+      writeJsonAtomic(this.noticesFilePath, notices);
       this.syncLegacyFile();
     } catch (e) {
       console.error('[NoticeService] 保存公告列表失败:', e);
@@ -114,7 +115,7 @@ export class NoticeService {
       const active = this.getActiveNotices();
       const top = active.length > 0 ? active[0] : null;
       if (top) {
-        fs.writeFileSync(this.legacyNoticeFilePath, JSON.stringify(top, null, 2), 'utf-8');
+        writeJsonAtomic(this.legacyNoticeFilePath, top);
       } else {
         const placeholder: Announcement = {
           id: 'notice_none',
@@ -126,7 +127,7 @@ export class NoticeService {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
-        fs.writeFileSync(this.legacyNoticeFilePath, JSON.stringify(placeholder, null, 2), 'utf-8');
+        writeJsonAtomic(this.legacyNoticeFilePath, placeholder);
       }
     } catch (e) {
       console.error('[NoticeService] 同步 legacyNoticeFile 失败:', e);
@@ -241,17 +242,8 @@ export class NoticeService {
     const index = list.findIndex((n) => n.id === id);
 
     if (index === -1) {
-      // 兼容旧接口：如果找不到特定 ID，更新第一个或创建新公告
-      if (list.length > 0) {
-        list[0] = {
-          ...list[0],
-          ...data,
-          updatedAt: new Date().toISOString()
-        };
-        this.saveAll(list);
-        return list[0];
-      }
-      return this.createNotice(data);
+      // 安全策略：指定 ID 不存在时直接报错，绝不静默覆盖第一条公告
+      throw new Error(`公告 ID 不存在: ${id}，请刷新列表后重试`);
     }
 
     list[index] = {
