@@ -67,34 +67,36 @@
               : 'theme-card hover:-translate-y-0.5 hover:shadow-md'"
             :style="currentTheme === theme.id ? { borderColor: theme.accentHex, backgroundColor: theme.cardHex } : {}"
           >
-            <!-- 激活标记徽章 -->
-            <div 
-              v-if="currentTheme === theme.id"
-              class="absolute top-3 right-3 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shadow"
-              :style="{ backgroundColor: theme.accentHex, color: '#ffffff' }"
-            >
-              <Check class="w-3 h-3 stroke-[3]" />
-              <span>当前使用</span>
-            </div>
-
             <div>
-              <!-- 色彩调色板预览圆点 & 深浅模式标签 -->
-              <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-1.5">
+              <!-- 色彩调色板预览圆点 & 深浅模式标签 + 当前使用徽章 (流式排版，完全并列不重叠) -->
+              <div class="flex items-center justify-between mb-3 gap-2">
+                <div class="flex items-center gap-1.5 shrink-0">
                   <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.bgHex }" title="背景色"></span>
                   <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.cardHex }" title="卡片色"></span>
                   <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.accentHex }" title="高亮主色"></span>
                   <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.secondaryHex }" title="辅助渐变色"></span>
                 </div>
 
-                <span 
-                  class="text-[10px] px-2 py-0.5 rounded-full font-mono flex items-center gap-1 border"
-                  :class="theme.type === 'dark' ? 'bg-slate-800/80 text-slate-300 border-white/10' : 'bg-amber-500/10 text-amber-600 border-amber-500/20 font-bold'"
-                >
-                  <Moon v-if="theme.type === 'dark'" class="w-2.5 h-2.5" />
-                  <Sun v-else class="w-2.5 h-2.5 text-amber-500" />
-                  <span>{{ theme.type === 'dark' ? '深色' : '浅色' }}</span>
-                </span>
+                <div class="flex items-center gap-1.5 flex-wrap justify-end">
+                  <span 
+                    class="text-[10px] px-2 py-0.5 rounded-full font-mono flex items-center gap-1 border shrink-0"
+                    :class="theme.type === 'dark' ? 'bg-slate-800/80 text-slate-300 border-white/10' : 'bg-amber-500/10 text-amber-600 border-amber-500/20 font-bold'"
+                  >
+                    <Moon v-if="theme.type === 'dark'" class="w-2.5 h-2.5" />
+                    <Sun v-else class="w-2.5 h-2.5 text-amber-500" />
+                    <span>{{ theme.type === 'dark' ? '深色' : '浅色' }}</span>
+                  </span>
+
+                  <!-- 当前使用徽章 -->
+                  <span 
+                    v-if="currentTheme === theme.id"
+                    class="text-[10px] font-bold px-2 py-0.5 rounded-full shadow flex items-center gap-1 shrink-0"
+                    :style="{ backgroundColor: theme.accentHex, color: '#ffffff' }"
+                  >
+                    <Check class="w-3 h-3 stroke-[3]" />
+                    <span>当前使用</span>
+                  </span>
+                </div>
               </div>
 
               <!-- 主题名称 -->
