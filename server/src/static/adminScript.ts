@@ -6,6 +6,9 @@ var versionsCache = [];
 var currentLicPage = 1;
 var currentLicTotalPages = 1;
 var currentLicList = [];
+var currentDevPage = 1;
+var currentDevTotalPages = 1;
+var currentDevList = [];
 
 function getHeaders() {
   var t = authToken || localStorage.getItem('steammaster_admin_token') || '';
@@ -111,6 +114,7 @@ function switchTab(tabId, el) {
   var target = document.getElementById('tab-' + tabId);
   if (target) { target.classList.remove('d-none'); target.style.cssText = 'display: block !important;'; }
   if (tabId === 'licenses') loadLicensesData(1);
+  if (tabId === 'devices') loadDevicesData(1);
   if (tabId === 'notices') loadNotices();
   if (tabId === 'versions') loadVersions();
   if (tabId === 'sources') loadSources();
@@ -131,6 +135,14 @@ async function loadStats() {
       var uptime = d.uptimeSeconds || 0;
       if (kUptime) kUptime.innerText = Math.floor(uptime/3600) + 'h ' + Math.floor((uptime%3600)/60) + 'm';
       if (kMem) kMem.innerText = '内存: ' + (d.memoryUsageMb || 0) + ' MB';
+    }
+
+    var devResp = await fetch('/api/admin/devices/stats', { headers: getHeaders() });
+    var devRes = await devResp.json();
+    if (devRes && devRes.success && devRes.data) {
+      var ds = devRes.data;
+      var kDevTot = document.getElementById('kpiDevTotal'); if (kDevTot) kDevTot.innerText = (ds.totalDevices || 0).toLocaleString() + ' 台';
+      var kDevToday = document.getElementById('kpiDevToday'); if (kDevToday) kDevToday.innerText = (ds.todayActiveDevices || 0).toLocaleString() + ' 台';
     }
   } catch(e) { console.warn('loadStats error:', e); }
 }
@@ -433,6 +445,85 @@ function copyCurrentLicenses() {
     });
   } else {
     prompt('当前页卡密列表:', lines);
+  }
+}
+
+// ==================== 客户端设备管理模块 ====================
+
+async function loadDevicesData(page) {
+  if (page) currentDevPage = page;
+  var searchInput = document.getElementById('devSearchInput');
+  var statusFilter = document.getElementById('devStatusFilter');
+
+  var q = searchInput ? encodeURIComponent(searchInput.value.trim()) : '';
+  var s = statusFilter ? statusFilter.value : 'all';
+
+  var tbody = document.getElementById('deviceTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:24px;">正在载入客户端设备档案...</td></tr>';
+
+  try {
+    var url = '/api/admin/devices/list?page=' + currentDevPage + '&limit=20&search=' + q + '&status=' + s;
+    var resp = await fetch(url, { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
+    var res = await resp.json();
+    if (res && res.success && res.data) {
+      var d = res.data;
+      currentDevList = d.list || [];
+      var total = d.total || 0;
+      var limit = d.limit || 20;
+      currentDevTotalPages = Math.ceil(total / limit) || 1;
+
+      // 更新 KPI
+      var st = d.stats || {};
+      var elTot = document.getElementById('kpiDevTabTotal'); if (elTot) elTot.innerText = (st.totalDevices || 0).toLocaleString() + ' 台';
+      var elToday = document.getElementById('kpiDevTabToday'); if (elToday) elToday.innerText = (st.todayActiveDevices || 0).toLocaleString() + ' 台';
+      var elWeek = document.getElementById('kpiDevTabWeek'); if (elWeek) elWeek.innerText = (st.weeklyActiveDevices || 0).toLocaleString() + ' 台';
+      var elAct = document.getElementById('kpiDevTabAct'); if (elAct) elAct.innerText = (st.activatedDevices || 0).toLocaleString() + ' 台';
+
+      // 渲染表格
+      if (!currentDevList.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:24px;">暂无匹配的客户端设备记录</td></tr>';
+      } else {
+        tbody.innerHTML = currentDevList.map(function(item) {
+          var licBadge = item.isActivated 
+            ? '<span class="badge badge-green">👑 已激活会员</span>' 
+            : '<span class="badge badge-gray">未激活 (基础版)</span>';
+          var devStr = '<strong style="color:#fff;font-family:monospace;font-size:12px;">' + escapeHtml(item.deviceId) + '</strong>';
+          var ipStr = '<code style="color:#94a3b8;font-size:11px;">' + escapeHtml(item.ip || '-') + '</code>';
+          var verStr = '<span class="badge badge-blue">v' + escapeHtml(item.clientVersion || '1.0.0') + '</span>';
+          var firstStr = formatTime(item.firstSeenAt);
+          var lastStr = formatTime(item.lastSeenAt);
+
+          return '<tr>' +
+            '<td>' + devStr + '</td>' +
+            '<td>' + licBadge + '</td>' +
+            '<td>' + verStr + '</td>' +
+            '<td>' + ipStr + '</td>' +
+            '<td>' + escapeHtml(item.osVersion || 'Windows') + '</td>' +
+            '<td>' + firstStr + '</td>' +
+            '<td><strong style="color:#34d399;">' + lastStr + '</strong></td>' +
+          '</tr>';
+        }).join('');
+      }
+
+      // 更新分页
+      var elPg = document.getElementById('devicePageInfo');
+      if (elPg) elPg.innerText = '第 ' + currentDevPage + ' / ' + currentDevTotalPages + ' 页 · 共 ' + total + ' 台设备';
+      var btnPrev = document.getElementById('devBtnPrev');
+      var btnNext = document.getElementById('devBtnNext');
+      if (btnPrev) btnPrev.disabled = currentDevPage <= 1;
+      if (btnNext) btnNext.disabled = currentDevPage >= currentDevTotalPages;
+    }
+  } catch(e) {
+    console.error('loadDevicesData error:', e);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#fb7185;padding:24px;">载入异常: ' + e.message + '</td></tr>';
+  }
+}
+
+function changeDevicePage(delta) {
+  var target = currentDevPage + delta;
+  if (target >= 1 && target <= currentDevTotalPages) {
+    loadDevicesData(target);
   }
 }
 

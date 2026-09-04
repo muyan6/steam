@@ -11,6 +11,7 @@ import { noticeService } from './services/noticeService.js';
 import { versionService } from './services/versionService.js';
 import { authService } from './services/authService.js';
 import { ADMIN_JS } from './static/adminScript.js';
+import { LANDING_HTML } from './static/landingPage.js';
 
 const app = express();
 
@@ -34,8 +35,15 @@ app.use((req, res, next) => {
 // 挂载 API 路由
 app.use('/api', apiRouter);
 
-// 后端管理控制台 (100% 独立内联、零外部 CDN 依赖、秒开原生 SPA)
-app.get(['/', '/dashboard'], (req, res) => {
+// 1. 前台宣传展示与下载页 (移动端/桌面端高质感响应式前页，对齐 ruku.html)
+app.get(['/', '/ruku.html', '/index.html'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(LANDING_HTML);
+});
+
+// 2. 后端管理控制台 (100% 独立内联、零外部 CDN 依赖、秒开原生 SPA)
+app.get(['/admin', '/dashboard'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -47,7 +55,7 @@ app.get(['/', '/dashboard'], (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SteamMaster 商业版 · 云端管控控制台</title>
+  <title>春风渡 · 云端管控控制台</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -122,6 +130,22 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     /* 主内容容器 */
     .main-container { max-width: 1320px; margin: 0 auto; padding: 28px 20px; }
+
+    /* 响应式移动端适配 */
+    @media (max-width: 768px) {
+      .app-header { padding: 12px 16px; flex-direction: column; align-items: flex-start; }
+      .nav-tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; padding: 4px; }
+      .tab-btn { padding: 6px 12px; font-size: 12.5px; white-space: nowrap; }
+      .main-container { padding: 16px 12px; }
+      .grid-4 { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .grid-2 { grid-template-columns: 1fr; gap: 12px; }
+      .modal-box { padding: 20px 16px; }
+      .form-row { grid-template-columns: 1fr; gap: 10px; }
+      .kpi-val { font-size: 22px; }
+    }
+    @media (max-width: 480px) {
+      .grid-4 { grid-template-columns: 1fr; }
+    }
 
     /* 现代玻璃拟态卡片 */
     .card {
@@ -332,8 +356,8 @@ app.get(['/', '/dashboard'], (req, res) => {
       <div style="width: 62px; height: 62px; border-radius: 18px; background: linear-gradient(135deg, #0284c7, #10b981); margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; font-size: 28px; color: #fff; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.35);">
         ⚡
       </div>
-      <h1 style="font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 6px;">SteamMaster 商业版</h1>
-      <p style="font-size: 13.5px; color: #94a3b8; margin-bottom: 24px;">云端数据调度引擎 · 激活码与安全管控中枢</p>
+      <h1 style="font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 6px;">春风渡</h1>
+      <p style="font-size: 13.5px; color: #94a3b8; margin-bottom: 24px;">云端数据调度引擎 · 激活码与设备安全管控中枢</p>
 
       <!-- 登录状态/错误提示框 -->
       <div id="loginNotice" class="alert-box alert-error d-none">
@@ -373,10 +397,10 @@ app.get(['/', '/dashboard'], (req, res) => {
         </div>
         <div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <strong style="color: #fff; font-size: 16px; font-weight: 800; letter-spacing: -0.01em;">SteamMaster 商业版</strong>
+            <strong style="color: #fff; font-size: 16px; font-weight: 800; letter-spacing: -0.01em;">春风渡</strong>
             <span class="badge badge-green">● 云端运行中</span>
           </div>
-          <div style="font-size: 12.5px; color: #94a3b8; margin-top: 1px;">28.8万+ DepotKey 调度中枢 · 激活码与多版本管控中枢</div>
+          <div style="font-size: 12.5px; color: #94a3b8; margin-top: 1px;">28.8万+ 本地/云端全量库调度中枢 · 客户端设备与激活码管控中心</div>
         </div>
       </div>
 
@@ -384,6 +408,7 @@ app.get(['/', '/dashboard'], (req, res) => {
       <div class="nav-tabs">
         <button class="tab-btn active" onclick="switchTab('overview', this)">📊 系统大盘</button>
         <button class="tab-btn" onclick="switchTab('licenses', this)">🔑 激活码管理</button>
+        <button class="tab-btn" onclick="switchTab('devices', this)">💻 客户端设备</button>
         <button class="tab-btn" onclick="switchTab('notices', this)">📢 公告中心</button>
         <button class="tab-btn" onclick="switchTab('versions', this)">🚀 版本与推送</button>
         <button class="tab-btn" onclick="switchTab('keys', this)">🔍 密钥检索</button>
@@ -416,14 +441,14 @@ app.get(['/', '/dashboard'], (req, res) => {
             <div class="kpi-sub">苏大猫 993499094 实时同步</div>
           </div>
           <div class="card">
-            <div class="kpi-title"><span>全量游戏索引数据库</span> <span>🎮</span></div>
-            <div class="kpi-val" id="kpiGames" style="color: #c084fc;">...</div>
-            <div class="kpi-sub">支持毫秒级中文拼音秒搜</div>
+            <div class="kpi-title"><span>累计客户端设备数</span> <span>💻</span></div>
+            <div class="kpi-val" id="kpiDevTotal" style="color: #c084fc;">...</div>
+            <div class="kpi-sub">已连接本系统的独立机器码总量</div>
           </div>
           <div class="card">
-            <div class="kpi-title"><span>服务运行时间与内存</span> <span>⚡</span></div>
-            <div class="kpi-val" id="kpiUptime" style="color: #fbbf24;">...</div>
-            <div class="kpi-sub" id="kpiMem">Node: ...</div>
+            <div class="kpi-title"><span>今日活跃客户端</span> <span>🔥</span></div>
+            <div class="kpi-val" id="kpiDevToday" style="color: #fbbf24;">...</div>
+            <div class="kpi-sub" id="kpiMem">今日在线与心跳上报</div>
           </div>
         </div>
 
@@ -438,6 +463,9 @@ app.get(['/', '/dashboard'], (req, res) => {
           <div style="display: flex; gap: 14px; flex-wrap: wrap;">
             <button onclick="triggerSyncAll()" id="btnSyncAll" class="btn btn-primary" style="padding: 11px 22px; font-size: 14px;">
               <span>🔄 立即触发全量多源聚合同步</span>
+            </button>
+            <button onclick="switchTab('devices', document.querySelectorAll('.tab-btn')[2])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: #c084fc;">
+              <span>💻 查看客户端设备监控 ➔</span>
             </button>
             <button onclick="openNoticeModal()" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px;">
               <span>📢 发布新系统公告</span>
@@ -534,6 +562,78 @@ app.get(['/', '/dashboard'], (req, res) => {
           <div style="display: flex; gap: 10px;">
             <button id="licBtnPrev" onclick="changeLicensePage(-1)" class="btn btn-secondary btn-sm" disabled>← 上一页</button>
             <button id="licBtnNext" onclick="changeLicensePage(1)" class="btn btn-secondary btn-sm" disabled>下一页 →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Tab 3: 客户端设备管理 ==================== -->
+      <div id="tab-devices" class="tab-content d-none" style="display: none;">
+        <!-- KPI 统计卡片 -->
+        <div class="grid-4" style="margin-bottom: 24px;">
+          <div class="card">
+            <div class="kpi-title"><span>累计客户端设备数</span> <span>💻</span></div>
+            <div class="kpi-val" id="kpiDevTabTotal" style="color: #38bdf8;">0</div>
+            <div class="kpi-sub">已连接本系统的独立机器码总量</div>
+          </div>
+          <div class="card">
+            <div class="kpi-title"><span>今日活跃设备数</span> <span>🔥</span></div>
+            <div class="kpi-val" id="kpiDevTabToday" style="color: #34d399;">0</div>
+            <div class="kpi-sub">今日有心跳/入库活跃记录的设备</div>
+          </div>
+          <div class="card">
+            <div class="kpi-title"><span>7天活跃设备数</span> <span>⚡</span></div>
+            <div class="kpi-val" id="kpiDevTabWeek" style="color: #fbbf24;">0</div>
+            <div class="kpi-sub">近7天内启动并连接云端的设备</div>
+          </div>
+          <div class="card">
+            <div class="kpi-title"><span>已激活会员设备</span> <span>👑</span></div>
+            <div class="kpi-val" id="kpiDevTabAct" style="color: #c084fc;">0</div>
+            <div class="kpi-sub">已绑定有效激活码的设备数</div>
+          </div>
+        </div>
+
+        <!-- 检索与操作工具栏 -->
+        <div class="card" style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+            <div style="display: flex; gap: 12px; flex: 1; min-width: 320px; flex-wrap: wrap;">
+              <input type="text" id="devSearchInput" class="input-ctrl" style="max-width: 340px;" placeholder="🔍 搜索设备码 / 客户端版本 / 操作系统 / IP..." onkeydown="if(event.key==='Enter') loadDevicesData(1);" />
+              <select id="devStatusFilter" class="input-ctrl" style="max-width: 160px;" onchange="loadDevicesData(1);">
+                <option value="all">全部设备状态</option>
+                <option value="active">仅看会员已激活</option>
+                <option value="inactive">仅看普通未激活</option>
+              </select>
+              <button onclick="loadDevicesData(1)" class="btn btn-secondary">🔍 筛选检索</button>
+            </div>
+            <button onclick="loadDevicesData(currentDevPage)" class="btn btn-secondary" style="font-size: 13.5px;">🔄 刷新列表</button>
+          </div>
+        </div>
+
+        <!-- 设备列表表格 -->
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>设备识别码 (Device ID)</th>
+                <th>授权状态</th>
+                <th>客户端版本</th>
+                <th>操作系统 / 平台</th>
+                <th>来源 IP</th>
+                <th>首次使用时间</th>
+                <th>最近心跳 / 活跃时间</th>
+              </tr>
+            </thead>
+            <tbody id="deviceTableBody">
+              <tr><td colspan="7" style="text-align: center; color: #64748b; padding: 32px; font-size: 14px;">正在载入设备档案...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 分页控制器 -->
+        <div id="devicePagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px; font-size: 13px; color: #94a3b8;">
+          <span id="devicePageInfo">共 0 台设备</span>
+          <div style="display: flex; gap: 10px;">
+            <button id="devBtnPrev" onclick="changeDevicePage(-1)" class="btn btn-secondary btn-sm" disabled>← 上一页</button>
+            <button id="devBtnNext" onclick="changeDevicePage(1)" class="btn btn-secondary btn-sm" disabled>下一页 →</button>
           </div>
         </div>
       </div>
@@ -751,7 +851,7 @@ app.get(['/', '/dashboard'], (req, res) => {
         </div>
         <div class="form-group">
           <label>版本标题</label>
-          <input type="text" id="verTitle" class="input-ctrl" placeholder="SteamMaster 商业版 v1.0.1 正式发布" />
+          <input type="text" id="verTitle" class="input-ctrl" placeholder="春风渡 v1.0.1 正式发布" />
         </div>
         <div class="form-group">
           <label>官方下载地址</label>
@@ -926,8 +1026,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 app.listen(CONFIG.PORT, CONFIG.HOST, () => {
   console.log(`
 ======================================================
-🚀 SteamMaster 商业版云端后端已成功启动！
-🌐 Web 管控控制台: http://${CONFIG.HOST}:${CONFIG.PORT}
+🚀 春风渡 云端后端已成功启动！
+🌐 前台宣传下载页: http://${CONFIG.HOST}:${CONFIG.PORT}
+💻 Web 管控控制台: http://${CONFIG.HOST}:${CONFIG.PORT}/admin
 📊 健康检查: http://localhost:${CONFIG.PORT}/api/health
 🔑 默认管理账号: ${CONFIG.DEFAULT_ADMIN_USER}
 🔑 默认管理密码: ${CONFIG.DEFAULT_ADMIN_PASS}

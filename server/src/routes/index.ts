@@ -66,6 +66,7 @@ import {
   getOnlineModes,
   searchOnlineFix
 } from '../controllers/toolboxController.js';
+import { deviceService } from '../services/deviceService.js';
 
 const router = Router();
 
@@ -73,6 +74,27 @@ const router = Router();
 
 // 健康与统计
 router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+
+// 客户端设备心跳与活跃度上报 (公开接口)
+router.post('/telemetry/heartbeat', (req, res) => {
+  const { deviceId, clientVersion, osVersion, licenseCode, licenseType, isActivated, unlockedCount, steamPath } = req.body || {};
+  if (!deviceId) {
+    return res.status(400).json({ success: false, message: '缺少 deviceId' });
+  }
+  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const record = deviceService.recordHeartbeat({
+    deviceId,
+    ip,
+    clientVersion,
+    osVersion,
+    licenseCode,
+    licenseType,
+    isActivated,
+    unlockedCount,
+    steamPath
+  });
+  res.json({ success: true, data: record });
+});
 
 // 管理员登录（公开接口，带防爆破保护）
 router.post('/auth/login', login);
@@ -140,6 +162,20 @@ router.post('/sources/sync', triggerSyncFromSources);
 router.get('/admin/stats', getServerStats);
 router.get('/admin/search/debug', searchDebugKeys);
 router.get('/admin/toolbox/stats', getToolboxAdminStats);
+
+// 客户端设备管理与活跃度监控
+router.get('/admin/devices/list', (req, res) => {
+  const page = parseInt(req.query.page as string, 10) || 1;
+  const limit = parseInt(req.query.limit as string, 10) || 20;
+  const search = (req.query.search as string) || '';
+  const status = (req.query.status as string) || 'all';
+  const result = deviceService.getDeviceList({ page, limit, search, status });
+  res.json({ success: true, data: result });
+});
+router.get('/admin/devices/stats', (req, res) => {
+  const stats = deviceService.getDeviceStats();
+  res.json({ success: true, data: stats });
+});
 
 // 卡密管理 CRUD 与批量生成
 router.get('/admin/license/list', getLicenseListAdmin);

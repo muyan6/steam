@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerIpcHandlers } from './ipc';
+import { licenseClientService } from './services/licenseClientService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,6 +51,12 @@ function createWindow() {
 app.whenReady().then(() => {
   // 注册所有 IPC 处理函数（仅在应用就绪时注册一次，避免多窗口重建抛出重复注册异常）
   registerIpcHandlers();
+
+  // 上报客户端启动心跳与活跃度
+  licenseClientService.sendHeartbeat();
+  setInterval(() => {
+    licenseClientService.sendHeartbeat();
+  }, 30 * 60 * 1000);
 
   createWindow();
 

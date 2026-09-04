@@ -108,7 +108,7 @@
 
             <span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-500/10 text-sky-300 font-mono text-xs font-semibold border border-sky-500/20">
               <Cloud class="w-3.5 h-3.5" />
-              <span>18万+ 云端库</span>
+              <span>18万+ 本地全量库</span>
             </span>
             <span 
               class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold border"
@@ -182,6 +182,11 @@
           @notify="addToast"
           @refresh-status="fetchSteamInfo"
           @open-license-modal="showLicenseModal = true"
+        />
+        <AboutView
+          v-else-if="currentTab === 'about'"
+          @notify="addToast"
+          @open-disclaimer="openDisclaimerModal"
         />
         <SettingsView
           v-else-if="currentTab === 'settings'"
@@ -336,12 +341,14 @@ import {
   Copy,
   Crown,
   Wrench,
-  Check
+  Check,
+  Info
 } from 'lucide-vue-next';
 import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
 import OnlineFixView from './views/OnlineFixView.vue';
 import ToolboxView from './views/ToolboxView.vue';
+import AboutView from './views/AboutView.vue';
 import SettingsView from './views/SettingsView.vue';
 import StartupWizardModal from './components/StartupWizardModal.vue';
 import LicenseModal from './components/LicenseModal.vue';
@@ -350,7 +357,7 @@ import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
 
 const appVersion = '1.0.0';
-const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'settings'>('search');
+const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'about' | 'settings'>('search');
 const showStartupWizard = ref(false);
 const showLicenseModal = ref(false);
 const isMaximized = ref(false);
@@ -425,6 +432,7 @@ const navItems = [
   { id: 'library' as const, label: '已入库规则管理', iconComponent: Library },
   { id: 'onlinefix' as const, label: '联机修复中心', iconComponent: Gamepad2 },
   { id: 'toolbox' as const, label: '实用工具箱', iconComponent: Wrench },
+  { id: 'about' as const, label: '功能详解与关于', iconComponent: Info },
   { id: 'settings' as const, label: '系统与环境设置', iconComponent: Settings2 },
 ];
 
@@ -511,15 +519,26 @@ const handleRestartSteam = async () => {
   }
 };
 
+const DISCLAIMER_STORAGE_KEY = 'chunfengdu_disclaimer_accepted_v1';
+
+const openDisclaimerModal = () => {
+  popupNotice.value = {
+    id: 'notice_disclaimer_01',
+    title: '免责声明',
+    content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n5. 如有权利方认为本工具涉及侵权，请联系官网邮箱进行下架处理。',
+    popupOnce: false
+  };
+};
+
 const closePopupNotice = () => {
   if (popupNotice.value && popupNotice.value.popupOnce) {
     localStorage.setItem(`read_notice_${popupNotice.value.id}`, 'true');
   }
-  sessionStorage.setItem('disclaimer_agreed', 'true');
   popupNotice.value = null;
 };
 
 const handleAgreeNotice = () => {
+  localStorage.setItem(DISCLAIMER_STORAGE_KEY, 'true');
   closePopupNotice();
   addToast('您已同意免责声明，欢迎使用春风渡！', 'success');
 };
@@ -534,6 +553,8 @@ const handleDeclineNotice = async () => {
 
 const checkNoticeAndVersion = async () => {
   try {
+    const hasAcceptedDisclaimer = localStorage.getItem(DISCLAIMER_STORAGE_KEY) === 'true';
+
     const notice = await window.electronAPI.checkNotice();
     if (notice && notice.enabled) {
       if (notice.type === 'banner') {
@@ -544,14 +565,9 @@ const checkNoticeAndVersion = async () => {
           popupNotice.value = notice;
         }
       }
-    } else if (!sessionStorage.getItem('disclaimer_agreed')) {
-      // 离线环境兜底免责声明
-      popupNotice.value = {
-        id: 'notice_disclaimer_01',
-        title: '免责声明',
-        content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n5. 如有权利方认为本工具涉及侵权，请联系官网邮箱进行下架处理。',
-        popupOnce: false
-      };
+    } else if (!hasAcceptedDisclaimer) {
+      // 离线环境且本机从未确认过免责声明时弹出（每台电脑仅首次弹出一次）
+      openDisclaimerModal();
     }
 
     const versionRes = await window.electronAPI.checkVersion(appVersion);

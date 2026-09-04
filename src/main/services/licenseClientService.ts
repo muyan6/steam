@@ -185,6 +185,39 @@ export class LicenseClientService {
     this.saveLocalLicense(null);
     return { success: true, message: '已清除本地卡密授权记录' };
   }
+
+  /**
+   * 向云端上报设备心跳与在线状态
+   */
+  public async sendHeartbeat(): Promise<void> {
+    try {
+      const deviceId = this.getDeviceId();
+      const appVersion = APP_CONFIG.APP_VERSION || '1.0.0';
+      const isActivated = !!(this.cachedLicense && this.cachedLicense.isActivated);
+      const licenseCode = this.cachedLicense?.code;
+      const osInfo = `${process.platform} ${process.arch}`;
+
+      const url = `${APP_CONFIG.API_BASE_URL}/api/telemetry/heartbeat`;
+      await axios.post(url, {
+        deviceId,
+        clientVersion: appVersion,
+        os: osInfo,
+        isActivated,
+        licenseCode
+      }, {
+        timeout: 5000,
+        httpsAgent: this.httpsAgent,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'ChunFengDu-Client'
+        }
+      });
+      console.log(`[LicenseClientService] 设备心跳上报成功 (${deviceId.substring(0, 8)}...)`);
+    } catch (e: any) {
+      // 心跳静默失败，避免干扰正常业务
+      console.debug('[LicenseClientService] 设备心跳上报跳过或未连通云端:', e.message);
+    }
+  }
 }
 
 export const licenseClientService = new LicenseClientService();

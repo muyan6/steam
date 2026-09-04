@@ -189,7 +189,7 @@
         <div class="p-5 flex-1 flex flex-col justify-between">
           <div>
             <h3 class="text-base font-bold text-slate-100">Open内核清单服务器自动切换</h3>
-            <p class="text-xs text-slate-400 mt-1">开启清单服务器自动切换，修复下载游戏无联网</p>
+            <p class="text-xs text-slate-400 mt-1">自动轮询全球高速清单节点（①官方直链加速 ➔ ②全球CDN镜像 ➔ ③本地缓存），修复下载无联网与清单缺失</p>
 
             <!-- 检查清单 -->
             <div class="mt-4 space-y-2 text-xs">
@@ -199,7 +199,7 @@
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
                 <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
-                <span class="text-slate-200">开启Open内核清单服务器自动切换功能</span>
+                <span class="text-slate-200">开启Open内核清单服务器自动轮询与智能故障自愈</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
                 <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />

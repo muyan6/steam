@@ -46,6 +46,23 @@
       </div>
     </div>
 
+    <!-- 核心联机操作提示横幅 -->
+    <div class="mb-5 p-4 rounded-2xl bg-sky-500/10 border border-sky-500/30 text-sky-200 flex items-start gap-3.5 shadow-sm shrink-0">
+      <div class="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/30 mt-0.5">
+        <Sparkles class="w-4.5 h-4.5" />
+      </div>
+      <div class="text-xs leading-relaxed min-w-0">
+        <div class="font-bold text-sky-300 text-sm mb-1 flex items-center gap-2">
+          <span>联机核心操作指引</span>
+          <span class="text-[11px] font-normal px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">优先推荐</span>
+        </div>
+        <p class="text-slate-200">
+          入库后游戏建议<strong>优先使用 OpenSteamTool 原生内核直接启动</strong>体验原生好友邀请与联机；
+          若遇到特定游戏原生联机无法连入、大厅房间不可见或联机失效，再使用本页面的<strong>「联机补丁模式」</strong>（SpaceWar / Goldberg / OnlineFix 专用补丁）进行精准修复与文件替换。
+        </p>
+      </div>
+    </div>
+
     <!-- ============================================== -->
     <!-- TAB 1: 联机启动模式 (主模式) -->
     <!-- ============================================== -->

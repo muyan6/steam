@@ -8,13 +8,13 @@
           @keydown.enter="handleSearch(1)"
           type="text"
           placeholder="输入游戏中文名、英文名、拼音缩写或 Steam AppID (如 BOMBANANA / 2358720 / wukong / 后室)..."
-          class="w-full bg-slate-900/80 border border-white/10 rounded-2xl px-4 py-2.5 pl-11 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner backdrop-blur-md"
+          class="w-full theme-card-static rounded-2xl px-4 py-2.5 pl-11 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner"
         />
         <Search class="w-4.5 h-4.5 absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
         <button
           v-if="searchQuery"
           @click="searchQuery = ''; handleSearch(1)"
-          class="absolute right-3 top-3 text-slate-400 hover:text-slate-200 p-0.5 rounded-full hover:bg-slate-800 transition cursor-pointer"
+          class="absolute right-3 top-3 text-slate-400 hover:text-slate-200 p-0.5 rounded-full hover:bg-white/10 transition cursor-pointer"
         >
           <X class="w-3.5 h-3.5" />
         </button>
@@ -45,7 +45,7 @@
         <div class="relative">
           <button
             @click="showSourceDropdown = !showSourceDropdown"
-            class="px-3.5 py-2.5 bg-slate-900/90 hover:bg-slate-800 border border-sky-500/30 text-sky-400 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
+            class="px-3.5 py-2.5 btn-soft-action border-sky-500/30 text-sky-400 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
             title="点击切换搜索数据源"
           >
             <Server class="w-3.5 h-3.5 text-sky-400" />
@@ -56,7 +56,7 @@
           <!-- 数据源切换下拉浮层 -->
           <div
             v-if="showSourceDropdown"
-            class="absolute right-0 top-full mt-2 w-64 bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
+            class="absolute right-0 top-full mt-2 w-64 theme-card-static rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 border"
           >
             <div class="text-[11px] text-slate-400 px-2.5 py-1 font-semibold border-b border-white/5 mb-1">
               选择搜索接口与数据引擎:
@@ -71,7 +71,7 @@
               <div>
                 <div class="flex items-center gap-1.5">
                   <span>{{ src.name }}</span>
-                  <span v-if="src.id === 'cloud_db'" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">18万+</span>
+                  <span v-if="src.id === 'local_db'" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">18万+</span>
                 </div>
                 <div class="text-[11px] text-slate-400 font-normal mt-0.5">{{ src.desc }}</div>
               </div>
@@ -100,7 +100,7 @@
       </div>
 
       <div class="flex items-center gap-2 text-xs font-mono">
-        <span class="bg-slate-900/80 px-3 py-1 rounded-xl border border-white/10 text-slate-300">
+        <span class="btn-soft-action px-3 py-1 rounded-xl border text-slate-300">
           共 <strong class="theme-text-accent font-bold">{{ totalItems.toLocaleString() }}</strong> 款 · 第 <strong class="text-slate-100">{{ currentPage }}</strong> / {{ totalPages.toLocaleString() }} 页
         </span>
       </div>
@@ -114,7 +114,7 @@
       </div>
 
       <div v-else-if="games.length === 0" class="flex flex-col items-center justify-center h-72 text-slate-400 p-6">
-        <div class="w-16 h-16 rounded-2xl bg-slate-900/80 border border-white/10 flex items-center justify-center text-2xl mb-3 shadow-inner">
+        <div class="w-16 h-16 rounded-2xl theme-card-static flex items-center justify-center text-2xl mb-3 shadow-inner">
           <Search class="w-7 h-7 text-slate-400" />
         </div>
         <p class="text-base font-bold text-slate-200 mb-1">未找到与「{{ searchQuery }}」匹配的游戏</p>
@@ -165,7 +165,7 @@
 
             <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent pointer-events-none"></div>
 
-            <div class="absolute top-2.5 right-2.5 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-mono theme-text-accent border border-white/10 font-bold shadow-sm">
+            <div class="absolute top-2.5 right-2.5 theme-card-static px-2.5 py-1 rounded-lg text-xs font-mono theme-text-accent font-bold shadow-sm border">
               ID: {{ game.appId }}
             </div>
             <div
@@ -300,7 +300,7 @@
             :min="1"
             :max="totalPages"
             placeholder="页码"
-            class="w-16 bg-slate-900/90 border border-white/10 rounded-xl px-2 py-1 text-center text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-400"
+            class="w-16 theme-card-static rounded-xl px-2 py-1 text-center text-xs font-mono focus:outline-none focus:border-sky-400"
           />
           <span class="text-slate-400">页</span>
           <button
@@ -313,7 +313,7 @@
       </div>
 
       <!-- 2. 1:1 换源提示条与切换按钮 (深度对齐参考界面) -->
-      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-1.5 px-4 bg-slate-900/60 rounded-2xl border border-white/5">
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-2 px-4 rounded-2xl border border-white/5 btn-soft-action">
         <div class="flex items-center gap-2 text-center">
           <Info class="w-4 h-4 text-sky-400 shrink-0" />
           <span>
@@ -373,13 +373,13 @@ const unlockingId = ref<number | null>(null);
 
 // 数据源系统
 const searchSources: SearchSourceConfig[] = [
+  { id: 'local_db', name: '本地18万+全量库', nameEn: 'Local 180K+ DB', desc: '纯客户端本地内存检索与分页 (3,800+页 0延迟/0服务器流量)', badge: '18万+' },
   { id: 'steam_official', name: 'Steam官方API', nameEn: 'Steam Official', desc: '直连 Steam 官方 Store 实时搜索，涵盖最新上架与热门游戏', badge: '官方' },
-  { id: 'cloud_db', name: '云端18万+自建库', nameEn: 'Cloud 180K+ DB', desc: '全量 18.8 万款游戏秒级极速分页检索 (共 3,900+ 页)', badge: '18万+' },
   { id: 'steam_community', name: 'Steam社区搜索源', nameEn: 'Steam Community', desc: '直连 Steam 社区应用与创意工坊检索', badge: '社区' },
-  { id: 'hybrid', name: '全域智能聚合源', nameEn: 'Hybrid Aggregate', desc: '多接口并行聚合检索，自动融合并去重', badge: '聚合' }
+  { id: 'hybrid', name: '全域智能聚合源', nameEn: 'Hybrid Aggregate', desc: '本地全量库与 Steam 官方源智能融合并去重', badge: '聚合' }
 ];
 
-const currentSource = ref<SearchSourceId>('steam_official');
+const currentSource = ref<SearchSourceId>('local_db');
 const showSourceDropdown = ref(false);
 const currentSourceConfig = computed(() => {
   return searchSources.find(s => s.id === currentSource.value) || searchSources[0];
