@@ -180,80 +180,7 @@
         </div>
       </div>
 
-      <!-- 2. 云端数据源溯源与上游引用清单看板 (每日自动同步) -->
-      <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 shadow-lg">
-        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div class="flex items-center gap-2 flex-wrap">
-            <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
-              <span>🌐 云端数据源溯源与上游引用清单</span>
-            </h3>
-            <span class="px-2.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
-              ● {{ sourcesList.length > 0 ? sourcesList.length + ' 个上游源协同运转' : '多源自动同步中' }}
-            </span>
-          </div>
-
-          <button
-            @click="handleSyncAllSources"
-            :disabled="syncingSources"
-            class="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow"
-          >
-            <span :class="{ 'animate-spin': syncingSources }">🔄</span>
-            <span>{{ syncingSources ? '正在全量同步...' : '⚡ 立即触发多源同步' }}</span>
-          </button>
-        </div>
-
-        <p class="text-xs text-slate-400 mb-4 leading-relaxed">
-          透明记录系统当前在后端聚合的所有开源上游数据源、API 端点、更新周期及收录体量。后端每日自动轮询同步，确保密钥库与 Token 永远保持最新。
-        </p>
-
-        <!-- 数据源卡片列表 -->
-        <div class="space-y-3">
-          <div
-            v-for="src in sourcesList"
-            :key="src.id"
-            class="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition"
-          >
-            <div class="flex items-start justify-between gap-3 flex-wrap mb-1.5">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-bold text-xs text-slate-100">{{ src.name }}</span>
-                <span class="text-[10px] px-2 py-0.5 rounded font-mono bg-slate-800 text-slate-300 border border-slate-700">
-                  {{ src.syncFrequency }}
-                </span>
-                <span
-                  class="text-[10px] px-2 py-0.5 rounded font-bold"
-                  :class="src.status === 'active' || src.status === 'ready' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-300 border border-amber-500/30'"
-                >
-                  ● {{ src.status === 'active' || src.status === 'ready' ? '正常同步' : '待同步' }}
-                </span>
-              </div>
-
-              <div v-if="src.totalRecordsCount > 0" class="text-xs font-mono font-bold text-sky-400">
-                已收录: {{ src.totalRecordsCount.toLocaleString() }} {{ src.category === 'depot_keys' ? '条密钥' : src.category === 'tokens' ? '款令牌' : src.category === 'games' ? '款游戏' : '个模块' }}
-              </div>
-            </div>
-
-            <p class="text-[11px] text-slate-400 leading-relaxed mb-2">
-              {{ src.description }}
-            </p>
-
-            <div class="flex items-center justify-between gap-2 flex-wrap text-[11px] pt-2 border-t border-slate-800/80 font-mono text-slate-400">
-              <div class="flex items-center gap-1">
-                <span>📍 来源/作者:</span>
-                <span class="text-slate-300">{{ src.author }}</span>
-              </div>
-              <div v-if="src.endpointUrl" class="text-slate-400 truncate max-w-md">
-                <span>🔗 {{ src.endpointUrl }}</span>
-              </div>
-            </div>
-
-            <div v-if="src.licenseOrNote" class="mt-2 text-[10px] text-slate-400 bg-slate-950/60 p-2 rounded-lg border border-slate-800/50">
-              💡 {{ src.licenseOrNote }}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 3. Steam 安装路径设置 -->
+      <!-- 2. Steam 安装路径设置 -->
       <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 shadow-lg">
         <h3 class="font-bold text-sm text-slate-200 mb-3 flex items-center gap-2">
           <span>📁 Steam 本地客户端路径</span>
@@ -361,7 +288,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { EnvironmentDiagnosticResult, EnvironmentCheckItem, DataSourceInfo } from '../../types';
+import { EnvironmentDiagnosticResult, EnvironmentCheckItem } from '../../types';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -373,10 +300,8 @@ const steamPathInput = ref('');
 const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>('steamrun');
 const deploying = ref(false);
 const refreshing = ref(false);
-const syncingSources = ref(false);
 const checkingHealth = ref(false);
 const healthResult = ref<EnvironmentDiagnosticResult | null>(null);
-const sourcesList = ref<DataSourceInfo[]>([]);
 
 // 缩放与精简展示状态控制
 const isExpandedView = ref(false);
@@ -627,42 +552,9 @@ const handleUninstallOST = async () => {
   }
 };
 
-const loadSources = async () => {
-  try {
-    const list = await window.electronAPI.getSourcesList();
-    if (Array.isArray(list)) {
-      sourcesList.value = list;
-    }
-  } catch {
-    // ignore
-  }
-};
-
-const handleSyncAllSources = async () => {
-  syncingSources.value = true;
-  try {
-    emit('notify', '正在触发后端多源全量自动化同步，请稍候...', 'info');
-    const res = await window.electronAPI.syncSources();
-    if (res && res.success) {
-      emit('notify', res.message || '后端多源数据同步成功！', 'success');
-      await loadSources();
-      await loadDbStats();
-      await runEnvironmentHealthCheck();
-      emit('refresh-status');
-    } else {
-      emit('notify', res?.message || '同步失败，请稍后重试', 'error');
-    }
-  } catch (e: any) {
-    emit('notify', `同步失败: ${e.message}`, 'error');
-  } finally {
-    syncingSources.value = false;
-  }
-};
-
 onMounted(() => {
   loadEnvInfo();
   loadDbStats();
-  loadSources();
   runEnvironmentHealthCheck();
 });
 </script>
