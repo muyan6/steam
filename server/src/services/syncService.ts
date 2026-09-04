@@ -6,6 +6,7 @@ import { CONFIG } from '../config/index.js';
 import { gameService } from './gameService.js';
 import { depotService } from './depotService.js';
 import { tokenService } from './tokenService.js';
+import { sourceRegistryService } from './sourceRegistryService.js';
 
 export class SyncService {
   private readonly httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -50,6 +51,7 @@ export class SyncService {
     }
 
     if (!data) {
+      sourceRegistryService.recordSyncError('steamtools_gamelist', '所有上游镜像请求超时');
       return { success: false, message: '所有上游镜像请求超时，请检查网络后重试。' };
     }
 
@@ -69,6 +71,7 @@ export class SyncService {
 
       // 重新加载内存索引
       await gameService.loadAllGamesDatabase();
+      sourceRegistryService.recordSyncSuccess('steamtools_gamelist', compactGames.length);
 
       return {
         success: true,
@@ -76,6 +79,7 @@ export class SyncService {
         count: compactGames.length
       };
     } catch (e: any) {
+      sourceRegistryService.recordSyncError('steamtools_gamelist', e.message);
       return { success: false, message: `解析并写入数据失败: ${e.message}` };
     }
   }
@@ -85,6 +89,7 @@ export class SyncService {
    */
   public async syncDepotKeys(): Promise<{ success: boolean; message: string; count?: number }> {
     let data: Record<string, string> | null = null;
+    let sudamaCount = 0;
 
     // 1. 优先尝试从苏大猫实时接口同步
     try {
@@ -97,9 +102,12 @@ export class SyncService {
 
       if (resp.data && typeof resp.data === 'object' && Object.keys(resp.data).length > 1000) {
         data = resp.data;
-        console.log(`[SyncService] 成功从苏大猫源拉取到 ${Object.keys(data!).length} 条 DepotKey`);
+        sudamaCount = Object.keys(data!).length;
+        sourceRegistryService.recordSyncSuccess('sudama_keys', sudamaCount);
+        console.log(`[SyncService] 成功从苏大猫源拉取到 ${sudamaCount} 条 DepotKey`);
       }
     } catch (e: any) {
+      sourceRegistryService.recordSyncError('sudama_keys', e.message);
       console.warn(`[SyncService] 苏大猫源同步 DepotKeys 异常: ${e.message}，尝试备用 GitHub 镜像源...`);
     }
 
@@ -118,6 +126,7 @@ export class SyncService {
 
           if (resp.data && typeof resp.data === 'object') {
             data = resp.data;
+            sourceRegistryService.recordSyncSuccess('manifesthub_keys', Object.keys(data!).length);
             break;
           }
         } catch (e: any) {
@@ -140,6 +149,7 @@ export class SyncService {
 
       depotService.saveDepotKeys(cleanKeys);
       const count = depotService.getTotalKeysCount();
+      sourceRegistryService.recordSyncSuccess('manifesthub_keys', count);
 
       return {
         success: true,
@@ -173,6 +183,7 @@ export class SyncService {
 
         tokenService.saveTokens(tokens);
         const count = tokenService.getTotalTokensCount();
+        sourceRegistryService.recordSyncSuccess('sudama_tokens', count);
 
         return {
           success: true,
@@ -180,8 +191,10 @@ export class SyncService {
           count
         };
       }
+      sourceRegistryService.recordSyncError('sudama_tokens', '返回格式不正确');
       return { success: false, message: 'Token 数据返回格式不正确' };
     } catch (e: any) {
+      sourceRegistryService.recordSyncError('sudama_tokens', e.message);
       console.error(`[SyncService] 同步 AccessTokens 失败:`, e.message);
       return { success: false, message: `同步 AccessTokens 失败: ${e.message}` };
     }

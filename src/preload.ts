@@ -48,6 +48,8 @@ export const electronAPI = {
   checkNotice: (): Promise<any> => ipcRenderer.invoke('app:check-notice'),
   checkVersion: (currentVersion?: string): Promise<any> => ipcRenderer.invoke('app:check-version', currentVersion),
   getDatabaseStats: (): Promise<any> => ipcRenderer.invoke('update:get-stats'),
+  getSourcesList: (): Promise<any> => ipcRenderer.invoke('app:get-sources'),
+  syncSources: (): Promise<any> => ipcRenderer.invoke('app:sync-sources'),
 
   // 对话框
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-directory')

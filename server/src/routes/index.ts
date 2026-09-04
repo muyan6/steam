@@ -6,6 +6,7 @@ import { getTokenForApp, getTokensStats } from '../controllers/tokenController.j
 import { getManifestsForApp, downloadManifestFile } from '../controllers/manifestController.js';
 import { getLatestNotice } from '../controllers/noticeController.js';
 import { checkVersion, getLatestVersionInfo } from '../controllers/versionController.js';
+import { getSourcesList, triggerSyncFromSources } from '../controllers/sourceController.js';
 import {
   requireAdmin,
   updateNotice,
@@ -14,7 +15,6 @@ import {
   triggerSyncDepots,
   triggerSyncTokens,
   triggerSyncAll,
-  getPublicStats,
   getServerStats
 } from '../controllers/adminController.js';
 
@@ -24,7 +24,10 @@ const router = Router();
 
 // 健康与统计
 router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
-router.get('/stats', getPublicStats);
+
+// 溯源与上游引用清单看板
+router.get('/sources', getSourcesList);
+router.post('/sources/sync', triggerSyncFromSources);
 
 // 商业版：公告通知
 router.get('/notice/latest', getLatestNotice);

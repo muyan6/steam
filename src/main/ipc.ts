@@ -111,6 +111,14 @@ export function registerIpcHandlers() {
     return await updateService.getDatabaseStats();
   });
 
+  ipcMain.handle('app:get-sources', async () => {
+    return await updateService.getSourcesList();
+  });
+
+  ipcMain.handle('app:sync-sources', async () => {
+    return await updateService.triggerSyncSources();
+  });
+
   // 6. 对话框服务
   ipcMain.handle('dialog:select-directory', async () => {
     const res = await dialog.showOpenDialog({

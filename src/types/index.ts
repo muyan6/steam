@@ -102,9 +102,23 @@ export interface ManifestInstallResult {
   message: string;
 }
 
+export interface DataSourceInfo {
+  id: string;
+  name: string;
+  author: string;
+  category: 'depot_keys' | 'tokens' | 'games' | 'manifests' | 'core_hook';
+  sourceUrl: string;
+  endpointUrl?: string;
+  syncFrequency: string;
+  status: 'active' | 'syncing' | 'error' | 'ready';
+  lastSyncTime: string;
+  totalRecordsCount: number;
+  description: string;
+  licenseOrNote: string;
+}
+
 export interface IpcResponse<T = any> {
   success: boolean;
   data?: T;
   message?: string;
 }
-
