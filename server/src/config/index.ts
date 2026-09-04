@@ -41,7 +41,7 @@ function resolveDataDir(): string {
 }
 
 export const CONFIG = {
-  PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
+  PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 1257,
   HOST: process.env.HOST || '0.0.0.0',
   ADMIN_SECRET: process.env.ADMIN_SECRET || 'steammaster_admin_8888',
   DATA_DIR: resolveDataDir(),

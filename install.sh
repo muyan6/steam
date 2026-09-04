@@ -7,15 +7,13 @@
 
 set -e
 
-# 颜色输出定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo -e "${CYAN}${BOLD}"
 echo "======================================================================"
@@ -23,7 +21,6 @@ echo "    ⚡ SteamMaster 商业版 - 云端后端数据引擎 一键自动部�
 echo "======================================================================"
 echo -e "${NC}"
 
-# 1. 检测当前脚本所在目录与 server 目录
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -d "$CURRENT_DIR/server" ]; then
     SERVER_DIR="$CURRENT_DIR/server"
@@ -36,10 +33,8 @@ fi
 echo -e "${BLUE}[1/5] 检查运行路径...${NC}"
 echo -e "   -> 后端目录定位为: ${CYAN}$SERVER_DIR${NC}"
 
-# 2. 检查并安装系统级基础依赖 (curl, git, node, pm2)
 echo -e "\n${BLUE}[2/5] 检查系统环境与基础依赖...${NC}"
 
-# 检测操作系统包管理器
 PKG_MANAGER=""
 if command -v apt-get &> /dev/null; then
     PKG_MANAGER="apt"
@@ -49,7 +44,6 @@ elif command -v yum &> /dev/null; then
     PKG_MANAGER="yum"
 fi
 
-# 安装 curl 与 git
 if ! command -v curl &> /dev/null || ! command -v git &> /dev/null; then
     echo -e "${YELLOW}   -> 正在安装 curl / git...${NC}"
     if [ "$PKG_MANAGER" = "apt" ]; then
@@ -59,7 +53,6 @@ if ! command -v curl &> /dev/null || ! command -v git &> /dev/null; then
     fi
 fi
 
-# 检查 Node.js 版本 (要求 >= 18)
 NODE_NEED_INSTALL=false
 if command -v node &> /dev/null; then
     NODE_VER=$(node -v | sed 's/v//' | cut -d. -f1)
@@ -73,7 +66,6 @@ else
     NODE_NEED_INSTALL=true
 fi
 
-# 自动安装 Node.js 20 LTS
 if [ "$NODE_NEED_INSTALL" = true ]; then
     echo -e "${YELLOW}   -> 正在自动安装 Node.js 20 LTS 环境...${NC}"
     if [ "$PKG_MANAGER" = "apt" ]; then
@@ -89,7 +81,6 @@ if [ "$NODE_NEED_INSTALL" = true ]; then
     echo -e "   -> Node.js 安装完成: ${GREEN}$(node -v)${NC}"
 fi
 
-# 检查并全局安装 PM2
 if ! command -v pm2 &> /dev/null; then
     echo -e "${YELLOW}   -> 正在全局安装 PM2 进程守护工具...${NC}"
     sudo npm install -g pm2
@@ -98,7 +89,6 @@ else
     echo -e "   -> PM2 已安装: ${GREEN}v$(pm2 -v)${NC}"
 fi
 
-# 3. 安装后端 NPM 依赖并构建编译
 echo -e "\n${BLUE}[3/5] 安装后端依赖并编译 TypeScript...${NC}"
 cd "$SERVER_DIR"
 
@@ -111,10 +101,8 @@ fi
 echo -e "   -> 正在执行 TypeScript 生产构建..."
 npm run build
 
-# 4. 配置并使用 PM2 守护启动服务
 echo -e "\n${BLUE}[4/5] 启动 PM2 守护服务...${NC}"
 
-# 如果已有运行的实例，先重载；若无则启动
 if pm2 describe steammaster-server &> /dev/null; then
     echo -e "   -> 检测到现有进程，正在重载服务配置..."
     pm2 restart ecosystem.config.cjs --update-env
@@ -123,14 +111,11 @@ else
     pm2 start ecosystem.config.cjs
 fi
 
-# 保持开机自启
 pm2 save
 
-# 5. 检测并输出服务运行状态与访问入口
 echo -e "\n${BLUE}[5/5] 服务健康状态检查...${NC}"
 sleep 2
 
-# 获取本地/公网 IP
 SERVER_IP=$(curl -s --max-time 3 ifconfig.me || curl -s --max-time 3 ipinfo.io/ip || echo "127.0.0.1")
 
 echo -e "${GREEN}${BOLD}"
@@ -141,10 +126,10 @@ echo -e "${NC}"
 
 echo -e "📌 ${BOLD}服务运行信息:${NC}"
 echo -e "   • 进程名称:    ${CYAN}steammaster-server${NC}"
-echo -e "   • 服务端口:    ${CYAN}3000${NC} (可于 ecosystem.config.cjs 修改)"
-echo -e "   • 管理控制台:  ${GREEN}http://${SERVER_IP}:3000/dashboard${NC}"
-echo -e "   • 健康检查API: ${GREEN}http://${SERVER_IP}:3000/api/health${NC}"
-echo -e "   • 客户端对接:  在客户端 appConfig.ts 中填入: ${YELLOW}http://${SERVER_IP}:3000${NC}"
+echo -e "   • 服务端口:    ${CYAN}1257${NC} (可于 ecosystem.config.cjs 修改)"
+echo -e "   • 管理控制台:  ${GREEN}http://${SERVER_IP}:1257/dashboard${NC}"
+echo -e "   • 健康检查API: ${GREEN}http://${SERVER_IP}:1257/api/health${NC}"
+echo -e "   • 客户端对接:  在客户端 appConfig.ts 中填入: ${YELLOW}http://${SERVER_IP}:1257${NC}"
 
 echo -e "\n🛠️ ${BOLD}常用维护指令:${NC}"
 echo -e "   • 查看运行状态: ${CYAN}pm2 status${NC}"
@@ -153,7 +138,7 @@ echo -e "   • 重启服务:     ${CYAN}pm2 restart steammaster-server${NC}"
 echo -e "   • 下次更新代码: ${GREEN}bash update.sh${NC}"
 
 echo -e "\n🔒 ${YELLOW}${BOLD}安全提示:${NC}"
-echo -e "   若无法通过外网访问，请确认云服务器安全组已放行 ${BOLD}TCP 3000${NC} 端口："
-echo -e "   • Ubuntu (UFW):    ${CYAN}sudo ufw allow 3000/tcp${NC}"
-echo -e "   • CentOS (Firewall): ${CYAN}sudo firewall-cmd --add-port=3000/tcp --permanent && sudo firewall-cmd --reload${NC}"
+echo -e "   若无法通过外网访问，请确认云服务器安全组已放行 ${BOLD}TCP 1257${NC} 端口："
+echo -e "   • Ubuntu (UFW):    ${CYAN}sudo ufw allow 1257/tcp${NC}"
+echo -e "   • CentOS (Firewall): ${CYAN}sudo firewall-cmd --add-port=1257/tcp --permanent && sudo firewall-cmd --reload${NC}"
 echo -e "======================================================================\n"

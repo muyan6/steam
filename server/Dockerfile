@@ -22,7 +22,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=1257
 
 # 仅安装生产依赖
 COPY package*.json ./
@@ -32,6 +32,6 @@ RUN npm install --only=production
 COPY --from=builder /app/dist ./dist
 COPY data ./data
 
-EXPOSE 3000
+EXPOSE 1257
 
 CMD ["node", "dist/server.js"]

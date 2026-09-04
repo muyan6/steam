@@ -1,6 +1,6 @@
 # SteamMaster 商业版 - 云端后端服务器部署指南
 
-本目录为 **SteamMaster** 的独立云端后端服务，负责承载 **18 万+ 游戏数据库、28 万+ DepotKey 密钥库、动态系统公告、客户端版本检测与强制升级** 等核心商业功能。
+本目录为 **SteamMaster** 的独立云端后端服务，负责承载 **18 万+ 游戏数据库、28 万+ DepotKey 密钥库、动态系统公告、客户端版本检测与强制升级** 等核心商业功能。默认服务端口已优化为 **1257**。
 
 ---
 
@@ -15,7 +15,7 @@
 chmod +x install.sh update.sh
 bash install.sh
 ```
-> **脚本会自动执行**：系统环境检测 -> Node.js 20 LTS 安装 -> 全局 PM2 安装 -> NPM 依赖安装 -> TypeScript 编译构建 -> PM2 后台守护启动 -> 开机自启保存 -> 端口与健康检查。
+> **脚本会自动执行**：系统环境检测 -> Node.js 20 LTS 安装 -> 全局 PM2 安装 -> NPM 依赖安装 -> TypeScript 编译构建 -> PM2 后台守护启动 (端口 1257) -> 开机自启保存 -> 端口与健康检查。
 
 ### 2. 后续更新代码 (一键极速重载)
 下次需要更新服务器代码时，**只需一条命令**：
@@ -51,7 +51,7 @@ pm2 stop steammaster-server
 如果你的服务器已安装 Docker 与 Docker Compose：
 
 ```bash
-# 一键构建并启动
+# 一键构建并启动 (暴露 1257 端口)
 docker compose up -d --build
 
 # 查看运行日志
@@ -65,7 +65,7 @@ docker compose logs -f
 请求管理接口时，请在 Header 中携带管理员密钥（默认密钥在 `ecosystem.config.cjs` 中配置为 `steammaster_admin_8888`）：
 
 ### 1. 发布 / 修改最新公告
-* **URL**: `POST http://<你的服务器IP>:3000/api/admin/notice`
+* **URL**: `POST http://<你的服务器IP>:1257/api/admin/notice`
 * **Header**: `x-admin-key: steammaster_admin_8888`
 * **Body (JSON)**:
 ```json
@@ -78,7 +78,7 @@ docker compose logs -f
 ```
 
 ### 2. 发布新版本 / 控制强制更新
-* **URL**: `POST http://<你的服务器IP>:3000/api/admin/version`
+* **URL**: `POST http://<你的服务器IP>:1257/api/admin/version`
 * **Header**: `x-admin-key: steammaster_admin_8888`
 * **Body (JSON)**:
 ```json
@@ -96,5 +96,5 @@ docker compose logs -f
 ```
 
 ### 3. 一键同步上游最新游戏库与密钥
-* **同步游戏**: `POST http://<你的服务器IP>:3000/api/admin/sync/games`
-* **同步密钥**: `POST http://<你的服务器IP>:3000/api/admin/sync/depots`
+* **同步游戏**: `POST http://<你的服务器IP>:1257/api/admin/sync/games`
+* **同步密钥**: `POST http://<你的服务器IP>:1257/api/admin/sync/depots`

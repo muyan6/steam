@@ -8,9 +8,9 @@ services:
     container_name: steammaster-backend
     restart: always
     ports:
-      - "3000:3000"
+      - "1257:1257"
     environment:
-      - PORT=3000
+      - PORT=1257
       - NODE_ENV=production
       - ADMIN_SECRET=steammaster_admin_8888
     volumes:

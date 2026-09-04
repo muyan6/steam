@@ -71,7 +71,7 @@ else
 fi
 
 sleep 1
-HEALTH_CHECK=$(curl -s --max-time 3 http://127.0.0.1:3000/api/health 2>/dev/null || echo "failed")
+HEALTH_CHECK=$(curl -s --max-time 3 http://127.0.0.1:1257/api/health 2>/dev/null || echo "failed")
 
 echo -e "\n${GREEN}${BOLD}"
 echo "======================================================================"
