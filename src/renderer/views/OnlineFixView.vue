@@ -15,23 +15,35 @@
 
     <!-- 方案一：全局 Steam -onlinefix 极速模式 -->
     <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 mb-6 shadow-lg">
-      <div class="flex items-start justify-between gap-4">
+      <div class="flex items-start justify-between gap-4 flex-wrap md:flex-nowrap">
         <div>
           <div class="flex items-center gap-2">
             <span class="text-lg font-bold text-slate-100">方案一：Steam 全局 -onlinefix 模式 (推荐)</span>
             <span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 text-[10px] font-bold">免改游戏文件</span>
           </div>
           <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-            借助 OpenSteamTool 内核的底层拦截机制，直接以 <code class="text-sky-400 font-mono">-onlinefix</code> 参数启动 Steam。此时所有游戏创建的大厅与房间均会自动伪装为 Spacewar (480)，可在 Steam 好友列表直接右键“邀请加入游戏”。
+            借助 OpenSteamTool 内核的底层拦截机制，直接以 <code class="text-sky-400 font-mono">-onlinefix</code> 参数拉起 Steam。所有支持 P2P 联机游戏的大厅与房间将动态伪装为 Spacewar (480)，可在 Steam 好友列表直接右键“邀请加入游戏”。
           </p>
+          <div class="mt-2 text-[11px] text-slate-400 flex items-center gap-1.5">
+            <span>💡</span>
+            <span><strong>如何回退：</strong>该模式只在带参数启动时临时生效，不修改任何游戏文件。若想退出联机模式，点击右侧「恢复正常启动 Steam」即可瞬间秒级还原！</span>
+          </div>
         </div>
 
-        <button
-          @click="handleLaunchGlobalOnlineFix"
-          class="px-5 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2 shrink-0"
-        >
-          <span>🚀 以 -onlinefix 模式启动 Steam</span>
-        </button>
+        <div class="flex flex-col gap-2 shrink-0">
+          <button
+            @click="handleLaunchGlobalOnlineFix"
+            class="px-5 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2"
+          >
+            <span>🚀 开启 -onlinefix 启动 Steam</span>
+          </button>
+          <button
+            @click="handleRestartNormalSteam"
+            class="px-5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-slate-100 text-xs font-medium rounded-xl transition flex items-center justify-center gap-1.5"
+          >
+            <span>🔄 恢复正常启动 Steam</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -214,6 +226,16 @@ const handleLaunchGlobalOnlineFix = async () => {
     emit('notify', 'Steam 已带 -onlinefix 成功启动！', 'success');
   } catch (e: any) {
     emit('notify', `启动失败: ${e.message}`, 'error');
+  }
+};
+
+const handleRestartNormalSteam = async () => {
+  try {
+    emit('notify', '正在以纯净原版模式重启 Steam 客户端...', 'info');
+    await window.electronAPI.restartSteam();
+    emit('notify', '已恢复原版正常模式启动 Steam！', 'success');
+  } catch (e: any) {
+    emit('notify', `重启失败: ${e.message}`, 'error');
   }
 };
 
