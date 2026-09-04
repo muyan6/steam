@@ -100,6 +100,23 @@ export interface LocalInstalledGame {
   hasBackup?: boolean;
 }
 
+export interface OnlineFixPatchResult {
+  success: boolean;
+  message: string;
+  fileName?: string;
+  extractedCount?: number;
+  articleUrl?: string;
+  downloadUrl?: string;
+}
+
+export interface OnlineFixSearchResult {
+  found: boolean;
+  message?: string;
+  gameArticleUrl?: string;
+  fileName?: string;
+  downloadUrl?: string;
+}
+
 export interface SteamlessRepairResult {
   success: boolean;
   message: string;

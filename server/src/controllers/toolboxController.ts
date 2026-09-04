@@ -88,3 +88,21 @@ export const getOnlineModes = async (_req: Request, res: Response): Promise<void
   }
 };
 
+export const searchOnlineFix = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const appId = req.query.appId as string;
+    const gameName = req.query.gameName as string;
+    if (!appId) {
+      res.status(400).json({ success: false, message: '缺少 appId 参数' });
+      return;
+    }
+    const result = await toolboxService.searchOnlineFix(appId, gameName);
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: `检索Online-Fix失败: ${error.message}` });
+  }
+};
+

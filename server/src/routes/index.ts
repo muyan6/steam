@@ -63,7 +63,8 @@ import {
   reportRepairLog,
   getToolboxAdminStats,
   getSteamlessInfo,
-  getOnlineModes
+  getOnlineModes,
+  searchOnlineFix
 } from '../controllers/toolboxController.js';
 
 const router = Router();
@@ -119,6 +120,7 @@ router.get('/toolbox/sha256-data', getSha256PackageInfo);
 router.post('/toolbox/repair-log', reportRepairLog);
 router.get('/toolbox/steamless-info', getSteamlessInfo);
 router.get('/toolbox/online-modes', getOnlineModes);
+router.get('/toolbox/onlinefix-search', searchOnlineFix);
 
 // ==================== 2. 管理员认证受保护 API ====================
 

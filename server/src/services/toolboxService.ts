@@ -207,7 +207,27 @@ export class ToolboxService {
       }
     ];
   }
+
+  /**
+   * 服务端转发检索 Online-Fix.me 补丁
+   */
+  public async searchOnlineFix(appId: string | number, gameName?: string): Promise<{
+    found: boolean;
+    query: string;
+    searchUrl: string;
+    source: string;
+  }> {
+    const query = appId.toString();
+    const searchUrl = `https://online-fix.me/index.php?do=search&subaction=search&story=${encodeURIComponent(query)}`;
+    return {
+      found: true,
+      query,
+      searchUrl,
+      source: 'online-fix.me'
+    };
+  }
 }
 
 export const toolboxService = new ToolboxService();
+
 

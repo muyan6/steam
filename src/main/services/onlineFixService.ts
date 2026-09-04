@@ -1,17 +1,337 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { spawn } from 'child_process';
 import { shell } from 'electron';
-import { OnlineFixStatus, LocalInstalledGame, OnlineLaunchMode } from '../../types';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
+import { createExtractorFromData } from 'node-unrar-js';
+import AdmZip from 'adm-zip';
+import {
+  OnlineFixStatus,
+  LocalInstalledGame,
+  OnlineLaunchMode,
+  OnlineFixSearchResult,
+  OnlineFixPatchResult
+} from '../../types';
 import { steamlessService } from './steamlessService';
 import { steamService } from './steamService';
 
 export class OnlineFixService {
+  private sessionCookie: string = '';
+  private readonly defaultUsername: string = 'huasjj';
+  private readonly defaultPassword: string = 'Fanxing6';
+
+  /**
+   * 确保 online-fix.me 登录会话
+   */
+  private async ensureAuth(): Promise<string> {
+    if (this.sessionCookie) return this.sessionCookie;
+
+    try {
+      const tokenRes = await fetch('https://online-fix.me/engine/ajax/authtoken.php', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://online-fix.me/',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+
+      const tokenData = await tokenRes.json();
+      const tokenCookies = tokenRes.headers.getSetCookie ? tokenRes.headers.getSetCookie() : [];
+      const initCookie = tokenCookies.map((c) => c.split(';')[0]).join('; ');
+
+      const formParams = new URLSearchParams();
+      formParams.append('login_name', this.defaultUsername);
+      formParams.append('login_password', this.defaultPassword);
+      formParams.append('login', 'submit');
+      formParams.append('login_not_save', '0');
+      if (tokenData && tokenData.field && tokenData.value) {
+        formParams.append(tokenData.field, tokenData.value);
+      }
+
+      const loginRes = await fetch('https://online-fix.me/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': initCookie,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://online-fix.me/'
+        },
+        body: formParams.toString()
+      });
+
+      const loginCookies = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [];
+      this.sessionCookie = [...tokenCookies, ...loginCookies].map((c) => c.split(';')[0]).join('; ');
+      return this.sessionCookie;
+    } catch (e: any) {
+      console.warn('[OnlineFixService] 自动登录 online-fix.me 失败:', e.message);
+      return '';
+    }
+  }
+
+  /**
+   * 在 online-fix.me 检索游戏补丁
+   */
+  public async searchOnlineFixPatch(appId: number, gameName?: string): Promise<OnlineFixSearchResult> {
+    const queries: string[] = [appId.toString()];
+    if (gameName) {
+      const cleanName = gameName.replace(/[^\w\s-]/gi, ' ').trim().replace(/\s+/g, ' ');
+      if (cleanName && cleanName !== appId.toString() && !queries.includes(cleanName)) {
+        queries.push(cleanName);
+      }
+    }
+
+    let gameArticleUrl: string | null = null;
+
+    for (const q of queries) {
+      console.log(`[OnlineFixService] 正在搜索 online-fix.me: "${q}"...`);
+      try {
+        const searchUrl = `https://online-fix.me/index.php?do=search&subaction=search&story=${encodeURIComponent(q)}`;
+        const res = await fetch(searchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          }
+        });
+        const html = await res.text();
+        if (html.includes('По вашему запросу ничего не найдено') || html.includes('ничего не найдено')) {
+          continue;
+        }
+
+        const contentMatch =
+          html.match(/<div[^>]+id="dle-content"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i) ||
+          html.match(/id="dle-content"[\s\S]*?(?=<div class="sidebar"|<aside|<\/section)/i);
+        const searchSection = contentMatch ? contentMatch[0] : html;
+        const links = [...searchSection.matchAll(/<a[^>]+href="(https:\/\/online-fix\.me\/games\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
+
+        for (const m of links) {
+          const url = m[1];
+          if (!url.includes('#') && !url.includes('/page,')) {
+            gameArticleUrl = url;
+            break;
+          }
+        }
+        if (gameArticleUrl) break;
+      } catch (err: any) {
+        console.warn(`[OnlineFixService] 检索 "${q}" 异常:`, err.message);
+      }
+    }
+
+    if (!gameArticleUrl) {
+      return {
+        found: false,
+        message: `未在 online-fix.me 搜索到该游戏 (AppID: ${appId}) 的联机补丁`
+      };
+    }
+
+    console.log(`[OnlineFixService] 匹配到游戏详情页: ${gameArticleUrl}`);
+    const cookie = await this.ensureAuth();
+
+    try {
+      const gameRes = await fetch(gameArticleUrl, {
+        headers: {
+          'Cookie': cookie,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://online-fix.me/'
+        }
+      });
+      const gameHtml = await gameRes.text();
+
+      const hosterMatch = gameHtml.match(/href="(https:\/\/hosters\.online-fix\.me:2053\/[^"]+)"/i);
+      if (!hosterMatch) {
+        return {
+          found: true,
+          gameArticleUrl,
+          message: '已找到游戏页面，但该页面暂无可用的联机补丁分流源'
+        };
+      }
+
+      const hosterUrl = hosterMatch[1];
+      const hosterRes = await fetch(hosterUrl, {
+        headers: {
+          'Cookie': cookie,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': gameArticleUrl
+        }
+      });
+      const hosterHtml = await hosterRes.text();
+      const dataLinksMatches = [...hosterHtml.matchAll(/data-links='([^']+)'/g)].map((m) => m[1]);
+
+      const candidateFiles: Array<{ direct_link: string; file_name: string; id: number; is_dangerous: boolean }> = [];
+      for (const raw of dataLinksMatches) {
+        try {
+          const parsed = JSON.parse(raw);
+          for (const item of parsed) {
+            candidateFiles.push(item);
+          }
+        } catch {}
+      }
+
+      const fixFiles = candidateFiles.filter((f) => {
+        const lower = f.file_name.toLowerCase();
+        return lower.includes('fix') || lower.includes('repair') || lower.includes('patch');
+      });
+
+      const targetList = fixFiles.length > 0 ? fixFiles : candidateFiles;
+      if (targetList.length === 0) {
+        return {
+          found: true,
+          gameArticleUrl,
+          message: '未在分流页面中检索到可用的 Fix_Repair 补丁包'
+        };
+      }
+
+      // 优先选取 PixelDrain
+      let chosenFile = targetList.find((f) => f.direct_link && f.direct_link.includes('pixeldrain.com/u/'));
+      let downloadUrl = '';
+      let fileName = '';
+
+      if (chosenFile) {
+        const pixelIdMatch = chosenFile.direct_link.match(/pixeldrain\.com\/u\/([a-zA-Z0-9_-]+)/);
+        if (pixelIdMatch) {
+          downloadUrl = `https://pixeldrain.com/api/file/${pixelIdMatch[1]}`;
+          fileName = chosenFile.file_name;
+        }
+      }
+
+      if (!downloadUrl) {
+        chosenFile = targetList[0];
+        downloadUrl = chosenFile.direct_link;
+        fileName = chosenFile.file_name;
+      }
+
+      return {
+        found: true,
+        gameArticleUrl,
+        fileName,
+        downloadUrl
+      };
+    } catch (err: any) {
+      return {
+        found: false,
+        message: `解析补丁源异常: ${err.message}`
+      };
+    }
+  }
+
+  /**
+   * 从 online-fix.me 自动检索、下载并解压安装联机补丁
+   */
+  public async downloadAndInstallOnlineFixPatch(
+    gamePath: string,
+    appId: number,
+    gameName?: string
+  ): Promise<OnlineFixPatchResult> {
+    try {
+      if (!fs.existsSync(gamePath)) {
+        return {
+          success: false,
+          message: `目标游戏目录不存在: ${gamePath}`
+        };
+      }
+
+      // 1. 在 online-fix.me 搜索补丁
+      const searchRes = await this.searchOnlineFixPatch(appId, gameName);
+      if (!searchRes.found || !searchRes.downloadUrl || !searchRes.fileName) {
+        return {
+          success: false,
+          message: searchRes.message || `未在 online-fix.me 搜索到《${gameName || appId}》的联机补丁`
+        };
+      }
+
+      // 2. 备份原版 DLL
+      const api64 = path.join(gamePath, 'steam_api64.dll');
+      const api32 = path.join(gamePath, 'steam_api.dll');
+      const backup64 = path.join(gamePath, 'steam_api64_o.dll');
+      const backup32 = path.join(gamePath, 'steam_api_o.dll');
+
+      if (fs.existsSync(api64) && !fs.existsSync(backup64)) {
+        fs.copyFileSync(api64, backup64);
+      }
+      if (fs.existsSync(api32) && !fs.existsSync(backup32)) {
+        fs.copyFileSync(api32, backup32);
+      }
+
+      // 3. 下载补丁包
+      const tempDir = path.join(os.tmpdir(), 'steammaster_onlinefix_downloads');
+      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+      const ext = path.extname(searchRes.fileName) || '.rar';
+      const tempFilePath = path.join(tempDir, `patch_${appId}_${Date.now()}${ext}`);
+
+      console.log(`[OnlineFixService] 正在从 ${searchRes.downloadUrl} 下载补丁包 (${searchRes.fileName})...`);
+      const res = await fetch(searchRes.downloadUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+
+      if (!res.ok) {
+        return {
+          success: false,
+          message: `从 online-fix.me 下载补丁失败，HTTP 状态码: ${res.status}`
+        };
+      }
+
+      const fileStream = fs.createWriteStream(tempFilePath);
+      if (!res.body) {
+        return { success: false, message: '无法获取下载数据流' };
+      }
+      await pipeline(Readable.fromWeb(res.body as any), fileStream);
+
+      // 4. 解压到游戏目录 (密码 online-fix.me)
+      console.log(`[OnlineFixService] 下载完成，正在解压补丁至: ${gamePath}...`);
+      let extractedCount = 0;
+
+      if (ext.toLowerCase() === '.rar' || searchRes.fileName.toLowerCase().endsWith('.rar')) {
+        const fileBuffer = fs.readFileSync(tempFilePath);
+        const extractor = await createExtractorFromData({
+          data: fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength),
+          password: 'online-fix.me'
+        });
+
+        const extracted = extractor.extract();
+        const files = [...extracted.files];
+        for (const f of files) {
+          if (f.extraction && f.fileHeader.name) {
+            const destPath = path.join(gamePath, f.fileHeader.name);
+            fs.mkdirSync(path.dirname(destPath), { recursive: true });
+            fs.writeFileSync(destPath, Buffer.from(f.extraction));
+            extractedCount++;
+          }
+        }
+      } else {
+        const zip = new AdmZip(tempFilePath);
+        zip.extractAllTo(gamePath, true, false, 'online-fix.me');
+        extractedCount = zip.getEntries().length;
+      }
+
+      // 清理临时包
+      try { fs.unlinkSync(tempFilePath); } catch {}
+
+      return {
+        success: true,
+        extractedCount,
+        fileName: searchRes.fileName,
+        articleUrl: searchRes.gameArticleUrl,
+        downloadUrl: searchRes.downloadUrl,
+        message: `成功从 online-fix.me 下载并安装联机补丁 (${searchRes.fileName})，共部署 ${extractedCount} 个文件！`
+      };
+    } catch (err: any) {
+      console.error('[OnlineFixService] 安装补丁失败:', err);
+      return {
+        success: false,
+        message: `安装联机补丁异常: ${err.message}`
+      };
+    }
+  }
+
   /**
    * 检查指定游戏目录的联机补丁状态
    */
   public checkGameDirectory(dirPath: string): OnlineFixStatus {
-    if (!fs.existsSync(dirPath)) {
+    if (!dirPath || !fs.existsSync(dirPath)) {
       return {
         gamePath: dirPath,
         hasBackup: false,
@@ -20,11 +340,10 @@ export class OnlineFixService {
       };
     }
 
-    const api64 = path.join(dirPath, 'steam_api64.dll');
-    const api32 = path.join(dirPath, 'steam_api.dll');
     const backup64 = path.join(dirPath, 'steam_api64_o.dll');
     const backup32 = path.join(dirPath, 'steam_api_o.dll');
     const onlineFixIni = path.join(dirPath, 'OnlineFix.ini');
+    const onlineFixDll = path.join(dirPath, 'OnlineFix64.dll');
     const goldbergSettings = path.join(dirPath, 'steam_settings');
 
     const hasBackup = fs.existsSync(backup64) || fs.existsSync(backup32);
@@ -32,18 +351,36 @@ export class OnlineFixService {
     let mode: 'spacewar' | 'goldberg' | 'none' = 'none';
     let appId: number | undefined;
 
-    if (fs.existsSync(onlineFixIni)) {
+    // 递归检查是否存在 OnlineFix.ini / OnlineFix64.dll
+    let foundOnlineFixIni = fs.existsSync(onlineFixIni) || fs.existsSync(onlineFixDll);
+    if (!foundOnlineFixIni) {
+      try {
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const subIni = path.join(dirPath, entry.name, 'OnlineFix.ini');
+            const subDll = path.join(dirPath, entry.name, 'OnlineFix64.dll');
+            if (fs.existsSync(subIni) || fs.existsSync(subDll)) {
+              foundOnlineFixIni = true;
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (foundOnlineFixIni) {
       isPatched = true;
       mode = 'spacewar';
       try {
-        const content = fs.readFileSync(onlineFixIni, 'utf-8');
-        const match = content.match(/RealAppId\s*=\s*(\d+)/i);
-        if (match && match[1]) {
-          appId = parseInt(match[1], 10);
+        if (fs.existsSync(onlineFixIni)) {
+          const content = fs.readFileSync(onlineFixIni, 'utf-8');
+          const match = content.match(/RealAppId\s*=\s*(\d+)/i);
+          if (match && match[1]) {
+            appId = parseInt(match[1], 10);
+          }
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     } else if (fs.existsSync(goldbergSettings)) {
       isPatched = true;
       mode = 'goldberg';
@@ -52,9 +389,7 @@ export class OnlineFixService {
         if (fs.existsSync(appIdFile)) {
           appId = parseInt(fs.readFileSync(appIdFile, 'utf-8').trim(), 10);
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
     return {
@@ -81,7 +416,6 @@ export class OnlineFixService {
       const backup32 = path.join(dirPath, 'steam_api_o.dll');
       const onlineFixIni = path.join(dirPath, 'OnlineFix.ini');
 
-      // 1. 如果存在原版 DLL 且未备份，先执行备份 (同时支持 64 位与 32 位)
       if (fs.existsSync(api64) && !fs.existsSync(backup64)) {
         fs.copyFileSync(api64, backup64);
       }
@@ -89,7 +423,6 @@ export class OnlineFixService {
         fs.copyFileSync(api32, backup32);
       }
 
-      // 2. 写入 OnlineFix.ini 配置文件
       const iniContent = `[Main]
 RealAppId=${realAppId}
 FakeAppId=480
@@ -101,7 +434,6 @@ FakeSteamId=1
 `;
       fs.writeFileSync(onlineFixIni, iniContent, 'utf-8');
 
-      // 3. 写入 steam_appid.txt
       const appidTxt = path.join(dirPath, 'steam_appid.txt');
       fs.writeFileSync(appidTxt, '480', 'utf-8');
 
@@ -140,14 +472,10 @@ FakeSteamId=1
         fs.mkdirSync(settingsDir, { recursive: true });
       }
 
-      // 写入 steam_appid.txt
       fs.writeFileSync(path.join(settingsDir, 'steam_appid.txt'), appId.toString(), 'utf-8');
       fs.writeFileSync(path.join(dirPath, 'steam_appid.txt'), appId.toString(), 'utf-8');
-
-      // 写入玩家昵称
       fs.writeFileSync(path.join(settingsDir, 'force_account_name.txt'), playerName, 'utf-8');
 
-      // 写入局域网广播 settings.ini
       const settingsIni = `[user_general]
 account_name=${playerName}
 language=schinese
@@ -180,6 +508,8 @@ enable=1
       const backup64 = path.join(dirPath, 'steam_api64_o.dll');
       const backup32 = path.join(dirPath, 'steam_api_o.dll');
       const onlineFixIni = path.join(dirPath, 'OnlineFix.ini');
+      const onlineFixDll = path.join(dirPath, 'OnlineFix64.dll');
+      const onlineFixUrl = path.join(dirPath, 'OnlineFix.url');
       const appidTxt = path.join(dirPath, 'steam_appid.txt');
       const settingsDir = path.join(dirPath, 'steam_settings');
 
@@ -197,12 +527,43 @@ enable=1
       if (fs.existsSync(onlineFixIni)) {
         try { fs.unlinkSync(onlineFixIni); } catch {}
       }
+      if (fs.existsSync(onlineFixDll)) {
+        try { fs.unlinkSync(onlineFixDll); } catch {}
+      }
+      if (fs.existsSync(onlineFixUrl)) {
+        try { fs.unlinkSync(onlineFixUrl); } catch {}
+      }
       if (fs.existsSync(appidTxt)) {
         try { fs.unlinkSync(appidTxt); } catch {}
       }
       if (fs.existsSync(settingsDir)) {
         try { fs.rmSync(settingsDir, { recursive: true, force: true }); } catch {}
       }
+
+      // 递归寻找并清理子目录中备份的 DLL
+      const searchAndRestore = (currentDir: string, depth = 0) => {
+        if (depth > 3) return;
+        try {
+          const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+          for (const entry of entries) {
+            const full = path.join(currentDir, entry.name);
+            if (entry.isDirectory()) {
+              searchAndRestore(full, depth + 1);
+            } else if (entry.name === 'steam_api64_o.dll') {
+              const mainDll = path.join(currentDir, 'steam_api64.dll');
+              fs.copyFileSync(full, mainDll);
+              try { fs.unlinkSync(full); } catch {}
+            } else if (entry.name === 'steam_api_o.dll') {
+              const mainDll = path.join(currentDir, 'steam_api.dll');
+              fs.copyFileSync(full, mainDll);
+              try { fs.unlinkSync(full); } catch {}
+            } else if (entry.name === 'OnlineFix.ini' || entry.name === 'OnlineFix64.dll' || entry.name === 'OnlineFix.url') {
+              try { fs.unlinkSync(full); } catch {}
+            }
+          }
+        } catch {}
+      };
+      searchAndRestore(dirPath, 0);
 
       return { success: true, message: '已完全恢复游戏原版状态与 DLL 文件！' };
     } catch (e: any) {
@@ -211,24 +572,21 @@ enable=1
   }
 
   /**
-   * 获取所有已知的 Steam 库目录路径 (包含 steamapps 及其它盘符 SteamLibrary)
+   * 获取所有已知的 Steam 库目录路径
    */
   public getSteamLibraryPaths(steamPath: string): string[] {
     const libraries: string[] = [];
     if (!steamPath || !fs.existsSync(steamPath)) return libraries;
 
-    // 1. Steam 根目录下的 steamapps
     const mainApps = path.join(steamPath, 'steamapps');
     if (fs.existsSync(mainApps)) {
       libraries.push(mainApps);
     }
 
-    // 2. 解析 libraryfolders.vdf 获取其它库路径
     const vdfPath = path.join(steamPath, 'steamapps', 'libraryfolders.vdf');
     if (fs.existsSync(vdfPath)) {
       try {
         const content = fs.readFileSync(vdfPath, 'utf-8');
-        // 匹配 "path"		"D:\\SteamLibrary"
         const pathMatches = content.matchAll(/"path"\s+"([^"]+)"/gi);
         for (const match of pathMatches) {
           const rawPath = match[1];
@@ -238,9 +596,7 @@ enable=1
             libraries.push(appsDir);
           }
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
     return libraries;
@@ -289,10 +645,9 @@ enable=1
     const libDirs = this.getSteamLibraryPaths(steamPath);
     const seenAppIds = new Set<number>();
 
-    // 过滤一些无用的公用组件（保留 480 Spacewar 及全部游戏）
     const skipAppIds = new Set<number>([
-      228980, // Steamworks Common Redistributables
-      1070560, // Steam Linux Runtime
+      228980,
+      1070560,
       1391110,
       1628350,
       223750
@@ -314,14 +669,12 @@ enable=1
             const manifestPath = path.join(libDir, file);
             const content = fs.readFileSync(manifestPath, 'utf-8');
 
-            // 解析 Name
             let name = `AppID ${appId}`;
             const nameMatch = content.match(/"name"\s+"([^"]+)"/i);
             if (nameMatch && nameMatch[1]) {
               name = nameMatch[1];
             }
 
-            // 解析 installdir
             let installDir = '';
             const dirMatch = content.match(/"installdir"\s+"([^"]+)"/i);
             if (dirMatch && dirMatch[1]) {
@@ -330,7 +683,6 @@ enable=1
               installDir = name;
             }
 
-            // 解析 SizeOnDisk
             let sizeOnDisk = 0;
             const sizeMatch = content.match(/"SizeOnDisk"\s+"([^"]+)"/i);
             if (sizeMatch && sizeMatch[1]) {
@@ -339,7 +691,6 @@ enable=1
 
             const fullInstallPath = path.join(libDir, 'common', installDir);
 
-            // 扫描目录下的可执行文件
             let executableFiles: string[] = [];
             let primaryExe: string | undefined;
             let hasSteamlessBackup = false;
@@ -347,7 +698,6 @@ enable=1
             if (fs.existsSync(fullInstallPath)) {
               executableFiles = steamlessService.findExecutableFiles(fullInstallPath, 2);
               if (executableFiles.length > 0) {
-                // 优先选取同名 exe 或第一个 exe
                 const lowerInstall = installDir.toLowerCase().replace(/\s+/g, '');
                 const matchedExe = executableFiles.find((p) => {
                   const base = path.basename(p, '.exe').toLowerCase().replace(/\s+/g, '');
@@ -356,14 +706,12 @@ enable=1
                 primaryExe = matchedExe || executableFiles[0];
               }
 
-              // 检查是否有 .bak 备份
               try {
                 const rootEntries = fs.readdirSync(fullInstallPath);
                 hasSteamlessBackup = rootEntries.some((f) => f.toLowerCase().endsWith('.bak'));
               } catch {}
             }
 
-            // 检查联机补丁状态
             const patchStatus = this.checkGameDirectory(fullInstallPath);
 
             seenAppIds.add(appId);
@@ -390,7 +738,6 @@ enable=1
       }
     }
 
-    // 优先显示有实际目录和执行文件的游戏，按名称字母排序
     return games.sort((a, b) => {
       const aExists = fs.existsSync(a.fullInstallPath) ? 1 : 0;
       const bExists = fs.existsSync(b.fullInstallPath) ? 1 : 0;
@@ -400,7 +747,7 @@ enable=1
   }
 
   /**
-   * 启动指定游戏的联机模式 (支持 Open内核 / Spacewar / BAT注入)
+   * 启动指定游戏的联机模式
    */
   public async launchGameOnline(options: {
     appId: number;
@@ -413,7 +760,6 @@ enable=1
 
     try {
       if (mode === 'open') {
-        // 模式 1: Open 内核联机模式 -> 确保 Steam 带 -onlinefix 运行，并通过 steam 协议拉起
         const isRunning = await steamService.isSteamRunning();
         if (!isRunning) {
           await steamService.restartSteam(['-onlinefix']);
@@ -427,7 +773,6 @@ enable=1
       }
 
       if (!gamePath || !fs.existsSync(gamePath)) {
-        // 若找不到游戏目录，回退到 steam 协议
         await shell.openExternal(`steam://rungameid/${appId}`);
         return {
           success: true,
@@ -435,7 +780,6 @@ enable=1
         };
       }
 
-      // 确定实际运行的 exe
       let targetExe = primaryExe;
       if (!targetExe || !fs.existsSync(targetExe)) {
         const exes = steamlessService.findExecutableFiles(gamePath, 2);
@@ -453,7 +797,6 @@ enable=1
       }
 
       if (mode === 'spacewar') {
-        // 模式 2: Spacewar 480 模式 (环境变量注入)
         const appidFile = path.join(gamePath, 'steam_appid.txt');
         try {
           fs.writeFileSync(appidFile, onlineAppId.toString(), 'utf-8');
@@ -479,7 +822,6 @@ enable=1
       }
 
       if (mode === 'bat') {
-        // 模式 3: BAT 环境变量注入模式
         const batName = 'Launch_Online_Fix.bat';
         const batPath = path.join(gamePath, batName);
         const exeFileName = path.basename(targetExe);
@@ -517,5 +859,3 @@ exit
 }
 
 export const onlineFixService = new OnlineFixService();
-
-

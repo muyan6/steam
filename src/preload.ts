@@ -74,6 +74,10 @@ export const electronAPI = {
     ipcRenderer.invoke('onlinefix:apply-goldberg', { dirPath, appId, playerName }),
   restoreGame: (dirPath: string): Promise<{ success: boolean; message: string }> =>
     ipcRenderer.invoke('onlinefix:restore', dirPath),
+  searchOnlineFixPatch: (appId: number, gameName?: string): Promise<OnlineFixSearchResult> =>
+    ipcRenderer.invoke('onlinefix:search-patch', { appId, gameName }),
+  installOnlineFixFromWeb: (gamePath: string, appId: number, gameName?: string): Promise<OnlineFixPatchResult> =>
+    ipcRenderer.invoke('onlinefix:install-onlinefix-web', { gamePath, appId, gameName }),
 
   // 商业版：公告通知与版本更新
   checkNotice: (): Promise<any> => ipcRenderer.invoke('app:check-notice'),

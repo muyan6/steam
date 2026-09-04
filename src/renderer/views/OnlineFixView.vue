@@ -22,7 +22,7 @@
             : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
         >
           <Wrench class="w-4 h-4" />
-          <span>联机补丁模式</span>
+          <span>联机补丁模式 (Online-Fix.me)</span>
         </button>
       </div>
 
@@ -353,7 +353,7 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- TAB 2: 联机补丁模式 (Online-Fix.me 自动安装与还原) -->
+    <!-- TAB 2: 联机补丁模式 (Online-Fix.me 自动下载解压安装) -->
     <!-- ============================================== -->
     <div v-else class="space-y-6 flex-1 flex flex-col min-h-0 pb-10">
       <!-- 快捷操作与搜索栏 -->
@@ -394,17 +394,17 @@
         </div>
       </div>
 
-      <!-- 1:1 黄色使用须知提示栏 (对齐截图) -->
+      <!-- 1:1 黄色使用须知提示栏 (对齐用户截图) -->
       <div class="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200/95 space-y-2.5 shadow-lg">
         <div class="flex items-center gap-2 font-bold text-sm text-amber-300">
           <AlertTriangle class="w-4 h-4 text-amber-400 shrink-0" />
           <span>使用须知</span>
         </div>
         <ol class="text-xs leading-relaxed text-amber-200/90 space-y-1.5 list-decimal list-inside pl-1">
-          <li>联机补丁是通过修改游戏运行库或注入配置文件，使游戏能够通过 Steam 虚拟通道 (Spacewar) 进行多人联机。</li>
-          <li>安装前系统会自动备份原始 DLL 文件（steam_api64_o.dll），随时可点击“还原原版”无损恢复。</li>
-          <li>联机双方或多方均需安装相同版本的联机补丁并运行 Steam 客户端方可正常组队/搜房。</li>
-          <li>若游戏启动提示缺少 DLL 或防病毒软件报毒，请将游戏目录添加至杀毒软件信任白名单。</li>
+          <li>联机补丁模式将自动在 <strong>online-fix.me</strong> 补丁网检索并下载该游戏的最新通用联机补丁 (<code>Fix_Repair_Steam_*.rar</code>)。</li>
+          <li>下载后系统会自动以密码 <code>online-fix.me</code> 解压并部署到游戏根目录，无需手动去老外网站点广告下载。</li>
+          <li>安装前系统会自动备份原始 DLL 文件（<code>steam_api64_o.dll</code> / <code>steam_api_o.dll</code>），随时可点击“还原原版”一键恢复。</li>
+          <li>若游戏启动提示缺少 DLL 或防病毒软件报毒拦截，请将游戏目录添加至杀毒软件信任白名单。</li>
         </ol>
       </div>
 
@@ -413,7 +413,7 @@
         <div class="flex items-center justify-between mb-3">
           <h4 class="font-bold text-sm text-slate-100 flex items-center gap-2">
             <FolderCog class="w-4 h-4 text-sky-400" />
-            <span>自定义非 Steam 目录补丁注入</span>
+            <span>自定义目录联机补丁注入</span>
           </h4>
           <button @click="showCustomDirModal = false" class="text-slate-400 hover:text-slate-200 text-xs">关闭</button>
         </div>
@@ -438,22 +438,24 @@
           <input
             v-model.number="patchAppIdInput"
             type="number"
-            placeholder="输入游戏真实 AppID (默认 480)"
+            placeholder="输入游戏真实 AppID (如 4704690)"
             class="w-56 bg-slate-950/60 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-200 font-mono"
           />
           <button
             @click="handleApplyCustomPatch"
-            :disabled="!targetDir || actionLoading"
-            class="px-5 py-2 theme-btn-primary text-xs font-bold rounded-xl cursor-pointer disabled:opacity-50"
+            :disabled="!targetDir || !patchAppIdInput || actionLoading"
+            class="px-5 py-2 theme-btn-primary text-xs font-bold rounded-xl cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
           >
-            注入补丁
+            <Download class="w-3.5 h-3.5" />
+            <span>自动下载并注入补丁</span>
           </button>
           <button
             @click="handleRestoreOriginalPatch"
             :disabled="!targetDir || actionLoading"
-            class="px-5 py-2 bg-slate-800 hover:bg-rose-900/60 text-slate-300 text-xs font-semibold rounded-xl cursor-pointer disabled:opacity-50"
+            class="px-5 py-2 bg-slate-800 hover:bg-rose-900/60 text-slate-300 text-xs font-semibold rounded-xl cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
           >
-            还原原版
+            <RotateCcw class="w-3.5 h-3.5" />
+            <span>还原原版</span>
           </button>
         </div>
       </div>
@@ -571,20 +573,21 @@
 
                 <!-- 底部操作按钮条 (📥 安装联机补丁 + ↩️ 还原原版 + 📁 打开目录) -->
                 <div class="flex items-center gap-2 pt-3 border-t border-white/10">
-                  <!-- 安装联机补丁按钮 -->
+                  <!-- 安装联机补丁按钮 (自动从 online-fix.me 下载并解压) -->
                   <button
-                    @click="handleInstallPatchForGame(game)"
-                    :disabled="actionLoading"
+                    @click="handleInstallOnlineFixWebPatch(game)"
+                    :disabled="downloadingAppId === game.appId || actionLoading"
                     class="flex-1 py-2.5 px-2.5 theme-btn-primary text-slate-950 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
                   >
-                    <Download class="w-3.5 h-3.5" />
-                    <span>{{ game.isPatched ? '重新安装' : '安装联机补丁' }}</span>
+                    <RotateCw v-if="downloadingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
+                    <Download v-else class="w-3.5 h-3.5" />
+                    <span>{{ downloadingAppId === game.appId ? '下载安装中...' : (game.isPatched ? '重新安装' : '安装联机补丁') }}</span>
                   </button>
 
                   <!-- 还原原版按钮 -->
                   <button
                     @click="handleRestorePatchForGame(game)"
-                    :disabled="actionLoading || (!game.isPatched && !game.hasBackup)"
+                    :disabled="downloadingAppId === game.appId || actionLoading || (!game.isPatched && !game.hasBackup)"
                     class="py-2.5 px-3 bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-200 border border-white/10 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
                     title="还原原始 DLL 文件"
                   >
@@ -703,9 +706,9 @@
           <div class="p-4 rounded-2xl bg-slate-950/60 border border-white/10 space-y-2">
             <h4 class="text-sm font-bold text-amber-400 flex items-center gap-2">
               <Wrench class="w-4 h-4" />
-              <span>4. 修复报错 (Steamless 解密脱壳)</span>
+              <span>4. Online-Fix 补丁自动安装</span>
             </h4>
-            <p>很多 Steam 游戏的主程序存在 SteamStub DRM 加密壳，启动时若提示 <code>Application load error 3:0000065432</code> 或闪退，点击「修复报错」即可自动脱壳解密并替换，完美解决启动报错！</p>
+            <p>对接著名的 <code>online-fix.me</code> 联机补丁库，精准匹配游戏真实 AppID，自动抓取高速下载源，并以 <code>online-fix.me</code> 密码解压部署 DLL 与配置文件，免去繁杂的手动寻找与下载！</p>
           </div>
         </div>
 
@@ -816,6 +819,7 @@ const isLaunchGamesCollapsed = ref(false);
 const isPatchGamesCollapsed = ref(false);
 
 const launchingAppId = ref<number | null>(null);
+const downloadingAppId = ref<number | null>(null);
 
 // 修复报错 Steamless Modal
 const showRepairModal = ref(false);
@@ -916,23 +920,29 @@ const confirmExecuteRepair = async () => {
   }
 };
 
-// 联机补丁模式：为单款游戏安装 Online-Fix 补丁
-const handleInstallPatchForGame = async (game: LocalInstalledGame) => {
-  actionLoading.value = true;
+// 联机补丁模式：从 online-fix.me 自动检索下载并解压安装补丁
+const handleInstallOnlineFixWebPatch = async (game: LocalInstalledGame) => {
+  downloadingAppId.value = game.appId;
   try {
-    emit('notify', `正在为《${game.name}》部署 Online-Fix 联机补丁...`, 'info');
-    const res = await window.electronAPI.applySpacewarFix(game.fullInstallPath, game.appId);
+    emit('notify', `正在 online-fix.me 检索《${game.name}》(AppID: ${game.appId}) 联机补丁...`, 'info');
+    const res = await window.electronAPI.installOnlineFixFromWeb(
+      game.fullInstallPath,
+      game.appId,
+      game.name
+    );
+
     if (res.success) {
-      emit('notify', res.message, 'success');
+      emit('notify', res.message || `成功为《${game.name}》安装 online-fix.me 联机补丁！`, 'success');
       game.isPatched = true;
       game.hasBackup = true;
+      game.patchMode = 'spacewar';
     } else {
-      emit('notify', res.message, 'error');
+      emit('notify', res.message || '未在 online-fix.me 搜索到该游戏的联机补丁', 'warning');
     }
   } catch (e: any) {
-    emit('notify', `安装补丁失败: ${e.message}`, 'error');
+    emit('notify', `下载安装补丁失败: ${e.message}`, 'error');
   } finally {
-    actionLoading.value = false;
+    downloadingAppId.value = null;
   }
 };
 
@@ -946,6 +956,7 @@ const handleRestorePatchForGame = async (game: LocalInstalledGame) => {
       emit('notify', res.message, 'success');
       game.isPatched = false;
       game.hasBackup = false;
+      game.patchMode = 'none';
     } else {
       emit('notify', res.message, 'error');
     }
@@ -978,19 +989,20 @@ const handleSelectFolder = async () => {
 };
 
 const handleApplyCustomPatch = async () => {
-  if (!targetDir.value) {
-    emit('notify', '请先选择游戏目录', 'warning');
+  if (!targetDir.value || !patchAppIdInput.value) {
+    emit('notify', '请先指定游戏目录与 AppID', 'warning');
     return;
   }
   actionLoading.value = true;
   try {
-    const appId = Number(patchAppIdInput.value) || 480;
-    const res = await window.electronAPI.applySpacewarFix(targetDir.value, appId);
+    const appId = Number(patchAppIdInput.value);
+    emit('notify', `正在 online-fix.me 检索 AppID: ${appId} 补丁...`, 'info');
+    const res = await window.electronAPI.installOnlineFixFromWeb(targetDir.value, appId);
     if (res.success) {
       emit('notify', res.message, 'success');
       await handleRefreshLocalGames();
     } else {
-      emit('notify', res.message, 'error');
+      emit('notify', res.message || '未在 online-fix.me 搜索到该游戏的联机补丁', 'warning');
     }
   } catch (e: any) {
     emit('notify', `注入失败: ${e.message}`, 'error');

@@ -162,6 +162,14 @@ export function registerIpcHandlers() {
     return onlineFixService.restoreOriginalGame(dirPath);
   });
 
+  ipcMain.handle('onlinefix:search-patch', async (_, { appId, gameName }) => {
+    return await onlineFixService.searchOnlineFixPatch(appId, gameName);
+  });
+
+  ipcMain.handle('onlinefix:install-onlinefix-web', async (_, { gamePath, appId, gameName }) => {
+    return await onlineFixService.downloadAndInstallOnlineFixPatch(gamePath, appId, gameName);
+  });
+
   // 5. 商业版：公告通知与版本检测
   ipcMain.handle('app:check-notice', async () => {
     return await updateService.checkNotice();
