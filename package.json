@@ -6,7 +6,8 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build && electron-builder",
+    "build": "vite build && electron-builder",
+    "pack:win": "vite build && electron-builder --win",
     "preview": "vite preview",
     "server:dev": "npm --prefix server run dev",
     "server:build": "npm --prefix server run build",
@@ -48,12 +49,36 @@
     "vue-tsc": "^2.2.0"
   },
   "build": {
-    "appId": "com.steammaster.app",
+    "appId": "com.chunfengdu.app",
     "productName": "春风渡",
     "win": {
       "target": [
-        "dir"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "春风渡"
     },
     "files": [
       "dist/**/*",
@@ -64,6 +89,9 @@
         "from": "src/main/assets/opensteam",
         "to": "assets/opensteam"
       }
-    ]
+    ],
+    "directories": {
+      "output": "release"
+    }
   }
 }
