@@ -76,12 +76,6 @@
         </div>
 
         <div class="flex items-center gap-3 text-xs">
-          <span
-            v-if="steamInfo.steamBitness && steamInfo.steamBitness !== 'unknown'"
-            class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono text-[11px] border border-sky-500/30"
-          >
-            {{ steamInfo.steamBitness === 'x86' ? 'Steam: 32位 (x86)' : 'Steam: 64位 (x64)' }}
-          </span>
           <span class="text-slate-400">云端引擎:</span>
           <span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono text-[11px]">
             ☁️ 18万+ 实时云端库
