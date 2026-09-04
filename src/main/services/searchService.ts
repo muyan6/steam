@@ -3,7 +3,7 @@ import path from 'path';
 import https from 'https';
 import axios from 'axios';
 import { POPULAR_GAMES_DATABASE } from '../database/gamesData';
-import { SteamGame } from '../../types';
+import { SteamGame, SearchSourceId, SearchPaginationParams, SearchPaginationResult } from '../../types';
 import { APP_CONFIG } from '../../config/appConfig';
 
 export class SearchService {
@@ -11,61 +11,60 @@ export class SearchService {
   private localAllGames: { appid: number; name: string }[] | null = null;
   private readonly httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-  /**
-   * 综合检索：优先通过云端后端检索；如果离线则启用 Steam 官方 Store 直连检索 + 本地 18万+ 数据库
-   */
-  public async searchGames(query: string): Promise<SteamGame[]> {
-    const q = query.trim();
-    if (!q) {
-      return this.fallbackPopularGames;
-    }
+  private readonly sourceNames: Record<SearchSourceId, string> = {
+    steam_official: 'Steam官方API',
+    cloud_db: '云端18万+自建库',
+    steam_community: 'Steam社区搜索源',
+    hybrid: '全域智能聚合源'
+  };
 
-    // 1. 优先尝试从云端服务端接口检索
+  /**
+   * 多数据源分页综合检索
+   */
+  public async searchGamesPaged(params: SearchPaginationParams): Promise<SearchPaginationResult> {
+    const q = (params.query || '').trim();
+    const source: SearchSourceId = params.source || 'steam_official';
+    const page = Math.max(1, params.page || 1);
+    const pageSize = Math.max(1, Math.min(100, params.pageSize || 48));
+
+    // 1. 优先尝试从云端服务端检索
     try {
       const url = `${APP_CONFIG.API_BASE_URL}/api/games/search`;
       const response = await axios.get(url, {
-        params: { q, limit: 48 },
+        params: { q, source, page, pageSize },
         timeout: 2500
       });
 
-      if (response.data && response.data.success && Array.isArray(response.data.data) && response.data.data.length > 0) {
-        return response.data.data;
+      if (response.data && response.data.success && response.data.data) {
+        const d = response.data.data;
+        if (Array.isArray(d)) {
+          return {
+            items: d,
+            total: d.length,
+            page,
+            pageSize,
+            totalPages: Math.max(1, Math.ceil(d.length / pageSize)),
+            source,
+            sourceName: this.sourceNames[source]
+          };
+        } else if (d.items && Array.isArray(d.items)) {
+          return d;
+        }
       }
     } catch {
-      // 云端未启动或超时，平滑走直连与离线检索
+      // 云端未连接，平滑走本地多源离线/直连处理
     }
 
-    // 2. 直连 Steam 官方商店极速检索（支持所有最新中文游戏、冷门游戏及别名）
-    const isNumber = /^\d+$/.test(q);
-    if (!isNumber) {
-      try {
-        const steamUrl = 'https://store.steampowered.com/api/storesearch/';
-        const resp = await axios.get(steamUrl, {
-          params: { term: q, l: 'schinese', cc: 'CN' },
-          httpsAgent: this.httpsAgent,
-          timeout: 4000,
-          headers: { 'User-Agent': 'Mozilla/5.0 ChunFengDu/1.0' }
-        });
+    // 2. 本地直接按源处理
+    return this.fallbackSearchPaged(q, source, page, pageSize);
+  }
 
-        if (resp.data && Array.isArray(resp.data.items) && resp.data.items.length > 0) {
-          const onlineResults: SteamGame[] = resp.data.items.map((item: any) => ({
-            appId: item.id,
-            name: item.name,
-            nameZh: item.name,
-            headerUrl: item.tiny_image
-              ? item.tiny_image.replace(/capsule_sm_\d+\.jpg/, 'header.jpg')
-              : `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${item.id}/header.jpg`,
-            description: `Steam 官方商店应用 (AppID: ${item.id})`
-          }));
-          return onlineResults;
-        }
-      } catch {
-        // 网络请求异常，走本地离线库
-      }
-    }
-
-    // 3. 离线/服务未启动时的优雅降级（使用本地全量库与热门库）
-    return this.fallbackSearch(q);
+  /**
+   * 兼容旧版 searchGames
+   */
+  public async searchGames(query: string): Promise<SteamGame[]> {
+    const res = await this.searchGamesPaged({ query, pageSize: 48 });
+    return res.items;
   }
 
   /**
@@ -75,7 +74,8 @@ export class SearchService {
     if (this.localAllGames) return;
     const candidatePaths = [
       path.join(process.cwd(), 'server/data/steam_all_games.json'),
-      path.join(process.cwd(), 'data/steam_all_games.json')
+      path.join(process.cwd(), 'data/steam_all_games.json'),
+      path.join(__dirname, '../../../server/data/steam_all_games.json')
     ];
     for (const p of candidatePaths) {
       if (fs.existsSync(p)) {
@@ -88,18 +88,95 @@ export class SearchService {
   }
 
   /**
-   * 离线降级搜索逻辑
+   * 本地多源分页降级逻辑
    */
-  private fallbackSearch(q: string): SteamGame[] {
+  private async fallbackSearchPaged(
+    q: string,
+    source: SearchSourceId,
+    page: number,
+    pageSize: number
+  ): Promise<SearchPaginationResult> {
+    this.loadLocalAllGames();
     const queryLower = q.toLowerCase();
     const isNumber = /^\d+$/.test(queryLower);
-    const results: SteamGame[] = [];
+
+    // 模式 A：无关键词全量浏览（3000+ 页）
+    if (!q) {
+      if (this.localAllGames && this.localAllGames.length > 0) {
+        const total = this.localAllGames.length;
+        const start = (page - 1) * pageSize;
+        const slice = this.localAllGames.slice(start, start + pageSize);
+
+        const items: SteamGame[] = slice.map((item) => ({
+          appId: item.appid || (item as any).appId,
+          name: item.name,
+          nameZh: item.name,
+          headerUrl: `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${item.appid || (item as any).appId}/header.jpg`,
+          description: `Steam 官方收录应用 (AppID: ${item.appid || (item as any).appId})`
+        }));
+
+        return {
+          items,
+          total,
+          page,
+          pageSize,
+          totalPages: Math.ceil(total / pageSize),
+          source,
+          sourceName: this.sourceNames[source]
+        };
+      } else {
+        const total = this.fallbackPopularGames.length;
+        const start = (page - 1) * pageSize;
+        const items = this.fallbackPopularGames.slice(start, start + pageSize);
+        return {
+          items,
+          total,
+          page,
+          pageSize,
+          totalPages: Math.max(1, Math.ceil(total / pageSize)),
+          source,
+          sourceName: this.sourceNames[source]
+        };
+      }
+    }
+
+    // 模式 B：有关键词检索
+    const allResults: SteamGame[] = [];
     const seenIds = new Set<number>();
 
-    // 热门精修库
+    // 1. 若为 steam_official 源且非纯数字，先向 Steam 官方 Store 检索
+    if (source === 'steam_official' && !isNumber) {
+      try {
+        const steamUrl = 'https://store.steampowered.com/api/storesearch/';
+        const resp = await axios.get(steamUrl, {
+          params: { term: q, l: 'schinese', cc: 'CN' },
+          httpsAgent: this.httpsAgent,
+          timeout: 3500,
+          headers: { 'User-Agent': 'Mozilla/5.0 ChunFengDu/1.0' }
+        });
+
+        if (resp.data && Array.isArray(resp.data.items) && resp.data.items.length > 0) {
+          for (const item of resp.data.items) {
+            allResults.push({
+              appId: item.id,
+              name: item.name,
+              nameZh: item.name,
+              headerUrl: item.tiny_image
+                ? item.tiny_image.replace(/capsule_sm_\d+\.jpg/, 'header.jpg')
+                : `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${item.id}/header.jpg`,
+              description: `Steam 官方商店应用 (AppID: ${item.id})`
+            });
+            seenIds.add(item.id);
+          }
+        }
+      } catch {}
+    }
+
+    // 2. 热门精修库
     for (const game of this.fallbackPopularGames) {
+      if (seenIds.has(game.appId)) continue;
       if (isNumber && game.appId.toString().includes(queryLower)) {
-        results.push(game);
+        allResults.push(game);
         seenIds.add(game.appId);
         continue;
       }
@@ -109,21 +186,19 @@ export class SearchService {
       const matchPinyin = game.pinyin ? game.pinyin.toLowerCase().includes(queryLower) : false;
 
       if (matchName || matchZh || matchPinyin) {
-        results.push(game);
+        allResults.push(game);
         seenIds.add(game.appId);
       }
     }
 
-    // 本地 18万+ 库兜底
-    this.loadLocalAllGames();
-    if (this.localAllGames && results.length < 48) {
+    // 3. 本地 18万+ 库
+    if (this.localAllGames) {
       for (const item of this.localAllGames) {
-        if (results.length >= 48) break;
         const appId = item.appid || (item as any).appId;
         if (!appId || seenIds.has(appId)) continue;
 
         if (isNumber && appId.toString().includes(queryLower)) {
-          results.push({
+          allResults.push({
             appId,
             name: item.name,
             nameZh: item.name,
@@ -132,7 +207,7 @@ export class SearchService {
           });
           seenIds.add(appId);
         } else if (item.name && item.name.toLowerCase().includes(queryLower)) {
-          results.push({
+          allResults.push({
             appId,
             name: item.name,
             nameZh: item.name,
@@ -144,9 +219,9 @@ export class SearchService {
       }
     }
 
-    if (isNumber && results.length === 0) {
+    if (isNumber && allResults.length === 0) {
       const appId = parseInt(queryLower, 10);
-      results.push({
+      allResults.push({
         appId,
         name: `Steam App ${appId}`,
         nameZh: `Steam 应用 (AppID: ${appId})`,
@@ -155,8 +230,21 @@ export class SearchService {
       });
     }
 
-    return results;
+    const total = allResults.length;
+    const start = (page - 1) * pageSize;
+    const items = allResults.slice(start, start + pageSize);
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      source,
+      sourceName: this.sourceNames[source]
+    };
   }
 }
 
 export const searchService = new SearchService();
+

@@ -20,11 +20,39 @@ export interface SteamGame {
   bannerUrl?: string;
   headerUrl?: string;
   description?: string;
+  releaseDate?: string;
   depots?: { [depotId: number]: string }; // depotId -> key
   dlcs?: number[];
   installed?: boolean;
   unlocked?: boolean;
   type?: 'game' | 'dlc' | 'tool';
+}
+
+export type SearchSourceId = 'steam_official' | 'cloud_db' | 'steam_community' | 'hybrid';
+
+export interface SearchSourceConfig {
+  id: SearchSourceId;
+  name: string;
+  nameEn: string;
+  desc: string;
+  badge: string;
+}
+
+export interface SearchPaginationParams {
+  query?: string;
+  source?: SearchSourceId;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface SearchPaginationResult {
+  items: SteamGame[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  source: SearchSourceId;
+  sourceName: string;
 }
 
 export interface DepotInfo {

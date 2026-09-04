@@ -1,37 +1,89 @@
 <template>
   <div class="h-full flex flex-col p-5 xl:p-6 overflow-hidden">
     <!-- 顶部搜索栏与操作栏 -->
-    <div class="flex items-center gap-3 mb-4 shrink-0">
-      <div class="relative flex-1">
+    <div class="flex items-center gap-3 mb-3.5 shrink-0 flex-wrap">
+      <div class="relative flex-1 min-w-[280px]">
         <input
           v-model="searchQuery"
-          @input="handleSearch"
+          @keydown.enter="handleSearch(1)"
           type="text"
-          placeholder="输入游戏中文名、英文名、拼音缩写或 Steam AppID (如 2358720 / wukong / 后室)..."
-          class="w-full bg-slate-900/80 border border-white/10 rounded-2xl px-4 py-3 pl-11 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner backdrop-blur-md"
+          placeholder="输入游戏中文名、英文名、拼音缩写或 Steam AppID (如 BOMBANANA / 2358720 / wukong / 后室)..."
+          class="w-full bg-slate-900/80 border border-white/10 rounded-2xl px-4 py-2.5 pl-11 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner backdrop-blur-md"
         />
         <Search class="w-4.5 h-4.5 absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
         <button
           v-if="searchQuery"
-          @click="searchQuery = ''; handleSearch()"
+          @click="searchQuery = ''; handleSearch(1)"
           class="absolute right-3 top-3 text-slate-400 hover:text-slate-200 p-0.5 rounded-full hover:bg-slate-800 transition cursor-pointer"
         >
           <X class="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <button
-        @click="refreshData"
-        :disabled="loading"
-        class="px-4 py-3 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-2xl text-xs font-bold text-slate-200 transition flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
-      >
-        <RotateCw class="w-3.5 h-3.5 text-slate-300" :class="{ 'animate-spin': loading }" />
-        <span>刷新</span>
-      </button>
+      <!-- 搜索按钮与刷新按钮 -->
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          @click="handleSearch(1)"
+          :disabled="loading"
+          class="px-5 py-2.5 theme-btn-primary rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+        >
+          <Search class="w-3.5 h-3.5" />
+          <span>搜索</span>
+        </button>
+
+        <button
+          @click="refreshData"
+          :disabled="loading"
+          class="px-3.5 py-2.5 btn-soft-action rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+          title="刷新数据"
+        >
+          <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': loading }" />
+          <span>刷新</span>
+        </button>
+
+        <!-- 数据源切换下拉/指示器 -->
+        <div class="relative">
+          <button
+            @click="showSourceDropdown = !showSourceDropdown"
+            class="px-3.5 py-2.5 bg-slate-900/90 hover:bg-slate-800 border border-sky-500/30 text-sky-400 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
+            title="点击切换搜索数据源"
+          >
+            <Server class="w-3.5 h-3.5 text-sky-400" />
+            <span>{{ currentSourceConfig.name }}</span>
+            <ChevronDown class="w-3.5 h-3.5 text-slate-400 transition-transform" :class="{ 'rotate-180': showSourceDropdown }" />
+          </button>
+
+          <!-- 数据源切换下拉浮层 -->
+          <div
+            v-if="showSourceDropdown"
+            class="absolute right-0 top-full mt-2 w-64 bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div class="text-[11px] text-slate-400 px-2.5 py-1 font-semibold border-b border-white/5 mb-1">
+              选择搜索接口与数据引擎:
+            </div>
+            <button
+              v-for="src in searchSources"
+              :key="src.id"
+              @click="selectSource(src.id)"
+              class="w-full text-left p-2.5 rounded-xl transition flex items-center justify-between text-xs cursor-pointer group"
+              :class="currentSource === src.id ? 'bg-sky-500/15 border border-sky-500/30 text-sky-300 font-bold' : 'text-slate-300 hover:bg-white/5'"
+            >
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span>{{ src.name }}</span>
+                  <span v-if="src.id === 'cloud_db'" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">18万+</span>
+                </div>
+                <div class="text-[11px] text-slate-400 font-normal mt-0.5">{{ src.desc }}</div>
+              </div>
+              <Check v-if="currentSource === src.id" class="w-4 h-4 text-sky-400 shrink-0" />
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- 状态指示与快捷标签 -->
-    <div class="flex items-center justify-between mb-4 text-xs text-slate-400 shrink-0 flex-wrap gap-2">
+    <!-- 快捷标签与统计信息 -->
+    <div class="flex items-center justify-between mb-3 text-xs text-slate-400 shrink-0 flex-wrap gap-2">
       <div class="flex items-center gap-2 flex-wrap">
         <span class="flex items-center gap-1.5 text-slate-400 font-semibold text-xs">
           <Sparkles class="w-4 h-4 text-amber-500" />
@@ -40,22 +92,25 @@
         <button
           v-for="tag in quickTags"
           :key="tag"
-          @click="searchQuery = tag; handleSearch()"
-          class="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-slate-100 border border-white/10 transition duration-150 text-xs font-medium"
+          @click="searchQuery = tag; handleSearch(1)"
+          class="px-3 py-1 rounded-xl btn-soft-action transition text-xs font-medium cursor-pointer"
         >
           {{ tag }}
         </button>
       </div>
-      <div class="font-mono text-xs bg-slate-900/60 px-3 py-1.5 rounded-xl border border-white/10">
-        共匹配到 <span class="theme-text-accent font-bold">{{ games.length }}</span> 款游戏
+
+      <div class="flex items-center gap-2 text-xs font-mono">
+        <span class="bg-slate-900/80 px-3 py-1 rounded-xl border border-white/10 text-slate-300">
+          共 <strong class="theme-text-accent font-bold">{{ totalItems.toLocaleString() }}</strong> 款 · 第 <strong class="text-slate-100">{{ currentPage }}</strong> / {{ totalPages.toLocaleString() }} 页
+        </span>
       </div>
     </div>
 
     <!-- 游戏卡片网格列表 -->
-    <div class="flex-1 overflow-y-auto pr-1">
+    <div class="flex-1 overflow-y-auto pr-1 min-h-0">
       <div v-if="loading && games.length === 0" class="flex flex-col items-center justify-center h-64 text-slate-400">
         <RotateCw class="w-8 h-8 animate-spin theme-text-accent mb-3" />
-        <p class="text-sm">正在搜索 Steam 官方数据库与 18 万+ 云端端点...</p>
+        <p class="text-sm">正在从 {{ currentSourceConfig.name }} 检索游戏数据...</p>
       </div>
 
       <div v-else-if="games.length === 0" class="flex flex-col items-center justify-center h-72 text-slate-400 p-6">
@@ -69,26 +124,25 @@
             <Sparkles class="w-4 h-4 text-sky-400" />
             <span>检索小贴士</span>
           </div>
-          <p class="font-medium">Steam 官方应用库中超 90% 的应用以 <strong>英文原名</strong> 登记收录。</p>
-          <p class="mt-1 text-slate-300">建议尝试输入该游戏的 <strong>英文原名</strong> 或 <strong>纯数字 AppID</strong> 即可秒级匹配！</p>
+          <p class="font-medium">当前接口未命中？您可以点击下方<strong>「切换下一个搜索接口」</strong>，或尝试输入<strong>英文原名</strong>与<strong>纯数字 AppID</strong> 秒级匹配！</p>
         </div>
 
         <p v-else class="text-xs text-slate-400 mt-2">
-          请检查拼写，或直接输入纯数字 Steam AppID 进行实时匹配
+          请检查拼写，或点击下方按钮切换搜索数据源重试
         </p>
       </div>
 
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pb-8">
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pb-4">
         <div
           v-for="game in games"
           :key="game.appId"
           class="game-card-surface flex flex-col group"
         >
-          <!-- 封面图 (流线暗角与微光过渡) -->
+          <!-- 封面图 (支持多 CDN 智能镜像平滑加载) -->
           <div class="relative w-full aspect-[460/215] bg-slate-950 overflow-hidden flex items-center justify-center shrink-0">
             <img
               v-if="!failedImgs.has(game.appId)"
-              :src="game.headerUrl || `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${game.appId}/header.jpg`"
+              :src="game.headerUrl || getGameCdnUrl(game.appId, 0)"
               :alt="game.name"
               class="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out"
               loading="lazy"
@@ -126,24 +180,24 @@
           <!-- 内容信息与操作栏 -->
           <div class="p-4 flex-1 flex flex-col justify-between gap-3">
             <div>
-              <h3 class="font-bold text-slate-100 text-sm line-clamp-1 group-hover:theme-text-accent transition duration-150">
+              <h3 class="font-bold text-slate-100 text-sm line-clamp-1 group-hover:theme-text-accent transition duration-150" :title="game.nameZh || game.name">
                 {{ game.nameZh || game.name }}
               </h3>
-              <p class="text-xs text-slate-400 line-clamp-1 mb-1 font-mono">
+              <p class="text-xs text-slate-400 line-clamp-1 mb-1 font-mono" :title="game.name">
                 {{ game.name }}
               </p>
-              <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed mb-1">
+              <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed mb-1" :title="game.description">
                 {{ game.description || 'Steam 官方收录应用' }}
               </p>
             </div>
 
-            <!-- 操作按钮 -->
+            <!-- 操作按钮条 -->
             <div class="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
               <button
                 v-if="!unlockedAppIds.includes(game.appId)"
                 @click="unlockGame(game)"
                 :disabled="unlockingId === game.appId"
-                class="flex-1 py-2.5 theme-btn-primary disabled:opacity-50 text-xs font-bold rounded-xl shadow-sm transition flex items-center justify-center gap-1.5"
+                class="flex-1 py-2.5 theme-btn-primary disabled:opacity-50 text-xs font-bold rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RotateCw v-if="unlockingId === game.appId" class="w-4 h-4 animate-spin" />
                 <PlusCircle v-else class="w-4 h-4" />
@@ -154,7 +208,7 @@
                 <a
                   :href="`steam://install/${game.appId}`"
                   title="在 Steam 中启动直接下载"
-                  class="flex-1 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-1.5"
+                  class="flex-1 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download class="w-4 h-4" />
                   <span>Steam 下载</span>
@@ -163,7 +217,7 @@
                 <button
                   @click="removeGame(game.appId)"
                   title="从入库规则中移除"
-                  class="px-3.5 py-2.5 btn-soft-action hover:bg-rose-900/60 hover:border-rose-500/40 text-slate-400 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center justify-center"
+                  class="px-3.5 py-2.5 btn-soft-action hover:bg-rose-900/60 hover:border-rose-500/40 text-slate-400 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center justify-center cursor-pointer"
                 >
                   <Trash2 class="w-4 h-4" />
                 </button>
@@ -182,11 +236,108 @@
         </div>
       </div>
     </div>
+
+    <!-- 底部区域：全量分页器 + 1:1 换源指引栏 -->
+    <div class="mt-3 pt-3 border-t border-white/10 shrink-0 space-y-3">
+      <!-- 1. 全量分页控制器 (支持 3000+ 页快速跳转与翻页) -->
+      <div v-if="totalPages > 1" class="flex items-center justify-between gap-3 flex-wrap text-xs">
+        <div class="flex items-center gap-1.5">
+          <button
+            @click="goToPage(1)"
+            :disabled="currentPage === 1 || loading"
+            class="px-3 py-1.5 rounded-xl btn-soft-action text-xs disabled:opacity-40 cursor-pointer font-medium"
+            title="首页"
+          >
+            首页
+          </button>
+          <button
+            @click="goToPage(currentPage - 1)"
+            :disabled="currentPage === 1 || loading"
+            class="px-3 py-1.5 rounded-xl btn-soft-action text-xs disabled:opacity-40 cursor-pointer flex items-center gap-1 font-medium"
+          >
+            <ChevronLeft class="w-3.5 h-3.5" />
+            <span>上一页</span>
+          </button>
+
+          <!-- 快捷数字页码 -->
+          <div class="hidden sm:flex items-center gap-1">
+            <button
+              v-for="p in visiblePages"
+              :key="p"
+              @click="goToPage(p)"
+              class="w-7 h-7 rounded-lg text-xs font-mono font-bold transition flex items-center justify-center cursor-pointer"
+              :class="currentPage === p ? 'theme-btn-primary shadow-sm' : 'btn-soft-action text-slate-300'"
+            >
+              {{ p }}
+            </button>
+          </div>
+
+          <button
+            @click="goToPage(currentPage + 1)"
+            :disabled="currentPage === totalPages || loading"
+            class="px-3 py-1.5 rounded-xl btn-soft-action text-xs disabled:opacity-40 cursor-pointer flex items-center gap-1 font-medium"
+          >
+            <span>下一页</span>
+            <ChevronRight class="w-3.5 h-3.5" />
+          </button>
+          <button
+            @click="goToPage(totalPages)"
+            :disabled="currentPage === totalPages || loading"
+            class="px-3 py-1.5 rounded-xl btn-soft-action text-xs disabled:opacity-40 cursor-pointer font-medium"
+            title="末页"
+          >
+            末页 ({{ totalPages.toLocaleString() }})
+          </button>
+        </div>
+
+        <!-- 页面直达跳转 -->
+        <div class="flex items-center gap-2">
+          <span class="text-slate-400">跳至</span>
+          <input
+            v-model.number="jumpPageInput"
+            @keydown.enter="handleJumpPage"
+            type="number"
+            :min="1"
+            :max="totalPages"
+            placeholder="页码"
+            class="w-16 bg-slate-900/90 border border-white/10 rounded-xl px-2 py-1 text-center text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-400"
+          />
+          <span class="text-slate-400">页</span>
+          <button
+            @click="handleJumpPage"
+            class="px-3 py-1 rounded-xl btn-soft-action text-xs font-bold hover:theme-text-accent cursor-pointer"
+          >
+            跳转
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. 1:1 换源提示条与切换按钮 (深度对齐参考界面) -->
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-1.5 px-4 bg-slate-900/60 rounded-2xl border border-white/5">
+        <div class="flex items-center gap-2 text-center">
+          <Info class="w-4 h-4 text-sky-400 shrink-0" />
+          <span>
+            当前使用 <strong class="text-sky-400 font-bold font-mono">{{ currentSourceConfig.name }}</strong>
+            <span class="mx-1 text-slate-500">|</span>
+            对当前搜索内容满意吗，不满意点击切换下一个搜索接口
+          </span>
+        </div>
+
+        <button
+          @click="handleSwitchNextSource"
+          :disabled="loading"
+          class="px-4 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 active:bg-sky-500/35 border border-sky-500/40 text-sky-300 font-bold text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
+        >
+          <ArrowLeftRight class="w-3.5 h-3.5 text-sky-400" />
+          <span>切换下一个搜索接口</span>
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { 
   Search, 
@@ -198,10 +349,15 @@ import {
   PlusCircle, 
   Download, 
   Trash2, 
-  ExternalLink 
+  ExternalLink,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Server,
+  Info,
+  ArrowLeftRight
 } from 'lucide-vue-next';
-import { SteamGame } from '../../types';
-import { APP_CONFIG } from '../../config/appConfig';
+import { SteamGame, SearchSourceId, SearchSourceConfig } from '../../types';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -214,18 +370,66 @@ const games = ref<SteamGame[]>([]);
 const unlockedAppIds = ref<number[]>([]);
 const loading = ref(false);
 const unlockingId = ref<number | null>(null);
-const failedImgs = reactive(new Set<number>());
-const retriedImgs = new Set<number>();
 
-const quickTags = ['后室', '黑神话', '艾尔登法环', '双人成行', '只狼', '博德之门', '幻兽帕鲁', '太空狼人杀'];
+// 数据源系统
+const searchSources: SearchSourceConfig[] = [
+  { id: 'steam_official', name: 'Steam官方API', nameEn: 'Steam Official', desc: '直连 Steam 官方 Store 实时搜索，涵盖最新上架与热门游戏', badge: '官方' },
+  { id: 'cloud_db', name: '云端18万+自建库', nameEn: 'Cloud 180K+ DB', desc: '全量 18.8 万款游戏秒级极速分页检索 (共 3,900+ 页)', badge: '18万+' },
+  { id: 'steam_community', name: 'Steam社区搜索源', nameEn: 'Steam Community', desc: '直连 Steam 社区应用与创意工坊检索', badge: '社区' },
+  { id: 'hybrid', name: '全域智能聚合源', nameEn: 'Hybrid Aggregate', desc: '多接口并行聚合检索，自动融合并去重', badge: '聚合' }
+];
+
+const currentSource = ref<SearchSourceId>('steam_official');
+const showSourceDropdown = ref(false);
+const currentSourceConfig = computed(() => {
+  return searchSources.find(s => s.id === currentSource.value) || searchSources[0];
+});
+
+// 分页系统
+const currentPage = ref(1);
+const pageSize = ref(48);
+const totalItems = ref(0);
+const totalPages = ref(1);
+const jumpPageInput = ref<number | null>(null);
+
+// 计算显示的快捷页码
+const visiblePages = computed(() => {
+  const current = currentPage.value;
+  const max = totalPages.value;
+  const delta = 2;
+  const range: number[] = [];
+  for (let i = Math.max(1, current - delta); i <= Math.min(max, current + delta); i++) {
+    range.push(i);
+  }
+  return range;
+});
+
+// 图片多 CDN 智能镜像加速与容错系统
+const failedImgs = reactive(new Set<number>());
+const imgCdnIndices = reactive(new Map<number, number>());
+
+const CDN_TEMPLATES = [
+  (id: number) => `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${id}/header.jpg`,
+  (id: number) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/header.jpg`,
+  (id: number) => `https://steamcdn-a.akamaihd.net/steam/apps/${id}/header.jpg`,
+  (id: number) => `https://cdn.steamstatic.com/steam/apps/${id}/header.jpg`
+];
+
+const getGameCdnUrl = (appId: number, cdnIndex = 0): string => {
+  const idx = cdnIndex % CDN_TEMPLATES.length;
+  return CDN_TEMPLATES[idx](appId);
+};
 
 const handleImgError = async (game: SteamGame) => {
-  if (retriedImgs.has(game.appId)) {
-    failedImgs.add(game.appId);
+  const currentIdx = imgCdnIndices.get(game.appId) || 0;
+  if (currentIdx + 1 < CDN_TEMPLATES.length) {
+    const nextIdx = currentIdx + 1;
+    imgCdnIndices.set(game.appId, nextIdx);
+    game.headerUrl = getGameCdnUrl(game.appId, nextIdx);
     return;
   }
-  retriedImgs.add(game.appId);
 
+  // 若所有 CDN 均失败，尝试一次 Steam 官方 API 动态获取
   try {
     const url = `https://store.steampowered.com/api/appdetails?appids=${game.appId}&l=schinese`;
     const resp = await axios.get(url, { timeout: 3500 });
@@ -234,18 +438,38 @@ const handleImgError = async (game: SteamGame) => {
       game.headerUrl = data.data.header_image;
       return;
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 
   failedImgs.add(game.appId);
 };
 
-const handleSearch = async () => {
+const quickTags = ['后室', '黑神话', '艾尔登法环', '双人成行', '只狼', '博德之门', '幻兽帕鲁', '太空狼人杀'];
+
+// 执行搜索
+const handleSearch = async (page = 1) => {
   loading.value = true;
+  currentPage.value = page;
+  showSourceDropdown.value = false;
+
   try {
-    const results = await window.electronAPI.searchGames(searchQuery.value);
-    games.value = results;
+    const res = await window.electronAPI.searchGames({
+      query: searchQuery.value,
+      source: currentSource.value,
+      page: currentPage.value,
+      pageSize: pageSize.value
+    });
+
+    if (res && res.items) {
+      games.value = res.items;
+      totalItems.value = res.total || res.items.length;
+      totalPages.value = res.totalPages || Math.max(1, Math.ceil(totalItems.value / pageSize.value));
+      currentPage.value = res.page || page;
+    } else if (Array.isArray(res)) {
+      games.value = res;
+      totalItems.value = res.length;
+      totalPages.value = 1;
+      currentPage.value = 1;
+    }
   } catch (e: any) {
     emit('notify', `搜索失败: ${e.message}`, 'error');
   } finally {
@@ -253,8 +477,38 @@ const handleSearch = async () => {
   }
 };
 
+// 换源
+const selectSource = (sourceId: SearchSourceId) => {
+  currentSource.value = sourceId;
+  showSourceDropdown.value = false;
+  emit('notify', `已切换至「${currentSourceConfig.value.name}」`, 'info');
+  handleSearch(1);
+};
+
+const handleSwitchNextSource = () => {
+  const currentIndex = searchSources.findIndex(s => s.id === currentSource.value);
+  const nextIndex = (currentIndex + 1) % searchSources.length;
+  currentSource.value = searchSources[nextIndex].id;
+  emit('notify', `已切换至「${searchSources[nextIndex].name}」！`, 'success');
+  handleSearch(1);
+};
+
+// 分页跳转
+const goToPage = (page: number) => {
+  if (page >= 1 && page <= totalPages.value && page !== currentPage.value) {
+    handleSearch(page);
+  }
+};
+
+const handleJumpPage = () => {
+  if (jumpPageInput.value && jumpPageInput.value >= 1 && jumpPageInput.value <= totalPages.value) {
+    goToPage(jumpPageInput.value);
+    jumpPageInput.value = null;
+  }
+};
+
 const refreshData = async () => {
-  await Promise.all([handleSearch(), loadUnlockedList()]);
+  await Promise.all([handleSearch(currentPage.value), loadUnlockedList()]);
   emit('refresh-status');
 };
 
@@ -268,7 +522,6 @@ const loadUnlockedList = async () => {
 };
 
 const unlockGame = async (game: SteamGame) => {
-  // 0. 前置严格授权检查：未激活时阻断入库，直接弹窗提示激活
   try {
     const lic = await window.electronAPI.getLicenseInfo();
     if (!lic || !lic.isActivated) {

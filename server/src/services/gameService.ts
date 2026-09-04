@@ -4,7 +4,7 @@ import axios from 'axios';
 import { pinyin } from 'pinyin-pro';
 import { POPULAR_GAMES_DATABASE } from '../data/popularGames.js';
 import { CHINESE_KEYWORD_MAP } from '../data/chineseDictionary.js';
-import { CompactGame, SteamGame } from '../types/index.js';
+import { CompactGame, SteamGame, SearchSourceId, SearchPaginationResult } from '../types/index.js';
 import { CONFIG } from '../config/index.js';
 
 export class GameService {
@@ -226,125 +226,204 @@ export class GameService {
     return Array.from(keywords);
   }
 
-  public async searchGames(query: string, limit: number = 48): Promise<SteamGame[]> {
-    const rawQ = query.trim();
-    if (!rawQ) {
-      return this.popularGames;
-    }
+  /**
+   * 多数据源综合分页检索系统
+   */
+  public async searchGamesPaged(params: {
+    query?: string;
+    source?: SearchSourceId;
+    page?: number;
+    pageSize?: number;
+  }): Promise<SearchPaginationResult> {
+    const rawQ = (params.query || '').trim();
+    const source: SearchSourceId = params.source || 'steam_official';
+    const page = Math.max(1, params.page || 1);
+    const pageSize = Math.max(1, Math.min(100, params.pageSize || 48));
 
     if (!this.isLoaded) {
       await this.loadAllGamesDatabase();
     }
 
-    const results: SteamGame[] = [];
-    const seenAppIds = new Set<number>();
-    const isNumber = /^\d+$/.test(rawQ);
+    const sourceNames: Record<SearchSourceId, string> = {
+      steam_official: 'Steam官方API',
+      cloud_db: '云端18万+自建库',
+      steam_community: 'Steam社区搜索源',
+      hybrid: '全域智能聚合源'
+    };
 
+    let allMatched: SteamGame[] = [];
+
+    // 模式 A：无关键词浏览全量库（3000+ 页海量宝库）
+    if (!rawQ) {
+      if (source === 'cloud_db' || source === 'hybrid') {
+        const total = this.allGames.length || this.popularGames.length;
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        const slice = this.allGames.length > 0 ? this.allGames.slice(start, end) : [];
+
+        const items: SteamGame[] = slice.map((g) => ({
+          appId: g.appId,
+          name: g.name,
+          nameZh: g.name,
+          headerUrl: `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${g.appId}/header.jpg`,
+          description: `Steam 官方收录应用 (AppID: ${g.appId})`
+        }));
+
+        return {
+          items: items.length > 0 ? items : this.popularGames.slice(0, pageSize),
+          total: total > 0 ? total : this.popularGames.length,
+          page,
+          pageSize,
+          totalPages: Math.ceil((total > 0 ? total : this.popularGames.length) / pageSize),
+          source,
+          sourceName: sourceNames[source]
+        };
+      } else {
+        // Steam 官方或社区源默认显示热门库
+        const total = this.popularGames.length;
+        const start = (page - 1) * pageSize;
+        const items = this.popularGames.slice(start, start + pageSize);
+
+        return {
+          items,
+          total,
+          page,
+          pageSize,
+          totalPages: Math.max(1, Math.ceil(total / pageSize)),
+          source,
+          sourceName: sourceNames[source]
+        };
+      }
+    }
+
+    // 模式 B：有关键词检索
+    const isNumber = /^\d+$/.test(rawQ);
+    const seenAppIds = new Set<number>();
     const searchKeywords = this.getExpandedKeywords(rawQ);
 
-    // 1. 优先在精修热门库中匹配
-    for (const game of this.popularGames) {
-      if (isNumber && game.appId.toString().includes(rawQ)) {
-        results.push(game);
-        seenAppIds.add(game.appId);
-        continue;
-      }
-
-      const gameNameLower = game.name.toLowerCase();
-      const gameZhLower = game.nameZh ? game.nameZh.toLowerCase() : '';
-      const gamePinyinLower = game.pinyin ? game.pinyin.toLowerCase() : '';
-
-      let matched = false;
-      for (const kw of searchKeywords) {
-        if (gameNameLower.includes(kw) || gameZhLower.includes(kw) || gamePinyinLower.includes(kw)) {
-          matched = true;
-          break;
+    // 1. Steam 官方 API 源
+    if (source === 'steam_official') {
+      const onlineResults = await this.searchSteamStoreOnlineAndPersist(rawQ);
+      for (const g of onlineResults) {
+        if (!seenAppIds.has(g.appId)) {
+          allMatched.push(g);
+          seenAppIds.add(g.appId);
         }
       }
 
-      if (matched) {
-        results.push(game);
-        seenAppIds.add(game.appId);
+      // 如果官方 API 结果较少，用中文缓存和热门库补充
+      for (const g of this.popularGames) {
+        if (isNumber && g.appId.toString().includes(rawQ) && !seenAppIds.has(g.appId)) {
+          allMatched.push(g);
+          seenAppIds.add(g.appId);
+        } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw))) && !seenAppIds.has(g.appId)) {
+          allMatched.push(g);
+          seenAppIds.add(g.appId);
+        }
       }
     }
-
-    // 2. 匹配持久化中文游戏数据库
-    for (const game of this.chineseGamesCache.values()) {
-      if (results.length >= limit) break;
-      if (seenAppIds.has(game.appId)) continue;
-
-      if (isNumber && game.appId.toString().includes(rawQ)) {
-        results.push(game);
-        seenAppIds.add(game.appId);
-        continue;
-      }
-
-      const gameNameLower = game.name.toLowerCase();
-      const gameZhLower = game.nameZh ? game.nameZh.toLowerCase() : '';
-      const gamePinyinLower = game.pinyin ? game.pinyin.toLowerCase() : '';
-
-      let matched = false;
-      for (const kw of searchKeywords) {
-        if (gameNameLower.includes(kw) || gameZhLower.includes(kw) || gamePinyinLower.includes(kw)) {
-          matched = true;
-          break;
+    // 2. 云端 18万+ 自建库源 (支持全量拼音与关键词模糊)
+    else if (source === 'cloud_db') {
+      // 热门与中文库优先
+      for (const g of this.popularGames) {
+        if (isNumber && g.appId.toString().includes(rawQ) && !seenAppIds.has(g.appId)) {
+          allMatched.push(g);
+          seenAppIds.add(g.appId);
+        } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw))) && !seenAppIds.has(g.appId)) {
+          allMatched.push(g);
+          seenAppIds.add(g.appId);
         }
       }
 
-      if (matched) {
-        results.push(game);
-        seenAppIds.add(game.appId);
+      for (const g of this.chineseGamesCache.values()) {
+        if (isNumber && g.appId.toString().includes(rawQ) && !seenAppIds.has(g.appId)) {
+          allMatched.push(g);
+          seenAppIds.add(g.appId);
+        } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw))) && !seenAppIds.has(g.appId)) {
+          allMatched.push(g);
+          seenAppIds.add(g.appId);
+        }
+      }
+
+      // 全量 18 万中检索
+      for (const g of this.allGames) {
+        if (seenAppIds.has(g.appId)) continue;
+        const nameLower = g.name.toLowerCase();
+        let matched = false;
+        if (isNumber) {
+          matched = g.appId.toString().includes(rawQ);
+        } else {
+          matched = searchKeywords.some((kw) => nameLower.includes(kw));
+        }
+
+        if (matched) {
+          allMatched.push({
+            appId: g.appId,
+            name: g.name,
+            nameZh: g.name,
+            headerUrl: `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${g.appId}/header.jpg`,
+            description: `Steam 官方收录应用 (AppID: ${g.appId})`
+          });
+          seenAppIds.add(g.appId);
+        }
       }
     }
+    // 3. Steam 社区源 / 4. 聚合源
+    else {
+      // 聚合热门 + 中文持久库 + 官方在线
+      const onlineResults = await this.searchSteamStoreOnlineAndPersist(rawQ);
+      for (const g of onlineResults) {
+        if (!seenAppIds.has(g.appId)) {
+          allMatched.push(g);
+          seenAppIds.add(g.appId);
+        }
+      }
 
-    // 3. 在全量 18万+ 数据库中检索
-    for (const game of this.allGames) {
-      if (results.length >= limit) break;
-      if (seenAppIds.has(game.appId)) continue;
-
-      const gameNameLower = game.name.toLowerCase();
-      let matched = false;
-
-      if (isNumber) {
-        matched = game.appId.toString().includes(rawQ);
-      } else {
-        for (const kw of searchKeywords) {
-          if (gameNameLower.includes(kw)) {
-            matched = true;
-            break;
+      for (const g of this.popularGames) {
+        if (!seenAppIds.has(g.appId)) {
+          if (isNumber && g.appId.toString().includes(rawQ)) {
+            allMatched.push(g);
+            seenAppIds.add(g.appId);
+          } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw)))) {
+            allMatched.push(g);
+            seenAppIds.add(g.appId);
           }
         }
       }
 
-      if (matched) {
-        // 如果已有缓存的高清图则使用，否则使用标准路径
-        const cachedImg = this.imageCache.get(game.appId);
-        results.push({
-          appId: game.appId,
-          name: game.name,
-          nameZh: game.name,
-          headerUrl: cachedImg || `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${game.appId}/header.jpg`,
-          description: `Steam 官方收录应用 (AppID: ${game.appId})`
-        });
-        seenAppIds.add(game.appId);
+      for (const g of this.chineseGamesCache.values()) {
+        if (!seenAppIds.has(g.appId)) {
+          if (isNumber && g.appId.toString().includes(rawQ)) {
+            allMatched.push(g);
+            seenAppIds.add(g.appId);
+          } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw)))) {
+            allMatched.push(g);
+            seenAppIds.add(g.appId);
+          }
+        }
       }
-    }
 
-    // 4. 如果是中文检索且命中条目为 0，尝试连线 Steam 在线接口补充并持久化
-    if (!isNumber && results.length === 0) {
-      const onlineResults = await this.searchSteamStoreOnlineAndPersist(rawQ);
-      for (const game of onlineResults) {
-        if (!seenAppIds.has(game.appId) && results.length < limit) {
-          results.push(game);
-          seenAppIds.add(game.appId);
+      for (const g of this.allGames) {
+        if (allMatched.length >= 200) break;
+        if (seenAppIds.has(g.appId)) continue;
+        const nameLower = g.name.toLowerCase();
+        if (isNumber ? g.appId.toString().includes(rawQ) : searchKeywords.some((kw) => nameLower.includes(kw))) {
+          allMatched.push({
+            appId: g.appId,
+            name: g.name,
+            nameZh: g.name,
+            headerUrl: `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${g.appId}/header.jpg`,
+            description: `Steam 官方收录应用 (AppID: ${g.appId})`
+          });
+          seenAppIds.add(g.appId);
         }
       }
     }
 
-    // 5. 如果是纯数字且库中完全未收录，自动生成兜底应用对象
-    if (isNumber && results.length === 0) {
+    // 纯数字未收录时的保底
+    if (isNumber && allMatched.length === 0) {
       const appId = parseInt(rawQ, 10);
-      results.push({
+      allMatched.push({
         appId,
         name: `Steam App ${appId}`,
         nameZh: `Steam 应用 (AppID: ${appId})`,
@@ -353,7 +432,24 @@ export class GameService {
       });
     }
 
-    return results;
+    const total = allMatched.length;
+    const start = (page - 1) * pageSize;
+    const items = allMatched.slice(start, start + pageSize);
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      source,
+      sourceName: sourceNames[source]
+    };
+  }
+
+  public async searchGames(query: string, limit: number = 48): Promise<SteamGame[]> {
+    const res = await this.searchGamesPaged({ query, pageSize: limit });
+    return res.items;
   }
 
   public getTotalGamesCount(): number {

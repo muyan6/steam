@@ -104,9 +104,12 @@ export function registerIpcHandlers() {
     return await manifestService.fetchAndInstallManifests(appId, dlcs || []);
   });
 
-  // 3. 搜索服务
-  ipcMain.handle('games:search', async (_, query: string) => {
-    return await searchService.searchGames(query);
+  // 3. 搜索服务 (支持换源与全量 18万+ 库分页检索)
+  ipcMain.handle('games:search', async (_, params: string | { query?: string; source?: any; page?: number; pageSize?: number }) => {
+    if (typeof params === 'string') {
+      return await searchService.searchGamesPaged({ query: params, pageSize: 48 });
+    }
+    return await searchService.searchGamesPaged(params || {});
   });
 
   // 4. 联机修复工具

@@ -50,8 +50,9 @@ export const electronAPI = {
   downloadManifest: (appId: number, dlcs?: number[]): Promise<any> =>
     ipcRenderer.invoke('ost:download-manifest', { appId, dlcs }),
 
-  // 搜索服务
-  searchGames: (query: string): Promise<SteamGame[]> => ipcRenderer.invoke('games:search', query),
+  // 搜索服务 (支持指定数据源与分页参数)
+  searchGames: (params: string | { query?: string; source?: any; page?: number; pageSize?: number }): Promise<any> =>
+    ipcRenderer.invoke('games:search', params),
 
   // 联机工具箱
   checkGameDir: (dirPath: string): Promise<OnlineFixStatus> => ipcRenderer.invoke('onlinefix:check-dir', dirPath),

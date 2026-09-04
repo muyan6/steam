@@ -13,9 +13,17 @@ export const getPopularGames = async (req: Request, res: Response) => {
 export const searchGames = async (req: Request, res: Response) => {
   try {
     const q = (req.query.q as string) || '';
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 48;
-    const results = await gameService.searchGames(q, limit);
-    res.json({ success: true, data: results });
+    const source = (req.query.source as any) || 'steam_official';
+    const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+    const pageSize = req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : (req.query.limit ? parseInt(req.query.limit as string, 10) : 48);
+
+    const result = await gameService.searchGamesPaged({
+      query: q,
+      source,
+      page,
+      pageSize
+    });
+    res.json({ success: true, data: result });
   } catch (e: any) {
     res.status(500).json({ success: false, message: e.message });
   }
