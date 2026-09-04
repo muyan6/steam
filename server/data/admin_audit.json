@@ -1,5 +1,55 @@
 [
   {
+    "id": "audit_1788496397510_qghzk",
+    "timestamp": "2026-09-04T04:33:17.510Z",
+    "action": "LOGIN_SUCCESS",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "userAgent": "",
+    "details": "管理员登录成功",
+    "success": true
+  },
+  {
+    "id": "audit_1788496397502_2uher",
+    "timestamp": "2026-09-04T04:33:17.502Z",
+    "action": "LOGIN_SUCCESS",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "userAgent": "",
+    "details": "管理员登录成功",
+    "success": true
+  },
+  {
+    "id": "audit_1788496397496_xz1yb",
+    "timestamp": "2026-09-04T04:33:17.496Z",
+    "action": "LOGIN_SUCCESS",
+    "operator": "ADMIN",
+    "ip": "127.0.0.1",
+    "userAgent": "",
+    "details": "管理员登录成功",
+    "success": true
+  },
+  {
+    "id": "audit_1788496397470_88dpv",
+    "timestamp": "2026-09-04T04:33:17.471Z",
+    "action": "LOGIN_SUCCESS",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "userAgent": "",
+    "details": "管理员登录成功",
+    "success": true
+  },
+  {
+    "id": "audit_1788496359921_3ent0",
+    "timestamp": "2026-09-04T04:32:39.921Z",
+    "action": "LOGIN_SUCCESS",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "userAgent": "test",
+    "details": "管理员登录成功",
+    "success": true
+  },
+  {
     "id": "audit_1788495592880_ahm1f",
     "timestamp": "2026-09-04T04:19:52.880Z",
     "action": "VERSION_PUSH_BROADCAST",

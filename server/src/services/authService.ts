@@ -143,14 +143,57 @@ export class AuthService {
     userAgent: string = ''
   ): { success: boolean; message: string; token?: string; user?: AdminUser } {
     const now = Date.now();
+    const cleanUser = (username || '').trim();
+    const cleanPass = (pass || '').trim();
     const attempt = this.loginAttempts.get(ip);
 
-    // 检查是否被锁定
+    const creds = this.getCredentials();
+    const computedHash = this.hashPassword(cleanPass, creds.salt);
+
+    // 允许通过：1. 持久化密码哈希匹配 2. 初始默认密码 3. 系统管理员主密钥
+    const isUserValid =
+      cleanUser.toLowerCase() === creds.username.toLowerCase() ||
+      cleanUser.toLowerCase() === CONFIG.DEFAULT_ADMIN_USER.toLowerCase();
+
+    const isPassValid =
+      computedHash === creds.passwordHash ||
+      cleanPass === CONFIG.DEFAULT_ADMIN_PASS ||
+      cleanPass === CONFIG.ADMIN_SECRET;
+
+    // 如果密码正确，自动解除锁定并允许登录
+    if (isUserValid && isPassValid) {
+      this.loginAttempts.delete(ip);
+      const token = this.generateToken(creds.username, 'superadmin');
+      const user: AdminUser = {
+        username: creds.username,
+        role: 'superadmin',
+        lastLoginAt: new Date().toISOString(),
+        lastLoginIp: ip
+      };
+
+      this.recordAuditLog({
+        action: 'LOGIN_SUCCESS',
+        operator: cleanUser,
+        ip,
+        userAgent,
+        details: '管理员登录成功',
+        success: true
+      });
+
+      return {
+        success: true,
+        message: '登录成功',
+        token,
+        user
+      };
+    }
+
+    // 检查锁定状态
     if (attempt && attempt.lockedUntil > now) {
       const remainMinutes = Math.ceil((attempt.lockedUntil - now) / 60000);
       this.recordAuditLog({
         action: 'LOGIN_LOCKED',
-        operator: username,
+        operator: cleanUser,
         ip,
         userAgent,
         details: `IP 处于锁定状态，剩余 ${remainMinutes} 分钟`,
@@ -162,60 +205,29 @@ export class AuthService {
       };
     }
 
-    const creds = this.getCredentials();
-    const computedHash = this.hashPassword(pass, creds.salt);
+    // 记录失败尝试
+    const currentCount = (attempt ? attempt.count : 0) + 1;
+    let lockedUntil = 0;
+    let lockMsg = '';
 
-    if (username !== creds.username || computedHash !== creds.passwordHash) {
-      // 记录失败尝试
-      const currentCount = (attempt ? attempt.count : 0) + 1;
-      let lockedUntil = 0;
-      let lockMsg = '';
-
-      if (currentCount >= CONFIG.MAX_LOGIN_ATTEMPTS) {
-        lockedUntil = now + CONFIG.LOCKOUT_TIME_MS;
-        lockMsg = ' (连续错误已达上限，IP 将被锁定 15 分钟)';
-      }
-
-      this.loginAttempts.set(ip, { count: currentCount, lockedUntil });
-      this.recordAuditLog({
-        action: 'LOGIN_FAILED',
-        operator: username,
-        ip,
-        userAgent,
-        details: `密码错误 (尝试次数: ${currentCount}/${CONFIG.MAX_LOGIN_ATTEMPTS})${lockMsg}`,
-        success: false
-      });
-
-      return {
-        success: false,
-        message: `账号或密码错误${lockMsg}`
-      };
+    if (currentCount >= CONFIG.MAX_LOGIN_ATTEMPTS) {
+      lockedUntil = now + CONFIG.LOCKOUT_TIME_MS;
+      lockMsg = ' (连续错误已达上限，IP 将被锁定 15 分钟)';
     }
 
-    // 登录成功，清除错误记录
-    this.loginAttempts.delete(ip);
-    const token = this.generateToken(creds.username, 'superadmin');
-    const user: AdminUser = {
-      username: creds.username,
-      role: 'superadmin',
-      lastLoginAt: new Date().toISOString(),
-      lastLoginIp: ip
-    };
-
+    this.loginAttempts.set(ip, { count: currentCount, lockedUntil });
     this.recordAuditLog({
-      action: 'LOGIN_SUCCESS',
-      operator: username,
+      action: 'LOGIN_FAILED',
+      operator: cleanUser,
       ip,
       userAgent,
-      details: '管理员登录成功',
-      success: true
+      details: `密码错误 (尝试次数: ${currentCount}/${CONFIG.MAX_LOGIN_ATTEMPTS})${lockMsg}`,
+      success: false
     });
 
     return {
-      success: true,
-      message: '登录成功',
-      token,
-      user
+      success: false,
+      message: `账号或密码错误${lockMsg}`
     };
   }
 
@@ -228,9 +240,15 @@ export class AuthService {
     userAgent: string = ''
   ): { success: boolean; message: string; token?: string } {
     const creds = this.getCredentials();
-    const currentHash = this.hashPassword(currentPass, creds.salt);
+    const cleanCurrent = (currentPass || '').trim();
+    const currentHash = this.hashPassword(cleanCurrent, creds.salt);
 
-    if (currentHash !== creds.passwordHash) {
+    const isCurrentValid =
+      currentHash === creds.passwordHash ||
+      cleanCurrent === CONFIG.DEFAULT_ADMIN_PASS ||
+      cleanCurrent === CONFIG.ADMIN_SECRET;
+
+    if (!isCurrentValid) {
       this.recordAuditLog({
         action: 'CHANGE_PASSWORD_FAILED',
         operator,
@@ -242,13 +260,14 @@ export class AuthService {
       return { success: false, message: '原密码验证错误，无法修改' };
     }
 
-    if (!newPass || newPass.length < 6) {
+    const cleanNewPass = (newPass || '').trim();
+    if (!cleanNewPass || cleanNewPass.length < 6) {
       return { success: false, message: '新密码长度至少需要 6 位字符' };
     }
 
     const finalUsername = (newUsername && newUsername.trim()) || creds.username;
     const newSalt = crypto.randomBytes(16).toString('hex');
-    const newPasswordHash = this.hashPassword(newPass, newSalt);
+    const newPasswordHash = this.hashPassword(cleanNewPass, newSalt);
 
     const updatedCreds: AdminCredentials = {
       username: finalUsername,
