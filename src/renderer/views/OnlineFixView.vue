@@ -1,51 +1,51 @@
 <template>
-  <div class="h-full flex flex-col p-6 overflow-y-auto">
+  <div class="h-full flex flex-col p-6 xl:p-8 overflow-y-auto">
     <!-- 标题与核心说明 -->
     <div class="mb-6">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-2xl theme-btn-primary flex items-center justify-center text-slate-950 font-black shadow-lg">
-          <Gamepad2 class="w-5 h-5 text-slate-950" />
+        <div class="w-12 h-12 rounded-2xl theme-btn-primary flex items-center justify-center text-slate-950 font-black shadow-lg">
+          <Gamepad2 class="w-6 h-6 text-slate-950" />
         </div>
         <div>
-          <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2.5">
+          <h2 class="text-2xl font-bold text-slate-100 flex items-center gap-3">
             <span>联机修复与生态中心</span>
-            <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-mono font-bold border border-emerald-500/20">
+            <span class="text-xs px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 font-mono font-bold border border-emerald-500/20">
               P2P 联机一键直通
             </span>
           </h2>
-          <p class="text-xs text-slate-400 mt-1">
+          <p class="text-sm text-slate-400 mt-1">
             采用官方底层拦截技术，告别繁琐的文件替换，一键以联机生态启动 Steam 即可畅玩全库 P2P 联机游戏
           </p>
         </div>
       </div>
     </div>
 
-    <div class="space-y-6 max-w-4xl pb-10">
+    <div class="space-y-6 w-full max-w-5xl xl:max-w-6xl pb-10">
       <!-- 🌟 方案一：全局 Steam -onlinefix 极速模式 (主推推荐方案 - 覆盖 99% 游戏) -->
-      <div class="theme-card-static rounded-3xl p-6 shadow-xl border relative overflow-hidden">
+      <div class="theme-card-static rounded-3xl p-6 xl:p-7 shadow-xl border relative overflow-hidden">
         <!-- 顶部主推标识与状态徽章 -->
         <div class="flex items-start justify-between gap-4 mb-4 flex-wrap">
           <div>
-            <div class="flex items-center gap-2.5">
-              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <span class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
+              <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
                 <span>方案一：Steam 全局 -onlinefix 极速联机</span>
               </h3>
-              <span class="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-sky-500/20 to-emerald-500/20 text-sky-400 text-[11px] font-bold border border-sky-500/30">
+              <span class="px-3 py-1 rounded-full bg-gradient-to-r from-sky-500/20 to-emerald-500/20 text-sky-400 text-xs font-bold border border-sky-500/30">
                 🌟 推荐方案 · 覆盖 99% 游戏
               </span>
             </div>
-            <p class="text-xs text-slate-300 mt-2 leading-relaxed max-w-2xl">
+            <p class="text-sm text-slate-300 mt-2.5 leading-relaxed max-w-2xl">
               直接通过 OpenSteamTool 内核的底层动态拦截机制拉起 Steam。<strong>无需寻找并修改任何游戏目录</strong>，所有支持 P2P 联机游戏的大厅与房间将动态伪装为 Spacewar (AppID 480)，可在 Steam 好友列表中直接右键“邀请加入游戏”！
             </p>
           </div>
 
           <!-- 当前运行状态指示 -->
-          <div class="flex items-center gap-2 flex-wrap">
-            <div class="px-3.5 py-2 rounded-2xl bg-slate-900/80 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <div class="px-4 py-2.5 rounded-2xl bg-slate-900/80 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2">
               <span class="text-slate-400">当前 Steam 状态:</span>
               <span v-if="steamInfo.isRunning" class="font-bold flex items-center gap-1.5" :class="steamInfo.globalOnlineFixEnabled ? 'text-emerald-400' : 'text-sky-400'">
-                <span class="w-2 h-2 rounded-full" :class="steamInfo.globalOnlineFixEnabled ? 'bg-emerald-400' : 'bg-sky-400'"></span>
+                <span class="w-2.5 h-2.5 rounded-full" :class="steamInfo.globalOnlineFixEnabled ? 'bg-emerald-400' : 'bg-sky-400'"></span>
                 <span>{{ steamInfo.globalOnlineFixEnabled ? '🟢 -onlinefix 联机模式' : '⚪ 原版纯净模式' }}</span>
               </span>
               <span v-else class="text-slate-500">⚪ 未运行</span>
@@ -54,16 +54,16 @@
             <!-- Spacewar 核心依赖状态 -->
             <button
               @click="!spacewarStatus.isInstalled ? (showSpacewarModal = true) : fetchSpacewarStatus(true)"
-              class="px-3.5 py-2 rounded-2xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2 transition cursor-pointer"
+              class="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2 transition cursor-pointer"
               :title="spacewarStatus.isInstalled ? 'Spacewar 已安装就绪，点击刷新检测' : '未检测到 Spacewar，点击查看安装向导'"
             >
               <span class="text-slate-400">Spacewar:</span>
               <span v-if="spacewarStatus.isInstalled" class="text-emerald-400 font-bold flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
                 <span>🟢 已就绪 (480)</span>
               </span>
               <span v-else class="text-amber-400 font-bold flex items-center gap-1.5 animate-pulse">
-                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
                 <span>🟡 未安装 (点击安装)</span>
               </span>
             </button>
@@ -71,60 +71,60 @@
         </div>
 
         <!-- 4 大核心优势网格 -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 my-4">
-          <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
-            <div class="flex items-center gap-2 text-sky-400 font-bold text-xs mb-1">
-              <Zap class="w-3.5 h-3.5" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 my-4">
+          <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
+            <div class="flex items-center gap-2 text-sky-400 font-bold text-sm mb-1.5">
+              <Zap class="w-4 h-4" />
               <span>全库通用免配置</span>
             </div>
-            <p class="text-[11px] text-slate-400 leading-snug">
+            <p class="text-xs text-slate-400 leading-relaxed">
               无需找游戏目录与DLL，幻兽帕鲁、后室、双人成行等全部即开即连。
             </p>
           </div>
 
-          <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
-            <div class="flex items-center gap-2 text-emerald-400 font-bold text-xs mb-1">
-              <ShieldCheck class="w-3.5 h-3.5" />
+          <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
+            <div class="flex items-center gap-2 text-emerald-400 font-bold text-sm mb-1.5">
+              <ShieldCheck class="w-4 h-4" />
               <span>0 损耗零改动</span>
             </div>
-            <p class="text-[11px] text-slate-400 leading-snug">
+            <p class="text-xs text-slate-400 leading-relaxed">
               不修改任何游戏本地文件与存档，彻底杜绝文件损坏或验证报错。
             </p>
           </div>
 
-          <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
-            <div class="flex items-center gap-2 text-purple-400 font-bold text-xs mb-1">
-              <Users class="w-3.5 h-3.5" />
+          <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
+            <div class="flex items-center gap-2 text-purple-400 font-bold text-sm mb-1.5">
+              <Users class="w-4 h-4" />
               <span>Steam 好友直邀</span>
             </div>
-            <p class="text-[11px] text-slate-400 leading-snug">
+            <p class="text-xs text-slate-400 leading-relaxed">
               进入游戏后直接按 Shift+Tab 或好友列表右键邀请好友秒进房间。
             </p>
           </div>
 
-          <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
-            <div class="flex items-center gap-2 text-amber-400 font-bold text-xs mb-1">
-              <RotateCcw class="w-3.5 h-3.5" />
+          <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col justify-between">
+            <div class="flex items-center gap-2 text-amber-400 font-bold text-sm mb-1.5">
+              <RotateCcw class="w-4 h-4" />
               <span>秒级无损还原</span>
             </div>
-            <p class="text-[11px] text-slate-400 leading-snug">
+            <p class="text-xs text-slate-400 leading-relaxed">
               仅在带参启动时生效，随时点击右侧按钮瞬间恢复官方纯净 Steam。
             </p>
           </div>
         </div>
 
         <!-- 极速联机简易 3 步指南 -->
-        <div class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 flex items-center justify-between text-xs text-slate-300 mb-5 flex-wrap gap-2">
+        <div class="p-4 rounded-2xl bg-slate-950/40 border border-white/10 flex items-center justify-between text-xs text-slate-300 mb-5 flex-wrap gap-2.5">
           <div class="flex items-center gap-2 font-bold text-slate-200">
             <Sparkles class="w-4 h-4 text-amber-500 shrink-0" />
             <span>极速联机 3 步走:</span>
           </div>
-          <div class="flex items-center gap-4 text-[11px] text-slate-400 flex-wrap">
-            <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded-full bg-sky-500/20 text-sky-400 font-mono text-center leading-4 font-bold">1</span> 点击下方按钮启动 Steam</span>
+          <div class="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
+            <span class="flex items-center gap-1.5"><span class="w-4.5 h-4.5 rounded-full bg-sky-500/20 text-sky-400 font-mono text-center leading-4 font-bold">1</span> 点击下方按钮启动 Steam</span>
             <span>➔</span>
-            <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded-full bg-sky-500/20 text-sky-400 font-mono text-center leading-4 font-bold">2</span> 正常启动已入库的游戏</span>
+            <span class="flex items-center gap-1.5"><span class="w-4.5 h-4.5 rounded-full bg-sky-500/20 text-sky-400 font-mono text-center leading-4 font-bold">2</span> 正常启动已入库的游戏</span>
             <span>➔</span>
-            <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded-full bg-sky-500/20 text-sky-400 font-mono text-center leading-4 font-bold">3</span> 呼出 Steam 好友列表直接右键邀请开黑</span>
+            <span class="flex items-center gap-1.5"><span class="w-4.5 h-4.5 rounded-full bg-sky-500/20 text-sky-400 font-mono text-center leading-4 font-bold">3</span> 呼出 Steam 好友列表直接右键邀请开黑</span>
           </div>
         </div>
 
@@ -133,48 +133,48 @@
           <button
             @click="handleLaunchGlobalOnlineFix"
             :disabled="actionLoading"
-            class="flex-1 py-3.5 theme-btn-primary text-xs font-bold rounded-2xl shadow-xl transition flex items-center justify-center gap-2 group"
+            class="flex-1 py-3.5 theme-btn-primary text-sm font-bold rounded-2xl shadow-xl transition flex items-center justify-center gap-2 group"
           >
-            <Rocket class="w-4 h-4 group-hover:animate-bounce" />
+            <Rocket class="w-5 h-5 group-hover:animate-bounce" />
             <span>一键以 -onlinefix 模式启动 Steam (推荐)</span>
           </button>
 
           <button
             @click="handleRestartNormalSteam"
             :disabled="actionLoading"
-            class="px-6 py-3.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-300 hover:text-slate-100 text-xs font-medium rounded-2xl transition flex items-center justify-center gap-2 shrink-0"
+            class="px-6 py-3.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-300 hover:text-slate-100 text-xs font-semibold rounded-2xl transition flex items-center justify-center gap-2 shrink-0"
           >
-            <RotateCcw class="w-3.5 h-3.5" />
+            <RotateCcw class="w-4 h-4" />
             <span>恢复官方原版 Steam</span>
           </button>
         </div>
       </div>
 
       <!-- 🛠️ 方案二：单游戏离线/局域网高级补丁 (高级备用方案 · 折叠式设计) -->
-      <div class="theme-card-static rounded-3xl p-5 shadow-lg border flex flex-col">
+      <div class="theme-card-static rounded-3xl p-5 xl:p-6 shadow-lg border flex flex-col">
         <!-- 折叠面板头部 -->
         <div 
           @click="showAdvancedPanel = !showAdvancedPanel"
           class="flex items-center justify-between cursor-pointer select-none group"
         >
           <div class="flex items-center gap-2.5">
-            <FolderCog class="w-4 h-4 text-slate-400 group-hover:theme-text-accent transition" />
-            <h3 class="text-sm font-bold text-slate-200 group-hover:text-slate-100 transition">
+            <FolderCog class="w-5 h-5 text-slate-400 group-hover:theme-text-accent transition" />
+            <h3 class="text-base font-bold text-slate-100 group-hover:theme-text-accent transition">
               方案二：单游戏文件级补丁注入器
             </h3>
-            <span class="px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-400 text-[10px] font-mono border border-white/10">
+            <span class="px-2.5 py-0.5 rounded-full bg-slate-800/80 text-slate-300 text-xs font-mono border border-white/10 font-semibold">
               备用方案 / 离线局域网
             </span>
           </div>
 
           <div class="flex items-center gap-2 text-xs text-slate-400 group-hover:text-slate-200 transition">
-            <span class="text-[11px]">{{ showAdvancedPanel ? '收起高级选项 ▴' : '展开高级选项 (非必需) ▾' }}</span>
+            <span class="font-medium">{{ showAdvancedPanel ? '收起高级选项 ▴' : '展开高级选项 (非必需) ▾' }}</span>
           </div>
         </div>
 
         <!-- 提示说明 -->
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          💡 <strong>日常联机无需使用此方案</strong>。仅在<strong>完全离线局域网</strong>（配合 Radmin VPN / 蒲公英）、或极少数老游戏需单独替换 <code class="text-slate-300 font-mono bg-slate-900/60 px-1 py-0.2 rounded">steam_api64.dll</code> 时作为备用。
+        <p class="text-xs text-slate-400 mt-2.5 leading-relaxed">
+          💡 <strong>日常联机无需使用此方案</strong>。仅在<strong>完全离线局域网</strong>（配合 Radmin VPN / 蒲公英）、或极少数老游戏需单独替换 <code class="text-slate-300 font-mono bg-slate-900/60 px-1.5 py-0.5 rounded">steam_api64.dll</code> 时作为备用。
         </p>
 
         <!-- 展开内容 -->
@@ -190,32 +190,32 @@
                 @input="checkDirectoryStatus"
                 type="text"
                 placeholder="例如: D:\SteamLibrary\steamapps\common\Palworld"
-                class="flex-1 bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 font-mono focus:outline-none focus:border-sky-400"
+                class="flex-1 bg-slate-900/90 border border-white/10 rounded-xl px-4 py-3 text-xs text-slate-100 placeholder-slate-500 font-mono focus:outline-none focus:border-sky-400"
               />
               <button
                 @click="handleSelectFolder"
-                class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-xs text-slate-200 transition font-medium flex items-center gap-1.5 shrink-0"
+                class="px-4 py-3 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-xs text-slate-200 transition font-semibold flex items-center gap-2 shrink-0"
               >
-                <FolderOpen class="w-3.5 h-3.5" />
+                <FolderOpen class="w-4 h-4" />
                 <span>浏览文件夹</span>
               </button>
             </div>
           </div>
 
           <!-- 目标检测状态卡片 -->
-          <div v-if="targetDir" class="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 text-xs">
+          <div v-if="targetDir" class="p-4 rounded-xl bg-slate-900/60 border border-white/10 text-xs">
             <div class="flex items-center justify-between">
               <span class="text-slate-400">当前目录状态:</span>
               <span v-if="dirStatus.isPatched" class="text-emerald-400 font-bold flex items-center gap-1.5">
-                <CheckCircle2 class="w-3.5 h-3.5 text-emerald-400" />
+                <CheckCircle2 class="w-4 h-4 text-emerald-400" />
                 <span>已注入 {{ dirStatus.mode === 'spacewar' ? 'Spacewar (480)' : 'Goldberg 局域网' }} 补丁</span>
               </span>
               <span v-else class="text-slate-400">
                 原版未注入状态 (安全)
               </span>
             </div>
-            <div v-if="dirStatus.hasBackup" class="text-sky-400 text-[11px] mt-1.5 flex items-center gap-1 font-medium">
-              <Check class="w-3 h-3 text-sky-400" />
+            <div v-if="dirStatus.hasBackup" class="text-sky-400 text-xs mt-1.5 flex items-center gap-1.5 font-medium">
+              <Check class="w-3.5 h-3.5 text-sky-400" />
               <span>已存在原版 steam_api64_o.dll 备份，随时支持一键无损还原</span>
             </div>
           </div>
@@ -225,30 +225,30 @@
             <!-- 模式 A: Spacewar 480 模式 -->
             <div
               @click="selectedMode = 'spacewar'"
-              class="p-4 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between"
+              class="p-4 xl:p-5 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col justify-between"
               :class="selectedMode === 'spacewar' 
-                ? 'bg-sky-500/10 border-sky-500/60 ring-1 ring-sky-500/50 shadow-md' 
+                ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md' 
                 : 'theme-card hover:border-sky-500/30'"
             >
               <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <span class="font-bold text-xs text-slate-100">模式 A: Spacewar (480) 官方大厅模式</span>
-                  <span v-if="selectedMode === 'spacewar'" class="text-sky-400 text-[11px] font-bold flex items-center gap-0.5">
-                    <Check class="w-3 h-3" /> 已选择
+                <div class="flex items-center justify-between mb-2">
+                  <span class="font-bold text-sm text-slate-100">模式 A: Spacewar (480) 官方大厅模式</span>
+                  <span v-if="selectedMode === 'spacewar'" class="text-sky-400 text-xs font-bold flex items-center gap-1">
+                    <Check class="w-3.5 h-3.5" /> 已选择
                   </span>
                 </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed mb-3">
+                <p class="text-xs text-slate-400 leading-relaxed mb-3">
                   替换本地 steam_api64.dll 并写入 OnlineFix.ini。好友在 Steam 中直接相互邀请直连。
                 </p>
               </div>
 
               <div>
-                <label class="block text-[11px] text-slate-400 mb-1 font-medium">该游戏真实 AppID (如 1623730):</label>
+                <label class="block text-xs text-slate-400 mb-1.5 font-medium">该游戏真实 AppID (如 1623730):</label>
                 <input
                   v-model.number="appIdInput"
                   type="number"
                   placeholder="请输入数字 AppID"
-                  class="w-full bg-slate-950/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-400 font-mono"
+                  class="w-full bg-slate-950/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-400 font-mono"
                   @click.stop
                 />
               </div>
@@ -257,30 +257,30 @@
             <!-- 模式 B: Goldberg 局域网模式 -->
             <div
               @click="selectedMode = 'goldberg'"
-              class="p-4 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between"
+              class="p-4 xl:p-5 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col justify-between"
               :class="selectedMode === 'goldberg' 
-                ? 'bg-emerald-500/10 border-emerald-500/60 ring-1 ring-emerald-500/50 shadow-md' 
+                ? 'bg-emerald-500/10 border-emerald-500/60 ring-2 ring-emerald-500/50 shadow-md' 
                 : 'theme-card hover:border-emerald-500/30'"
             >
               <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <span class="font-bold text-xs text-slate-100">模式 B: Goldberg 离线/局域网模式</span>
-                  <span v-if="selectedMode === 'goldberg'" class="text-emerald-400 text-[11px] font-bold flex items-center gap-0.5">
-                    <Check class="w-3 h-3" /> 已选择
+                <div class="flex items-center justify-between mb-2">
+                  <span class="font-bold text-sm text-slate-100">模式 B: Goldberg 离线/局域网模式</span>
+                  <span v-if="selectedMode === 'goldberg'" class="text-emerald-400 text-xs font-bold flex items-center gap-1">
+                    <Check class="w-3.5 h-3.5" /> 已选择
                   </span>
                 </div>
-                <p class="text-[11px] text-slate-400 leading-relaxed mb-3">
+                <p class="text-xs text-slate-400 leading-relaxed mb-3">
                   部署 Goldberg 离线模拟器与广播配置。适合离线局域网或 VPN 虚拟局域网对战。
                 </p>
               </div>
 
               <div>
-                <label class="block text-[11px] text-slate-400 mb-1 font-medium">玩家游戏内自定义昵称:</label>
+                <label class="block text-xs text-slate-400 mb-1.5 font-medium">玩家游戏内自定义昵称:</label>
                 <input
                   v-model="playerNameInput"
                   type="text"
-                  placeholder="如: Player_01"
-                  class="w-full bg-slate-950/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-400"
+                  placeholder="如: 春风渡玩家"
+                  class="w-full bg-slate-950/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-400"
                   @click.stop
                 />
               </div>
@@ -292,7 +292,7 @@
             <button
               @click="handleApplyFix"
               :disabled="!targetDir || actionLoading"
-              class="flex-1 py-2.5 theme-btn-primary disabled:opacity-50 text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-2"
+              class="flex-1 py-3 theme-btn-primary disabled:opacity-50 text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-2 cursor-pointer"
             >
               <Zap class="w-4 h-4" />
               <span>一键注入所选联机补丁</span>
@@ -301,9 +301,9 @@
             <button
               @click="handleRestoreOriginal"
               :disabled="!targetDir || actionLoading"
-              class="px-6 py-2.5 bg-slate-800/80 hover:bg-rose-900/60 border border-white/10 hover:border-rose-500/40 disabled:opacity-50 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
+              class="px-6 py-3 bg-slate-800/80 hover:bg-rose-900/60 border border-white/10 hover:border-rose-500/40 disabled:opacity-50 text-slate-300 hover:text-rose-200 text-xs font-semibold rounded-xl transition flex items-center gap-2 cursor-pointer"
             >
-              <RotateCcw class="w-3.5 h-3.5" />
+              <RotateCcw class="w-4 h-4" />
               <span>一键无损还原原版</span>
             </button>
           </div>
