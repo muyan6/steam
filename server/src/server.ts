@@ -529,12 +529,12 @@ app.get(['/', '/dashboard'], (req, res) => {
 
   <!-- ==================== 纯原生 JavaScript 逻辑 (0 外部依赖) ==================== -->
   <script>
-    let authToken = localStorage.getItem('steammaster_admin_token') || '';
-    let noticesCache = [];
-    let versionsCache = [];
+    var authToken = localStorage.getItem('steammaster_admin_token') || '';
+    var noticesCache = [];
+    var versionsCache = [];
 
     function getHeaders() {
-      const t = authToken || localStorage.getItem('steammaster_admin_token') || '';
+      var t = authToken || localStorage.getItem('steammaster_admin_token') || '';
       return {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + t,
@@ -544,9 +544,9 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     function showNotice(type, text) {
-      const box = document.getElementById('loginNotice');
-      const icon = document.getElementById('loginNoticeIcon');
-      const txt = document.getElementById('loginNoticeText');
+      var box = document.getElementById('loginNotice');
+      var icon = document.getElementById('loginNoticeIcon');
+      var txt = document.getElementById('loginNoticeText');
       if (!box || !icon || !txt) return;
       box.className = 'alert-box ' + (type === 'error' ? 'alert-error' : type === 'success' ? 'alert-success' : 'alert-info');
       icon.innerText = type === 'error' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️';
@@ -554,7 +554,7 @@ app.get(['/', '/dashboard'], (req, res) => {
       box.classList.remove('d-none');
       box.style.cssText = 'display: flex !important;';
       if (type === 'error') {
-        const loginBox = document.getElementById('loginBox');
+        var loginBox = document.getElementById('loginBox');
         if (loginBox) {
           loginBox.classList.remove('shake');
           void loginBox.offsetWidth; // 触发重绘
@@ -564,7 +564,7 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     function hideNotice() {
-      const box = document.getElementById('loginNotice');
+      var box = document.getElementById('loginNotice');
       if (box) {
         box.classList.add('d-none');
         box.style.cssText = 'display: none !important;';
@@ -573,9 +573,9 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     // 检查登录状态
     function checkAuth() {
-      const t = authToken || localStorage.getItem('steammaster_admin_token') || '';
-      const loginSec = document.getElementById('loginSection');
-      const dashSec = document.getElementById('dashboardSection');
+      var t = authToken || localStorage.getItem('steammaster_admin_token') || '';
+      var loginSec = document.getElementById('loginSection');
+      var dashSec = document.getElementById('dashboardSection');
 
       if (t) {
         authToken = t;
@@ -601,11 +601,11 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function handleLoginSubmit() {
-      const userEl = document.getElementById('loginUser');
-      const passEl = document.getElementById('loginPass');
-      const user = (userEl ? userEl.value : '').trim();
-      const pass = (passEl ? passEl.value : '').trim();
-      const btn = document.getElementById('loginBtn');
+      var userEl = document.getElementById('loginUser');
+      var passEl = document.getElementById('loginPass');
+      var user = (userEl ? userEl.value : '').trim();
+      var pass = (passEl ? passEl.value : '').trim();
+      var btn = document.getElementById('loginBtn');
 
       if (!user || !pass) {
         showNotice('error', '请输入管理员账号与密码');
@@ -619,13 +619,13 @@ app.get(['/', '/dashboard'], (req, res) => {
       }
 
       try {
-        const resp = await fetch('/api/auth/login', {
+        var resp = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: user, password: pass })
         });
         
-        let data;
+        var data;
         try {
           data = await resp.json();
         } catch (jsonErr) {
@@ -636,11 +636,11 @@ app.get(['/', '/dashboard'], (req, res) => {
           showNotice('success', '登录成功！正在进入管控大盘...');
           authToken = data.token;
           localStorage.setItem('steammaster_admin_token', authToken);
-          const adminEl = document.getElementById('adminUsername');
+          var adminEl = document.getElementById('adminUsername');
           if (adminEl) adminEl.innerText = (data.user && data.user.username) ? data.user.username : user;
           
-          const loginSec = document.getElementById('loginSection');
-          const dashSec = document.getElementById('dashboardSection');
+          var loginSec = document.getElementById('loginSection');
+          var dashSec = document.getElementById('dashboardSection');
           if (loginSec) {
             loginSec.classList.add('d-none');
             loginSec.style.cssText = 'display: none !important;';
@@ -671,8 +671,8 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     function switchTab(tabId, el) {
-      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => {
+      document.querySelectorAll('.tab-btn').forEach(function(btn) { btn.classList.remove('active'); });
+      document.querySelectorAll('.tab-content').forEach(function(c) {
         c.classList.add('d-none');
         c.style.cssText = 'display: none !important;';
       });
@@ -680,11 +680,11 @@ app.get(['/', '/dashboard'], (req, res) => {
       if (el) {
         el.classList.add('active');
       } else {
-        const found = document.querySelector('.tab-btn[onclick*="' + tabId + '"]');
+        var found = document.querySelector('.tab-btn[onclick*="' + tabId + '"]');
         if (found) found.classList.add('active');
       }
 
-      const target = document.getElementById('tab-' + tabId);
+      var target = document.getElementById('tab-' + tabId);
       if (target) {
         target.classList.remove('d-none');
         target.style.cssText = 'display: block !important;';
@@ -698,23 +698,23 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     async function loadStats() {
       try {
-        const resp = await fetch('/api/admin/stats', { headers: getHeaders() });
-        const res = await resp.json();
+        var resp = await fetch('/api/admin/stats', { headers: getHeaders() });
+        var res = await resp.json();
         if (res && res.success) {
-          const d = res.data;
-          const kKeys = document.getElementById('kpiKeys');
-          const kTokens = document.getElementById('kpiTokens');
-          const kGames = document.getElementById('kpiGames');
-          const kUptime = document.getElementById('kpiUptime');
-          const kMem = document.getElementById('kpiMem');
+          var d = res.data;
+          var kKeys = document.getElementById('kpiKeys');
+          var kTokens = document.getElementById('kpiTokens');
+          var kGames = document.getElementById('kpiGames');
+          var kUptime = document.getElementById('kpiUptime');
+          var kMem = document.getElementById('kpiMem');
 
           if (kKeys) kKeys.innerText = (d.depotKeysCount || 0).toLocaleString() + ' 条';
           if (kTokens) kTokens.innerText = (d.tokensCount || 0).toLocaleString() + ' 款';
           if (kGames) kGames.innerText = (d.gamesCount || 0).toLocaleString() + ' 款';
           
-          const uptime = d.uptimeSeconds || 0;
-          const h = Math.floor(uptime / 3600);
-          const m = Math.floor((uptime % 3600) / 60);
+          var uptime = d.uptimeSeconds || 0;
+          var h = Math.floor(uptime / 3600);
+          var m = Math.floor((uptime % 3600) / 60);
           if (kUptime) kUptime.innerText = h + 'h ' + m + 'm';
           if (kMem) kMem.innerText = '内存: ' + (d.memoryUsageMb || 0) + ' MB · ' + (d.nodeVersion || '');
         }
@@ -725,31 +725,31 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     async function loadNotices() {
       try {
-        const resp = await fetch('/api/admin/notices', { headers: getHeaders() });
-        const res = await resp.json();
-        const tbody = document.getElementById('noticeTableBody');
+        var resp = await fetch('/api/admin/notices', { headers: getHeaders() });
+        var res = await resp.json();
+        var tbody = document.getElementById('noticeTableBody');
         if (res && res.success && tbody) {
           noticesCache = res.data || [];
           if (noticesCache.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #64748b; padding: 24px;">暂无公告记录</td></tr>';
             return;
           }
-          tbody.innerHTML = noticesCache.map(n => \`
-            <tr>
-              <td><span class="badge \${n.enabled ? 'badge-green' : 'badge-gray'}">\${n.enabled ? '● 启用中' : '○ 已停用'}</span></td>
-              <td><strong style="color: #fff;">\${escapeHtml(n.title)}</strong></td>
-              <td><span class="badge badge-blue">\${n.type === 'popup' ? '弹窗 Modal' : '横幅 Banner'}</span></td>
-              <td><span class="badge badge-amber">\${n.level || 'info'}</span></td>
-              <td><strong>\${n.priority || 0}</strong></td>
-              <td style="font-family: monospace;">\${n.targetVersion || '*'}</td>
-              <td style="color: #64748b; font-size: 11px;">\${formatTime(n.updatedAt)}</td>
-              <td style="text-align: right;">
-                <button onclick="previewNotice('\${n.id}')" class="btn btn-secondary btn-sm" style="color: #38bdf8;">预览</button>
-                <button onclick="toggleNotice('\${n.id}', \${!n.enabled})" class="btn btn-secondary btn-sm">\${n.enabled ? '停用' : '启用'}</button>
-                <button onclick="deleteNotice('\${n.id}')" class="btn btn-danger btn-sm">删除</button>
-              </td>
-            </tr>
-          \`).join('');
+          tbody.innerHTML = noticesCache.map(function(n) {
+            return '<tr>' +
+              '<td><span class="badge ' + (n.enabled ? 'badge-green' : 'badge-gray') + '">' + (n.enabled ? '● 启用中' : '○ 已停用') + '</span></td>' +
+              '<td><strong style="color: #fff;">' + escapeHtml(n.title) + '</strong></td>' +
+              '<td><span class="badge badge-blue">' + (n.type === 'popup' ? '弹窗 Modal' : '横幅 Banner') + '</span></td>' +
+              '<td><span class="badge badge-amber">' + (n.level || 'info') + '</span></td>' +
+              '<td><strong>' + (n.priority || 0) + '</strong></td>' +
+              '<td style="font-family: monospace;">' + (n.targetVersion || '*') + '</td>' +
+              '<td style="color: #64748b; font-size: 11px;">' + formatTime(n.updatedAt) + '</td>' +
+              '<td style="text-align: right;">' +
+                '<button onclick="previewNotice(\'' + n.id + '\')" class="btn btn-secondary btn-sm" style="color: #38bdf8;">预览</button> ' +
+                '<button onclick="toggleNotice(\'' + n.id + '\', ' + (!n.enabled) + ')" class="btn btn-secondary btn-sm">' + (n.enabled ? '停用' : '启用') + '</button> ' +
+                '<button onclick="deleteNotice(\'' + n.id + '\')" class="btn btn-danger btn-sm">删除</button>' +
+              '</td>' +
+            '</tr>';
+          }).join('');
         }
       } catch (e) {
         console.warn('加载公告失败:', e);
@@ -758,29 +758,29 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     async function loadVersions() {
       try {
-        const resp = await fetch('/api/admin/versions', { headers: getHeaders() });
-        const res = await resp.json();
-        const tbody = document.getElementById('versionTableBody');
+        var resp = await fetch('/api/admin/versions', { headers: getHeaders() });
+        var res = await resp.json();
+        var tbody = document.getElementById('versionTableBody');
         if (res && res.success && tbody) {
           versionsCache = res.data || [];
           if (versionsCache.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #64748b; padding: 24px;">暂无版本发布记录</td></tr>';
             return;
           }
-          tbody.innerHTML = versionsCache.map(v => \`
-            <tr>
-              <td style="font-family: monospace; font-weight: 800; color: #fff;">v\${v.version}</td>
-              <td><span class="badge badge-blue">\${v.channel || 'stable'}</span></td>
-              <td style="color: #94a3b8;">\${v.releaseDate}</td>
-              <td><strong style="color: #cbd5e1;">\${escapeHtml(v.title)}</strong></td>
-              <td>\${v.forceUpdate ? '<span class="badge badge-rose">强更</span>' : '<span class="badge badge-gray">普通</span>'}</td>
-              <td><span class="badge \${v.enabled !== false ? 'badge-green' : 'badge-gray'}">\${v.enabled !== false ? '上架' : '下架'}</span></td>
-              <td style="text-align: right;">
-                <button onclick="quickPushVersion('\${v.version}')" class="btn btn-secondary btn-sm" style="color: #a855f7;">广播</button>
-                <button onclick="deleteVersion('\${v.version}')" class="btn btn-danger btn-sm">删除</button>
-              </td>
-            </tr>
-          \`).join('');
+          tbody.innerHTML = versionsCache.map(function(v) {
+            return '<tr>' +
+              '<td style="font-family: monospace; font-weight: 800; color: #fff;">v' + v.version + '</td>' +
+              '<td><span class="badge badge-blue">' + (v.channel || 'stable') + '</span></td>' +
+              '<td style="color: #94a3b8;">' + v.releaseDate + '</td>' +
+              '<td><strong style="color: #cbd5e1;">' + escapeHtml(v.title) + '</strong></td>' +
+              '<td>' + (v.forceUpdate ? '<span class="badge badge-rose">强更</span>' : '<span class="badge badge-gray">普通</span>') + '</td>' +
+              '<td><span class="badge ' + (v.enabled !== false ? 'badge-green' : 'badge-gray') + '">' + (v.enabled !== false ? '上架' : '下架') + '</span></td>' +
+              '<td style="text-align: right;">' +
+                '<button onclick="quickPushVersion(\'' + v.version + '\')" class="btn btn-secondary btn-sm" style="color: #a855f7;">广播</button> ' +
+                '<button onclick="deleteVersion(\'' + v.version + '\')" class="btn btn-danger btn-sm">删除</button>' +
+              '</td>' +
+            '</tr>';
+          }).join('');
         }
       } catch (e) {
         console.warn('加载版本失败:', e);
@@ -788,35 +788,34 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function searchKey() {
-      const q = (document.getElementById('keySearchInput').value || '').trim();
+      var q = (document.getElementById('keySearchInput').value || '').trim();
       if (!q) return;
-      const resBox = document.getElementById('keySearchResult');
-      const btn = document.getElementById('btnSearchKey');
+      var resBox = document.getElementById('keySearchResult');
+      var btn = document.getElementById('btnSearchKey');
       if (btn) btn.innerText = '检索中...';
       try {
-        const resp = await fetch('/api/admin/search/debug?q=' + encodeURIComponent(q), { headers: getHeaders() });
-        const res = await resp.json();
+        var resp = await fetch('/api/admin/search/debug?q=' + encodeURIComponent(q), { headers: getHeaders() });
+        var res = await resp.json();
         if (res && res.success) {
-          const d = res.data;
+          var d = res.data;
           resBox.style.display = 'block';
-          resBox.innerHTML = \`
-            <div style="margin-bottom: 12px; font-weight: bold; color: #fff;">🎯 检索结果: \${escapeHtml(q)}</div>
-            \${d.game ? \`
-              <div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.06);">
-                <strong style="color: #38bdf8;">\${escapeHtml(d.game.nameZh || d.game.name)}</strong> (\${escapeHtml(d.game.name)}) · AppID: \${d.game.appId}
-              </div>
-            \` : ''}
-            <div class="grid-2">
-              <div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
-                <div style="color: #94a3b8; font-size: 11px; margin-bottom: 6px;">AES-256 DepotKey 密钥</div>
-                <div style="font-family: monospace; color: #34d399; word-break: break-all;">\${escapeHtml(d.depotKey || '未命中分包密钥')}</div>
-              </div>
-              <div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
-                <div style="color: #94a3b8; font-size: 11px; margin-bottom: 6px;">PICS AccessToken 令牌</div>
-                <div style="font-family: monospace; color: #38bdf8; word-break: break-all;">\${escapeHtml(d.token || '公开分包 (无保护令牌需求)')}</div>
-              </div>
-            </div>
-          \`;
+          var html = '<div style="margin-bottom: 12px; font-weight: bold; color: #fff;">🎯 检索结果: ' + escapeHtml(q) + '</div>';
+          if (d.game) {
+            html += '<div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.06);">' +
+              '<strong style="color: #38bdf8;">' + escapeHtml(d.game.nameZh || d.game.name) + '</strong> (' + escapeHtml(d.game.name) + ') · AppID: ' + d.game.appId +
+            '</div>';
+          }
+          html += '<div class="grid-2">' +
+            '<div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">' +
+              '<div style="color: #94a3b8; font-size: 11px; margin-bottom: 6px;">AES-256 DepotKey 密钥</div>' +
+              '<div style="font-family: monospace; color: #34d399; word-break: break-all;">' + escapeHtml(d.depotKey || '未命中分包密钥') + '</div>' +
+            '</div>' +
+            '<div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">' +
+              '<div style="color: #94a3b8; font-size: 11px; margin-bottom: 6px;">PICS AccessToken 令牌</div>' +
+              '<div style="font-family: monospace; color: #38bdf8; word-break: break-all;">' + escapeHtml(d.token || '公开分包 (无保护令牌需求)') + '</div>' +
+            '</div>' +
+          '</div>';
+          resBox.innerHTML = html;
         }
       } catch (e) {
         alert('查询失败: ' + e.message);
@@ -827,22 +826,22 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     async function loadSources() {
       try {
-        const resp = await fetch('/api/sources');
-        const res = await resp.json();
-        const grid = document.getElementById('sourcesGrid');
-        if (res && res.success && res.data?.sources && grid) {
-          grid.innerHTML = res.data.sources.map(s => \`
-            <div class="card">
-              <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-                <strong style="color: #fff;">\${escapeHtml(s.name)}</strong>
-                <span class="badge badge-green">\${escapeHtml(s.status)}</span>
-              </div>
-              <p style="color: #94a3b8; font-size: 12px; margin-bottom: 10px;">\${escapeHtml(s.description)}</p>
-              <div style="font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">
-                来源: \${escapeHtml(s.author)} · 周期: \${escapeHtml(s.syncFrequency)}
-              </div>
-            </div>
-          \`).join('');
+        var resp = await fetch('/api/sources');
+        var res = await resp.json();
+        var grid = document.getElementById('sourcesGrid');
+        if (res && res.success && res.data && res.data.sources && grid) {
+          grid.innerHTML = res.data.sources.map(function(s) {
+            return '<div class="card">' +
+              '<div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">' +
+                '<strong style="color: #fff;">' + escapeHtml(s.name) + '</strong>' +
+                '<span class="badge badge-green">' + escapeHtml(s.status) + '</span>' +
+              '</div>' +
+              '<p style="color: #94a3b8; font-size: 12px; margin-bottom: 10px;">' + escapeHtml(s.description) + '</p>' +
+              '<div style="font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">' +
+                '来源: ' + escapeHtml(s.author) + ' · 周期: ' + escapeHtml(s.syncFrequency) +
+              '</div>' +
+            '</div>';
+          }).join('');
         }
       } catch (e) {
         console.warn('加载数据源失败:', e);
@@ -850,11 +849,11 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function triggerSyncAll() {
-      const btn = document.getElementById('btnSyncAll');
+      var btn = document.getElementById('btnSyncAll');
       if (btn) btn.innerHTML = '<span>⏳ 正在同步中...</span>';
       try {
-        const resp = await fetch('/api/admin/sync/all', { method: 'POST', headers: getHeaders() });
-        const res = await resp.json();
+        var resp = await fetch('/api/admin/sync/all', { method: 'POST', headers: getHeaders() });
+        var res = await resp.json();
         alert(res.message || '多源全量聚合同步完成！');
         loadStats();
       } catch (e) {
@@ -866,20 +865,20 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     async function loadAuditLogs() {
       try {
-        const resp = await fetch('/api/auth/audit-logs?limit=50', { headers: getHeaders() });
-        const res = await resp.json();
-        const tbody = document.getElementById('auditTableBody');
+        var resp = await fetch('/api/auth/audit-logs?limit=50', { headers: getHeaders() });
+        var res = await resp.json();
+        var tbody = document.getElementById('auditTableBody');
         if (res && res.success && res.data && tbody) {
-          tbody.innerHTML = res.data.map(l => \`
-            <tr style="font-size: 11px; font-family: monospace;">
-              <td style="color: #64748b;">\${formatTime(l.timestamp)}</td>
-              <td style="color: #38bdf8; font-weight: bold;">\${escapeHtml(l.action)}</td>
-              <td>\${escapeHtml(l.operator)}</td>
-              <td style="color: #64748b;">\${escapeHtml(l.ip)}</td>
-              <td style="font-family: inherit; color: #cbd5e1;">\${escapeHtml(l.details || '')}</td>
-              <td><span class="badge \${l.success ? 'badge-green' : 'badge-rose'}">\${l.success ? '成功' : '失败'}</span></td>
-            </tr>
-          \`).join('');
+          tbody.innerHTML = res.data.map(function(l) {
+            return '<tr style="font-size: 11px; font-family: monospace;">' +
+              '<td style="color: #64748b;">' + formatTime(l.timestamp) + '</td>' +
+              '<td style="color: #38bdf8; font-weight: bold;">' + escapeHtml(l.action) + '</td>' +
+              '<td>' + escapeHtml(l.operator) + '</td>' +
+              '<td style="color: #64748b;">' + escapeHtml(l.ip) + '</td>' +
+              '<td style="font-family: inherit; color: #cbd5e1;">' + escapeHtml(l.details || '') + '</td>' +
+              '<td><span class="badge ' + (l.success ? 'badge-green' : 'badge-rose') + '">' + (l.success ? '成功' : '失败') + '</span></td>' +
+            '</tr>';
+          }).join('');
         }
       } catch (e) {
         console.warn('加载审计日志失败:', e);
@@ -887,10 +886,10 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function handleChangePassword() {
-      const cur = (document.getElementById('curPass').value || '').trim();
-      const user = (document.getElementById('newUsername').value || '').trim();
-      const pass = (document.getElementById('newPass').value || '').trim();
-      const msg = document.getElementById('pwdMsg');
+      var cur = (document.getElementById('curPass').value || '').trim();
+      var user = (document.getElementById('newUsername').value || '').trim();
+      var pass = (document.getElementById('newPass').value || '').trim();
+      var msg = document.getElementById('pwdMsg');
 
       if (!cur || !pass) {
         msg.style.display = 'block';
@@ -900,12 +899,12 @@ app.get(['/', '/dashboard'], (req, res) => {
       }
 
       try {
-        const resp = await fetch('/api/auth/change-password', {
+        var resp = await fetch('/api/auth/change-password', {
           method: 'POST',
           headers: getHeaders(),
           body: JSON.stringify({ currentPassword: cur, newUsername: user, newPassword: pass })
         });
-        const res = await resp.json();
+        var res = await resp.json();
         msg.style.display = 'block';
         if (res && res.success) {
           msg.className = 'badge-green';
@@ -941,7 +940,7 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     function openPushModal() {
-      const latest = versionsCache[0]?.version || '1.0.0';
+      var latest = (versionsCache[0] && versionsCache[0].version) || '1.0.0';
       document.getElementById('pushVersion').value = latest;
       document.getElementById('pushTitle').value = '🚀 SteamMaster 发现全新版本 v' + latest;
       document.getElementById('pushContent').value = '全新版本已上线，建议立即升级体验最新功能！';
@@ -956,7 +955,7 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     function previewNotice(id) {
-      const n = noticesCache.find(x => x.id === id);
+      var n = noticesCache.find(function(x) { return x.id === id; });
       if (!n) return;
       document.getElementById('previewTitle').innerText = n.title;
       document.getElementById('previewContent').innerText = n.content;
@@ -968,28 +967,28 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function handleNoticeSubmit() {
-      const title = (document.getElementById('noticeTitle').value || '').trim();
-      const content = (document.getElementById('noticeContent').value || '').trim();
+      var title = (document.getElementById('noticeTitle').value || '').trim();
+      var content = (document.getElementById('noticeContent').value || '').trim();
       if (!title || !content) {
         alert('请填写公告标题与内容');
         return;
       }
-      const payload = {
-        title,
+      var payload = {
+        title: title,
         type: document.getElementById('noticeType').value,
         level: document.getElementById('noticeLevel').value,
         priority: parseInt(document.getElementById('noticePriority').value, 10) || 10,
         targetVersion: document.getElementById('noticeVersion').value || '*',
-        content,
+        content: content,
         enabled: true
       };
       try {
-        const resp = await fetch('/api/admin/notices', {
+        var resp = await fetch('/api/admin/notices', {
           method: 'POST',
           headers: getHeaders(),
           body: JSON.stringify(payload)
         });
-        const res = await resp.json();
+        var res = await resp.json();
         if (res && res.success) {
           closeModal('noticeModal');
           loadNotices();
@@ -1001,29 +1000,29 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function handleVersionSubmit() {
-      const ver = (document.getElementById('verNumber').value || '').trim();
-      const title = (document.getElementById('verTitle').value || '').trim();
+      var ver = (document.getElementById('verNumber').value || '').trim();
+      var title = (document.getElementById('verTitle').value || '').trim();
       if (!ver || !title) {
         alert('请填写版本号与更新标题');
         return;
       }
-      const changelog = document.getElementById('verChangelog').value.split('\n').map(s => s.trim()).filter(Boolean);
-      const payload = {
+      var changelog = document.getElementById('verChangelog').value.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+      var payload = {
         version: ver,
         releaseDate: document.getElementById('verDate').value,
-        title,
+        title: title,
         downloadUrl: document.getElementById('verUrl').value,
         forceUpdate: document.getElementById('verForce').checked,
-        changelog,
+        changelog: changelog,
         enabled: true
       };
       try {
-        const resp = await fetch('/api/admin/versions', {
+        var resp = await fetch('/api/admin/versions', {
           method: 'POST',
           headers: getHeaders(),
           body: JSON.stringify(payload)
         });
-        const res = await resp.json();
+        var res = await resp.json();
         if (res && res.success) {
           closeModal('versionModal');
           loadVersions();
@@ -1035,25 +1034,25 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function handlePushSubmit() {
-      const ver = (document.getElementById('pushVersion').value || '').trim();
-      const title = (document.getElementById('pushTitle').value || '').trim();
-      const content = (document.getElementById('pushContent').value || '').trim();
+      var ver = (document.getElementById('pushVersion').value || '').trim();
+      var title = (document.getElementById('pushTitle').value || '').trim();
+      var content = (document.getElementById('pushContent').value || '').trim();
       if (!ver || !title) {
         alert('请填写目标版本与推送标题');
         return;
       }
-      const payload = {
+      var payload = {
         version: ver,
-        title,
-        content
+        title: title,
+        content: content
       };
       try {
-        const resp = await fetch('/api/admin/versions/push', {
+        var resp = await fetch('/api/admin/versions/push', {
           method: 'POST',
           headers: getHeaders(),
           body: JSON.stringify(payload)
         });
-        const res = await resp.json();
+        var res = await resp.json();
         if (res && res.success) {
           closeModal('pushModal');
           alert('🎉 全网版本推送广播发起成功！所有在线客户端已接收。');
