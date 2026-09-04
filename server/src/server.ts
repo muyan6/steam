@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import cors from 'cors';
 import { CONFIG } from './config/index.js';
 import apiRouter from './routes/index.js';
@@ -10,6 +10,7 @@ import { sourceRegistryService } from './services/sourceRegistryService.js';
 import { noticeService } from './services/noticeService.js';
 import { versionService } from './services/versionService.js';
 import { authService } from './services/authService.js';
+import { ADMIN_JS } from './static/adminScript.js';
 
 const app = express();
 
@@ -527,26 +528,21 @@ app.get(['/', '/dashboard'], (req, res) => {
     </div>
   </div>
 
-  <!-- 管理控制台 JS (外部独立文件, 零 TypeScript 字符串转义冲突) -->
-  <script src="/admin.js"></script>
+  <!-- 管理控制台 JS (原生内联嵌入 + 独立路由双重保障, 零外部依赖) -->
+  <script>
+${ADMIN_JS}
+  </script>
 </body>
 </html>`;
 
   res.send(html);
 });
 
-// 静态服务: 管理控制台 JS (独立文件, 零 TS 模板字符串转义冲突)
+// 静态服务: 管理控制台 JS 路由 (直接返回编译内嵌脚本，无文件路径与 require 报错隐患)
 app.get('/admin.js', (req, res) => {
-  const path = require('path');
-  const fs = require('fs');
-  const adminJsPath = path.join(__dirname, '../src/static/admin.js');
-  if (!fs.existsSync(adminJsPath)) {
-    res.status(404).send('// admin.js not found');
-    return;
-  }
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.send(fs.readFileSync(adminJsPath, 'utf8'));
+  res.send(ADMIN_JS);
 });
 
 
