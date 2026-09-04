@@ -10,3 +10,8 @@
   git push origin main
   ```
 - 提交完成后向用户汇报提交摘要与 Commit ID。
+
+### 前后端同步修改与一体化协同规范 (Frontend & Backend Synchronization)
+- **同步新增与对齐**：前端（Vue/Electron 客户端）新增功能时，后端（Express/Server API/Dashboard）必须**同步新增**配套的接口、字段和数据支持，拒绝单端孤立或脱节开发。
+- **严禁无序随意改动**：保持接口命名、参数与 TypeScript 类型严密一致，确保前后端系统更加协调、适配且高内聚。
+- **双端构建验证**：修改后必须同时通过前端 (`npx vite build`) 和后端 (`npm run build` in `server/`) 编译。
