@@ -1,25 +1,5 @@
 [
   {
-    "version": "1.0.1",
-    "channel": "stable",
-    "releaseDate": "2026-09-04",
-    "title": "SteamMaster 体验更新 v1.0.1",
-    "changelog": [
-      "优化云端秒搜",
-      "新增管理控制台鉴权与公告推送中心"
-    ],
-    "downloadUrl": "https://gitee.com/muyan6/steam/releases",
-    "downloadUrlBackup": "",
-    "forceUpdate": false,
-    "minSupportedVersion": "1.0.0",
-    "fileSize": "",
-    "sha256": "",
-    "enabled": true,
-    "downloadCount": 0,
-    "createdAt": "2026-09-04T04:19:52.868Z",
-    "updatedAt": "2026-09-04T04:19:52.868Z"
-  },
-  {
     "version": "1.0.0",
     "channel": "stable",
     "releaseDate": "2026-09-01",
@@ -35,7 +15,7 @@
     "minSupportedVersion": "1.0.0",
     "enabled": true,
     "downloadCount": 0,
-    "createdAt": "2026-09-04T04:19:52.483Z",
-    "updatedAt": "2026-09-04T04:19:52.483Z"
+    "createdAt": "2026-09-01T00:00:00.000Z",
+    "updatedAt": "2026-09-01T00:00:00.000Z"
   }
 ]

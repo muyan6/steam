@@ -1,14 +1,14 @@
 {
-  "id": "notice_1788495592854_tckh",
-  "title": "自动化测试公告 001",
-  "content": "这是一条自动化测试公告正文",
+  "id": "notice_welcome_01",
+  "title": "🎉 欢迎使用 SteamMaster 商业版！",
+  "content": "SteamMaster 商业版云端引擎已正式上线！\n• 支持 18 万+ 游戏一键秒搜与 28 万+ DepotKey 实时匹配。\n• 支持 Spacewar 与 Goldberg 联机模式修复。\n• 云端自动同步 24 小时保持最新。",
   "type": "popup",
   "level": "success",
-  "priority": 999,
+  "priority": 100,
   "popupOnce": false,
   "link": "",
   "targetVersion": "*",
   "enabled": true,
-  "createdAt": "2026-09-04T04:19:52.854Z",
-  "updatedAt": "2026-09-04T04:19:52.860Z"
+  "createdAt": "2026-09-01T00:00:00.000Z",
+  "updatedAt": "2026-09-01T00:00:00.000Z"
 }
