@@ -38,15 +38,28 @@
 
 ---
 
-## 🚀 启动与运行
+## 🚀 获取与运行
 
-### 1. 开发模式启动
+### 1. 从 Gitee 仓库克隆代码
 ```bash
+git clone https://gitee.com/muyan6/steam.git
+cd steam
+```
+
+### 2. 安装依赖并启动开发环境
+```bash
+npm install
 npm run dev
 ```
 
-### 2. 编译与打包
+### 3. 编译与打包
 ```bash
 npm run build
 ```
 编译产物将输出在 `dist/` 与 `dist-electron/` 目录下。
+
+---
+
+## 📦 官方仓库
+* **Gitee 仓库**: [https://gitee.com/muyan6/steam](https://gitee.com/muyan6/steam)
+

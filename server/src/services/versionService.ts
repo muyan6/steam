@@ -25,7 +25,7 @@ export class VersionService {
           '☁️ 全面接入云端数据库，支持 18 万+ 游戏秒搜与 28 万+ DepotKey 匹配',
           '💉 支持 Spacewar 官方大厅联机与 Goldberg 局域网/虚拟专网模式'
         ],
-        downloadUrl: 'https://github.com',
+        downloadUrl: 'https://gitee.com/muyan6/steam',
         forceUpdate: false,
         minSupportedVersion: '1.0.0'
       };

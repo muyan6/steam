@@ -8,21 +8,26 @@
 
 项目已内置高度自动化的部署与更新脚本，自动检测并安装 Node.js 20、PM2、依赖包，并配置开机自启：
 
-### 1. 首次部署 (一键全自动)
-上传项目到云服务器后，执行：
+### 1. 首次部署 (从 Gitee 克隆并一键安装)
+在云服务器终端执行：
 ```bash
-# 赋予执行权限并运行
+# 克隆 Gitee 仓库
+git clone https://gitee.com/muyan6/steam.git
+cd steam/server
+
+# 赋予执行权限并全自动部署
 chmod +x install.sh update.sh
 bash install.sh
 ```
 > **脚本会自动执行**：系统环境检测 -> Node.js 20 LTS 安装 -> 全局 PM2 安装 -> NPM 依赖安装 -> TypeScript 编译构建 -> PM2 后台守护启动 (端口 1257) -> 开机自启保存 -> 端口与健康检查。
 
-### 2. 后续更新代码 (一键极速重载)
+### 2. 后续更新代码 (自动从 Gitee 同步并一键极速重载)
 下次需要更新服务器代码时，**只需一条命令**：
 ```bash
 bash update.sh
 ```
-> **更新脚本会自动执行**：Git 远程代码拉取 -> 增量 NPM 依赖更新 -> TypeScript 重新编译 -> PM2 服务无缝热重载 -> 健康检查状态回显。
+> **更新脚本会自动执行**：从 Gitee 远程仓库拉取最新代码 (`git pull`) -> 增量 NPM 依赖更新 -> TypeScript 重新编译 -> PM2 服务无缝热重载 -> 健康检查状态回显。
+
 
 ---
 

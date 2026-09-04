@@ -21,6 +21,11 @@
   ],
   "author": "SteamMaster Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/muyan6/steam.git"
+  },
+  "homepage": "https://gitee.com/muyan6/steam",
   "dependencies": {
     "adm-zip": "^0.6.0",
     "axios": "^1.7.9",

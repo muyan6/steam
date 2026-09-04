@@ -2,7 +2,8 @@
 
 # ==============================================================================
 # SteamMaster 云端后端服务 一键极速更新脚本 (update.sh)
-# 用途: 自动拉取最新 Git 代码、增量安装依赖、重新编译并秒级无缝重载服务
+# 官方源码: https://gitee.com/muyan6/steam
+# 用途: 自动从 Gitee 仓库拉取最新代码、增量安装依赖、重新编译并秒级无缝重载服务
 # ==============================================================================
 
 set -e
@@ -18,6 +19,7 @@ NC='\033[0m'
 echo -e "${CYAN}${BOLD}"
 echo "======================================================================"
 echo "    🔄 SteamMaster 商业版 - 云端后端数据引擎 一键增量更新脚本"
+echo "    📦 官方仓库: https://gitee.com/muyan6/steam"
 echo "======================================================================"
 echo -e "${NC}"
 
@@ -34,15 +36,17 @@ else
     PROJECT_ROOT="$SCRIPT_DIR"
 fi
 
-echo -e "${BLUE}[1/4] 拉取 Git 远程仓库最新代码...${NC}"
+echo -e "${BLUE}[1/4] 从 Gitee 仓库拉取最新代码...${NC}"
 cd "$PROJECT_ROOT"
 
 if [ -d ".git" ]; then
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
     echo -e "   -> 当前分支: ${CYAN}$CURRENT_BRANCH${NC}"
+    echo -e "   -> 同步源:   ${CYAN}https://gitee.com/muyan6/steam.git${NC}"
     
     git stash > /dev/null 2>&1 || true
-    git pull origin "$CURRENT_BRANCH"
+    # 优先从 Gitee 极速仓库拉取最新代码
+    git pull https://gitee.com/muyan6/steam.git "$CURRENT_BRANCH" || git pull origin "$CURRENT_BRANCH"
     
     LATEST_COMMIT=$(git log -1 --format="%h - %s (%cr)" 2>/dev/null || echo "未知版本")
     echo -e "   -> 最新提交: ${GREEN}$LATEST_COMMIT${NC}"
@@ -86,6 +90,7 @@ else
     echo -e "   • 健康状态:    ${YELLOW}● 服务已启动，正在初始化索引${NC}"
 fi
 
+echo -e "   • 源码仓库:    ${CYAN}https://gitee.com/muyan6/steam${NC}"
 echo -e "   • PM2 进程名:  ${CYAN}steammaster-server${NC}"
 echo -e "   • 查看实时日志: ${CYAN}pm2 logs steammaster-server --lines 30${NC}"
 echo -e "======================================================================\n"
