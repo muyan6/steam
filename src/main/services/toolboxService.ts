@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { steamService } from './steamService';
 import { ostService } from './ostService';
 import { luaGameService } from './luaGameService';
@@ -157,12 +158,12 @@ export class ToolboxService {
       }
       steps.push(`✓ OpenSteamTool 核心组件部署成功 (${deployRes.deployedCount}/3 核心模块就绪)`);
 
-      // 步骤 3: 修复注册表配置、写入 toml 并启动 Steam
+      // 步骤 3: 写入 toml 并初始化规则/清单目录
       steps.push('3. 正在生成 opensteamtool.toml 并修复配置...');
       ostService.generateTomlConfig(steamPath, 'steamrun');
       luaGameService.ensureLuaDir(steamPath);
       manifestDownloadService.ensureDepotCacheDir(steamPath);
-      steps.push('✓ 内核注册表环境与配置文件已修复就绪');
+      steps.push('✓ 内核配置文件已修复就绪');
 
       steps.push('正在启动 Steam 客户端...');
       await new Promise((resolve) => setTimeout(resolve, 800));
@@ -230,26 +231,36 @@ export class ToolboxService {
         fs.mkdirSync(ostDir, { recursive: true });
       }
 
-      // 写入 sha256.json 与 config.json 校验支持数据
-      const sha256Data = {
+      // 写入 sha256.json：对已部署的核心 DLL 计算真实 SHA256 摘要
+      const sha256Data: Record<string, unknown> = {
         version: '1.4.8-full',
         generatedAt: new Date().toISOString(),
         engine: 'OpenSteamTool-x64',
-        checksums: {
-          'OpenSteamTool.dll': '9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b',
-          'dwmapi.dll': 'a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e',
-          'xinput1_4.dll': 'f0e1d2c3b4a5968778695a4b3c2d1e0f12345678'
-        },
+        checksums: {} as Record<string, string>,
         meta: {
           autoValidate: true,
           skipCorrupted: false,
           manifestIntegrityCheck: true
         }
       };
+      const checksums = sha256Data.checksums as Record<string, string>;
+      const dllCandidates = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll'];
+      let hashedCount = 0;
+      for (const dll of dllCandidates) {
+        const dllPath = path.join(steamPath, dll);
+        if (fs.existsSync(dllPath)) {
+          try {
+            checksums[dll] = crypto.createHash('sha256').update(fs.readFileSync(dllPath)).digest('hex');
+            hashedCount++;
+          } catch {}
+        }
+      }
+      if (hashedCount === 0) {
+        throw new Error('未找到已部署的核心 DLL，请先执行「修复 OpenSteamTool 内核」后再补齐校验包');
+      }
 
       fs.writeFileSync(path.join(ostDir, 'sha256.json'), JSON.stringify(sha256Data, null, 2), 'utf-8');
-      fs.writeFileSync(path.join(ostDir, 'ost_hashes.dat'), Buffer.from('OPENSTEAMTOOL_SHA256_VERIFIED_DATA_BLOCK_OK'), 'utf-8');
-      steps.push('✓ SHA256 校验包及离线校验字典已写入 opensteamtool/');
+      steps.push(`✓ 已计算并写入 ${hashedCount} 个核心 DLL 的真实 SHA256 校验数据到 opensteamtool/`);
 
       // 步骤 4: 重新启动 Steam
       steps.push('4. 正在重新启动 Steam 客户端...');

@@ -73,10 +73,20 @@ export class LuaGameService {
   }
 
   /**
+   * 校验 AppID：必须为正整数，防止非法值拼入文件路径
+   */
+  private isValidAppId(appId: number | string): boolean {
+    return typeof appId === 'number' ? Number.isInteger(appId) && appId > 0 : /^\d+$/.test(String(appId));
+  }
+
+  /**
    * 将游戏规则写入 <SteamPath>/config/lua/<appid>.lua
    */
   public saveLuaScript(steamPath: string, metadata: GameMetadata): { success: boolean; filePath: string; message: string } {
     try {
+      if (!this.isValidAppId(metadata.appId)) {
+        return { success: false, filePath: '', message: `非法 AppID: ${metadata.appId}，已拒绝写入规则` };
+      }
       const luaDir = this.ensureLuaDir(steamPath);
       const filePath = path.join(luaDir, `${metadata.appId}.lua`);
       const content = this.buildLuaContent(metadata);
@@ -111,6 +121,7 @@ export class LuaGameService {
 
   /**
    * 双轨兼容：自动将所有已入库应用及 DLC AppID 同步到 GreenLuma AppList 目录 (<steam>/AppList/*.txt)
+   * 仅清理本工具通过 .cfd_managed.json 清单写入的文件，用户手动维护的 GreenLuma 条目不受影响
    */
   public syncGreenLumaAppList(steamPath: string): void {
     try {
@@ -140,24 +151,34 @@ export class LuaGameService {
         }
       }
 
-      // 清理 AppList 目录下旧的序号 txt 文件
-      if (fs.existsSync(appListDir)) {
-        const existing = fs.readdirSync(appListDir);
-        for (const file of existing) {
-          if (/^\d+\.txt$/i.test(file)) {
-            try { fs.unlinkSync(path.join(appListDir, file)); } catch {}
-          }
-        }
+      if (!fs.existsSync(appListDir)) return;
 
-        // 写入连续序号 0.txt, 1.txt, 2.txt ...
-        let index = 0;
-        const sortedIds = Array.from(allAppIds).sort((a, b) => a - b);
-        for (const id of sortedIds) {
-          fs.writeFileSync(path.join(appListDir, `${index}.txt`), id.toString(), 'utf-8');
-          index++;
-        }
-        console.log(`[LuaGameService] 成功同步 GreenLuma AppList: 共 ${sortedIds.length} 个 AppID 条目写入 ${appListDir}`);
+      const managedFile = path.join(appListDir, '.cfd_managed.json');
+      let managedFiles: string[] = [];
+      try {
+        const parsed = JSON.parse(fs.readFileSync(managedFile, 'utf-8'));
+        if (Array.isArray(parsed)) managedFiles = parsed.filter((x) => typeof x === 'string');
+      } catch {}
+
+      // 仅清理本工具此前写入的文件，保留用户手动维护的 GreenLuma 条目
+      for (const file of managedFiles) {
+        try { fs.unlinkSync(path.join(appListDir, file)); } catch {}
       }
+
+      // 写入连续序号 0.txt, 1.txt, 2.txt ... 并记录管理清单
+      const written: string[] = [];
+      let index = 0;
+      const sortedIds = Array.from(allAppIds).sort((a, b) => a - b);
+      for (const id of sortedIds) {
+        const fileName = `${index}.txt`;
+        fs.writeFileSync(path.join(appListDir, fileName), id.toString(), 'utf-8');
+        written.push(fileName);
+        index++;
+      }
+      try {
+        fs.writeFileSync(managedFile, JSON.stringify(written, null, 2), 'utf-8');
+      } catch {}
+      console.log(`[LuaGameService] 成功同步 GreenLuma AppList: 共 ${sortedIds.length} 个 AppID 条目写入 ${appListDir}`);
     } catch (e: any) {
       console.warn('[LuaGameService] 同步 GreenLuma AppList 异常:', e.message);
     }
@@ -272,6 +293,9 @@ export class LuaGameService {
    * 移除指定 AppID 的 Lua 脚本（一键出库）
    */
   public removeLuaScript(steamPath: string, appId: number | string): { success: boolean; message: string } {
+    if (!this.isValidAppId(appId)) {
+      return { success: false, message: `非法 AppID: ${appId}` };
+    }
     let removed = false;
     const pathsToClean = [
       path.join(steamPath, 'config', 'lua', `${appId}.lua`),

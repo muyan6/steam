@@ -169,36 +169,28 @@ export class UpdateService {
   }
 
   /**
-   * 手动触发后端全量数据源同步
+   * 数据源同步由服务端每日定时任务自动执行，属管理后台职能；
+   * 客户端不再触发同步（该接口受管理员鉴权保护，普通客户端调用恒 401）。
    */
-  public async triggerSyncSources(): Promise<{ success: boolean; message: string; results?: any }> {
-    try {
-      const url = `${APP_CONFIG.API_BASE_URL}/api/sources/sync`;
-      const resp = await axios.post(url, {}, { timeout: 35000 });
-      if (resp.data) {
-        return resp.data;
-      }
-      return { success: false, message: '同步响应超时' };
-    } catch (e: any) {
-      return { success: false, message: `触发同步失败: ${e.message}` };
-    }
+  public async triggerSyncSources(): Promise<{ success: boolean; message: string }> {
+    return {
+      success: false,
+      message: '数据源同步由服务端每日定时自动执行，无需手动触发；如需手动同步请在管理后台操作。'
+    };
   }
 
   /**
-   * 获取数据库及云端连接状态统计
+   * 获取数据库及云端连接状态统计（公开只读接口，客户端不持有任何管理凭据）
    */
   public async getDatabaseStats(): Promise<DatabaseStats> {
     try {
-      const url = `${APP_CONFIG.API_BASE_URL}/api/admin/stats`;
-      const resp = await axios.get(url, {
-        headers: { 'x-admin-key': 'steammaster_admin_8888' },
-        timeout: 3000
-      });
+      const url = `${APP_CONFIG.API_BASE_URL}/api/stats`;
+      const resp = await axios.get(url, { timeout: 3000 });
 
       if (resp.data && resp.data.success && resp.data.data) {
         return {
           gamesCount: resp.data.data.gamesCount || 0,
-          keysCount: resp.data.data.depotKeysCount || 0,
+          keysCount: resp.data.data.keysCount || 0,
           lastUpdated: '已连接云端实时数据库',
           serverStatus: 'online'
         };
@@ -208,9 +200,9 @@ export class UpdateService {
     }
 
     return {
-      gamesCount: 183751,
-      keysCount: 304624,
-      lastUpdated: '本地持久化模式',
+      gamesCount: 0,
+      keysCount: 0,
+      lastUpdated: '云端暂不可用',
       serverStatus: 'offline'
     };
   }

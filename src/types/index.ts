@@ -28,7 +28,7 @@ export interface SteamGame {
   type?: 'game' | 'dlc' | 'tool';
 }
 
-export type SearchSourceId = 'steam_official' | 'cloud_db' | 'steam_community' | 'hybrid';
+export type SearchSourceId = 'steam_official' | 'cloud_db' | 'steam_community' | 'hybrid' | 'local_db';
 
 export interface SearchSourceConfig {
   id: SearchSourceId;

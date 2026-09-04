@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import https from 'https';
 import axios from 'axios';
 import { app } from 'electron';
 import { deviceService } from './deviceService';
@@ -9,7 +8,6 @@ import { ClientLicenseInfo } from '../../types';
 
 export class LicenseClientService {
   private localLicensePath: string;
-  private httpsAgent = new https.Agent({ rejectUnauthorized: false });
   private cachedLicense: ClientLicenseInfo | null = null;
 
   constructor() {
@@ -96,7 +94,6 @@ export class LicenseClientService {
         code: this.cachedLicense?.code
       }, {
         timeout: 4000,
-        httpsAgent: this.httpsAgent,
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'ChunFengDu-Client'
@@ -147,7 +144,6 @@ export class LicenseClientService {
         deviceId
       }, {
         timeout: 6000,
-        httpsAgent: this.httpsAgent,
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'ChunFengDu-Client'
@@ -192,7 +188,7 @@ export class LicenseClientService {
   public async sendHeartbeat(): Promise<void> {
     try {
       const deviceId = this.getDeviceId();
-      const appVersion = APP_CONFIG.APP_VERSION || '1.0.0';
+      const appVersion = APP_CONFIG.VERSION;
       const isActivated = !!(this.cachedLicense && this.cachedLicense.isActivated);
       const licenseCode = this.cachedLicense?.code;
       const osInfo = `${process.platform} ${process.arch}`;
@@ -201,12 +197,11 @@ export class LicenseClientService {
       await axios.post(url, {
         deviceId,
         clientVersion: appVersion,
-        os: osInfo,
+        osVersion: osInfo,
         isActivated,
         licenseCode
       }, {
         timeout: 5000,
-        httpsAgent: this.httpsAgent,
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'ChunFengDu-Client'

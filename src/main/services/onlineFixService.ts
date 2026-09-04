@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
-import { shell } from 'electron';
+import { app, shell } from 'electron';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { createExtractorFromData } from 'node-unrar-js';
@@ -20,14 +20,64 @@ import { getUnrarWasmBinary } from './unrarWasm';
 
 export class OnlineFixService {
   private sessionCookie: string = '';
-  private readonly defaultUsername: string = 'huasjj';
-  private readonly defaultPassword: string = 'Fanxing6';
+  private accountUsername: string = '';
+  private accountPassword: string = '';
+  private accountLoaded: boolean = false;
 
   /**
-   * 确保 online-fix.me 登录会话
+   * 从 userData 目录加载用户可选配置的 online-fix.me 账号。
+   * 客户端不再内置任何第三方站点口令；未配置时以访客模式检索。
+   */
+  private loadAccount(): void {
+    if (this.accountLoaded) return;
+    this.accountLoaded = true;
+    try {
+      const accountFile = path.join(app.getPath('userData'), 'onlinefix_account.json');
+      if (fs.existsSync(accountFile)) {
+        const parsed = JSON.parse(fs.readFileSync(accountFile, 'utf-8'));
+        if (typeof parsed.username === 'string') this.accountUsername = parsed.username.trim();
+        if (typeof parsed.password === 'string') this.accountPassword = parsed.password;
+      }
+    } catch (e: any) {
+      console.warn('[OnlineFixService] 读取补丁站账号配置失败:', e.message);
+    }
+  }
+
+  /**
+   * 保存用户配置的 online-fix.me 账号（留空表示以访客模式使用）
+   */
+  public setAccount(username: string, password: string): void {
+    this.loadAccount();
+    this.accountUsername = (username || '').trim();
+    this.accountPassword = password || '';
+    this.sessionCookie = '';
+    try {
+      const accountFile = path.join(app.getPath('userData'), 'onlinefix_account.json');
+      fs.writeFileSync(accountFile, JSON.stringify({ username: this.accountUsername, password: this.accountPassword }, null, 2), 'utf-8');
+    } catch (e: any) {
+      console.warn('[OnlineFixService] 保存补丁站账号配置失败:', e.message);
+    }
+  }
+
+  public getAccountConfigured(): boolean {
+    this.loadAccount();
+    return !!(this.accountUsername && this.accountPassword);
+  }
+
+  private resetAuth(): void {
+    this.sessionCookie = '';
+  }
+
+  /**
+   * 确保 online-fix.me 登录会话（未配置账号时返回空串，即访客模式）
    */
   private async ensureAuth(): Promise<string> {
     if (this.sessionCookie) return this.sessionCookie;
+    this.loadAccount();
+
+    if (!this.accountUsername || !this.accountPassword) {
+      return '';
+    }
 
     try {
       const controller = new AbortController();
@@ -48,8 +98,8 @@ export class OnlineFixService {
       const initCookie = tokenCookies.map((c) => c.split(';')[0]).join('; ');
 
       const formParams = new URLSearchParams();
-      formParams.append('login_name', this.defaultUsername);
-      formParams.append('login_password', this.defaultPassword);
+      formParams.append('login_name', this.accountUsername);
+      formParams.append('login_password', this.accountPassword);
       formParams.append('login', 'submit');
       formParams.append('login_not_save', '0');
       if (tokenData && tokenData.field && tokenData.value) {
@@ -138,21 +188,28 @@ export class OnlineFixService {
     }
 
     console.log(`[OnlineFixService] 匹配到游戏详情页: ${gameArticleUrl}`);
-    const cookie = await this.ensureAuth();
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      let cookie = await this.ensureAuth();
 
-      const gameRes = await fetch(gameArticleUrl, {
-        headers: {
-          'Cookie': cookie,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://online-fix.me/'
-        },
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+      const fetchArticlePage = () =>
+        fetch(gameArticleUrl!, {
+          headers: {
+            'Cookie': cookie,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://online-fix.me/'
+          },
+          signal: AbortSignal.timeout(12000)
+        });
+
+      let gameRes = await fetchArticlePage();
+      // 会话过期时重置 Cookie 并重登一次
+      if (gameRes.status === 403 && cookie) {
+        console.warn('[OnlineFixService] 会话已过期 (403)，正在重新登录...');
+        this.resetAuth();
+        cookie = await this.ensureAuth();
+        gameRes = await fetchArticlePage();
+      }
 
       const gameHtml = await gameRes.text();
 
@@ -300,9 +357,22 @@ export class OnlineFixService {
 
       const fileStream = fs.createWriteStream(tempFilePath);
       if (!res.body) {
+        fileStream.destroy();
+        try { fs.unlinkSync(tempFilePath); } catch {}
         return { success: false, message: '无法获取下载数据流' };
       }
-      await pipeline(Readable.fromWeb(res.body as any), fileStream);
+      try {
+        // AbortController 覆盖整个下载过程（含 body 传输阶段），避免服务器停滞导致 IPC 永久挂起
+        const bodyTimeout = setTimeout(() => downloadController.abort(), 300000); // body 阶段 5 分钟上限
+        await pipeline(Readable.fromWeb(res.body as any), fileStream);
+        clearTimeout(bodyTimeout);
+      } catch (dlErr: any) {
+        clearTimeout(downloadTimeout);
+        fileStream.destroy();
+        try { fs.unlinkSync(tempFilePath); } catch {}
+        throw dlErr;
+      }
+      clearTimeout(downloadTimeout);
 
       const downloadedFileSize = fs.statSync(tempFilePath).size;
       console.log(`[OnlineFixService] 下载完成 (大小: ${(downloadedFileSize / 1024 / 1024).toFixed(2)} MB)，正在解压补丁至: ${gamePath}...`);
@@ -317,15 +387,22 @@ export class OnlineFixService {
         const wasmBinary = getUnrarWasmBinary();
         const extractor = await createExtractorFromData({
           wasmBinary,
-          data,
+          data: data as ArrayBuffer,
           password: 'online-fix.me'
         });
 
         const extracted = extractor.extract();
         const files = [...extracted.files];
+        const resolvedGamePath = path.resolve(gamePath);
         for (const f of files) {
           if (f.fileHeader && f.fileHeader.name) {
-            const destPath = path.join(gamePath, f.fileHeader.name);
+            // 防路径穿越：拒绝压缩包内条目写出游戏目录（../、盘符绝对路径、UNC）
+            const entryName = f.fileHeader.name;
+            const destPath = path.resolve(gamePath, entryName);
+            if (destPath !== resolvedGamePath && !destPath.startsWith(resolvedGamePath + path.sep)) {
+              console.warn(`[OnlineFixService] 已拒绝解压越界条目: ${entryName}`);
+              continue;
+            }
             if (f.extraction && f.extraction.length > 0) {
               fs.mkdirSync(path.dirname(destPath), { recursive: true });
               fs.writeFileSync(destPath, Buffer.from(f.extraction));
@@ -505,12 +582,15 @@ FakeSteamId=1
         fs.mkdirSync(settingsDir, { recursive: true });
       }
 
+      // 清洗玩家名：禁止换行/分号等字符注入 ini 其他字段
+      const safePlayerName = playerName.replace(/[\r\n;=\[\]]/g, '').trim().slice(0, 32) || '春风渡玩家';
+
       fs.writeFileSync(path.join(settingsDir, 'steam_appid.txt'), appId.toString(), 'utf-8');
       fs.writeFileSync(path.join(dirPath, 'steam_appid.txt'), appId.toString(), 'utf-8');
-      fs.writeFileSync(path.join(settingsDir, 'force_account_name.txt'), playerName, 'utf-8');
+      fs.writeFileSync(path.join(settingsDir, 'force_account_name.txt'), safePlayerName, 'utf-8');
 
       const settingsIni = `[user_general]
-account_name=${playerName}
+account_name=${safePlayerName}
 language=schinese
 
 [auto_discovery]
@@ -520,7 +600,7 @@ enable=1
 
       return {
         success: true,
-        message: `成功配置 Goldberg 局域网联机环境（玩家名: ${playerName}）！`
+        message: `成功配置 Goldberg 局域网联机环境（玩家名: ${safePlayerName}）！`
       };
     } catch (e: any) {
       return { success: false, message: `配置失败: ${e.message}` };
@@ -725,13 +805,15 @@ enable=1
               if (fs.existsSync(commonDir)) {
                 try {
                   const baseTarget = installDir.toLowerCase().replace(/[\s_-]+/g, '');
-                  const entries = fs.readdirSync(commonDir);
-                  const matched = entries.find((e) => {
-                    const clean = e.toLowerCase().replace(/[\s_-]+/g, '');
-                    return clean === baseTarget || clean.includes(baseTarget) || baseTarget.includes(clean);
-                  });
-                  if (matched) {
-                    fullInstallPath = path.join(commonDir, matched);
+                  if (baseTarget.length >= 3) {
+                    const entries = fs.readdirSync(commonDir);
+                    const matched = entries.find((e) => {
+                      const clean = e.toLowerCase().replace(/[\s_-]+/g, '');
+                      return clean === baseTarget || (clean.length >= 3 && (clean.includes(baseTarget) || baseTarget.includes(clean)));
+                    });
+                    if (matched) {
+                      fullInstallPath = path.join(commonDir, matched);
+                    }
                   }
                 } catch {}
               }

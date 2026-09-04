@@ -79,6 +79,8 @@ export const electronAPI = {
     ipcRenderer.invoke('onlinefix:search-patch', { appId, gameName }),
   installOnlineFixFromWeb: (gamePath: string, appId: number, gameName?: string): Promise<OnlineFixPatchResult> =>
     ipcRenderer.invoke('onlinefix:install-onlinefix-web', { gamePath, appId, gameName }),
+  setOnlineFixAccount: (username: string, password: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('onlinefix:set-account', { username, password }),
 
   // 商业版：公告通知与版本更新
   checkNotice: (): Promise<any> => ipcRenderer.invoke('app:check-notice'),

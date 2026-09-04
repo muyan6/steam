@@ -63,8 +63,8 @@ export class ManifestDownloadService {
         const parts = f.replace('.manifest', '').split('_');
         if (parts.length >= 2) {
           const dId = parts[0];
-          // 如果 depotId 等于 appId，或者在 appId 邻近范围内
-          if (appPrefixes.some(prefix => dId.startsWith(prefix) || Math.abs(parseInt(dId, 10) - parseInt(prefix, 10)) <= 20)) {
+          // 仅接受与 appId/dlc 完全一致的 depotId，避免前缀/邻近启发式把无关 depot 误报为已就绪
+          if (appPrefixes.includes(dId)) {
             matchedFiles.push(f);
             if (!matchedDepots.includes(dId)) matchedDepots.push(dId);
           }
@@ -122,8 +122,7 @@ export class ManifestDownloadService {
   public async downloadSingleManifest(
     steamPath: string,
     depotId: string,
-    manifestGid: string,
-    size: number = 0
+    manifestGid: string
   ): Promise<{ success: boolean; filePath: string; message: string }> {
     const depotCacheDir = this.ensureDepotCacheDir(steamPath);
     const targetPath = path.join(depotCacheDir, `${depotId}_${manifestGid}.manifest`);
@@ -135,7 +134,9 @@ export class ManifestDownloadService {
     const cdnHosts = await this.getCdnHosts();
 
     for (const host of cdnHosts) {
-      const url = `https://${host}/depot/${depotId}/manifest/${manifestGid}/5/${size || 0}`;
+      // SteamPipe manifest 接口末段为 manifest 文件自身大小，元数据中的 d.size 是整个 depot 的内容字节数，
+      // 语义不符会导致 CDN 404；统一传 0 走 CDN 兼容路径
+      const url = `https://${host}/depot/${depotId}/manifest/${manifestGid}/5/0`;
       try {
         const resp = await axios.get(url, {
           responseType: 'arraybuffer',
@@ -246,7 +247,7 @@ export class ManifestDownloadService {
       const batch = validDepots.slice(i, i + limit);
       await Promise.all(
         batch.map(async (d) => {
-          const res = await this.downloadSingleManifest(steamPath, d.depotId, d.manifestGid!, d.size || 0);
+          const res = await this.downloadSingleManifest(steamPath, d.depotId, d.manifestGid!);
           if (res.success && res.filePath) {
             downloadedFiles.push(path.basename(res.filePath));
           }

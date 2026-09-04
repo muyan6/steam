@@ -46,7 +46,7 @@ export class SteamlessService {
     if (cli) {
       return { available: true, engine: 'Steamless CLI v3.1.0 (本地就绪)', cliPath: cli };
     }
-    return { available: true, engine: '内置 SteamStub PE 智能脱壳解密引擎 (Auto Unpacker)' };
+    return { available: false, engine: 'Steamless CLI 未随应用分发，无法执行脱壳' };
   }
 
   /**
@@ -149,7 +149,16 @@ export class SteamlessService {
 
       const cli = cliPath || this.findSteamlessCli();
 
-      if (cli && fs.existsSync(cli)) {
+      if (!cli || !fs.existsSync(cli)) {
+        // Steamless CLI 未随应用分发，无法真正脱壳；如实报告，不做任何伪修复
+        return {
+          success: false,
+          status: 'skipped',
+          message: `Steamless CLI 未随应用分发，无法对 ${path.basename(exePath)} 执行脱壳解密。若该游戏带 SteamStub DRM 壳，请使用完整版客户端或手动获取 Steamless.CLI.exe 放入应用 assets/tools/steamless/ 目录。`
+        };
+      }
+
+      {
         const success = await new Promise<boolean>((resolve) => {
           const proc = spawn(cli, ['--quiet', '--keep-bind', exePath], {
             cwd: dir,
@@ -157,6 +166,10 @@ export class SteamlessService {
           });
 
           const timer = setTimeout(() => {
+            try {
+              // Windows 上 proc.kill() 不会杀死子进程树，使用 taskkill /T /F
+              spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true });
+            } catch {}
             try { proc.kill(); } catch {}
             resolve(false);
           }, 15000);
@@ -185,20 +198,13 @@ export class SteamlessService {
             message: `成功通过 Steamless CLI 解密并替换 (${path.basename(exePath)})`
           };
         }
-      }
 
-      const stubCheck = this.checkIsSteamStubbed(exePath);
-      if (!fs.existsSync(backupPath)) {
-        fs.copyFileSync(exePath, backupPath);
+        return {
+          success: false,
+          status: 'error',
+          message: `Steamless CLI 处理 ${path.basename(exePath)} 未产生解密输出（该文件可能未加壳或不被支持）`
+        };
       }
-
-      return {
-        success: true,
-        status: 'unpacked',
-        message: stubCheck.isStubbed
-          ? `已成功去除 SteamStub DRM 壳并完成解密 (${path.basename(exePath)})`
-          : `已就绪安全备份并完成 PE 启动兼容优化 (${path.basename(exePath)})`
-      };
     } catch (err: any) {
       return {
         success: false,

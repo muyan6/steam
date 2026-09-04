@@ -1,4 +1,3 @@
-import https from 'https';
 import axios from 'axios';
 import { DepotInfo, GameMetadata } from '../../types';
 import { APP_CONFIG } from '../../config/appConfig';
@@ -8,7 +7,6 @@ export class MetadataService {
   private readonly STEAM_STORE_API = 'https://store.steampowered.com/api/appdetails';
   private readonly STEAMCMD_API = 'https://api.steamcmd.net/v1/info';
 
-  private readonly httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
   private readonly axiosHeaders = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -35,7 +33,6 @@ export class MetadataService {
       const resp = await axios.get(url, {
         params: { name: hintName },
         timeout: 5000,
-        httpsAgent: this.httpsAgent,
         headers: this.axiosHeaders
       });
 
@@ -114,7 +111,6 @@ export class MetadataService {
       const resp = await axios.get(`${this.STEAM_STORE_API}`, {
         params: { appids: appId, l: 'zh-CN', cc: 'CN' },
         headers: this.axiosHeaders,
-        httpsAgent: this.httpsAgent,
         timeout: 4000
       });
       if (resp.data && resp.data[appId] && resp.data[appId].success) {
@@ -133,7 +129,6 @@ export class MetadataService {
     try {
       const resp = await axios.get(`${this.STEAMCMD_API}/${appId}`, {
         headers: this.axiosHeaders,
-        httpsAgent: this.httpsAgent,
         timeout: 5000
       });
       const depotsData = resp.data?.data?.[appId]?.depots;

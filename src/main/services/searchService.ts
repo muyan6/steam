@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import https from 'https';
 import axios from 'axios';
 import { POPULAR_GAMES_DATABASE } from '../database/gamesData';
 import { SteamGame, SearchSourceId, SearchPaginationParams, SearchPaginationResult } from '../../types';
@@ -9,13 +8,13 @@ import { APP_CONFIG } from '../../config/appConfig';
 export class SearchService {
   private fallbackPopularGames: SteamGame[] = [...POPULAR_GAMES_DATABASE];
   private localAllGames: { appid: number; name: string }[] | null = null;
-  private readonly httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
   private readonly sourceNames: Record<SearchSourceId, string> = {
     steam_official: 'Steam官方API',
     cloud_db: '云端18万+自建库',
     steam_community: 'Steam社区搜索源',
-    hybrid: '全域智能聚合源'
+    hybrid: '全域智能聚合源',
+    local_db: '本地18万+全量库'
   };
 
   /**
@@ -150,7 +149,6 @@ export class SearchService {
         const steamUrl = 'https://store.steampowered.com/api/storesearch/';
         const resp = await axios.get(steamUrl, {
           params: { term: q, l: 'schinese', cc: 'CN' },
-          httpsAgent: this.httpsAgent,
           timeout: 3500,
           headers: { 'User-Agent': 'Mozilla/5.0 ChunFengDu/1.0' }
         });

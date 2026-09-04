@@ -1,4 +1,6 @@
 import { app, ipcMain, dialog, BrowserWindow, shell } from 'electron';
+import fs from 'fs';
+import path from 'path';
 import { steamService } from './services/steamService';
 import { ostService } from './services/ostService';
 import { manifestService } from './services/manifestService';
@@ -51,7 +53,10 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('steam:set-path', async (_, customPath: string) => {
-    steamService.setCustomSteamPath(customPath);
+    const res = steamService.setCustomSteamPath(customPath);
+    if (!res.success) {
+      return { ...await steamService.getEnvironmentInfo(), setError: res.message };
+    }
     return await steamService.getEnvironmentInfo();
   });
 
@@ -173,6 +178,15 @@ export function registerIpcHandlers() {
     return await onlineFixService.downloadAndInstallOnlineFixPatch(gamePath, appId, gameName);
   });
 
+  ipcMain.handle('onlinefix:set-account', async (_, { username, password }: { username: string; password: string }) => {
+    try {
+      onlineFixService.setAccount(username || '', password || '');
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  });
+
   // 5. 商业版：公告通知与版本检测
   ipcMain.handle('app:check-notice', async () => {
     return await updateService.checkNotice();
@@ -258,18 +272,21 @@ export function registerIpcHandlers() {
           try {
             const baseTarget = path.basename(normalizedPath).toLowerCase().replace(/[\s_-]+/g, '');
             const entries = fs.readdirSync(parentDir);
-            const matched = entries.find((e) => {
-              const clean = e.toLowerCase().replace(/[\s_-]+/g, '');
-              return clean === baseTarget || clean.includes(baseTarget) || baseTarget.includes(clean);
-            });
+            // 模糊匹配需要双方都有足够长度，避免空串/过短名误配到无关目录
+            const matched =
+              baseTarget.length >= 3
+                ? entries.find((e) => {
+                    const clean = e.toLowerCase().replace(/[\s_-]+/g, '');
+                    return clean === baseTarget || (clean.length >= 3 && (clean.includes(baseTarget) || baseTarget.includes(clean)));
+                  })
+                : undefined;
             if (matched) {
               normalizedPath = path.join(parentDir, matched);
             } else {
-              // 若依然不存在，则自动创建该游戏目录以便用户放置或查看
-              fs.mkdirSync(normalizedPath, { recursive: true });
+              return { success: false, message: `目录不存在: ${normalizedPath}` };
             }
           } catch {
-            fs.mkdirSync(normalizedPath, { recursive: true });
+            return { success: false, message: `目录不存在: ${normalizedPath}` };
           }
         } else {
           return { success: false, message: `游戏根目录不存在: ${normalizedPath}` };
