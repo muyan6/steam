@@ -252,7 +252,8 @@ export class SteamService {
       // 检查 64 位核心 DLL (OpenSteamTool.dll + dwmapi.dll / xinput1_4.dll)
       const hasCore = fs.existsSync(path.join(steamPath, 'OpenSteamTool.dll'));
       const hasHijack = fs.existsSync(path.join(steamPath, 'dwmapi.dll')) || fs.existsSync(path.join(steamPath, 'xinput1_4.dll'));
-      ostInstalled = hasCore && hasHijack;
+      // 仅当为 64 位 Steam 且具备核心 DLL 时才判定为已注入就绪
+      ostInstalled = hasCore && hasHijack && steamBitness === 'x64';
 
       // 统计 config/lua/ 下所有 <appid>.lua 规则
       const luaDir = path.join(steamPath, 'config', 'lua');
@@ -300,18 +301,28 @@ export class SteamService {
         items.push({
           name: 'Steam 核心主程序',
           category: 'path',
-          status: 'success',
+          status: steamBitness === 'x86' ? 'error' : 'success',
           message: `路径有效 (${bitnessText})`,
           detail: steamPath
         });
 
-        items.push({
-          name: 'Steam 客户端位数架构',
-          category: 'path',
-          status: 'success',
-          message: `自动识别为 ${bitnessText}`,
-          detail: `系统已自适应匹配 ${bitnessText} 专用 Hook 注入内核`
-        });
+        if (steamBitness === 'x86') {
+          items.push({
+            name: 'Steam 客户端位数架构',
+            category: 'path',
+            status: 'error',
+            message: '32 位 (x86) - 不支持',
+            detail: 'OpenSteamTool 仅支持 64 位 (x64) Steam 客户端。请将 Steam 客户端更新至官方最新 64 位版本！'
+          });
+        } else {
+          items.push({
+            name: 'Steam 客户端位数架构',
+            category: 'path',
+            status: 'success',
+            message: `已识别为 ${bitnessText}`,
+            detail: '已完美适配 64 位 OpenSteamTool 核心注入组件'
+          });
+        }
       } else {
         items.push({
           name: 'Steam 核心主程序',
@@ -326,41 +337,19 @@ export class SteamService {
     // 2. OpenSteam 核心 Hook DLL 模块与架构匹配检测
     let hasHookDll = false;
     let hookDllName = '';
-    let mismatchDetail = '';
 
     if (steamPath) {
       if (steamBitness === 'x86') {
-        const versionDll = path.join(steamPath, 'version.dll');
-        const versionBak = path.join(steamPath, 'version.bak.dll');
-
-        if (fs.existsSync(versionDll)) {
-          const bitness = getExecutableBitness(versionDll);
-          if (bitness === 'x86') {
-            hasHookDll = true;
-            hookDllName = 'version.dll (32位 x86)';
-          } else {
-            mismatchDetail = '检测到 version.dll 但架构非 32 位 (x86)';
-          }
-        } else if (fs.existsSync(versionBak)) {
-          items.push({
-            name: 'OpenSteam 注入模块 (DLL)',
-            category: 'hook',
-            status: 'warning',
-            message: '发现备份模块 (version.bak.dll)，待激活恢复',
-            detail: '点击上方「一键修复」或「一键同步环境配置」可自动恢复并激活 32 位 version.dll'
-          });
-        }
-
-        // 检测是否有 64 位 DLL 遗留导致潜在混淆
-        const x64Conflicts = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll'].filter(
-          (f) => fs.existsSync(path.join(steamPath, f)) && getExecutableBitness(path.join(steamPath, f)) === 'x64'
-        );
-        if (x64Conflicts.length > 0 && !hasHookDll) {
-          mismatchDetail = `检测到残留的 64 位模块 (${x64Conflicts.join(', ')})，与 32 位 Steam 不兼容，请点击一键修复自动切换`;
-        }
+        items.push({
+          name: 'OpenSteam 注入模块 (DLL)',
+          category: 'hook',
+          status: 'error',
+          message: '32 位客户端无法加载 64 位 OST 内核',
+          detail: '请先将 Steam 升级至 64 位版本，升级后将自动部署 64 位 OpenSteamTool.dll'
+        });
       } else {
         // x64 或 unknown 架构
-        const hookDllCandidates = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll', 'hid.dll', 'version.dll'];
+        const hookDllCandidates = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll'];
         for (const dll of hookDllCandidates) {
           const p = path.join(steamPath, dll);
           if (fs.existsSync(p)) {
@@ -369,32 +358,24 @@ export class SteamService {
             break;
           }
         }
-      }
 
-      if (hasHookDll) {
-        items.push({
-          name: 'OpenSteam 注入模块 (DLL)',
-          category: 'hook',
-          status: 'success',
-          message: `核心 Hook DLL 已就绪 (${hookDllName})`,
-          detail: `已完美适配当前 Steam 客户端架构，注入模块加载正常`
-        });
-      } else if (mismatchDetail) {
-        items.push({
-          name: 'OpenSteam 注入模块 (DLL)',
-          category: 'hook',
-          status: 'warning',
-          message: '模块架构待修复',
-          detail: mismatchDetail
-        });
-      } else if (!items.some((i) => i.name === 'OpenSteam 注入模块 (DLL)')) {
-        items.push({
-          name: 'OpenSteam 注入模块 (DLL)',
-          category: 'hook',
-          status: 'error',
-          message: '未检测到匹配架构的 Hook 模块',
-          detail: `Steam 根目录下缺少 ${steamBitness === 'x86' ? '32 位 version.dll' : '64 位 OpenSteamTool.dll / dwmapi.dll'} 劫持模块`
-        });
+        if (hasHookDll) {
+          items.push({
+            name: 'OpenSteam 注入模块 (DLL)',
+            category: 'hook',
+            status: 'success',
+            message: `核心 Hook DLL 已就绪 (${hookDllName})`,
+            detail: `已完美适配 64 位 Steam 客户端架构，注入模块加载正常`
+          });
+        } else {
+          items.push({
+            name: 'OpenSteam 注入模块 (DLL)',
+            category: 'hook',
+            status: 'error',
+            message: '未检测到 64 位 Hook 模块',
+            detail: 'Steam 根目录下缺少 OpenSteamTool.dll / dwmapi.dll / xinput1_4.dll 核心劫持模块'
+          });
+        }
       }
     }
 

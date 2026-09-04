@@ -100,6 +100,14 @@ export class OSTService {
       return { success: false, message: '未找到 Steam 安装路径，请先在设置中手动指定。' };
     }
 
+    const steamBitness = await steamService.detectSteamBitness(steamPath);
+    if (steamBitness === 'x86') {
+      return {
+        success: false,
+        message: '检测到当前 Steam 为 32 位版本。OpenSteamTool 仅支持 64 位 Steam，请将 Steam 更新至最新版本！'
+      };
+    }
+
     try {
       const deployRes = await this.deployCoreBinaries(steamPath);
       if (!deployRes.success) {

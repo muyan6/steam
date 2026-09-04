@@ -232,7 +232,7 @@ import { SteamEnvironmentInfo } from '../types';
 
 const appVersion = '1.0.0';
 const currentTab = ref<'search' | 'library' | 'onlinefix' | 'settings'>('search');
-const showStartupWizard = ref(true);
+const showStartupWizard = ref(false);
 
 const navItems = [
   { id: 'search' as const, label: '游戏检索与入库', icon: '🔍' },
@@ -275,8 +275,10 @@ const fetchSteamInfo = async () => {
   try {
     const info = await window.electronAPI.getSteamInfo();
     steamInfo.value = info;
+    return info;
   } catch (e: any) {
     console.error('获取 Steam 状态失败:', e);
+    return null;
   }
 };
 
@@ -323,9 +325,25 @@ const checkNoticeAndVersion = async () => {
   }
 };
 
-onMounted(() => {
-  fetchSteamInfo();
+const initApp = async () => {
+  try {
+    const info = await fetchSteamInfo();
+    // 核心判定：若已检测到 Steam 路径、已部署注入核心且为 64 位，则直接进入主界面
+    if (info && info.steamPath && info.ostInstalled && info.steamBitness === 'x64') {
+      showStartupWizard.value = false;
+    } else {
+      // 首次使用、未注入或检测到 32 位老版本异常时唤起启动引导
+      showStartupWizard.value = true;
+    }
+  } catch {
+    showStartupWizard.value = true;
+  }
+
   checkNoticeAndVersion();
+};
+
+onMounted(() => {
+  initApp();
   // 每隔 5 秒自动同步一次 Steam 运行状态
   setInterval(fetchSteamInfo, 5000);
 });

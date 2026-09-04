@@ -29,7 +29,7 @@
         </div>
       </div>
 
-      <!-- 步骤 1 & 2: 检测 Steam 路径并询问是否注入 -->
+      <!-- 步骤 1 & 2: 检测 Steam 路径并校验位数 / 询问是否注入 -->
       <div v-if="step === 1 || step === 2" class="p-6 space-y-5">
         <!-- 步骤 1: 路径检测结果展示 -->
         <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
@@ -41,9 +41,10 @@
             <div class="flex items-center gap-2">
               <span
                 v-if="steamBitness !== 'unknown'"
-                class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                class="px-2 py-0.5 rounded text-[10px] font-bold font-mono border"
+                :class="steamBitness === 'x86' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-sky-500/20 text-sky-300 border-sky-500/30'"
               >
-                {{ steamBitness === 'x86' ? '32 位 (x86)' : '64 位 (x64)' }}
+                {{ steamBitness === 'x86' ? '32 位 (x86) ⚠️' : '64 位 (x64) ✓' }}
               </span>
               <span
                 v-if="steamPath"
@@ -88,47 +89,89 @@
           </div>
         </div>
 
-        <!-- 步骤 2: 询问是否注入 Steam -->
-        <div class="bg-gradient-to-br from-sky-950/40 via-slate-950/60 to-slate-950/80 border border-sky-500/30 rounded-xl p-4">
-          <div class="text-xs font-bold text-sky-300 flex items-center gap-2 mb-2">
-            <span>💉 步骤 2：是否注入 Steam 环境？</span>
+        <!-- 场景 A：检测到 32 位 Steam (x86) -> 阻止激活，提示更新并只提供退出按钮 -->
+        <div v-if="steamBitness === 'x86'" class="bg-rose-950/40 border border-rose-500/50 rounded-xl p-4 animate-in fade-in duration-200">
+          <div class="text-xs font-bold text-rose-300 flex items-center gap-2 mb-2">
+            <span>🚫 提示：检测到 32 位 (x86) Steam 客户端</span>
           </div>
-          <p class="text-xs text-slate-300 leading-relaxed mb-2">
-            是否立即向当前 Steam 目录激活 OpenSteam 解锁运行环境？
+          <p class="text-xs text-rose-200 leading-relaxed mb-3">
+            <strong>OpenSteamTool 内核仅支持 64 位 (x64) 现代 Steam 客户端。</strong>
+            检测到您当前的 Steam 客户端为 32 位老旧版本，无法正常加载 64 位注入核心与解锁规则。
           </p>
-          <ul class="text-[11px] text-slate-400 space-y-1 list-disc list-inside bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
-            <li v-if="steamBitness === 'x86'">
-              🎯 <strong>智能架构匹配</strong>：已自动识别为 <span class="text-sky-300 font-bold font-mono">32 位 (x86) Steam</span>，将部署 32 位专用 Hook 核心 (<code class="text-sky-300 font-mono">version.dll</code>)
-            </li>
-            <li v-else-if="steamBitness === 'x64'">
-              🎯 <strong>智能架构匹配</strong>：已自动识别为 <span class="text-sky-300 font-bold font-mono">64 位 (x64) Steam</span>，将部署 64 位 OpenSteamTool 核心组件
-            </li>
-            <li v-else>
-              🎯 <strong>智能架构匹配</strong>：自动检测 Steam 位数并智能部署匹配的 Hook 注入核心
-            </li>
-            <li>自动部署并配置 <code class="text-sky-300 font-mono">st_scripts/</code> 自动化解锁规则引擎</li>
-            <li>配置 <code class="text-sky-300 font-mono">opensteamtool.toml</code> 公共清单端点与分包解密</li>
-            <li>若选择 <strong>“否”</strong>，程序将直接退出关闭</li>
-          </ul>
+
+          <div class="bg-slate-950/70 p-3 rounded-lg border border-rose-800/40 space-y-1.5 text-[11px] text-slate-300">
+            <div class="font-bold text-slate-200">💡 升级解决方案：</div>
+            <div class="flex items-start gap-1.5">
+              <span class="text-sky-400 font-mono">1.</span>
+              <span>打开 Steam 客户端，点击顶部菜单 <strong>「Steam」➔「检查 Steam 客户端更新...」</strong> 进行在线升级。</span>
+            </div>
+            <div class="flex items-start gap-1.5">
+              <span class="text-sky-400 font-mono">2.</span>
+              <span>或前往 Steam 官方网站 (<strong>store.steampowered.com</strong>) 下载最新安装包覆盖安装（不会丢失游戏）。</span>
+            </div>
+            <div class="flex items-start gap-1.5">
+              <span class="text-sky-400 font-mono">3.</span>
+              <span>升级至 64 位版本后，点击下方「重新检测」或重新启动本程序。</span>
+            </div>
+          </div>
+
+          <!-- 32 位专属按钮：仅退出与重新检测，不提供激活按钮 -->
+          <div class="flex items-center justify-between pt-4 mt-3 border-t border-rose-900/50">
+            <button
+              @click="checkSteamPath"
+              :disabled="checkingPath"
+              class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
+            >
+              <span :class="{ 'animate-spin': checkingPath }">🔄</span>
+              <span>重新检测</span>
+            </button>
+
+            <button
+              @click="handleExitApp"
+              class="px-6 py-2.5 bg-gradient-to-r from-rose-700 to-rose-600 hover:from-rose-600 hover:to-rose-500 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-1.5"
+            >
+              <span>✕ 退出程序</span>
+            </button>
+          </div>
         </div>
 
-        <!-- 操作按钮 -->
-        <div class="flex items-center justify-between pt-2 border-t border-slate-800">
-          <button
-            @click="handleExitApp"
-            class="px-5 py-2.5 bg-slate-800/80 hover:bg-rose-900/60 border border-slate-700/80 hover:border-rose-500/40 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
-          >
-            <span>✕ 否，退出程序</span>
-          </button>
+        <!-- 场景 B：正常 64 位 Steam (x64) 或未知路径 -> 步骤 2 正常询问注入 -->
+        <div v-else class="space-y-4">
+          <div class="bg-gradient-to-br from-sky-950/40 via-slate-950/60 to-slate-950/80 border border-sky-500/30 rounded-xl p-4">
+            <div class="text-xs font-bold text-sky-300 flex items-center gap-2 mb-2">
+              <span>💉 步骤 2：是否注入 Steam 环境？</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed mb-2">
+              是否立即向当前 Steam 目录激活 OpenSteam 解锁运行环境？
+            </p>
+            <ul class="text-[11px] text-slate-400 space-y-1 list-disc list-inside bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
+              <li>
+                🎯 <strong>64 位架构匹配</strong>：已自动识别为 <span class="text-sky-300 font-bold font-mono">64 位 (x64) Steam</span>，将部署 64 位 OpenSteamTool 核心组件
+              </li>
+              <li>自动部署并配置 <code class="text-sky-300 font-mono">config/lua/</code> 与 <code class="text-sky-300 font-mono">st_scripts/</code> 自动化解锁规则引擎</li>
+              <li>配置公共清单端点与分包解密</li>
+              <li>若选择 <strong>“否”</strong>，程序将直接退出关闭</li>
+            </ul>
+          </div>
 
-          <button
-            @click="startActivation"
-            :disabled="!steamPath || checkingPath"
-            class="px-6 py-2.5 bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"
-          >
-            <span>⚡ 是，进入下一步激活</span>
-            <span>➔</span>
-          </button>
+          <!-- 64 位操作按钮 -->
+          <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+            <button
+              @click="handleExitApp"
+              class="px-5 py-2.5 bg-slate-800/80 hover:bg-rose-900/60 border border-slate-700/80 hover:border-rose-500/40 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
+            >
+              <span>✕ 否，退出程序</span>
+            </button>
+
+            <button
+              @click="startActivation"
+              :disabled="!steamPath || checkingPath || steamBitness !== 'x64'"
+              class="px-6 py-2.5 bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"
+            >
+              <span>⚡ 是，进入下一步激活</span>
+              <span>➔</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -147,7 +190,7 @@
           <div class="flex items-center justify-between">
             <span class="text-slate-300 flex items-center gap-2">
               <span :class="activationPhase >= 1 ? 'text-emerald-400' : 'text-slate-600'">●</span>
-              <span>1. 校验 Steam 安装路径及位数架构 ({{ steamBitness === 'x86' ? '32位 x86' : '64位 x64' }})</span>
+              <span>1. 校验 Steam 安装路径及 64 位架构 (x64)</span>
             </span>
             <span v-if="activationPhase > 1" class="text-emerald-400 font-bold">✓ 完成</span>
             <span v-else-if="activationPhase === 1" class="text-sky-400 animate-spin">🔄</span>
@@ -156,7 +199,7 @@
           <div class="flex items-center justify-between">
             <span class="text-slate-300 flex items-center gap-2">
               <span :class="activationPhase >= 2 ? 'text-emerald-400' : 'text-slate-600'">●</span>
-              <span>2. 自适应部署 {{ steamBitness === 'x86' ? '32位专用 Hook 内核' : '64位 Hook 内核' }} 与规则引擎</span>
+              <span>2. 部署 64 位 OpenSteamTool 核心组件与规则引擎</span>
             </span>
             <span v-if="activationPhase > 2" class="text-emerald-400 font-bold">✓ 完成</span>
             <span v-else-if="activationPhase === 2" class="text-sky-400 animate-spin">🔄</span>
@@ -190,12 +233,12 @@
         <div>
           <h3 class="font-bold text-lg text-slate-100">Steam 注入环境激活完成！</h3>
           <p class="text-xs text-slate-300 mt-2 max-w-md mx-auto leading-relaxed">
-            已成功为您的 {{ steamBitness === 'x86' ? '32 位' : '64 位' }} Steam 挂载专用注入核心。您可以开始搜索收录的 18 万+ 游戏，一键生成解锁规则与分包密钥。
+            已成功为您的 64 位 Steam 挂载 OpenSteamTool 核心。您可以开始搜索收录的 18 万+ 游戏，一键生成解锁规则与分包密钥。
           </p>
         </div>
 
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 font-mono inline-block">
-          Steam 目录：{{ steamPath }} ({{ steamBitness === 'x86' ? '32位 x86' : '64位 x64' }})
+          Steam 目录：{{ steamPath }} (64位 x64)
         </div>
 
         <div>
@@ -242,7 +285,7 @@ const checkSteamPath = async () => {
       steamPath.value = info.steamPath;
       isSteamRunning.value = info.isRunning;
       steamBitness.value = info.steamBitness || 'unknown';
-      step.value = 2; // 进入第2步：确认注入
+      step.value = 2; // 进入第2步：确认注入或拦截32位
     } else {
       step.value = 1; // 未检测到，停留在第1步提示选择
     }
@@ -289,7 +332,7 @@ const onPathInputChange = async () => {
   }
 };
 
-// 步骤 2 选项：点击“否”，直接退出程序
+// 步骤 2 选项：点击“退出程序”
 const handleExitApp = async () => {
   try {
     await window.electronAPI.quitApp();
@@ -300,6 +343,11 @@ const handleExitApp = async () => {
 
 // 步骤 2 选项：点击“是”，启动步骤 3 激活注入流程
 const startActivation = async () => {
+  if (steamBitness.value === 'x86') {
+    emit('notify', 'OpenSteamTool 仅支持 64 位 Steam，请先更新 Steam！', 'error');
+    return;
+  }
+
   step.value = 3;
   activationPhase.value = 1;
   progressPercent.value = 25;
@@ -311,7 +359,7 @@ const startActivation = async () => {
     }
     await new Promise((r) => setTimeout(r, 600));
 
-    // 阶段 2: 写入 opensteamtool.toml 与 st_scripts 注入配置
+    // 阶段 2: 部署 OpenSteamTool 64位核心 DLL 与规则引擎
     activationPhase.value = 2;
     progressPercent.value = 60;
     const activateRes = await window.electronAPI.activateInjection({
