@@ -600,16 +600,25 @@ app.get(['/', '/dashboard'], (req, res) => {
   <!-- ==================== 模态框 4: 客户端公告弹窗预览 ==================== -->
   <div id="previewModal" class="modal-overlay" style="display: none;">
     <div class="modal-box" style="max-width: 440px; border-color: rgba(56, 189, 248, 0.4);">
-      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
-        <div style="width: 38px; height: 38px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 18px;">
-          🔔
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 38px; height: 38px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+            🔔
+          </div>
+          <div>
+            <strong id="previewTitle" style="color: #fff; font-size: 14px; display: block;"></strong>
+            <span style="color: #64748b; font-size: 11px;">客户端弹窗实际展示效果</span>
+          </div>
         </div>
-        <div>
-          <strong id="previewTitle" style="color: #fff; font-size: 14px; display: block;"></strong>
-          <span style="color: #64748b; font-size: 11px;">客户端弹窗实际展示效果</span>
-        </div>
+        <button type="button" onclick="closeModal('previewModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
       <div id="previewContent" style="background: rgba(2, 6, 23, 0.8); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 12px; color: #cbd5e1; font-size: 12px; white-space: pre-line; line-height: 1.6; margin-bottom: 16px;"></div>
+      <div style="display: flex; justify-content: flex-end;">
+        <button type="button" onclick="closeModal('previewModal')" class="btn btn-secondary btn-sm">关闭预览</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== 模态框 5: 批量生成激活码 ==================== -->
   <div id="generateLicenseModal" class="modal-overlay" style="display: none;">
     <div class="modal-box" style="max-width: 480px;">

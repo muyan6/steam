@@ -265,8 +265,17 @@ function changeLicensePage(delta) {
 
 function openGenerateLicenseModal() {
   var notice = document.getElementById('genLicNotice');
-  if (notice) notice.classList.add('d-none');
-  document.getElementById('generateLicenseModal').style.display = 'flex';
+  if (notice) {
+    notice.classList.add('d-none');
+    notice.style.display = 'none';
+  }
+  var btn = document.getElementById('btnDoGenLicense');
+  if (btn) {
+    btn.disabled = false;
+    btn.innerText = '立即批量生成';
+  }
+  var m = document.getElementById('generateLicenseModal');
+  if (m) m.style.display = 'flex';
 }
 
 async function handleGenerateLicenseSubmit() {
@@ -275,6 +284,13 @@ async function handleGenerateLicenseSubmit() {
   var prefix = (document.getElementById('genLicPrefix').value || '').trim();
   var remark = (document.getElementById('genLicRemark').value || '').trim();
   var btn = document.getElementById('btnDoGenLicense');
+  var notice = document.getElementById('genLicNotice');
+  var txt = document.getElementById('genLicNoticeText');
+
+  if (count < 1 || count > 500) {
+    alert('生成数量需在 1 ~ 500 之间');
+    return;
+  }
 
   if (btn) { btn.disabled = true; btn.innerText = '正在批量生成...'; }
   try {
@@ -285,18 +301,25 @@ async function handleGenerateLicenseSubmit() {
     });
     var res = await resp.json();
     if (res && res.success) {
-      var notice = document.getElementById('genLicNotice');
-      var txt = document.getElementById('genLicNoticeText');
       if (notice && txt) {
-        txt.innerText = res.message || '生成成功！';
+        notice.className = 'alert-box alert-success';
+        txt.innerText = res.message || ('成功生成 ' + count + ' 张激活码！');
         notice.classList.remove('d-none');
+        notice.style.display = 'flex';
       }
+      loadLicensesData(1);
       setTimeout(function() {
         closeModal('generateLicenseModal');
-        loadLicensesData(1);
-      }, 800);
+      }, 1000);
     } else {
-      alert('生成失败: ' + (res.message || '未知错误'));
+      if (notice && txt) {
+        notice.className = 'alert-box alert-error';
+        txt.innerText = res.message || '生成失败';
+        notice.classList.remove('d-none');
+        notice.style.display = 'flex';
+      } else {
+        alert('生成失败: ' + (res.message || '未知错误'));
+      }
     }
   } catch(e) {
     alert('请求异常: ' + e.message);
@@ -307,7 +330,8 @@ async function handleGenerateLicenseSubmit() {
 
 function openExtendLicenseModal(code) {
   document.getElementById('extLicCode').value = code;
-  document.getElementById('extendLicenseModal').style.display = 'flex';
+  var m = document.getElementById('extendLicenseModal');
+  if (m) m.style.display = 'flex';
 }
 
 async function handleExtendLicenseSubmit() {
@@ -501,18 +525,26 @@ async function loadAuditLogs() {
   try {
     var resp = await fetch('/api/auth/audit-logs', { headers: getHeaders() });
     var res = await resp.json();
-    var el = document.getElementById('auditLogsContainer');
-    if (res && res.success && el) {
+    var tbody = document.getElementById('auditTableBody');
+    if (res && res.success && tbody) {
       var logs = res.data || [];
-      if (!logs.length) { el.innerHTML = '<div style="color:#64748b;font-size:11px;">暂无审计日志</div>'; return; }
-      el.innerHTML = logs.slice(0, 10).map(function(l) {
-        return '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;font-size:11px;">' +
-          '<span><strong>' + escapeHtml(l.action) + '</strong> - <span style="color:#94a3b8;">' + escapeHtml(l.detail) + '</span></span>' +
-          '<span style="color:#64748b;font-family:monospace;">' + formatTime(l.time) + '</span>' +
-        '</div>';
+      if (!logs.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:24px;">暂无审计日志</td></tr>';
+        return;
+      }
+      tbody.innerHTML = logs.map(function(l) {
+        var statusBadge = l.success ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-rose">失败</span>';
+        return '<tr>' +
+          '<td style="color:#64748b;font-family:monospace;white-space:nowrap;">' + formatTime(l.timestamp || l.time) + '</td>' +
+          '<td><strong>' + escapeHtml(l.action) + '</strong></td>' +
+          '<td><span class="badge badge-blue">' + escapeHtml(l.operator || 'admin') + '</span></td>' +
+          '<td style="color:#94a3b8;font-family:monospace;">' + escapeHtml(l.ip || '-') + '</td>' +
+          '<td style="color:#cbd5e1;">' + escapeHtml(l.details || l.detail || '-') + '</td>' +
+          '<td>' + statusBadge + '</td>' +
+        '</tr>';
       }).join('');
     }
-  } catch(e) {}
+  } catch(e) { console.warn('loadAuditLogs error:', e); }
 }
 
 async function handleChangePassword() {
@@ -593,10 +625,14 @@ function previewNotice(id) {
   if (!n) return;
   document.getElementById('previewTitle').innerText = n.title;
   document.getElementById('previewContent').innerText = n.content;
-  document.getElementById('previewModal').style.display = 'flex';
+  var m = document.getElementById('previewModal');
+  if (m) m.style.display = 'flex';
 }
 
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+function closeModal(id) {
+  var m = document.getElementById(id);
+  if (m) m.style.display = 'none';
+}
 
 async function handleNoticeSubmit() {
   var title = (document.getElementById('noticeTitle').value || '').trim();
@@ -672,6 +708,25 @@ function loadAllData() {
   loadNotices();
   loadVersions();
 }
+
+// 全局模态框交互：点击背景蒙层或按下 ESC 键自动关闭所有可关闭模态框
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList && e.target.classList.contains('modal-overlay')) {
+    if (e.target.id !== 'loginSection') {
+      e.target.style.display = 'none';
+    }
+  }
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(function(m) {
+      if (m.id !== 'loginSection') {
+        m.style.display = 'none';
+      }
+    });
+  }
+});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', checkAuth);
