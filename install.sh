@@ -2,7 +2,7 @@
 
 # ==============================================================================
 # SteamMaster 云端后端服务 一键全自动部署脚本 (install.sh)
-# 官方源码: https://gitee.com/muyan6/steam
+# Gitee 官方仓库: https://gitee.com/muyan6/steam.git
 # 支持环境: Ubuntu / Debian / CentOS / RockyLinux / AlmaLinux / RHEL / Fedora
 # ==============================================================================
 
@@ -19,7 +19,7 @@ NC='\033[0m'
 echo -e "${CYAN}${BOLD}"
 echo "======================================================================"
 echo "    ⚡ SteamMaster 商业版 - 云端后端数据引擎 一键自动部署脚本"
-echo "    📦 官方仓库: https://gitee.com/muyan6/steam"
+echo "    📦 源码仓库: https://gitee.com/muyan6/steam"
 echo "======================================================================"
 echo -e "${NC}"
 
@@ -123,11 +123,11 @@ SERVER_IP=$(curl -s --max-time 3 ifconfig.me || curl -s --max-time 3 ipinfo.io/i
 echo -e "${GREEN}${BOLD}"
 echo "======================================================================"
 echo "    🎉 SteamMaster 云端后端服务部署成功！"
+echo "    📦 源码仓库: https://gitee.com/muyan6/steam"
 echo "======================================================================"
 echo -e "${NC}"
 
 echo -e "📌 ${BOLD}服务运行信息:${NC}"
-echo -e "   • 源码仓库:    ${CYAN}https://gitee.com/muyan6/steam${NC}"
 echo -e "   • 进程名称:    ${CYAN}steammaster-server${NC}"
 echo -e "   • 服务端口:    ${CYAN}1257${NC} (可于 ecosystem.config.cjs 修改)"
 echo -e "   • 管理控制台:  ${GREEN}http://${SERVER_IP}:1257/dashboard${NC}"

@@ -12,50 +12,89 @@
     </div>
 
     <div class="space-y-6 max-w-4xl pb-10">
-      <!-- 0. 界面外观与主题配色 (专属全新面板) -->
-      <div class="theme-card-static rounded-2xl p-5 shadow-lg border">
-        <div class="flex items-center justify-between mb-3">
+      <!-- 0. 界面外观与主题配色 (包含 3 款深色 + 3 款浅色共 6 种精选配色) -->
+      <div class="theme-card-static rounded-3xl p-5 shadow-lg border">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div class="flex items-center gap-2">
             <Palette class="w-4 h-4 theme-text-accent" />
             <h3 class="font-bold text-sm text-slate-200">界面外观与主题配色</h3>
-            <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono border border-slate-700">3 种精选配色</span>
+            <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-slate-800/80 text-slate-300 font-mono border border-white/10 font-bold">
+              6 种精选配色 (3深 + 3浅)
+            </span>
           </div>
-          <span class="text-xs text-slate-400 font-medium">即时切换 · 自动保存</span>
+
+          <!-- 深浅分类过滤切换 -->
+          <div class="flex items-center gap-1 bg-slate-950/40 p-1 rounded-xl border border-white/5 text-xs">
+            <button
+              @click="themeFilter = 'all'"
+              class="px-2.5 py-1 rounded-lg transition font-medium text-[11px]"
+              :class="themeFilter === 'all' ? 'bg-white/10 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+            >
+              全部 (6)
+            </button>
+            <button
+              @click="themeFilter = 'dark'"
+              class="px-2.5 py-1 rounded-lg transition font-medium text-[11px] flex items-center gap-1"
+              :class="themeFilter === 'dark' ? 'bg-white/10 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+            >
+              <Moon class="w-3 h-3" />
+              <span>深色 (3)</span>
+            </button>
+            <button
+              @click="themeFilter = 'light'"
+              class="px-2.5 py-1 rounded-lg transition font-medium text-[11px] flex items-center gap-1"
+              :class="themeFilter === 'light' ? 'bg-white/10 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+            >
+              <Sun class="w-3 h-3 text-amber-400" />
+              <span>浅色 (3)</span>
+            </button>
+          </div>
         </div>
 
         <p class="text-xs text-slate-400 mb-4 leading-relaxed">
-          提供 3 套针对现代游戏桌面端设计的专属高质感主题，随心切换沉浸视觉风格：
+          提供针对现代游戏桌面端设计的专属高质感主题，涵盖深空钛金、赛博紫晶、铂金翡翠以及全新皓月霜白、香槟晨曦与森林薄荷：
         </p>
 
-        <!-- 3 款主题选择卡片网格 -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        <!-- 6 款主题选择卡片网格 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           <div
-            v-for="theme in THEME_LIST"
+            v-for="theme in filteredThemes"
             :key="theme.id"
             @click="handleSelectTheme(theme.id)"
-            class="p-4 rounded-xl border transition-all duration-200 cursor-pointer relative overflow-hidden group flex flex-col justify-between"
+            class="p-4 rounded-2xl border transition-all duration-200 cursor-pointer relative overflow-hidden group flex flex-col justify-between"
             :class="currentTheme === theme.id 
               ? 'ring-2 ring-offset-2 ring-offset-slate-950 shadow-lg' 
-              : 'bg-slate-900/50 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/80'"
+              : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10'"
             :style="currentTheme === theme.id ? { borderColor: theme.accentHex, backgroundColor: theme.cardHex } : {}"
           >
             <!-- 激活标记徽章 -->
             <div 
               v-if="currentTheme === theme.id"
-              class="absolute top-2.5 right-2.5 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shadow"
-              :style="{ backgroundColor: theme.accentHex, color: '#000000' }"
+              class="absolute top-3 right-3 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shadow"
+              :style="{ backgroundColor: theme.accentHex, color: '#ffffff' }"
             >
               <Check class="w-3 h-3 stroke-[3]" />
               <span>当前使用</span>
             </div>
 
             <div>
-              <!-- 色彩调色板预览圆点 -->
-              <div class="flex items-center gap-1.5 mb-3">
-                <span class="w-4 h-4 rounded-full border border-white/20 shadow-sm" :style="{ backgroundColor: theme.bgHex }" title="背景色"></span>
-                <span class="w-4 h-4 rounded-full border border-white/20 shadow-sm" :style="{ backgroundColor: theme.cardHex }" title="卡片色"></span>
-                <span class="w-4 h-4 rounded-full border border-white/20 shadow-sm" :style="{ backgroundColor: theme.accentHex }" title="高亮主色"></span>
-                <span class="w-4 h-4 rounded-full border border-white/20 shadow-sm" :style="{ backgroundColor: theme.secondaryHex }" title="辅助渐变色"></span>
+              <!-- 色彩调色板预览圆点 & 深浅模式标签 -->
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.bgHex }" title="背景色"></span>
+                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.cardHex }" title="卡片色"></span>
+                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.accentHex }" title="高亮主色"></span>
+                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.secondaryHex }" title="辅助渐变色"></span>
+                </div>
+
+                <span 
+                  class="text-[10px] px-2 py-0.5 rounded-full font-mono flex items-center gap-1 border"
+                  :class="theme.type === 'dark' ? 'bg-slate-800/80 text-slate-300 border-white/10' : 'bg-amber-500/10 text-amber-600 border-amber-500/20 font-bold'"
+                >
+                  <Moon v-if="theme.type === 'dark'" class="w-2.5 h-2.5" />
+                  <Sun v-else class="w-2.5 h-2.5 text-amber-500" />
+                  <span>{{ theme.type === 'dark' ? '深色' : '浅色' }}</span>
+                </span>
               </div>
 
               <!-- 主题名称 -->
@@ -70,7 +109,7 @@
               </p>
             </div>
 
-            <div class="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+            <div class="mt-3 pt-2.5 border-t border-black/5 flex items-center justify-between text-[11px]">
               <span class="font-mono text-slate-400">#{{ theme.id }}</span>
               <span 
                 class="font-medium group-hover:underline flex items-center gap-1"
@@ -84,7 +123,7 @@
       </div>
 
       <!-- 1. 运行环境完整度与注入健康体检面板 -->
-      <div class="theme-card-static rounded-2xl p-5 shadow-lg border transition-all duration-300">
+      <div class="theme-card-static rounded-3xl p-5 shadow-lg border transition-all duration-300">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2.5 flex-wrap">
             <Activity class="w-4 h-4 theme-text-accent" />
@@ -116,7 +155,7 @@
             <button
               @click="handleStartHealthCheck"
               :disabled="checkingHealth"
-              class="theme-btn-primary px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow"
+              class="theme-btn-primary px-3.5 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow"
             >
               <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': checkingHealth }" />
               <span>{{ checkingHealth ? '正在全面体检...' : '开始全面检测' }}</span>
@@ -131,7 +170,7 @@
         <!-- 正常折叠时的清爽简报卡片 -->
         <div
           v-if="healthResult && !isExpandedView && healthResult.overallStatus === 'ready'"
-          class="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between mb-3 text-xs"
+          class="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between mb-3 text-xs"
         >
           <div class="flex items-center gap-2 text-emerald-300">
             <CheckCircle2 class="w-4 h-4 shrink-0 text-emerald-400" />
@@ -145,7 +184,7 @@
         <!-- 存在异常时的精简提醒条 -->
         <div
           v-if="healthResult && isExpandedView && filterMode === 'issues_only' && abnormalItemsCount > 0"
-          class="p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/30 flex items-center justify-between mb-3 text-xs"
+          class="p-2.5 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex items-center justify-between mb-3 text-xs"
         >
           <span class="text-amber-300 font-medium flex items-center gap-1.5">
             <AlertTriangle class="w-3.5 h-3.5" />
@@ -161,7 +200,7 @@
           <div
             v-for="(item, idx) in displayedItems"
             :key="idx"
-            class="p-3.5 rounded-xl bg-slate-900/70 border flex items-start justify-between gap-3 transition"
+            class="p-3.5 rounded-2xl bg-slate-900/70 border flex items-start justify-between gap-3 transition"
             :class="getItemBorderClass(item.status)"
           >
             <div class="flex items-start gap-3 min-w-0">
@@ -213,7 +252,7 @@
       </div>
 
       <!-- 2. 云端数据库连接面板 -->
-      <div class="theme-card-static rounded-2xl p-5 shadow-lg border">
+      <div class="theme-card-static rounded-3xl p-5 shadow-lg border">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
             <Cloud class="w-4 h-4 theme-text-accent" />
@@ -231,7 +270,7 @@
 
         <!-- 统计指标卡片 -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
-          <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+          <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
             <div>
               <div class="text-xs text-slate-400 flex items-center gap-1.5">
                 <Database class="w-3.5 h-3.5 text-sky-400" />
@@ -251,7 +290,7 @@
             </button>
           </div>
 
-          <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+          <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
             <div>
               <div class="text-xs text-slate-400 flex items-center gap-1.5">
                 <Key class="w-3.5 h-3.5 text-emerald-400" />
@@ -261,7 +300,7 @@
                 {{ dbStats.keysCount > 0 ? dbStats.keysCount.toLocaleString() + ' 条' : '288,000+ 条' }}
               </div>
             </div>
-            <div class="text-xs text-emerald-400 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <div class="text-xs text-emerald-400 flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 font-bold">
               <Zap class="w-3.5 h-3.5" />
               <span>实时云端下发</span>
             </div>
@@ -270,7 +309,7 @@
       </div>
 
       <!-- 3. Steam 安装路径设置 -->
-      <div class="theme-card-static rounded-2xl p-5 shadow-lg border">
+      <div class="theme-card-static rounded-3xl p-5 shadow-lg border">
         <div class="flex items-center gap-2 mb-3">
           <Folder class="w-4 h-4 theme-text-accent" />
           <h3 class="font-bold text-sm text-slate-200">Steam 本地客户端路径</h3>
@@ -280,18 +319,18 @@
             v-model="steamPathInput"
             type="text"
             placeholder="自动从注册表探测，或点击右侧浏览手动选择..."
-            class="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50"
+            class="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-2xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50"
           />
           <button
             @click="handleBrowseSteamPath"
-            class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-200 font-medium transition flex items-center gap-1.5"
+            class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl text-xs text-slate-200 font-medium transition flex items-center gap-1.5"
           >
             <FolderOpen class="w-3.5 h-3.5 text-slate-300" />
             <span>浏览路径</span>
           </button>
           <button
             @click="handleSaveSteamPath"
-            class="theme-btn-primary px-4 py-2.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
+            class="theme-btn-primary px-4 py-2.5 text-xs font-bold rounded-2xl transition flex items-center gap-1.5"
           >
             <Save class="w-3.5 h-3.5" />
             <span>保存并检测</span>
@@ -300,7 +339,7 @@
       </div>
 
       <!-- 4. OpenSteamTool 内核与公共清单源设置 -->
-      <div class="theme-card-static rounded-2xl p-5 shadow-lg border">
+      <div class="theme-card-static rounded-3xl p-5 shadow-lg border">
         <div class="flex items-center gap-2 mb-3">
           <Globe class="w-4 h-4 theme-text-accent" />
           <h3 class="font-bold text-sm text-slate-200">公共清单 (Manifest) 上游 API 端点配置</h3>
@@ -312,19 +351,19 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <div
             @click="manifestApi = 'steamrun'"
-            class="p-3.5 rounded-xl border transition cursor-pointer"
+            class="p-3.5 rounded-2xl border transition cursor-pointer"
             :class="manifestApi === 'steamrun' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
           >
             <div class="font-bold text-xs text-slate-200 mb-1 flex items-center gap-1.5">
               <span>SteamRun 镜像源</span>
-              <span class="text-[9px] px-1 py-0.2 rounded bg-sky-500/20 text-sky-300">推荐</span>
+              <span class="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300">推荐</span>
             </div>
             <div class="text-[11px] text-slate-400 font-mono break-all">manifest.steam.run</div>
           </div>
 
           <div
             @click="manifestApi = 'wudrm'"
-            class="p-3.5 rounded-xl border transition cursor-pointer"
+            class="p-3.5 rounded-2xl border transition cursor-pointer"
             :class="manifestApi === 'wudrm' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
           >
             <div class="font-bold text-xs text-slate-200 mb-1">WUDRM 国内高速源</div>
@@ -333,7 +372,7 @@
 
           <div
             @click="manifestApi = 'opensteamtool'"
-            class="p-3.5 rounded-xl border transition cursor-pointer"
+            class="p-3.5 rounded-2xl border transition cursor-pointer"
             :class="manifestApi === 'opensteamtool' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
           >
             <div class="font-bold text-xs text-slate-200 mb-1">OpenSteamTool 备用源</div>
@@ -345,7 +384,7 @@
           <div class="flex items-center gap-2">
             <button
               @click="emit('relaunch-wizard')"
-              class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-sky-300 font-medium transition flex items-center gap-1.5"
+              class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl text-xs text-sky-300 font-medium transition flex items-center gap-1.5"
             >
               <Sparkles class="w-3.5 h-3.5" />
               <span>重新运行注入向导</span>
@@ -353,7 +392,7 @@
             <button
               @click="handleUninstallOST"
               :disabled="deploying"
-              class="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-medium transition flex items-center gap-1.5"
+              class="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-2xl text-xs font-medium transition flex items-center gap-1.5"
             >
               <Trash2 class="w-3.5 h-3.5" />
               <span>卸载注入</span>
@@ -362,7 +401,7 @@
           <button
             @click="handleDeployOSTEnv"
             :disabled="deploying"
-            class="theme-btn-primary px-4 py-2 disabled:opacity-50 text-xs font-bold rounded-xl shadow transition flex items-center gap-1.5"
+            class="theme-btn-primary px-4 py-2 disabled:opacity-50 text-xs font-bold rounded-2xl shadow transition flex items-center gap-1.5"
           >
             <Zap class="w-3.5 h-3.5" />
             <span>{{ deploying ? '正在写入...' : '一键同步/重建环境' }}</span>
@@ -371,7 +410,7 @@
       </div>
 
       <!-- 5. 安全免责与防杀软提示 -->
-      <div class="rounded-2xl p-5 bg-slate-900/40 border border-slate-800">
+      <div class="rounded-3xl p-5 bg-slate-900/40 border border-slate-800">
         <h3 class="font-bold text-xs text-amber-400 mb-2 flex items-center gap-1.5">
           <ShieldAlert class="w-4 h-4 text-amber-400" />
           <span>安全提示与杀毒软件白名单说明</span>
@@ -407,7 +446,9 @@ import {
   Globe, 
   Sparkles, 
   Trash2, 
-  ShieldAlert 
+  ShieldAlert,
+  Moon,
+  Sun
 } from 'lucide-vue-next';
 import { EnvironmentDiagnosticResult, EnvironmentCheckItem, AppThemeId } from '../../types';
 import { useTheme } from '../composables/useTheme';
@@ -419,6 +460,13 @@ const emit = defineEmits<{
 }>();
 
 const { currentTheme, THEME_LIST, setTheme } = useTheme();
+
+const themeFilter = ref<'all' | 'dark' | 'light'>('all');
+
+const filteredThemes = computed(() => {
+  if (themeFilter.value === 'all') return THEME_LIST;
+  return THEME_LIST.filter(t => t.type === themeFilter.value);
+});
 
 const steamPathInput = ref('');
 const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>('steamrun');
@@ -441,7 +489,7 @@ const dbStats = ref({
 const handleSelectTheme = (themeId: AppThemeId) => {
   setTheme(themeId);
   const matched = THEME_LIST.find(t => t.id === themeId);
-  emit('notify', `已切换至「${matched?.name || themeId}」主题配色！`, 'success');
+  emit('notify', `已切换至「${matched?.name || themeId}」${matched?.type === 'light' ? '浅色' : '深色'}主题！`, 'success');
 };
 
 const abnormalItemsCount = computed(() => {

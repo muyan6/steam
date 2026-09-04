@@ -1,9 +1,10 @@
-export type AppThemeId = 'midnight' | 'neon' | 'emerald';
+export type AppThemeId = 'midnight' | 'neon' | 'emerald' | 'frost' | 'dawn' | 'mint';
 
 export interface ThemeConfig {
   id: AppThemeId;
   name: string;
   nameEn: string;
+  type: 'dark' | 'light';
   description: string;
   bgHex: string;
   cardHex: string;

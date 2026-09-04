@@ -2,8 +2,8 @@
 
 # ==============================================================================
 # SteamMaster 云端后端服务 一键极速更新脚本 (update.sh)
-# 官方源码: https://gitee.com/muyan6/steam
-# 用途: 自动从 Gitee 仓库拉取最新代码、增量安装依赖、重新编译并秒级无缝重载服务
+# Gitee 官方仓库: https://gitee.com/muyan6/steam.git
+# 用途: 自动拉取 Gitee 最新代码、增量安装依赖、重新编译并秒级无缝重载服务
 # ==============================================================================
 
 set -e
@@ -19,7 +19,7 @@ NC='\033[0m'
 echo -e "${CYAN}${BOLD}"
 echo "======================================================================"
 echo "    🔄 SteamMaster 商业版 - 云端后端数据引擎 一键增量更新脚本"
-echo "    📦 官方仓库: https://gitee.com/muyan6/steam"
+echo "    📦 源码仓库: https://gitee.com/muyan6/steam"
 echo "======================================================================"
 echo -e "${NC}"
 
@@ -36,17 +36,22 @@ else
     PROJECT_ROOT="$SCRIPT_DIR"
 fi
 
-echo -e "${BLUE}[1/4] 从 Gitee 仓库拉取最新代码...${NC}"
+echo -e "${BLUE}[1/4] 拉取 Gitee 远程仓库最新代码...${NC}"
 cd "$PROJECT_ROOT"
 
 if [ -d ".git" ]; then
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
     echo -e "   -> 当前分支: ${CYAN}$CURRENT_BRANCH${NC}"
-    echo -e "   -> 同步源:   ${CYAN}https://gitee.com/muyan6/steam.git${NC}"
     
+    # 自动识别并无缝切换至 Gitee 加速源
+    CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+    if [[ "$CURRENT_REMOTE" =~ "github.com" ]]; then
+        echo -e "   -> 检测到 GitHub 远端，正在自动切换为 Gitee 镜像加速源..."
+        git remote set-url origin https://gitee.com/muyan6/steam.git 2>/dev/null || true
+    fi
+
     git stash > /dev/null 2>&1 || true
-    # 优先从 Gitee 极速仓库拉取最新代码
-    git pull https://gitee.com/muyan6/steam.git "$CURRENT_BRANCH" || git pull origin "$CURRENT_BRANCH"
+    git pull origin "$CURRENT_BRANCH"
     
     LATEST_COMMIT=$(git log -1 --format="%h - %s (%cr)" 2>/dev/null || echo "未知版本")
     echo -e "   -> 最新提交: ${GREEN}$LATEST_COMMIT${NC}"
@@ -79,7 +84,7 @@ HEALTH_CHECK=$(curl -s --max-time 3 http://127.0.0.1:1257/api/health 2>/dev/null
 
 echo -e "\n${GREEN}${BOLD}"
 echo "======================================================================"
-echo "    🎉 SteamMaster 云端后端服务已成功更新并热重载！"
+echo "    🎉 SteamMaster 云端后端服务已成功从 Gitee 更新并热重载！"
 echo "======================================================================"
 echo -e "${NC}"
 
@@ -90,7 +95,6 @@ else
     echo -e "   • 健康状态:    ${YELLOW}● 服务已启动，正在初始化索引${NC}"
 fi
 
-echo -e "   • 源码仓库:    ${CYAN}https://gitee.com/muyan6/steam${NC}"
 echo -e "   • PM2 进程名:  ${CYAN}steammaster-server${NC}"
 echo -e "   • 查看实时日志: ${CYAN}pm2 logs steammaster-server --lines 30${NC}"
 echo -e "======================================================================\n"
