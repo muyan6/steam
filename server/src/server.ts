@@ -35,6 +35,12 @@ app.use('/api', apiRouter);
 
 // 后端管理控制台 (100% 独立内联、零外部 CDN 依赖、秒开原生 SPA)
 app.get(['/', '/dashboard'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -135,21 +141,21 @@ app.get(['/', '/dashboard'], (req, res) => {
         <span id="loginNoticeText">账号或密码错误</span>
       </div>
 
-      <form id="loginForm" onsubmit="handleLoginSubmit(event); return false;">
+      <div id="loginFormContainer">
         <div class="form-group" style="text-align: left;">
           <label>管理员账号 (Username)</label>
-          <input type="text" id="loginUser" class="input-ctrl" value="admin" required placeholder="请输入管理员账号 (默认: admin)" autocomplete="username" />
+          <input type="text" id="loginUser" class="input-ctrl" value="admin" placeholder="请输入管理员账号 (默认: admin)" autocomplete="username" onkeydown="if(event.key==='Enter') handleLoginSubmit();" />
         </div>
 
         <div class="form-group" style="text-align: left;">
           <label>管理员密码 (Password)</label>
-          <input type="password" id="loginPass" class="input-ctrl" required placeholder="请输入管理员密码 (默认: admin123)" autocomplete="current-password" />
+          <input type="password" id="loginPass" class="input-ctrl" placeholder="请输入管理员密码 (默认: admin123)" autocomplete="current-password" onkeydown="if(event.key==='Enter') handleLoginSubmit();" />
         </div>
 
-        <button type="submit" id="loginBtn" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 11px; margin-top: 8px; font-size: 14px;">
+        <button type="button" id="loginBtn" onclick="handleLoginSubmit()" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 11px; margin-top: 8px; font-size: 14px;">
           <span>安全登录控制台</span>
         </button>
-      </form>
+      </div>
 
       <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 11px; color: #64748b; line-height: 1.6;">
         <div>默认账号: <code style="color: #38bdf8; font-weight: bold;">admin</code> · 默认密码: <code style="color: #38bdf8; font-weight: bold;">admin123</code></div>
@@ -159,7 +165,7 @@ app.get(['/', '/dashboard'], (req, res) => {
   </div>
 
   <!-- ==================== 2. 控制台主界面 ==================== -->
-  <div id="dashboardSection" class="d-none">
+  <div id="dashboardSection" class="d-none" style="display: none;">
     <header class="app-header">
       <div style="display: flex; align-items: center; gap: 12px;">
         <div style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #0284c7, #10b981); display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff;">
@@ -176,12 +182,12 @@ app.get(['/', '/dashboard'], (req, res) => {
 
       <!-- 选项卡切换导航 -->
       <div class="nav-tabs">
-        <button class="tab-btn active" onclick="switchTab('overview')">📊 系统大盘</button>
-        <button class="tab-btn" onclick="switchTab('notices')">📢 公告中心</button>
-        <button class="tab-btn" onclick="switchTab('versions')">🚀 版本与推送</button>
-        <button class="tab-btn" onclick="switchTab('keys')">🔑 密钥检索</button>
-        <button class="tab-btn" onclick="switchTab('sources')">🌐 多源调度</button>
-        <button class="tab-btn" onclick="switchTab('security')">⚙️ 安全配置</button>
+        <button class="tab-btn active" onclick="switchTab('overview', this)">📊 系统大盘</button>
+        <button class="tab-btn" onclick="switchTab('notices', this)">📢 公告中心</button>
+        <button class="tab-btn" onclick="switchTab('versions', this)">🚀 版本与推送</button>
+        <button class="tab-btn" onclick="switchTab('keys', this)">🔑 密钥检索</button>
+        <button class="tab-btn" onclick="switchTab('sources', this)">🌐 多源调度</button>
+        <button class="tab-btn" onclick="switchTab('security', this)">⚙️ 安全配置</button>
       </div>
 
       <!-- 用户信息与退出 -->
@@ -240,7 +246,7 @@ app.get(['/', '/dashboard'], (req, res) => {
       </div>
 
       <!-- ==================== Tab 2: 公告中心 ==================== -->
-      <div id="tab-notices" class="tab-content d-none">
+      <div id="tab-notices" class="tab-content d-none" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <div>
             <strong style="color: #fff; font-size: 15px;">📢 公告发布与调度管理</strong>
@@ -271,13 +277,13 @@ app.get(['/', '/dashboard'], (req, res) => {
       </div>
 
       <!-- ==================== Tab 3: 版本与推送 ==================== -->
-      <div id="tab-versions" class="tab-content d-none">
+      <div id="tab-versions" class="tab-content d-none" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <div>
             <strong style="color: #fff; font-size: 15px;">🚀 版本发布与更新推送中心</strong>
             <div style="color: #64748b; font-size: 11px;">管理客户端升级规则、更新日志、强制升级及全网推送通知广播</div>
           </div>
-          <div style="display: gap: 8px; display: flex;">
+          <div style="display: flex; gap: 8px;">
             <button onclick="openPushModal()" class="btn btn-secondary btn-sm" style="color: #a855f7;">📢 发起全网更新推送</button>
             <button onclick="openVersionModal()" class="btn btn-primary btn-sm">+ 发布新版本</button>
           </div>
@@ -304,7 +310,7 @@ app.get(['/', '/dashboard'], (req, res) => {
       </div>
 
       <!-- ==================== Tab 4: 密钥检索 ==================== -->
-      <div id="tab-keys" class="tab-content d-none">
+      <div id="tab-keys" class="tab-content d-none" style="display: none;">
         <div class="card" style="margin-bottom: 16px;">
           <strong style="color: #fff; font-size: 14px; margin-bottom: 8px; display: block;">🔑 28.8万+ DepotKey 密钥与 Token 检索器</strong>
           <div style="display: flex; gap: 10px;">
@@ -317,7 +323,7 @@ app.get(['/', '/dashboard'], (req, res) => {
       </div>
 
       <!-- ==================== Tab 5: 多源调度 ==================== -->
-      <div id="tab-sources" class="tab-content d-none">
+      <div id="tab-sources" class="tab-content d-none" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <div>
             <strong style="color: #fff; font-size: 15px;">🌐 多源数据管道与爬虫调度中心</strong>
@@ -330,14 +336,14 @@ app.get(['/', '/dashboard'], (req, res) => {
       </div>
 
       <!-- ==================== Tab 6: 安全配置 ==================== -->
-      <div id="tab-security" class="tab-content d-none">
+      <div id="tab-security" class="tab-content d-none" style="display: none;">
         <div class="card" style="max-width: 500px; margin-bottom: 20px;">
           <strong style="color: #fff; font-size: 14px; margin-bottom: 12px; display: block;">⚙️ 修改管理员账号与密码</strong>
           <div id="pwdMsg" style="display: none; padding: 8px 12px; border-radius: 8px; font-size: 11px; margin-bottom: 12px;"></div>
-          <form onsubmit="handleChangePassword(event); return false;">
+          <div>
             <div class="form-group">
               <label>原密码 (Current Password)</label>
-              <input type="password" id="curPass" class="input-ctrl" required placeholder="请输入当前管理员密码" />
+              <input type="password" id="curPass" class="input-ctrl" placeholder="请输入当前管理员密码" />
             </div>
             <div class="form-group">
               <label>新管理员用户名 (Username)</label>
@@ -345,10 +351,10 @@ app.get(['/', '/dashboard'], (req, res) => {
             </div>
             <div class="form-group">
               <label>新安全密码 (New Password)</label>
-              <input type="password" id="newPass" class="input-ctrl" required minlength="6" placeholder="至少 6 位安全字符" />
+              <input type="password" id="newPass" class="input-ctrl" minlength="6" placeholder="至少 6 位安全字符" />
             </div>
-            <button type="submit" id="btnChangePass" class="btn btn-primary" style="width: 100%; justify-content: center;">保存修改</button>
-          </form>
+            <button type="button" id="btnChangePass" onclick="handleChangePassword()" class="btn btn-primary" style="width: 100%; justify-content: center;">保存修改</button>
+          </div>
         </div>
 
         <div class="card">
@@ -386,11 +392,11 @@ app.get(['/', '/dashboard'], (req, res) => {
         <strong id="noticeModalTitle" style="color: #fff; font-size: 14px;">发布系统公告</strong>
         <button type="button" onclick="closeModal('noticeModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
-      <form onsubmit="handleNoticeSubmit(event); return false;">
+      <div>
         <input type="hidden" id="noticeId" />
         <div class="form-group">
           <label>公告标题 (Title)</label>
-          <input type="text" id="noticeTitle" class="input-ctrl" required placeholder="例如: 🎉 欢迎使用 SteamMaster！" />
+          <input type="text" id="noticeTitle" class="input-ctrl" placeholder="例如: 🎉 欢迎使用 SteamMaster！" />
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -422,13 +428,13 @@ app.get(['/', '/dashboard'], (req, res) => {
         </div>
         <div class="form-group">
           <label>公告详细内容 (Content)</label>
-          <textarea id="noticeContent" class="input-ctrl" rows="4" required placeholder="请输入公告正文..."></textarea>
+          <textarea id="noticeContent" class="input-ctrl" rows="4" placeholder="请输入公告正文..."></textarea>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
           <button type="button" onclick="closeModal('noticeModal')" class="btn btn-secondary">取消</button>
-          <button type="submit" class="btn btn-primary">保存下发</button>
+          <button type="button" onclick="handleNoticeSubmit()" class="btn btn-primary">保存下发</button>
         </div>
-      </form>
+      </div>
     </div>
   </div>
 
@@ -439,28 +445,28 @@ app.get(['/', '/dashboard'], (req, res) => {
         <strong id="versionModalTitle" style="color: #fff; font-size: 14px;">发布新版本</strong>
         <button type="button" onclick="closeModal('versionModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
-      <form onsubmit="handleVersionSubmit(event); return false;">
+      <div>
         <div class="form-row">
           <div class="form-group">
             <label>版本号 (如 1.0.1)</label>
-            <input type="text" id="verNumber" class="input-ctrl" required placeholder="1.0.1" />
+            <input type="text" id="verNumber" class="input-ctrl" placeholder="1.0.1" />
           </div>
           <div class="form-group">
             <label>发布日期</label>
-            <input type="date" id="verDate" class="input-ctrl" required />
+            <input type="date" id="verDate" class="input-ctrl" />
           </div>
         </div>
         <div class="form-group">
           <label>版本标题</label>
-          <input type="text" id="verTitle" class="input-ctrl" required placeholder="SteamMaster 商业版 v1.0.1 正式发布" />
+          <input type="text" id="verTitle" class="input-ctrl" placeholder="SteamMaster 商业版 v1.0.1 正式发布" />
         </div>
         <div class="form-group">
           <label>官方下载地址</label>
-          <input type="text" id="verUrl" class="input-ctrl" required value="https://gitee.com/muyan6/steam/releases" />
+          <input type="text" id="verUrl" class="input-ctrl" value="https://gitee.com/muyan6/steam/releases" />
         </div>
         <div class="form-group">
           <label>更新日志 (Changelog, 每行一条)</label>
-          <textarea id="verChangelog" class="input-ctrl" rows="4" required placeholder="🚀 优化游戏秒搜与入库引擎&#10;☁️ 新增云端管理控制台与公告推送"></textarea>
+          <textarea id="verChangelog" class="input-ctrl" rows="4" placeholder="🚀 优化游戏秒搜与入库引擎&#10;☁️ 新增云端管理控制台与公告推送"></textarea>
         </div>
         <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
           <input type="checkbox" id="verForce" />
@@ -468,9 +474,9 @@ app.get(['/', '/dashboard'], (req, res) => {
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
           <button type="button" onclick="closeModal('versionModal')" class="btn btn-secondary">取消</button>
-          <button type="submit" class="btn btn-primary">立即发布上线</button>
+          <button type="button" onclick="handleVersionSubmit()" class="btn btn-primary">立即发布上线</button>
         </div>
-      </form>
+      </div>
     </div>
   </div>
 
@@ -481,24 +487,24 @@ app.get(['/', '/dashboard'], (req, res) => {
         <strong style="color: #fff; font-size: 14px;">📢 全网版本更新推送广播</strong>
         <button type="button" onclick="closeModal('pushModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
-      <form onsubmit="handlePushSubmit(event); return false;">
+      <div>
         <div class="form-group">
           <label>目标推送版本</label>
-          <input type="text" id="pushVersion" class="input-ctrl" required placeholder="1.0.0" />
+          <input type="text" id="pushVersion" class="input-ctrl" placeholder="1.0.0" />
         </div>
         <div class="form-group">
           <label>推送标题</label>
-          <input type="text" id="pushTitle" class="input-ctrl" required placeholder="🚀 发现新版本更新！" />
+          <input type="text" id="pushTitle" class="input-ctrl" placeholder="🚀 发现新版本更新！" />
         </div>
         <div class="form-group">
           <label>推送广播内容</label>
-          <textarea id="pushContent" class="input-ctrl" rows="3" required placeholder="全新版本现已发布，建议立即升级体验！"></textarea>
+          <textarea id="pushContent" class="input-ctrl" rows="3" placeholder="全新版本现已发布，建议立即升级体验！"></textarea>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
           <button type="button" onclick="closeModal('pushModal')" class="btn btn-secondary">取消</button>
-          <button type="submit" class="btn btn-primary">立即广播推送</button>
+          <button type="button" onclick="handlePushSubmit()" class="btn btn-primary">立即广播推送</button>
         </div>
-      </form>
+      </div>
     </div>
   </div>
 
@@ -546,6 +552,7 @@ app.get(['/', '/dashboard'], (req, res) => {
       icon.innerText = type === 'error' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️';
       txt.innerText = text;
       box.classList.remove('d-none');
+      box.style.cssText = 'display: flex !important;';
       if (type === 'error') {
         const loginBox = document.getElementById('loginBox');
         if (loginBox) {
@@ -558,7 +565,10 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     function hideNotice() {
       const box = document.getElementById('loginNotice');
-      if (box) box.classList.add('d-none');
+      if (box) {
+        box.classList.add('d-none');
+        box.style.cssText = 'display: none !important;';
+      }
     }
 
     // 检查登录状态
@@ -569,37 +579,43 @@ app.get(['/', '/dashboard'], (req, res) => {
 
       if (t) {
         authToken = t;
-        if (loginSec) loginSec.style.display = 'none';
+        if (loginSec) {
+          loginSec.classList.add('d-none');
+          loginSec.style.cssText = 'display: none !important;';
+        }
         if (dashSec) {
           dashSec.classList.remove('d-none');
-          dashSec.style.display = 'block';
+          dashSec.style.cssText = 'display: block !important;';
         }
         loadAllData();
       } else {
-        if (loginSec) loginSec.style.display = 'flex';
+        if (loginSec) {
+          loginSec.classList.remove('d-none');
+          loginSec.style.cssText = 'display: flex !important;';
+        }
         if (dashSec) {
           dashSec.classList.add('d-none');
-          dashSec.style.display = 'none';
+          dashSec.style.cssText = 'display: none !important;';
         }
       }
     }
 
-    // 登录处理
-    async function handleLoginSubmit(e) {
-      if (e) { e.preventDefault(); e.stopPropagation(); }
-      const user = (document.getElementById('loginUser').value || '').trim();
-      const pass = (document.getElementById('loginPass').value || '').trim();
+    async function handleLoginSubmit() {
+      const userEl = document.getElementById('loginUser');
+      const passEl = document.getElementById('loginPass');
+      const user = (userEl ? userEl.value : '').trim();
+      const pass = (passEl ? passEl.value : '').trim();
       const btn = document.getElementById('loginBtn');
 
       if (!user || !pass) {
         showNotice('error', '请输入管理员账号与密码');
-        return false;
+        return;
       }
 
       showNotice('info', '正在校验凭据并连接云端控制台...');
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '正在登录...';
+        btn.innerHTML = '<span>⏳ 正在验证凭据...</span>';
       }
 
       try {
@@ -608,39 +624,44 @@ app.get(['/', '/dashboard'], (req, res) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: user, password: pass })
         });
-        const data = await resp.json();
-        if (data && data.success && data.token) {
+        
+        let data;
+        try {
+          data = await resp.json();
+        } catch (jsonErr) {
+          throw new Error('服务器返回非标准响应 (HTTP ' + resp.status + ')');
+        }
+
+        if (resp.ok && data && data.success && data.token) {
           showNotice('success', '登录成功！正在进入管控大盘...');
           authToken = data.token;
           localStorage.setItem('steammaster_admin_token', authToken);
           const adminEl = document.getElementById('adminUsername');
-          if (adminEl) adminEl.innerText = data.user?.username || user;
+          if (adminEl) adminEl.innerText = (data.user && data.user.username) ? data.user.username : user;
           
-          // 立即切换到控制台界面
           const loginSec = document.getElementById('loginSection');
           const dashSec = document.getElementById('dashboardSection');
-          if (loginSec) loginSec.style.display = 'none';
+          if (loginSec) {
+            loginSec.classList.add('d-none');
+            loginSec.style.cssText = 'display: none !important;';
+          }
           if (dashSec) {
             dashSec.classList.remove('d-none');
-            dashSec.style.display = 'block';
+            dashSec.style.cssText = 'display: block !important;';
           }
           
           loadAllData();
         } else {
           showNotice('error', (data && data.message) ? data.message : '账号或密码错误 (默认密码: admin123 或主密钥 steammaster_admin_8888)');
-          if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '安全登录控制台';
-          }
         }
       } catch (err) {
         showNotice('error', '连接服务器失败: ' + err.message + ' (请确认后端服务已启动并在 1257 端口运行)');
+      } finally {
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = '安全登录控制台';
+          btn.innerHTML = '<span>安全登录控制台</span>';
         }
       }
-      return false;
     }
 
     function handleLogout() {
@@ -649,22 +670,24 @@ app.get(['/', '/dashboard'], (req, res) => {
       checkAuth();
     }
 
-    // 选项卡切换
-    function switchTab(tabId) {
+    function switchTab(tabId, el) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => {
         c.classList.add('d-none');
-        c.style.display = 'none';
+        c.style.cssText = 'display: none !important;';
       });
 
-      if (event && event.target) {
-        const btn = event.target.closest('.tab-btn');
-        if (btn) btn.classList.add('active');
+      if (el) {
+        el.classList.add('active');
+      } else {
+        const found = document.querySelector('.tab-btn[onclick*="' + tabId + '"]');
+        if (found) found.classList.add('active');
       }
+
       const target = document.getElementById('tab-' + tabId);
       if (target) {
         target.classList.remove('d-none');
-        target.style.display = 'block';
+        target.style.cssText = 'display: block !important;';
       }
 
       if (tabId === 'notices') loadNotices();
@@ -673,7 +696,6 @@ app.get(['/', '/dashboard'], (req, res) => {
       if (tabId === 'security') loadAuditLogs();
     }
 
-    // 加载概况统计
     async function loadStats() {
       try {
         const resp = await fetch('/api/admin/stats', { headers: getHeaders() });
@@ -701,7 +723,6 @@ app.get(['/', '/dashboard'], (req, res) => {
       }
     }
 
-    // 加载公告列表
     async function loadNotices() {
       try {
         const resp = await fetch('/api/admin/notices', { headers: getHeaders() });
@@ -735,7 +756,6 @@ app.get(['/', '/dashboard'], (req, res) => {
       }
     }
 
-    // 加载版本列表
     async function loadVersions() {
       try {
         const resp = await fetch('/api/admin/versions', { headers: getHeaders() });
@@ -767,13 +787,12 @@ app.get(['/', '/dashboard'], (req, res) => {
       }
     }
 
-    // 密钥检索
     async function searchKey() {
-      const q = document.getElementById('keySearchInput').value.trim();
+      const q = (document.getElementById('keySearchInput').value || '').trim();
       if (!q) return;
       const resBox = document.getElementById('keySearchResult');
       const btn = document.getElementById('btnSearchKey');
-      btn.innerText = '检索中...';
+      if (btn) btn.innerText = '检索中...';
       try {
         const resp = await fetch('/api/admin/search/debug?q=' + encodeURIComponent(q), { headers: getHeaders() });
         const res = await resp.json();
@@ -781,20 +800,20 @@ app.get(['/', '/dashboard'], (req, res) => {
           const d = res.data;
           resBox.style.display = 'block';
           resBox.innerHTML = \`
-            <div style="margin-bottom: 12px; font-weight: bold; color: #fff;">🎯 检索结果: \${q}</div>
+            <div style="margin-bottom: 12px; font-weight: bold; color: #fff;">🎯 检索结果: \${escapeHtml(q)}</div>
             \${d.game ? \`
               <div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.06);">
-                <strong style="color: #38bdf8;">\${d.game.nameZh || d.game.name}</strong> (\${d.game.name}) · AppID: \${d.game.appId}
+                <strong style="color: #38bdf8;">\${escapeHtml(d.game.nameZh || d.game.name)}</strong> (\${escapeHtml(d.game.name)}) · AppID: \${d.game.appId}
               </div>
             \` : ''}
             <div class="grid-2">
               <div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
                 <div style="color: #94a3b8; font-size: 11px; margin-bottom: 6px;">AES-256 DepotKey 密钥</div>
-                <div style="font-family: monospace; color: #34d399; word-break: break-all;">\${d.depotKey || '未命中分包密钥'}</div>
+                <div style="font-family: monospace; color: #34d399; word-break: break-all;">\${escapeHtml(d.depotKey || '未命中分包密钥')}</div>
               </div>
               <div style="background: rgba(2,6,23,0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
                 <div style="color: #94a3b8; font-size: 11px; margin-bottom: 6px;">PICS AccessToken 令牌</div>
-                <div style="font-family: monospace; color: #38bdf8; word-break: break-all;">\${d.token || '公开分包 (无保护令牌需求)'}</div>
+                <div style="font-family: monospace; color: #38bdf8; word-break: break-all;">\${escapeHtml(d.token || '公开分包 (无保护令牌需求)')}</div>
               </div>
             </div>
           \`;
@@ -802,11 +821,10 @@ app.get(['/', '/dashboard'], (req, res) => {
       } catch (e) {
         alert('查询失败: ' + e.message);
       } finally {
-        btn.innerText = '查询';
+        if (btn) btn.innerText = '查询';
       }
     }
 
-    // 多源列表
     async function loadSources() {
       try {
         const resp = await fetch('/api/sources');
@@ -817,19 +835,20 @@ app.get(['/', '/dashboard'], (req, res) => {
             <div class="card">
               <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                 <strong style="color: #fff;">\${escapeHtml(s.name)}</strong>
-                <span class="badge badge-green">\${s.status}</span>
+                <span class="badge badge-green">\${escapeHtml(s.status)}</span>
               </div>
               <p style="color: #94a3b8; font-size: 12px; margin-bottom: 10px;">\${escapeHtml(s.description)}</p>
               <div style="font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">
-                来源: \${s.author} · 周期: \${s.syncFrequency}
+                来源: \${escapeHtml(s.author)} · 周期: \${escapeHtml(s.syncFrequency)}
               </div>
             </div>
           \`).join('');
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('加载数据源失败:', e);
+      }
     }
 
-    // 触发同步
     async function triggerSyncAll() {
       const btn = document.getElementById('btnSyncAll');
       if (btn) btn.innerHTML = '<span>⏳ 正在同步中...</span>';
@@ -845,7 +864,6 @@ app.get(['/', '/dashboard'], (req, res) => {
       }
     }
 
-    // 审计日志
     async function loadAuditLogs() {
       try {
         const resp = await fetch('/api/auth/audit-logs?limit=50', { headers: getHeaders() });
@@ -855,24 +873,31 @@ app.get(['/', '/dashboard'], (req, res) => {
           tbody.innerHTML = res.data.map(l => \`
             <tr style="font-size: 11px; font-family: monospace;">
               <td style="color: #64748b;">\${formatTime(l.timestamp)}</td>
-              <td style="color: #38bdf8; font-weight: bold;">\${l.action}</td>
-              <td>\${l.operator}</td>
-              <td style="color: #64748b;">\${l.ip}</td>
+              <td style="color: #38bdf8; font-weight: bold;">\${escapeHtml(l.action)}</td>
+              <td>\${escapeHtml(l.operator)}</td>
+              <td style="color: #64748b;">\${escapeHtml(l.ip)}</td>
               <td style="font-family: inherit; color: #cbd5e1;">\${escapeHtml(l.details || '')}</td>
               <td><span class="badge \${l.success ? 'badge-green' : 'badge-rose'}">\${l.success ? '成功' : '失败'}</span></td>
             </tr>
           \`).join('');
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('加载审计日志失败:', e);
+      }
     }
 
-    // 改密
-    async function handleChangePassword(e) {
-      if (e) e.preventDefault();
-      const cur = document.getElementById('curPass').value;
-      const user = document.getElementById('newUsername').value.trim();
-      const pass = document.getElementById('newPass').value;
+    async function handleChangePassword() {
+      const cur = (document.getElementById('curPass').value || '').trim();
+      const user = (document.getElementById('newUsername').value || '').trim();
+      const pass = (document.getElementById('newPass').value || '').trim();
       const msg = document.getElementById('pwdMsg');
+
+      if (!cur || !pass) {
+        msg.style.display = 'block';
+        msg.className = 'badge-rose';
+        msg.innerText = '❌ 请输入当前密码与新密码';
+        return;
+      }
 
       try {
         const resp = await fetch('/api/auth/change-password', {
@@ -900,7 +925,6 @@ app.get(['/', '/dashboard'], (req, res) => {
       }
     }
 
-    // 模态框控制
     function openNoticeModal() {
       document.getElementById('noticeId').value = '';
       document.getElementById('noticeTitle').value = '';
@@ -943,15 +967,20 @@ app.get(['/', '/dashboard'], (req, res) => {
       document.getElementById(id).style.display = 'none';
     }
 
-    async function handleNoticeSubmit(e) {
-      if (e) e.preventDefault();
+    async function handleNoticeSubmit() {
+      const title = (document.getElementById('noticeTitle').value || '').trim();
+      const content = (document.getElementById('noticeContent').value || '').trim();
+      if (!title || !content) {
+        alert('请填写公告标题与内容');
+        return;
+      }
       const payload = {
-        title: document.getElementById('noticeTitle').value,
+        title,
         type: document.getElementById('noticeType').value,
         level: document.getElementById('noticeLevel').value,
         priority: parseInt(document.getElementById('noticePriority').value, 10) || 10,
         targetVersion: document.getElementById('noticeVersion').value || '*',
-        content: document.getElementById('noticeContent').value,
+        content,
         enabled: true
       };
       try {
@@ -965,17 +994,24 @@ app.get(['/', '/dashboard'], (req, res) => {
           closeModal('noticeModal');
           loadNotices();
           alert('公告已发布下发！');
+        } else {
+          alert('发布失败: ' + (res.message || '未知错误'));
         }
       } catch (err) { alert('发布失败: ' + err.message); }
     }
 
-    async function handleVersionSubmit(e) {
-      if (e) e.preventDefault();
+    async function handleVersionSubmit() {
+      const ver = (document.getElementById('verNumber').value || '').trim();
+      const title = (document.getElementById('verTitle').value || '').trim();
+      if (!ver || !title) {
+        alert('请填写版本号与更新标题');
+        return;
+      }
       const changelog = document.getElementById('verChangelog').value.split('\n').map(s => s.trim()).filter(Boolean);
       const payload = {
-        version: document.getElementById('verNumber').value.trim(),
+        version: ver,
         releaseDate: document.getElementById('verDate').value,
-        title: document.getElementById('verTitle').value,
+        title,
         downloadUrl: document.getElementById('verUrl').value,
         forceUpdate: document.getElementById('verForce').checked,
         changelog,
@@ -992,16 +1028,24 @@ app.get(['/', '/dashboard'], (req, res) => {
           closeModal('versionModal');
           loadVersions();
           alert('新版本已发布上线！');
+        } else {
+          alert('发布失败: ' + (res.message || '未知错误'));
         }
       } catch (err) { alert('发布失败: ' + err.message); }
     }
 
-    async function handlePushSubmit(e) {
-      if (e) e.preventDefault();
+    async function handlePushSubmit() {
+      const ver = (document.getElementById('pushVersion').value || '').trim();
+      const title = (document.getElementById('pushTitle').value || '').trim();
+      const content = (document.getElementById('pushContent').value || '').trim();
+      if (!ver || !title) {
+        alert('请填写目标版本与推送标题');
+        return;
+      }
       const payload = {
-        version: document.getElementById('pushVersion').value,
-        title: document.getElementById('pushTitle').value,
-        content: document.getElementById('pushContent').value
+        version: ver,
+        title,
+        content
       };
       try {
         const resp = await fetch('/api/admin/versions/push', {
@@ -1013,6 +1057,8 @@ app.get(['/', '/dashboard'], (req, res) => {
         if (res && res.success) {
           closeModal('pushModal');
           alert('🎉 全网版本推送广播发起成功！所有在线客户端已接收。');
+        } else {
+          alert('推送失败: ' + (res.message || '未知错误'));
         }
       } catch (err) { alert('推送失败: ' + err.message); }
     }
