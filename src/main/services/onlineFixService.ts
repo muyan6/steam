@@ -205,6 +205,74 @@ enable=1
       return { success: false, message: `还原失败: ${e.message}` };
     }
   }
+
+  /**
+   * 获取所有已知的 Steam 库目录路径 (包含 steamapps 及其它盘符 SteamLibrary)
+   */
+  public getSteamLibraryPaths(steamPath: string): string[] {
+    const libraries: string[] = [];
+    if (!steamPath || !fs.existsSync(steamPath)) return libraries;
+
+    // 1. Steam 根目录下的 steamapps
+    const mainApps = path.join(steamPath, 'steamapps');
+    if (fs.existsSync(mainApps)) {
+      libraries.push(mainApps);
+    }
+
+    // 2. 解析 libraryfolders.vdf 获取其它库路径
+    const vdfPath = path.join(steamPath, 'steamapps', 'libraryfolders.vdf');
+    if (fs.existsSync(vdfPath)) {
+      try {
+        const content = fs.readFileSync(vdfPath, 'utf-8');
+        // 匹配 "path"		"D:\\SteamLibrary"
+        const pathMatches = content.matchAll(/"path"\s+"([^"]+)"/gi);
+        for (const match of pathMatches) {
+          const rawPath = match[1];
+          const cleanPath = rawPath.replace(/\\\\/g, '\\');
+          const appsDir = path.join(cleanPath, 'steamapps');
+          if (fs.existsSync(appsDir) && !libraries.includes(appsDir)) {
+            libraries.push(appsDir);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return libraries;
+  }
+
+  /**
+   * 检测 Steam 中是否已安装 Spacewar (AppID: 480)
+   */
+  public isSpacewarInstalled(steamPath: string): { isInstalled: boolean; path?: string; appName: string; appId: number } {
+    const defaultInfo = {
+      isInstalled: false,
+      appName: 'Spacewar',
+      appId: 480
+    };
+
+    if (!steamPath || !fs.existsSync(steamPath)) {
+      return defaultInfo;
+    }
+
+    const libDirs = this.getSteamLibraryPaths(steamPath);
+    for (const libDir of libDirs) {
+      const manifestPath = path.join(libDir, 'appmanifest_480.acf');
+      const commonDir = path.join(libDir, 'common', 'Spacewar');
+      if (fs.existsSync(manifestPath) || fs.existsSync(commonDir)) {
+        return {
+          isInstalled: true,
+          path: fs.existsSync(manifestPath) ? manifestPath : commonDir,
+          appName: 'Spacewar',
+          appId: 480
+        };
+      }
+    }
+
+    return defaultInfo;
+  }
 }
 
 export const onlineFixService = new OnlineFixService();
+

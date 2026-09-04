@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, BrowserWindow } from 'electron';
+import { app, ipcMain, dialog, BrowserWindow, shell } from 'electron';
 import { steamService } from './services/steamService';
 import { ostService } from './services/ostService';
 import { manifestService } from './services/manifestService';
@@ -111,6 +111,24 @@ export function registerIpcHandlers() {
   // 4. 联机修复工具
   ipcMain.handle('onlinefix:check-dir', async (_, dirPath: string) => {
     return onlineFixService.checkGameDirectory(dirPath);
+  });
+
+  ipcMain.handle('onlinefix:check-spacewar', async () => {
+    const steamPath = await steamService.detectSteamPath();
+    if (!steamPath) {
+      return { isInstalled: false, appName: 'Spacewar', appId: 480 };
+    }
+    return onlineFixService.isSpacewarInstalled(steamPath);
+  });
+
+  ipcMain.handle('onlinefix:install-spacewar', async () => {
+    try {
+      await shell.openExternal('steam://install/480');
+      return true;
+    } catch (e: any) {
+      console.error('唤起 Steam 安装 Spacewar 失败:', e);
+      return false;
+    }
   });
 
   ipcMain.handle('onlinefix:apply-spacewar', async (_, { dirPath, appId }) => {

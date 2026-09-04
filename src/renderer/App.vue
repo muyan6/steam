@@ -309,7 +309,7 @@
       :license-info="licenseInfo"
       @close="showLicenseModal = false"
       @refresh="loadLicenseInfo(true)"
-      @notify="showToast"
+      @notify="addToast"
     />
 
     <!-- 全局 Toast 提示 -->

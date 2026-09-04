@@ -41,13 +41,32 @@
           </div>
 
           <!-- 当前运行状态指示 -->
-          <div class="px-3.5 py-2 rounded-2xl bg-slate-900/80 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2">
-            <span class="text-slate-400">当前 Steam 状态:</span>
-            <span v-if="steamInfo.isRunning" class="font-bold flex items-center gap-1.5" :class="steamInfo.globalOnlineFixEnabled ? 'text-emerald-400' : 'text-sky-400'">
-              <span class="w-2 h-2 rounded-full" :class="steamInfo.globalOnlineFixEnabled ? 'bg-emerald-400' : 'bg-sky-400'"></span>
-              <span>{{ steamInfo.globalOnlineFixEnabled ? '🟢 -onlinefix 联机模式' : '⚪ 原版纯净模式' }}</span>
-            </span>
-            <span v-else class="text-slate-500">⚪ 未运行</span>
+          <div class="flex items-center gap-2 flex-wrap">
+            <div class="px-3.5 py-2 rounded-2xl bg-slate-900/80 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2">
+              <span class="text-slate-400">当前 Steam 状态:</span>
+              <span v-if="steamInfo.isRunning" class="font-bold flex items-center gap-1.5" :class="steamInfo.globalOnlineFixEnabled ? 'text-emerald-400' : 'text-sky-400'">
+                <span class="w-2 h-2 rounded-full" :class="steamInfo.globalOnlineFixEnabled ? 'bg-emerald-400' : 'bg-sky-400'"></span>
+                <span>{{ steamInfo.globalOnlineFixEnabled ? '🟢 -onlinefix 联机模式' : '⚪ 原版纯净模式' }}</span>
+              </span>
+              <span v-else class="text-slate-500">⚪ 未运行</span>
+            </div>
+
+            <!-- Spacewar 核心依赖状态 -->
+            <button
+              @click="!spacewarStatus.isInstalled ? (showSpacewarModal = true) : fetchSpacewarStatus(true)"
+              class="px-3.5 py-2 rounded-2xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2 transition cursor-pointer"
+              :title="spacewarStatus.isInstalled ? 'Spacewar 已安装就绪，点击刷新检测' : '未检测到 Spacewar，点击查看安装向导'"
+            >
+              <span class="text-slate-400">Spacewar:</span>
+              <span v-if="spacewarStatus.isInstalled" class="text-emerald-400 font-bold flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>🟢 已就绪 (480)</span>
+              </span>
+              <span v-else class="text-amber-400 font-bold flex items-center gap-1.5 animate-pulse">
+                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span>🟡 未安装 (点击安装)</span>
+              </span>
+            </button>
           </div>
         </div>
 
@@ -291,6 +310,66 @@
         </div>
       </div>
     </div>
+
+    <!-- 🌟 Spacewar 未安装提示弹窗 (像素级对齐设计) -->
+    <div
+      v-if="showSpacewarModal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200"
+      @click.self="showSpacewarModal = false"
+    >
+      <div class="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-7 shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
+        <!-- 警告黄色圆环图标 -->
+        <div class="w-16 h-16 rounded-full bg-amber-500/15 border-2 border-amber-500/40 flex items-center justify-center mb-4 shadow-lg shadow-amber-500/10">
+          <AlertTriangle class="w-8 h-8 text-amber-400" />
+        </div>
+
+        <!-- 标题 -->
+        <h3 class="text-xl font-bold text-slate-100 mb-2 tracking-tight">
+          Spacewar未安装
+        </h3>
+
+        <!-- 提示说明文案 -->
+        <p class="text-xs text-slate-300 leading-relaxed max-w-xs mb-6">
+          正在帮你安装联机必备Steam应用《Spacewar》<br />
+          Steam弹出安装请进行安装，安装后点击刷新列表。
+        </p>
+
+        <!-- 按钮组 -->
+        <div class="flex items-center gap-3 w-full">
+          <button
+            @click="handleTriggerSpacewarInstall"
+            class="flex-1 py-3 px-4 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-bold text-xs rounded-2xl shadow-lg shadow-sky-500/20 transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Check class="w-4 h-4 text-slate-950" />
+            <span>打开Steam安装</span>
+          </button>
+
+          <button
+            @click="showSpacewarModal = false"
+            class="flex-1 py-3 px-4 bg-slate-800/90 hover:bg-slate-700 active:bg-slate-600 text-slate-300 hover:text-slate-100 font-bold text-xs rounded-2xl border border-white/10 transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <X class="w-4 h-4 text-slate-400" />
+            <span>取消</span>
+          </button>
+        </div>
+
+        <!-- 底部快捷状态与刷新 -->
+        <div class="mt-5 pt-3.5 border-t border-white/5 w-full flex items-center justify-between text-[11px] text-slate-400">
+          <span class="flex items-center gap-1.5 font-mono">
+            <span class="w-2 h-2 rounded-full" :class="spacewarStatus.isInstalled ? 'bg-emerald-400' : 'bg-amber-400'"></span>
+            <span>{{ spacewarStatus.isInstalled ? '已成功检测到 Spacewar (AppID: 480)' : '等待安装确认中...' }}</span>
+          </span>
+          <button
+            @click="fetchSpacewarStatus(true)"
+            :disabled="isCheckingSpacewar"
+            class="text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1 cursor-pointer transition disabled:opacity-50"
+          >
+            <RefreshCw class="w-3 h-3" :class="isCheckingSpacewar ? 'animate-spin' : ''" />
+            <span>刷新状态</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -307,9 +386,12 @@ import {
   Check, 
   Sparkles,
   ShieldCheck,
-  Users
+  Users,
+  AlertTriangle,
+  X,
+  RefreshCw
 } from 'lucide-vue-next';
-import { OnlineFixStatus, SteamEnvironmentInfo } from '../../types';
+import { OnlineFixStatus, SteamEnvironmentInfo, SpacewarStatus } from '../../types';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -321,6 +403,14 @@ const selectedMode = ref<'spacewar' | 'goldberg'>('spacewar');
 const appIdInput = ref<number | ''>('');
 const playerNameInput = ref('春风渡玩家');
 const actionLoading = ref(false);
+
+const showSpacewarModal = ref(false);
+const isCheckingSpacewar = ref(false);
+const spacewarStatus = ref<SpacewarStatus>({
+  isInstalled: false,
+  appName: 'Spacewar',
+  appId: 480
+});
 
 const steamInfo = ref<SteamEnvironmentInfo>({
   steamPath: null,
@@ -345,6 +435,37 @@ const fetchSteamStatus = async () => {
     }
   } catch {
     // ignore
+  }
+};
+
+const fetchSpacewarStatus = async (notifyUser: boolean = false) => {
+  isCheckingSpacewar.value = true;
+  try {
+    const status = await window.electronAPI.checkSpacewarInstalled();
+    if (status) {
+      spacewarStatus.value = status;
+      if (notifyUser) {
+        if (status.isInstalled) {
+          emit('notify', '检测到 Spacewar (AppID: 480) 已成功就绪！', 'success');
+        } else {
+          emit('notify', '尚未检测到 Spacewar 安装文件，请在 Steam 中确认安装。', 'warning');
+        }
+      }
+    }
+  } catch {
+    // ignore
+  } finally {
+    isCheckingSpacewar.value = false;
+  }
+};
+
+const handleTriggerSpacewarInstall = async () => {
+  try {
+    emit('notify', '正在唤起 Steam 安装向导...', 'info');
+    await window.electronAPI.installSpacewar();
+    emit('notify', '已打开 Steam 安装界面，请在 Steam 弹窗中点击确认安装，安装后点击【刷新状态】即可。', 'success');
+  } catch (e: any) {
+    emit('notify', `唤起 Steam 安装失败: ${e.message}`, 'error');
   }
 };
 
@@ -374,6 +495,13 @@ const checkDirectoryStatus = async () => {
 };
 
 const handleLaunchGlobalOnlineFix = async () => {
+  // 检测 Spacewar 是否已安装
+  if (!spacewarStatus.value.isInstalled) {
+    showSpacewarModal.value = true;
+    emit('notify', '检测到未安装联机必备组件 Spacewar，请先完成安装！', 'warning');
+    return;
+  }
+
   actionLoading.value = true;
   try {
     emit('notify', '正在以 -onlinefix 参数拉起 Steam...', 'info');
@@ -404,6 +532,12 @@ const handleRestartNormalSteam = async () => {
 const handleApplyFix = async () => {
   if (!targetDir.value) {
     emit('notify', '请先指定游戏目录', 'warning');
+    return;
+  }
+
+  if (selectedMode.value === 'spacewar' && !spacewarStatus.value.isInstalled) {
+    showSpacewarModal.value = true;
+    emit('notify', '检测到未安装联机必备组件 Spacewar，请先完成安装！', 'warning');
     return;
   }
 
@@ -455,5 +589,6 @@ const handleRestoreOriginal = async () => {
 
 onMounted(() => {
   fetchSteamStatus();
+  fetchSpacewarStatus();
 });
 </script>

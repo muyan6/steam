@@ -74,6 +74,13 @@ export interface OnlineFixStatus {
   appId?: number;
 }
 
+export interface SpacewarStatus {
+  isInstalled: boolean;
+  path?: string;
+  appName?: string;
+  appId: number;
+}
+
 export interface AppSettings {
   steamPath: string;
   manifestApi: 'opensteamtool' | 'steamrun' | 'wudrm' | 'custom';

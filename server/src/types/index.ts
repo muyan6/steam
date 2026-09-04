@@ -139,3 +139,18 @@ export interface ToolboxStatsResponse {
   autoSwitchCount: number;
   nodes: ManifestServerNode[];
 }
+
+export interface SpacewarStatus {
+  isInstalled: boolean;
+  path?: string;
+  appName?: string;
+  appId: number;
+}
+
+export interface OnlineFixMetadata {
+  fakeAppId: number;
+  fakeAppName: string;
+  recommendedMode: 'onlinefix_global' | 'spacewar_single' | 'goldberg_lan';
+  docUrl?: string;
+}
+
