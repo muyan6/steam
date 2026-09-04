@@ -438,12 +438,18 @@ const fetchSteamStatus = async () => {
   }
 };
 
-const fetchSpacewarStatus = async (notifyUser: boolean = false) => {
+const fetchSpacewarStatus = async (notifyUser: boolean = false, autoPopupIfMissing: boolean = false) => {
   isCheckingSpacewar.value = true;
   try {
     const status = await window.electronAPI.checkSpacewarInstalled();
     if (status) {
       spacewarStatus.value = status;
+      if (!status.isInstalled && autoPopupIfMissing) {
+        showSpacewarModal.value = true;
+      } else if (status.isInstalled && showSpacewarModal.value) {
+        showSpacewarModal.value = false;
+      }
+
       if (notifyUser) {
         if (status.isInstalled) {
           emit('notify', '检测到 Spacewar (AppID: 480) 已成功就绪！', 'success');
@@ -587,8 +593,9 @@ const handleRestoreOriginal = async () => {
   }
 };
 
-onMounted(() => {
+onMounted(async () => {
   fetchSteamStatus();
-  fetchSpacewarStatus();
+  // 进入联机修复中心后立即检测，若未安装 Spacewar 则直接弹出安装提示窗口
+  await fetchSpacewarStatus(false, true);
 });
 </script>
