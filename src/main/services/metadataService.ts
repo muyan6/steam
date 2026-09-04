@@ -2,6 +2,7 @@ import https from 'https';
 import axios from 'axios';
 import { DepotInfo, GameMetadata } from '../../types';
 import { APP_CONFIG } from '../../config/appConfig';
+import { licenseClientService } from './licenseClientService';
 
 export class MetadataService {
   private readonly STEAM_STORE_API = 'https://store.steampowered.com/api/appdetails';
@@ -19,6 +20,12 @@ export class MetadataService {
    */
   public async fetchMetadata(appId: string | number, hintName: string = ''): Promise<GameMetadata> {
     const sAppId = appId.toString();
+
+    // 0. 未激活时严禁向云端发起密钥请求
+    const license = await licenseClientService.getLicenseInfo(false);
+    if (!license || !license.isActivated) {
+      throw new Error('当前设备尚未激活软件授权，无法调用云端数据引擎获取游戏密钥。请先输入卡密激活。');
+    }
 
     console.log(`[MetadataService] 正在按需获取 AppID ${sAppId} 元数据与解密密钥...`);
 

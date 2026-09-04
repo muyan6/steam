@@ -6,6 +6,7 @@ import { steamService } from './steamService';
 import { metadataService } from './metadataService';
 import { luaGameService } from './luaGameService';
 import { manifestDownloadService } from './manifestDownloadService';
+import { licenseClientService } from './licenseClientService';
 import { SteamGame, LuaGameInfo } from '../../types';
 
 export class OSTService {
@@ -255,7 +256,18 @@ server = "${manifestApi || 'steamrun'}"
     scriptPath?: string;
     matchedKeysCount?: number;
     manifestCount?: number;
+    notActivated?: boolean;
   }> {
+    // 0. 严格校验软件授权状态：未激活时拒绝入库，防止误导用户产生空入库规则
+    const license = await licenseClientService.getLicenseInfo(false);
+    if (!license || !license.isActivated) {
+      return {
+        success: false,
+        message: '当前设备尚未激活软件授权！无法获取云端 28.8万条解密密钥与游戏入库规则。请先输入卡密激活后再使用。',
+        notActivated: true
+      };
+    }
+
     const steamPath = await steamService.detectSteamPath();
     if (!steamPath) {
       return { success: false, message: '未找到 Steam 客户端路径' };

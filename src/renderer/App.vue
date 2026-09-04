@@ -165,11 +165,13 @@
           v-if="currentTab === 'search'"
           @notify="addToast"
           @refresh-status="fetchSteamInfo"
+          @open-license-modal="showLicenseModal = true"
         />
         <LibraryView
           v-else-if="currentTab === 'library'"
           @notify="addToast"
           @refresh-status="fetchSteamInfo"
+          @open-license-modal="showLicenseModal = true"
         />
         <OnlineFixView
           v-else-if="currentTab === 'onlinefix'"
@@ -179,12 +181,14 @@
           v-else-if="currentTab === 'toolbox'"
           @notify="addToast"
           @refresh-status="fetchSteamInfo"
+          @open-license-modal="showLicenseModal = true"
         />
         <SettingsView
           v-else-if="currentTab === 'settings'"
           @notify="addToast"
           @refresh-status="fetchSteamInfo"
           @relaunch-wizard="showStartupWizard = true"
+          @open-license-modal="showLicenseModal = true"
         />
       </div>
     </main>

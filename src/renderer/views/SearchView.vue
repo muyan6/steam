@@ -204,6 +204,7 @@ import { APP_CONFIG } from '../../config/appConfig';
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
   (e: 'refresh-status'): void;
+  (e: 'open-license-modal'): void;
 }>();
 
 const searchQuery = ref('');
@@ -229,16 +230,6 @@ const handleImgError = async (game: SteamGame) => {
     const data = resp.data?.[game.appId.toString()];
     if (data && data.data && data.data.header_image) {
       game.headerUrl = data.data.header_image;
-      return;
-    }
-  } catch {
-    // ignore
-  }
-
-  try {
-    const resp = await axios.get(`${APP_CONFIG.API_BASE_URL}/api/games/${game.appId}/header`, { timeout: 2500 });
-    if (resp.data && resp.data.success && resp.data.headerUrl) {
-      game.headerUrl = resp.data.headerUrl;
       return;
     }
   } catch {
@@ -275,6 +266,19 @@ const loadUnlockedList = async () => {
 };
 
 const unlockGame = async (game: SteamGame) => {
+  // 0. 前置严格授权检查：未激活时阻断入库，直接弹窗提示激活
+  try {
+    const lic = await window.electronAPI.getLicenseInfo();
+    if (!lic || !lic.isActivated) {
+      emit('notify', '当前设备尚未激活软件授权！无法使用一键入库与密钥调度，请先激活后使用。', 'warning');
+      emit('open-license-modal');
+      return;
+    }
+  } catch (e: any) {
+    emit('notify', `授权检测异常: ${e.message}`, 'error');
+    return;
+  }
+
   unlockingId.value = game.appId;
   try {
     const plainGame: SteamGame = {
@@ -296,9 +300,12 @@ const unlockGame = async (game: SteamGame) => {
       emit('refresh-status');
     } else {
       emit('notify', res.message, 'error');
+      if ((res as any).notActivated) {
+        emit('open-license-modal');
+      }
     }
   } catch (e: any) {
-    emit('notify', `操作异常: ${e.message}`, 'error');
+    emit('notify', `入库异常: ${e.message}`, 'error');
   } finally {
     unlockingId.value = null;
   }
