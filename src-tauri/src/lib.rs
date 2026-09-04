@@ -9,7 +9,7 @@ pub mod steamless;
 
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Window};
+use tauri::{AppHandle, Manager, Window};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use crate::steam::SteamEnvironmentInfo;
@@ -74,9 +74,11 @@ fn get_device_id() -> String {
 
 // Steam 环境命令
 #[tauri::command]
-fn get_steam_info(custom_path: Option<String>) -> SteamEnvironmentInfo {
-    steam::get_steam_info(custom_path.as_deref())
-}
+async fn get_steam_info(custom_path: Option<String>) -> SteamEnvironmentInfo {
+        tauri::async_runtime::spawn_blocking(move || { steam::get_steam_info(custom_path.as_deref()) })
+        .await
+        .unwrap_or_else(|_e| steam::get_steam_info(None))
+    }
 
 #[tauri::command]
 fn set_steam_path(path: String) -> Result<SteamEnvironmentInfo, String> {
@@ -89,24 +91,28 @@ fn set_steam_path(path: String) -> Result<SteamEnvironmentInfo, String> {
 }
 
 #[tauri::command]
-fn restart_steam(extra_args: Option<Vec<String>>) -> bool {
-    if let Some(steam_path) = steam::detect_steam_path() {
+async fn restart_steam(extra_args: Option<Vec<String>>) -> bool {
+        tauri::async_runtime::spawn_blocking(move || { if let Some(steam_path) = steam::detect_steam_path() {
         let args = extra_args.unwrap_or_default();
         steam::restart_steam(&steam_path, &args)
     } else {
         false
+    } })
+        .await
+        .unwrap_or_else(|_e| false)
     }
-}
 
 // Steam 目录选择与打开（对应 Electron 版 selectDirectory / openFolder）
 #[tauri::command]
-fn select_directory(app_handle: AppHandle) -> Option<String> {
-    app_handle
+async fn select_directory(app_handle: AppHandle) -> Option<String> {
+        tauri::async_runtime::spawn_blocking(move || { app_handle
         .dialog()
         .file()
         .blocking_pick_folder()
-        .map(|p| p.to_string())
-}
+        .map(|p| p.to_string()) })
+        .await
+        .unwrap_or_else(|_e| None)
+    }
 
 #[tauri::command]
 fn open_path(app_handle: AppHandle, path: String) -> Result<(), String> {
@@ -141,8 +147,8 @@ fn resolve_manifest_server(
 
 // OpenSteamTool 核心命令
 #[tauri::command]
-fn ensure_ost_env(manifest_api: Option<String>, custom_api_url: Option<String>) -> serde_json::Value {
-    let server = match resolve_manifest_server(manifest_api, custom_api_url) {
+async fn ensure_ost_env(manifest_api: Option<String>, custom_api_url: Option<String>) -> serde_json::Value {
+        tauri::async_runtime::spawn_blocking(move || { let server = match resolve_manifest_server(manifest_api, custom_api_url) {
         Ok(s) => s,
         Err(e) => return json!({ "success": false, "message": e }),
     };
@@ -156,16 +162,18 @@ fn ensure_ost_env(manifest_api: Option<String>, custom_api_url: Option<String>) 
         }
     } else {
         json!({ "success": false, "message": "未找到 Steam 安装路径" })
+    } })
+        .await
+        .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
     }
-}
 
 #[tauri::command]
-fn activate_injection(
+async fn activate_injection(
     manifest_api: Option<String>,
     custom_api_url: Option<String>,
     restart_steam: Option<bool>,
 ) -> serde_json::Value {
-    let server = match resolve_manifest_server(manifest_api, custom_api_url) {
+        tauri::async_runtime::spawn_blocking(move || { let server = match resolve_manifest_server(manifest_api, custom_api_url) {
         Ok(s) => s,
         Err(e) => return json!({ "success": false, "message": e }),
     };
@@ -190,8 +198,10 @@ fn activate_injection(
         })
     } else {
         json!({ "success": false, "message": "未找到 Steam 安装路径" })
+    } })
+        .await
+        .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
     }
-}
 
 #[tauri::command]
 fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
@@ -265,8 +275,8 @@ fn uninstall_injection() -> serde_json::Value {
 
 // 环境体检：返回与 Electron 版一致的 EnvironmentDiagnosticResult 结构
 #[tauri::command]
-fn check_environment_health() -> serde_json::Value {
-    let mut items: Vec<serde_json::Value> = Vec::new();
+async fn check_environment_health() -> serde_json::Value {
+        tauri::async_runtime::spawn_blocking(move || { let mut items: Vec<serde_json::Value> = Vec::new();
 
     let steam_path = steam::detect_steam_path();
     match &steam_path {
@@ -347,16 +357,37 @@ fn check_environment_health() -> serde_json::Value {
         "summary": summary,
         "items": items,
         "checkedAt": chrono_like_now()
-    })
-}
+    }) })
+        .await
+        .unwrap_or_else(|e| json!({ "overallStatus": "partial", "summary": "体检任务执行失败", "items": [], "checkedAt": local_time_string() }))
+    }
 
 fn chrono_like_now() -> String {
-    // 使用标准库生成可读时间戳（本地时区由系统格式化输出不可用时退化为 UTC 秒）
+    local_time_string()
+}
+
+/// 生成可读的本地时间字符串（UTC+8，无外部依赖）
+fn local_time_string() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("unix:{}", secs)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+        + 8 * 3600; // UTC+8
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400);
+    let (h, m, sec) = (rem / 3600, rem % 3600 / 60, rem % 60);
+    // Howard Hinnant civil_from_days 算法
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { y + 1 } else { y };
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, d, h, m, sec)
 }
 
 // 工具箱
@@ -371,17 +402,19 @@ fn toolbox_action(success: bool, message: String, steps: Vec<String>) -> Toolbox
 }
 
 #[tauri::command]
-fn toolbox_clear_cache() -> ToolboxActionResult {
-    if let Some(steam_path) = steam::detect_steam_path() {
+async fn toolbox_clear_cache() -> ToolboxActionResult {
+        tauri::async_runtime::spawn_blocking(move || { if let Some(steam_path) = steam::detect_steam_path() {
         toolbox::clear_steam_cache(&steam_path)
     } else {
         toolbox_action(false, "未找到 Steam 客户端路径".to_string(), vec!["[失败] 无法定位 Steam 目录".to_string()])
+    } })
+        .await
+        .unwrap_or_else(|e| toolbox::ToolboxActionResult { success: false, message: format!("任务执行失败: {}", e), steps: Some(Vec::new()), cleaned_files_count: None, restarted_steam: None })
     }
-}
 
 #[tauri::command]
-fn toolbox_repair_ost() -> ToolboxActionResult {
-    if let Some(steam_path) = steam::detect_steam_path() {
+async fn toolbox_repair_ost() -> ToolboxActionResult {
+        tauri::async_runtime::spawn_blocking(move || { if let Some(steam_path) = steam::detect_steam_path() {
         let mut steps = Vec::new();
         let was_running = steam::is_steam_running();
         if was_running {
@@ -421,8 +454,10 @@ fn toolbox_repair_ost() -> ToolboxActionResult {
         }
     } else {
         toolbox_action(false, "未找到 Steam 客户端路径".to_string(), vec!["[失败] 无法定位 Steam 目录".to_string()])
+    } })
+        .await
+        .unwrap_or_else(|e| toolbox::ToolboxActionResult { success: false, message: format!("任务执行失败: {}", e), steps: Some(Vec::new()), cleaned_files_count: None, restarted_steam: None })
     }
-}
 
 // 读取 opensteamtool.toml 中的 server 值
 fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
@@ -476,8 +511,8 @@ fn get_toolbox_status() -> serde_json::Value {
 
 // 清单服务器自动切换（对应 Electron 版 toolboxAutoSwitchManifest）
 #[tauri::command]
-fn auto_switch_manifest() -> ToolboxActionResult {
-    let mut steps = Vec::new();
+async fn auto_switch_manifest() -> ToolboxActionResult {
+        tauri::async_runtime::spawn_blocking(move || { let mut steps = Vec::new();
     let Some(steam_path) = steam::detect_steam_path() else {
         return toolbox_action(false, "未找到 Steam 安装目录。".to_string(), vec!["[失败] 无法定位 Steam 目录".to_string()]);
     };
@@ -513,13 +548,15 @@ fn auto_switch_manifest() -> ToolboxActionResult {
         steps: Some(steps),
         cleaned_files_count: None,
         restarted_steam: Some(restarted),
+    } })
+        .await
+        .unwrap_or_else(|e| toolbox::ToolboxActionResult { success: false, message: format!("任务执行失败: {}", e), steps: Some(Vec::new()), cleaned_files_count: None, restarted_steam: None })
     }
-}
 
 // 补齐核心 DLL 真实 SHA256 校验数据（对应 Electron 版 toolboxFillSha256）
 #[tauri::command]
-fn fill_sha256() -> ToolboxActionResult {
-    use sha2::{Digest, Sha256};
+async fn fill_sha256() -> ToolboxActionResult {
+        tauri::async_runtime::spawn_blocking(move || { use sha2::{Digest, Sha256};
 
     let mut steps = Vec::new();
     let Some(steam_path) = steam::detect_steam_path() else {
@@ -576,8 +613,10 @@ fn fill_sha256() -> ToolboxActionResult {
             steps.push(format!("[错误] 写入失败: {}", e));
             toolbox_action(false, format!("补齐 SHA256 失败: {}", e), steps)
         }
+    } })
+        .await
+        .unwrap_or_else(|e| toolbox::ToolboxActionResult { success: false, message: format!("任务执行失败: {}", e), steps: Some(Vec::new()), cleaned_files_count: None, restarted_steam: None })
     }
-}
 
 // ==================== 联机修复中心 / 清单预缓存 / Steamless ====================
 
@@ -599,8 +638,8 @@ fn check_manifest_status(app_id: u32, dlcs: Option<Vec<u32>>) -> serde_json::Val
 }
 
 #[tauri::command]
-fn download_manifests(app_id: u32, dlcs: Option<Vec<u32>>) -> serde_json::Value {
-    match steam::detect_steam_path() {
+async fn download_manifests(app_id: u32, dlcs: Option<Vec<u32>>) -> serde_json::Value {
+        tauri::async_runtime::spawn_blocking(move || { match steam::detect_steam_path() {
         Some(sp) => {
             let result = manifests::download_depot_manifests(&sp, app_id, &dlcs.unwrap_or_default());
             serde_json::to_value(result).unwrap_or(json!({}))
@@ -610,27 +649,33 @@ fn download_manifests(app_id: u32, dlcs: Option<Vec<u32>>) -> serde_json::Value 
             "depotKeys": {}, "manifestFiles": [], "source": "none",
             "message": "未检测到 Steam 客户端安装目录"
         }),
+    } })
+        .await
+        .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
     }
-}
 
 #[tauri::command]
-fn is_spacewar_installed() -> serde_json::Value {
-    match steam::detect_steam_path() {
+async fn is_spacewar_installed() -> serde_json::Value {
+        tauri::async_runtime::spawn_blocking(move || { match steam::detect_steam_path() {
         Some(sp) => {
             let (installed, path) = localgames::is_spacewar_installed(&sp);
             json!({ "isInstalled": installed, "path": path, "appName": "Spacewar", "appId": 480 })
         }
         None => json!({ "isInstalled": false, "appName": "Spacewar", "appId": 480 }),
+    } })
+        .await
+        .unwrap_or_else(|e| json!({ "isInstalled": false, "appName": "Spacewar", "appId": 480 }))
     }
-}
 
 #[tauri::command]
-fn scan_local_games() -> Vec<localgames::LocalInstalledGame> {
-    match steam::detect_steam_path() {
+async fn scan_local_games() -> Vec<localgames::LocalInstalledGame> {
+        tauri::async_runtime::spawn_blocking(move || { match steam::detect_steam_path() {
         Some(sp) => localgames::scan_installed_games(&sp),
         None => vec![],
+    } })
+        .await
+        .unwrap_or_else(|_e| Vec::new())
     }
-}
 
 #[tauri::command]
 fn check_game_dir(dir_path: String) -> serde_json::Value {
@@ -665,24 +710,28 @@ fn restore_game(dir_path: String) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn launch_local_game(
+async fn launch_local_game(
     app_id: u32,
     game_path: String,
     primary_exe: Option<String>,
     mode: String,
     online_app_id: u32,
 ) -> serde_json::Value {
-    match localgames::launch_game_online(app_id, &game_path, primary_exe, &mode, online_app_id) {
+        tauri::async_runtime::spawn_blocking(move || { match localgames::launch_game_online(app_id, &game_path, primary_exe, &mode, online_app_id) {
         Ok(msg) => json!({ "success": true, "message": msg }),
         Err(e) => json!({ "success": false, "message": e }),
+    } })
+        .await
+        .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
     }
-}
 
 #[tauri::command]
-fn search_onlinefix_patch(app_id: u32, game_name: Option<String>) -> serde_json::Value {
-    let r = onlinefix::search_onlinefix_patch(app_id, game_name.as_deref());
-    serde_json::to_value(r).unwrap_or(json!({ "found": false }))
-}
+async fn search_onlinefix_patch(app_id: u32, game_name: Option<String>) -> serde_json::Value {
+        tauri::async_runtime::spawn_blocking(move || { let r = onlinefix::search_onlinefix_patch(app_id, game_name.as_deref());
+    serde_json::to_value(r).unwrap_or(json!({ "found": false })) })
+        .await
+        .unwrap_or_else(|e| json!({ "found": false, "message": format!("任务执行失败: {}", e) }))
+    }
 
 #[tauri::command]
 fn set_onlinefix_account(username: String, password: String) -> serde_json::Value {
@@ -691,54 +740,152 @@ fn set_onlinefix_account(username: String, password: String) -> serde_json::Valu
 }
 
 #[tauri::command]
-fn onlinefix_prepare(
+async fn onlinefix_prepare(
     game_path: String,
     app_id: u32,
     game_name: Option<String>,
 ) -> Result<serde_json::Value, onlinefix::OnlineFixPatchResult> {
-    match onlinefix::prepare_patch(&game_path, app_id, game_name.as_deref()) {
+        tauri::async_runtime::spawn_blocking(move || { match onlinefix::prepare_patch(&game_path, app_id, game_name.as_deref()) {
         Ok(prep) => Ok(serde_json::to_value(prep).unwrap_or(json!({}))),
         Err(fail) => Err(fail),
+    } })
+        .await
+        .map_err(|e| onlinefix::OnlineFixPatchResult { success: false, message: format!("任务执行失败: {}", e), file_name: None, extracted_count: None, article_url: None, download_url: None })?
     }
-}
 
 /// 读取临时目录中的补丁归档（原始字节，仅限应用临时下载目录）
 #[tauri::command]
-fn read_file_raw(path: String) -> Result<tauri::ipc::Response, String> {
-    if !onlinefix::is_temp_archive(&path) {
+async fn read_file_raw(path: String) -> Result<tauri::ipc::Response, String> {
+        tauri::async_runtime::spawn_blocking(move || { if !onlinefix::is_temp_archive(&path) {
         return Err("非法的文件访问路径".to_string());
     }
     let bytes = std::fs::read(&path).map_err(|e| format!("读取归档失败: {}", e))?;
-    Ok(tauri::ipc::Response::new(bytes))
-}
+    Ok(tauri::ipc::Response::new(bytes)) })
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+    }
 
 #[tauri::command]
-fn zip_extract(archive_path: String, dest_dir: String) -> Result<serde_json::Value, String> {
-    if !onlinefix::is_temp_archive(&archive_path) {
+async fn zip_extract(archive_path: String, dest_dir: String) -> Result<serde_json::Value, String> {
+        tauri::async_runtime::spawn_blocking(move || { if !onlinefix::is_temp_archive(&archive_path) {
         return Err("非法的归档路径".to_string());
     }
     let count = onlinefix::extract_zip_archive(&archive_path, &dest_dir)?;
-    Ok(json!({ "extractedCount": count }))
-}
+    Ok(json!({ "extractedCount": count })) })
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+    }
 
 #[tauri::command]
-fn onlinefix_deploy(
+async fn onlinefix_deploy(
     game_path: String,
     entries: Vec<onlinefix::PatchEntry>,
     archive_path: Option<String>,
 ) -> serde_json::Value {
-    let r = onlinefix::deploy_patch_entries(&game_path, &entries, archive_path.as_deref());
-    serde_json::to_value(r).unwrap_or(json!({ "success": false, "message": "部署失败" }))
+        tauri::async_runtime::spawn_blocking(move || { let r = onlinefix::deploy_patch_entries(&game_path, &entries, archive_path.as_deref());
+    serde_json::to_value(r).unwrap_or(json!({ "success": false, "message": "部署失败" })) })
+        .await
+        .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
+    }
+
+#[tauri::command]
+fn get_steamless_status(app: AppHandle) -> steamless::SteamlessStatusInfo {
+    let resource_dir = app.path().resource_dir().ok();
+    steamless::get_status_with_resource(resource_dir.as_deref())
 }
 
 #[tauri::command]
-fn get_steamless_status() -> steamless::SteamlessStatusInfo {
-    steamless::get_status()
+async fn repair_game_steamless(app: AppHandle, game_path: String, game_name: Option<String>) -> steamless::SteamlessRepairResult {
+        let resource_dir = app.path().resource_dir().ok();
+        tauri::async_runtime::spawn_blocking(move || { steamless::repair_game_with_resource(&game_path, game_name.as_deref(), resource_dir.as_deref()) })
+        .await
+        .unwrap_or_else(|e| steamless::SteamlessRepairResult { success: false, message: format!("任务执行失败: {}", e), total_found: 0, repaired_count: 0, backup_count: 0, skipped_count: 0, details: Vec::new() })
+    }
+
+// 本地 18万+ 全量库分页检索（Tauri 版，数据文件随包分发）
+#[tauri::command]
+async fn search_local_games(
+    app: AppHandle,
+    query: Option<String>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> serde_json::Value {
+    let resource_dir = app.path().resource_dir().ok();
+    tauri::async_runtime::spawn_blocking(move || {
+        manifests::search_local_all(resource_dir.as_deref(), query.as_deref(), page.unwrap_or(1), page_size.unwrap_or(48))
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "items": [], "total": 0, "totalPages": 1, "source": "local_db", "sourceName": "本地全量库", "error": format!("任务执行失败: {}", e) }))
+}
+
+// 已入库游戏详情（真实清单/密钥状态，供 LibraryView 渲染"预缓存"入口）
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnlockedDetail {
+    pub app_id: u32,
+    pub name: String,
+    pub has_token: bool,
+    pub has_manifest: bool,
+    pub has_depot_keys: bool,
+    pub depots_count: u32,
+    pub dlc_count: u32,
+    pub lua_path: String,
 }
 
 #[tauri::command]
-fn repair_game_steamless(game_path: String, game_name: Option<String>) -> steamless::SteamlessRepairResult {
-    steamless::repair_game(&game_path, game_name.as_deref())
+async fn get_unlocked_details() -> Vec<UnlockedDetail> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut details = Vec::new();
+        if let Some(steam_path) = steam::detect_steam_path() {
+            let lua_dir = steam_path.join("config").join("lua");
+            if let Ok(entries) = std::fs::read_dir(&lua_dir) {
+                let mut items: Vec<(u32, PathBuf)> = entries
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| {
+                        let p = e.path();
+                        let stem = p.file_stem()?.to_str()?;
+                        let id = stem.parse::<u32>().ok()?;
+                        p.extension()?.to_str()?.eq_ignore_ascii_case("lua").then_some((id, p))
+                    })
+                    .collect();
+                items.sort_by_key(|(id, _)| *id);
+                for (app_id, path) in items {
+                    let content = std::fs::read_to_string(&path).unwrap_or_default();
+                    // 名称来自首行注释 "-- Game: X" / "-- X"
+                    let mut name = format!("Steam App {}", app_id);
+                    if let Some(first) = content.lines().next() {
+                        let t = first.trim_start_matches('-').trim();
+                        let t = t.strip_prefix("Game:").map(|s| s.trim()).unwrap_or(t);
+                        if let Some(pos) = t.find("(AppID") {
+                            let t = t[..pos].trim();
+                            if !t.is_empty() {
+                                name = t.to_string();
+                            }
+                        } else if !t.is_empty() {
+                            name = t.to_string();
+                        }
+                    }
+                    let addappid_count = content.matches("addappid").count() as u32;
+                    let has_token = content.contains("addtoken");
+                    let has_depot_keys = content.contains("setDepotKey");
+                    let has_manifest = manifests::check_manifest_status(&steam_path, app_id, &[]).has_manifest;
+                    details.push(UnlockedDetail {
+                        app_id,
+                        name,
+                        has_token,
+                        has_manifest,
+                        has_depot_keys,
+                        depots_count: addappid_count.max(1),
+                        dlc_count: addappid_count.saturating_sub(1),
+                        lua_path: format!("config/lua/{}.lua", app_id),
+                    });
+                }
+            }
+        }
+        details
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -793,7 +940,9 @@ pub fn run() {
             zip_extract,
             onlinefix_deploy,
             get_steamless_status,
-            repair_game_steamless
+            repair_game_steamless,
+            search_local_games,
+            get_unlocked_details
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

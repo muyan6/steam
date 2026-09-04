@@ -143,7 +143,7 @@
           <Cpu class="w-4 h-4 theme-text-accent" />
           <span>本地运行环境与设备标识</span>
         </h3>
-        <span class="text-xs font-mono text-slate-400">Node.js + Electron</span>
+        <span class="text-xs font-mono text-slate-400">{{ isTauriEnvironment() ? 'Tauri 2.0 + WebView2' : 'Node.js + Electron' }}</span>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
@@ -174,6 +174,7 @@
 </template>
 
 <script setup lang="ts">
+import { isTauriEnvironment } from '../api/tauriBridge';
 import { ref, onMounted } from 'vue';
 import { 
   Zap, 

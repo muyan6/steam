@@ -958,7 +958,7 @@ const handleInstallOnlineFixWebPatch = async (game: LocalInstalledGame) => {
       emit('notify', res.message || `成功为《${game.name}》安装 online-fix.me 联机补丁！`, 'success');
       game.isPatched = true;
       game.hasBackup = true;
-      game.patchMode = 'spacewar';
+      game.patchMode = 'goldberg';
     } else {
       emit('notify', res.message || '未在 online-fix.me 搜索到该游戏的联机补丁', 'warning');
     }

@@ -116,7 +116,7 @@ pub fn check_game_directory(dir_path: &Path) -> (bool, String, Option<u32>) {
     if !dir_path.exists() {
         return (false, "none".to_string(), None);
     }
-    let has_backup = dir_path.join("steam_api64_o.dll").exists() || dir_path.join("steam_api_o.dll").exists();
+    let _has_backup = dir_path.join("steam_api64_o.dll").exists() || dir_path.join("steam_api_o.dll").exists();
 
     let mut found_online_fix = dir_path.join("OnlineFix.ini").exists() || dir_path.join("OnlineFix64.dll").exists();
     if !found_online_fix {
@@ -135,15 +135,12 @@ pub fn check_game_directory(dir_path: &Path) -> (bool, String, Option<u32>) {
     if found_online_fix {
         let mut app_id = None;
         if let Ok(content) = fs::read_to_string(dir_path.join("OnlineFix.ini")) {
-            // 查找 RealAppId=数字
+            // 查找 RealAppId=数字（大小写不敏感）
             for line in content.lines() {
                 let line = line.trim();
-                if let Some(rest) = line.strip_prefix("RealAppId").or_else(|| line.strip_prefix("realappid")) {
-                    let rest = rest.trim_start();
-                    if let Some(rest) = rest.strip_prefix('=') {
-                        if let Ok(id) = rest.trim().trim_end_matches(';').parse::<u32>() {
-                            app_id = Some(id);
-                        }
+                if line.len() >= 10 && line[..10].eq_ignore_ascii_case("RealAppId=") {
+                    if let Ok(id) = line[10..].trim().trim_end_matches(';').parse::<u32>() {
+                        app_id = Some(id);
                     }
                 }
             }
@@ -230,7 +227,7 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
             let _ = fs::remove_file(&bak_p);
         }
     }
-    for f in ["OnlineFix.ini", "OnlineFix64.dll", "OnlineFix.url", "steam_appid.txt"] {
+    for f in ["OnlineFix.ini", "OnlineFix64.dll", "OnlineFix.url", "steam_appid.txt", "Launch_Online_Fix.bat"] {
         let _ = fs::remove_file(dir_path.join(f));
     }
     let _ = fs::remove_dir_all(dir_path.join("steam_settings"));

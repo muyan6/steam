@@ -30,6 +30,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": [
+      "assets/tools/steamless/*",
+      "assets/tools/steamless/Plugins/*",
+      "../server/data/steam_all_games.json"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -131,29 +131,34 @@ async function searchSteamOfficial(q: string, page: number, pageSize: number, la
   return null;
 }
 
-function searchLocal(q: string, page: number, pageSize: number): any {
-  const query = q.trim().toLowerCase();
-  let matched = GAMES_DATABASE;
-  if (query) {
-    matched = GAMES_DATABASE.filter((g) =>
-      g.appId.toString().includes(query) ||
-      g.name.toLowerCase().includes(query) ||
-      (g.nameZh && g.nameZh.toLowerCase().includes(query)) ||
-      (g.pinyin && g.pinyin.toLowerCase().includes(query))
-    );
+async function searchLocal(q: string, page: number, pageSize: number): Promise<any> {
+  // 优先走 Rust 端 18万+ 全量库（随包分发），失败时回退内置精简库
+  try {
+    return await invoke('search_local_games', { query: q, page, pageSize });
+  } catch {
+    const query = q.trim().toLowerCase();
+    let matched = GAMES_DATABASE;
+    if (query) {
+      matched = GAMES_DATABASE.filter((g) =>
+        g.appId.toString().includes(query) ||
+        g.name.toLowerCase().includes(query) ||
+        (g.nameZh && g.nameZh.toLowerCase().includes(query)) ||
+        (g.pinyin && g.pinyin.toLowerCase().includes(query))
+      );
+    }
+    const total = matched.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const start = (page - 1) * pageSize;
+    return {
+      items: matched.slice(start, start + pageSize),
+      total,
+      page,
+      pageSize,
+      totalPages,
+      source: 'local_db',
+      sourceName: '本地精简库'
+    };
   }
-  const total = matched.length;
-  const totalPages = Math.ceil(total / pageSize) || 1;
-  const start = (page - 1) * pageSize;
-  return {
-    items: matched.slice(start, start + pageSize),
-    total,
-    page,
-    pageSize,
-    totalPages,
-    source: 'local_db',
-    sourceName: '本地全量数据库'
-  };
 }
 
 // ==================== 桥接 ====================
@@ -174,7 +179,7 @@ export const createTauriBridge = () => {
     checkEnvironmentHealth: async (): Promise<any> => invoke('check_environment_health'),
     setSteamPath: async (path: string): Promise<SteamEnvironmentInfo> => invoke('set_steam_path', { path }),
     restartSteam: async (extraArgs: string[] = []): Promise<boolean> => invoke('restart_steam', { extraArgs }),
-    launchOnlineFixSteam: async (): Promise<boolean> => invoke('restart_steam', { extraArgs: [] }),
+    launchOnlineFixSteam: async (): Promise<boolean> => invoke('restart_steam', { extraArgs: ['-onlinefix'] }),
 
     // 对话框与系统操作
     selectDirectory: async (): Promise<string | null> => invoke('select_directory'),
@@ -215,22 +220,7 @@ export const createTauriBridge = () => {
       });
     },
     getUnlockedGames: async (): Promise<number[]> => invoke<number[]>('get_unlocked_games'),
-    getUnlockedDetails: async (): Promise<any[]> => {
-      const ids = await invoke<number[]>('get_unlocked_games');
-      return ids.map(id => {
-        const found = GAMES_DATABASE.find(g => g.appId === id);
-        return {
-          appId: id,
-          name: found ? (found.nameZh || found.name) : `Steam App ${id}`,
-          hasToken: true,
-          hasManifest: true,
-          hasDepotKeys: true,
-          depotsCount: found?.depots ? Object.keys(found.depots).length : 1,
-          dlcCount: found?.dlcs ? found.dlcs.length : 0,
-          luaPath: `config/lua/${id}.lua`
-        };
-      });
-    },
+    getUnlockedDetails: async (): Promise<any[]> => invoke<any[]>('get_unlocked_details'),
     removeUnlockedGame: async (appId: number): Promise<{ success: boolean; message: string }> =>
       invoke('remove_unlocked_game', { appId }),
     uninstallInjection: async (): Promise<{ success: boolean; message: string }> =>
@@ -252,7 +242,7 @@ export const createTauriBridge = () => {
       const pageSize = params?.pageSize || 48;
 
       if (source === 'local_db') {
-        return searchLocal(q, page, pageSize);
+        return await searchLocal(q, page, pageSize);
       }
       if (source === 'steam_official' || source === 'steam_community') {
         const lang = source === 'steam_community' ? 'en' : 'schinese';
@@ -260,7 +250,7 @@ export const createTauriBridge = () => {
         if (official) return official;
         const cloud = q ? await searchCloud(q, source, page, pageSize) : null;
         if (cloud) return cloud;
-        return searchLocal(q, page, pageSize);
+        return await searchLocal(q, page, pageSize);
       }
       if (source === 'hybrid') {
         const [cloud, official] = await Promise.all([
@@ -270,22 +260,28 @@ export const createTauriBridge = () => {
         if (cloud && official) {
           const seen = new Set<number>();
           const merged: SteamSearchItem[] = [];
-          for (const item of [...cloud.items, ...official.items]) {
+          for (const item of [...official.items, ...cloud.items]) {
             if (!seen.has(item.appId)) {
               seen.add(item.appId);
               merged.push(item);
             }
           }
-          return { ...cloud, items: merged, total: seen.size, source: 'hybrid', sourceName: '全域智能聚合源' };
+          // 与分页语义对齐：只返回当前页大小的去重结果，统计沿用云端总数
+          return {
+            ...cloud,
+            items: merged.slice(0, pageSize),
+            source: 'hybrid',
+            sourceName: '全域智能聚合源'
+          };
         }
         if (cloud) return { ...cloud, source: 'hybrid', sourceName: '全域智能聚合源' };
         if (official) return { ...official, source: 'hybrid', sourceName: '全域智能聚合源' };
-        return searchLocal(q, page, pageSize);
+        return await searchLocal(q, page, pageSize);
       }
       // cloud_db 与其他未知源：云端优先，回退本地
       const cloud = q ? await searchCloud(q, source, page, pageSize) : null;
       if (cloud) return cloud;
-      return searchLocal(q, page, pageSize);
+      return await searchLocal(q, page, pageSize);
     },
 
     // 联机修复中心（Rust 端完整实现）
@@ -329,26 +325,40 @@ export const createTauriBridge = () => {
 
       let extractedCount = 0;
       if (isRar) {
-        // 2a. RAR：读取原始字节 → 渲染进程 unrar.wasm 解压 → 回传条目由 Rust 部署
+        // 2a. RAR：读取原始字节 → 渲染进程 unrar.wasm 解压 → 分批回传由 Rust 部署
+        //     （分批控制单次 IPC 载荷约 4MB，避免 100MB+ 补丁的内存峰值）
         const bytes = (await invoke('read_file_raw', { path: archivePath })) as ArrayBuffer;
         const entries = await extractRarEntries(bytes);
-        const res = await invoke<any>('onlinefix_deploy', {
-          gamePath,
-          entries: entries.map((e) => ({ name: e.name, dataB64: e.dataB64 })),
-          archivePath
-        });
-        extractedCount = res.extractedCount || entries.length;
+        let batch: ExtractedEntry[] = [];
+        let batchSize = 0;
+        const flush = async (isLast: boolean) => {
+          if (batch.length === 0) return;
+          const res = await invoke<any>('onlinefix_deploy', {
+            gamePath,
+            entries: batch.map((e) => ({ name: e.name, dataB64: e.dataB64 })),
+            archivePath: isLast ? archivePath : null
+          });
+          extractedCount += res.extractedCount ?? 0;
+          batch = [];
+          batchSize = 0;
+        };
+        for (const e of entries) {
+          batch.push(e);
+          batchSize += e.dataB64.length;
+          if (batchSize >= 4 * 1024 * 1024) await flush(false);
+        }
+        await flush(true);
       } else {
-        // 2b. ZIP：Rust 端直接解压（含 ZipCrypto/AES 密码支持与越界防护）
+        // 2b. ZIP：Rust 端直接解压（含密码支持与越界防护）
         const res = await invoke<any>('zip_extract', { archivePath, destDir: gamePath });
-        extractedCount = res.extractedCount || 0;
+        extractedCount = res.extractedCount ?? 0;
       }
 
       return {
         success: extractedCount > 0,
         message: extractedCount > 0
           ? `成功从 online-fix.me 下载并安装联机补丁 (${fileName})，共解压部署 ${extractedCount} 个文件！`
-          : '补丁已下载但未解压出任何文件（归档可能为空或不被支持）',
+          : '补丁已下载但未能部署任何文件（归档可能为空、密码不匹配或全部条目被拒绝）',
         fileName,
         extractedCount,
         articleUrl: prep.articleUrl,
@@ -418,7 +428,22 @@ export const createTauriBridge = () => {
         }
       } catch {}
 
-      if (cached && cached.deviceId === devId) return cached;
+      if (cached && cached.deviceId === devId) {
+        // 离线兜底也必须校验本地到期时间，过期授权不放行
+        if (cached.isActivated && !cached.isLifetime && cached.expiresAt) {
+          const expMs = new Date(cached.expiresAt).getTime();
+          if (!isNaN(expMs) && expMs < Date.now()) {
+            return {
+              ...cached,
+              isActivated: false,
+              status: 'expired',
+              remainingDays: 0,
+              message: '您的会员授权已到期，请续费使用！'
+            };
+          }
+        }
+        return cached;
+      }
       return { isActivated: false, status: 'unactivated', deviceId: devId, message: '当前设备未激活' };
     },
     activateLicense: async (code: string): Promise<any> => {
@@ -460,3 +485,32 @@ export const createTauriBridge = () => {
     }
   };
 };
+
+
+// Tauri 版设备心跳：对齐 Electron 版行为（启动一次 + 每 30 分钟一次），
+// 保证 Dashboard 设备统计不因客户端版本而失真
+let heartbeatStarted = false;
+export function startTauriHeartbeat(): void {
+  if (heartbeatStarted || !isTauriEnvironment()) return;
+  heartbeatStarted = true;
+  const send = async () => {
+    try {
+      const deviceId = await invoke<string>('get_device_id');
+      let license: any = null;
+      try { license = JSON.parse(localStorage.getItem('cfd_license_cache') || 'null'); } catch {}
+      await httpFetch(`${APP_CONFIG.API_BASE_URL}/api/telemetry/heartbeat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId,
+          clientVersion: APP_CONFIG.VERSION,
+          osVersion: `tauri ${navigator.platform || 'windows'}`,
+          isActivated: !!(license && license.isActivated),
+          licenseCode: license?.code
+        })
+      });
+    } catch {}
+  };
+  void send();
+  setInterval(send, 30 * 60 * 1000);
+}

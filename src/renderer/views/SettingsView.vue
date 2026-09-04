@@ -108,10 +108,10 @@
               <!-- 色彩调色板预览圆点 & 深浅模式标签 + 当前使用徽章 (流式排版，完全并列不重叠) -->
               <div class="flex items-center justify-between mb-3 gap-2">
                 <div class="flex items-center gap-2 shrink-0">
-                  <span class="w-4.5 h-4.5 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.bgHex }" title="背景色"></span>
-                  <span class="w-4.5 h-4.5 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.cardHex }" title="卡片色"></span>
-                  <span class="w-4.5 h-4.5 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.accentHex }" title="高亮主色"></span>
-                  <span class="w-4.5 h-4.5 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.secondaryHex }" title="辅助渐变色"></span>
+                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.bgHex }" title="背景色"></span>
+                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.cardHex }" title="卡片色"></span>
+                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.accentHex }" title="高亮主色"></span>
+                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.secondaryHex }" title="辅助渐变色"></span>
                 </div>
 
                 <div class="flex items-center gap-2 flex-wrap justify-end">

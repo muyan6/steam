@@ -193,7 +193,6 @@
           @notify="addToast"
           @refresh-status="fetchSteamInfo"
           @relaunch-wizard="showStartupWizard = true"
-          @open-license-modal="showLicenseModal = true"
         />
       </div>
     </main>

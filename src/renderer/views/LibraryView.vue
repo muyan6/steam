@@ -86,7 +86,7 @@
         <div
           v-for="game in filteredGames"
           :key="game.appId"
-          class="game-card-surface p-4 xl:p-4.5 flex flex-col justify-between gap-3.5 group"
+          class="game-card-surface p-4 xl:p-4 flex flex-col justify-between gap-3.5 group"
         >
           <!-- 封面小图与信息 -->
           <div class="flex items-center gap-3.5 min-w-0">

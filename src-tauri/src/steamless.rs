@@ -53,6 +53,16 @@ fn candidate_cli_paths() -> Vec<PathBuf> {
     paths
 }
 
+/// 追加 Tauri 资源目录候选（打包后资源位于 resource_dir）
+pub fn candidate_paths_with_resource(resource_dir: Option<&std::path::Path>) -> Vec<PathBuf> {
+    let mut paths = candidate_cli_paths();
+    if let Some(rd) = resource_dir {
+        paths.insert(0, rd.join("assets").join("tools").join("steamless").join("Steamless.CLI.exe"));
+        paths.insert(1, rd.join("tools").join("steamless").join("Steamless.CLI.exe"));
+    }
+    paths
+}
+
 pub fn find_steamless_cli() -> Option<String> {
     for p in candidate_cli_paths() {
         if p.exists() {
@@ -62,16 +72,29 @@ pub fn find_steamless_cli() -> Option<String> {
     None
 }
 
-pub fn get_status() -> SteamlessStatusInfo {
-    match find_steamless_cli() {
+pub fn get_status_with_resource(resource_dir: Option<&std::path::Path>) -> SteamlessStatusInfo {
+    let cli = candidate_paths_with_resource(resource_dir).into_iter().find(|p| p.exists());
+    match cli {
         Some(cli) => SteamlessStatusInfo {
             available: true,
-            engine: "Steamless CLI v3.1.0 (本地就绪)".to_string(),
-            cli_path: Some(cli),
+            engine: "Steamless CLI v3.1.0.5 (内置就绪)".to_string(),
+            cli_path: Some(cli.to_string_lossy().to_string()),
+        },
+        None => get_status(),
+    }
+}
+
+pub fn get_status() -> SteamlessStatusInfo {
+    let cli = candidate_cli_paths().into_iter().find(|p| p.exists());
+    match cli {
+        Some(cli) => SteamlessStatusInfo {
+            available: true,
+            engine: "Steamless CLI v3.1.0.5 (本地就绪)".to_string(),
+            cli_path: Some(cli.to_string_lossy().to_string()),
         },
         None => SteamlessStatusInfo {
             available: false,
-            engine: "Steamless CLI 未随应用分发。请下载 Steamless.CLI.exe 并放置到应用目录 tools/steamless/ 下".to_string(),
+            engine: "Steamless CLI 未找到".to_string(),
             cli_path: None,
         },
     }
@@ -109,18 +132,20 @@ fn find_executables(dir: &Path, max_depth: usize) -> Vec<PathBuf> {
     results
 }
 
-/// 运行 Steamless CLI 处理单个 exe（15 秒超时，超时强杀）
+/// 运行 Steamless CLI 处理单个 exe（30 秒超时，超时强杀）
+/// 注意：Steamless 的输出文件名规则是「输入路径原样追加 .unpacked.exe」：
+///   game.exe -> game.exe.unpacked.exe
 fn unpack_single(
     cli: &str,
     exe_path: &Path,
 ) -> (bool, String, &'static str) {
     let dir = exe_path.parent().unwrap_or(Path::new("."));
-    let ext = exe_path.extension().and_then(|e| e.to_str()).unwrap_or("exe");
-    let stem = exe_path.file_stem().and_then(|s| s.to_str()).unwrap_or("game");
-    let unpacked = dir.join(format!("{}.unpacked.exe", stem));
+    let unpacked = PathBuf::from(format!("{}.unpacked.exe", exe_path.display()));
+    let file_label = exe_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
 
     let child = Command::new(cli)
-        .args(["--quiet", "--keep-bind"])
+        // Steamless CLI 参数为精确小写匹配：--quiet / --keepbind（没有 --keep-bind）
+        .args(["--quiet", "--keepbind"])
         .arg(exe_path)
         .current_dir(dir)
         .stdout(std::process::Stdio::null())
@@ -132,7 +157,7 @@ fn unpack_single(
         Err(e) => return (false, format!("启动 Steamless CLI 失败: {}", e), "error"),
     };
 
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut timed_out = false;
     loop {
         match child.try_wait() {
@@ -151,29 +176,37 @@ fn unpack_single(
             Err(_) => break,
         }
     }
-    if unpacked.exists() {
-        let backup = exe_path.with_extension(&format!("{}.bak", ext));
+
+    // 超时被强杀时输出可能是残缺文件，绝不能用它覆盖原 exe
+    if timed_out {
+        let _ = fs::remove_file(&unpacked);
+        return (false, format!("Steamless CLI 处理 {} 超时，已放弃本次解密", file_label), "error");
+    }
+
+    if unpacked.exists() && fs::metadata(&unpacked).map(|m| m.len() > 0).unwrap_or(false) {
+        // 备份命名与 Steamless 输出同规则追加：game.exe -> game.exe.bak
+        let backup = PathBuf::from(format!("{}.bak", exe_path.display()));
         if !backup.exists() {
             let _ = fs::copy(exe_path, &backup);
         }
         if fs::copy(&unpacked, exe_path).is_ok() {
             let _ = fs::remove_file(&unpacked);
-            return (true, format!("成功通过 Steamless CLI 解密并替换 ({})", stem), "unpacked");
+            return (true, format!("成功通过 Steamless CLI 解密并替换 ({})", file_label), "unpacked");
         }
     }
 
-    if timed_out {
-        (false, format!("Steamless CLI 处理 {} 超时", stem), "error")
-    } else {
-        (
-            false,
-            format!("Steamless CLI 处理 {} 未产生解密输出（该文件可能未加壳或不被支持）", stem),
-            "error",
-        )
-    }
+    (
+        false,
+        format!("Steamless CLI 处理 {} 未产生解密输出（该文件可能未加壳或不被支持）", file_label),
+        "error",
+    )
 }
 
 pub fn repair_game(game_dir: &str, game_name: Option<&str>) -> SteamlessRepairResult {
+    repair_game_with_resource(game_dir, game_name, None)
+}
+
+pub fn repair_game_with_resource(game_dir: &str, game_name: Option<&str>, resource_dir: Option<&std::path::Path>) -> SteamlessRepairResult {
     let dir = PathBuf::from(game_dir);
     if !dir.exists() {
         return SteamlessRepairResult {
@@ -200,10 +233,10 @@ pub fn repair_game(game_dir: &str, game_name: Option<&str>) -> SteamlessRepairRe
         };
     }
 
-    let Some(cli) = find_steamless_cli() else {
+    let Some(cli) = candidate_paths_with_resource(resource_dir).into_iter().find(|p| p.exists()) else {
         return SteamlessRepairResult {
             success: false,
-            message: "Steamless CLI 未随应用分发，无法执行脱壳解密。请下载 Steamless.CLI.exe 并放置到应用目录 tools/steamless/ 下后重试。".to_string(),
+            message: "Steamless CLI 未找到，无法执行脱壳解密。".to_string(),
             total_found: exes.len(),
             repaired_count: 0,
             backup_count: 0,
@@ -217,7 +250,7 @@ pub fn repair_game(game_dir: &str, game_name: Option<&str>) -> SteamlessRepairRe
     let mut details = Vec::new();
     for exe in &exes {
         let name = exe.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let (ok, msg, status) = unpack_single(&cli, exe);
+        let (ok, msg, status) = unpack_single(&cli.to_string_lossy(), exe);
         details.push(SteamlessDetail {
             file: name,
             status: status.to_string(),

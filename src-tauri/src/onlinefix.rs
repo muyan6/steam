@@ -415,21 +415,34 @@ pub fn prepare_patch(
         .user_agent(UA)
         .build()
         .map_err(|e| fail(format!("构建下载客户端失败: {}", e)))?;
-    let resp = crate::manifests::block_on(client.get(&download_url).send())
+    let mut resp = crate::manifests::block_on(client.get(&download_url).send())
         .map_err(|e| fail(format!("下载补丁失败: {}", e)))?;
 
     if !resp.status().is_success() {
         return Err(fail(format!("从 online-fix.me 下载补丁失败，HTTP 状态码: {}", resp.status())));
     }
 
-    let bytes = crate::manifests::block_on(resp.bytes())
-        .map_err(|e| fail(format!("读取补丁数据流失败: {}", e)))?;
-    if bytes.is_empty() {
+    // 流式写入临时文件，避免 100MB+ 补丁整包驻留内存
+    let mut file = fs::File::create(&temp_path).map_err(|e| fail(format!("创建临时文件失败: {}", e)))?;
+    let mut total: u64 = 0;
+    loop {
+        match crate::manifests::block_on(resp.chunk()) {
+            Ok(Some(chunk)) => {
+                file.write_all(&chunk).map_err(|e| fail(format!("写入临时文件失败: {}", e)))?;
+                total += chunk.len() as u64;
+            }
+            Ok(None) => break,
+            Err(e) => {
+                drop(file);
+                let _ = fs::remove_file(&temp_path);
+                return Err(fail(format!("读取补丁数据流失败: {}", e)));
+            }
+        }
+    }
+    if total == 0 {
+        let _ = fs::remove_file(&temp_path);
         return Err(fail("下载数据为空".to_string()));
     }
-
-    let mut file = fs::File::create(&temp_path).map_err(|e| fail(format!("创建临时文件失败: {}", e)))?;
-    file.write_all(&bytes).map_err(|e| fail(format!("写入临时文件失败: {}", e)))?;
 
     Ok(PreparedArchive {
         archive_path: temp_path.to_string_lossy().to_string(),
@@ -527,19 +540,17 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
     let dest = PathBuf::from(dest_dir);
     let dest_resolved = dest.canonicalize().unwrap_or(dest.clone());
     let mut count = 0usize;
+    let mut skipped = 0usize;
 
     for i in 0..archive.len() {
-        // 先探测密码解密可行性，再按结果走对应读取路径（避免借用冲突）
-        let can_decrypt = {
-            let a = &mut archive;
-            a.by_index_decrypt(i, ARCHIVE_PASSWORD.as_bytes()).is_ok()
-        };
-        let mut entry = if can_decrypt {
-            let a = &mut archive;
-            a.by_index_decrypt(i, ARCHIVE_PASSWORD.as_bytes())
-                .map_err(|e| format!("归档条目解密失败: {}", e))?
-        } else {
-            archive.by_index(i).map_err(|e| format!("读取归档条目失败: {}", e))?
+        // 解密失败（密码不匹配）或损坏的条目直接跳过，绝不回退明文读取——
+        // 对加密条目回退 by_index 必然报 PASSWORD_REQUIRED 并中止整个解压
+        let mut entry = match archive.by_index_decrypt(i, ARCHIVE_PASSWORD.as_bytes()) {
+            Ok(f) => f,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
         };
 
         let Some(safe_name) = entry.enclosed_name().map(|p| p.to_path_buf()) else {
@@ -567,6 +578,9 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
 
     if is_temp_archive(archive_path) {
         let _ = fs::remove_file(archive_path);
+    }
+    if skipped > 0 {
+        println!("[OnlineFix] 有 {} 个条目因密码不匹配被跳过", skipped);
     }
     Ok(count)
 }

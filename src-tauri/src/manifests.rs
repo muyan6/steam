@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde::Serialize;
+use serde_json::json;
 
 pub const SERVER_API: &str = "http://150.158.129.222:1257";
 
@@ -105,7 +106,7 @@ struct DepotMeta {
 }
 
 fn parse_metadata(app_id: u32) -> Result<(Vec<DepotMeta>, BTreeMap<String, String>), String> {
-    let url = format!("{}/api/metadata/{}", SERVER_API, app_id);
+    let url = format!("{}/api/metadata/{}?deviceId={}", SERVER_API, app_id, crate::device::get_machine_guid());
     let resp = block_on(http_client().get(&url).timeout(Duration::from_secs(10)).send())
         .map_err(|e| format!("请求元数据失败: {}", e))?;
     let json: serde_json::Value = block_on(resp.json()).map_err(|e| format!("解析元数据失败: {}", e))?;
@@ -324,4 +325,152 @@ pub fn download_depot_manifests(
         source: "cdn".to_string(),
         message: format!("成功就绪 {}/{} 个分包清单到 depotcache！", downloaded_count, valid.len()),
     }
+}
+
+// ==================== 本地 18万+ 全量库检索 ====================
+
+use std::sync::Mutex as StdMutex;
+
+struct LocalDbState {
+    parsed: bool,
+    games: Vec<(u32, String)>,
+}
+
+fn local_db_state() -> &'static StdMutex<LocalDbState> {
+    static STATE: StdMutex<LocalDbState> = StdMutex::new(LocalDbState { parsed: false, games: Vec::new() });
+    &STATE
+}
+
+/// 解析 steam_all_games.json（数组，元素含 appid/name 字段）
+fn parse_local_db_text(text: &str) -> Vec<(u32, String)> {
+    let mut out = Vec::new();
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
+        if let Some(arr) = json.as_array() {
+            for item in arr {
+                let appid = match item.get("appid") {
+                    Some(serde_json::Value::Number(n)) => n.as_u64().unwrap_or(0) as u32,
+                    Some(serde_json::Value::String(s)) => s.parse::<u32>().unwrap_or(0),
+                    _ => continue,
+                };
+                let name = item
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if appid > 0 && !name.is_empty() {
+                    out.push((appid, name));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 定位全量库数据文件：Tauri 资源目录 → 开发目录
+fn locate_local_db_file(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(rd) = resource_dir {
+        candidates.push(rd.join("steam_all_games.json"));
+        candidates.push(rd.join("data").join("steam_all_games.json"));
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("..").join("server").join("data").join("steam_all_games.json"));
+        candidates.push(cwd.join("server").join("data").join("steam_all_games.json"));
+        candidates.push(cwd.join("data").join("steam_all_games.json"));
+    }
+    candidates.into_iter().find(|p| p.exists())
+}
+
+/// 全量库分页检索（与 Electron 版 searchService 的本地模式语义一致）
+pub fn search_local_all(
+    resource_dir: Option<&Path>,
+    query: Option<&str>,
+    page: u32,
+    page_size: u32,
+) -> serde_json::Value {
+    let page = page.max(1);
+    let page_size = page_size.clamp(1, 100);
+
+    // 懒加载：首次调用时解析并缓存（约 18.3 万条）
+    {
+        let mut state = local_db_state().lock().unwrap_or_else(|e| e.into_inner());
+        if !state.parsed {
+            state.parsed = true;
+            if let Some(path) = locate_local_db_file(resource_dir) {
+                match fs::read_to_string(&path) {
+                    Ok(text) => {
+                        state.games = parse_local_db_text(&text);
+                        println!("[Manifests] 本地全量库载入完成: {} 条 ({})", state.games.len(), path.display());
+                    }
+                    Err(e) => println!("[Manifests] 读取本地全量库失败: {}", e),
+                }
+            }
+        }
+    }
+
+    let state = local_db_state().lock().unwrap_or_else(|e| e.into_inner());
+    let q = query.unwrap_or("").trim().to_lowercase();
+    let is_number = !q.is_empty() && q.chars().all(|c| c.is_ascii_digit());
+
+    let matched: Vec<&(u32, String)> = if q.is_empty() {
+        state.games.iter().collect()
+    } else {
+        let mut matched: Vec<&(u32, String)> = state
+            .games
+            .iter()
+            .filter(|(id, name)| {
+                id.to_string().contains(&q) || name.to_lowercase().contains(&q)
+            })
+            .collect();
+        matched
+    };
+
+    // 纯数字且无命中时，合成 Steam App 条目兜底（与 Electron 版一致）
+    if matched.is_empty() && is_number {
+        if let Ok(id) = q.parse::<u32>() {
+            return json!({
+                "items": [{
+                    "appId": id,
+                    "name": format!("Steam App {}", id),
+                    "nameZh": format!("Steam App {}", id),
+                    "headerUrl": format!("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{}/header.jpg", id),
+                    "description": format!("Steam 官方收录应用 (AppID: {})", id)
+                }],
+                "total": 1,
+                "page": page,
+                "pageSize": page_size,
+                "totalPages": 1,
+                "source": "local_db",
+                "sourceName": "本地18万+全量库"
+            });
+        }
+    }
+
+    let total = matched.len();
+    let total_pages = (total + page_size as usize - 1) / page_size as usize;
+    let start = ((page - 1) as usize) * page_size as usize;
+    let items: Vec<serde_json::Value> = matched
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .map(|(id, name)| {
+            json!({
+                "appId": id,
+                "name": name,
+                "nameZh": name,
+                "headerUrl": format!("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{}/header.jpg", id),
+                "description": format!("Steam 官方收录应用 (AppID: {})", id)
+            })
+        })
+        .collect();
+
+    json!({
+        "items": items,
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+        "totalPages": total_pages.max(1),
+        "source": "local_db",
+        "sourceName": "本地18万+全量库"
+    })
 }

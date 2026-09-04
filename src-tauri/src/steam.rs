@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::os::windows::process::CommandExt;
 use std::process::Command;
 use winreg::enums::*;
 use winreg::RegKey;
@@ -43,12 +44,6 @@ pub fn save_custom_steam_path(path: &str) {
         }
         let payload = serde_json::json!({ "steamPath": path });
         let _ = std::fs::write(file, payload.to_string());
-    }
-}
-
-pub fn clear_custom_steam_path() {
-    if let Some(file) = custom_path_file() {
-        let _ = std::fs::remove_file(file);
     }
 }
 
@@ -125,9 +120,15 @@ pub fn is_steam_running() -> bool {
 }
 
 pub fn is_onlinefix_running() -> bool {
-    // 通过 wmic 检查 steam.exe 启动命令行是否带 -onlinefix 参数（wmic 不可用时视为否）
-    let output = Command::new("wmic")
-        .args(["process", "where", "name='steam.exe'", "get", "commandline"])
+    // 通过 PowerShell CIM 检查 steam.exe 启动命令行是否带 -onlinefix 参数
+    // （wmic 在 Windows 11 24H2 起已被移除，故使用 Get-CimInstance）
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-CimInstance Win32_Process -Filter \"Name = 'steam.exe'\").CommandLine",
+        ])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .output();
 
     if let Ok(out) = output {
@@ -143,30 +144,6 @@ pub fn is_onlinefix_running() -> bool {
 pub fn is_64bit_windows() -> bool {
     std::env::var("PROCESSOR_ARCHITEW6432").is_ok()
         || std::env::var("PROCESSOR_ARCHITECTURE").map(|v| v == "AMD64").unwrap_or(false)
-}
-
-/// 解析 PE 头 Machine 字段判断 steam.exe 位数（0x8664 = x64, 0x014c = x86）
-pub fn detect_steam_bitness(steam_path: &Path) -> String {
-    let exe = steam_path.join("steam.exe");
-    if let Ok(data) = std::fs::read(&exe) {
-        if data.len() > 0x40 && &data[0..2] == b"MZ" {
-            let e_lfanew = u32::from_le_bytes([
-                data[0x3C],
-                data[0x3D],
-                data[0x3E],
-                data[0x3F],
-            ]) as usize;
-            if e_lfanew + 6 <= data.len() && &data[e_lfanew..e_lfanew + 4] == b"PE\0\0" {
-                let machine = u16::from_le_bytes([data[e_lfanew + 4], data[e_lfanew + 5]]);
-                return match machine {
-                    0x8664 => "x64".to_string(),
-                    0x014C => "x86".to_string(),
-                    _ => "unknown".to_string(),
-                };
-            }
-        }
-    }
-    "unknown".to_string()
 }
 
 pub fn count_unlocked_scripts(steam_path: &Path) -> usize {
@@ -235,6 +212,11 @@ pub fn get_steam_info(custom_path: Option<&str>) -> SteamEnvironmentInfo {
 }
 
 pub fn kill_steam() -> bool {
+    // Steam 未运行时直接返回，不做任何等待
+    if !is_steam_running() {
+        return true;
+    }
+
     // 1. 先尝试 Steam 官方安全退出，避免强杀中断下载任务
     if let Some(steam_path) = detect_steam_path() {
         let shutdown = steam_path.join("steam.exe");

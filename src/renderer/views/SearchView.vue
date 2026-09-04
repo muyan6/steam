@@ -434,17 +434,21 @@ const handleImgError = async (game: SteamGame) => {
     return;
   }
 
-  // 所有 CDN 均失败：先登记，再尝试一次 Steam 官方 API 动态获取（每 appId 仅一次）
-  failedImgs.add(game.appId);
+  // 所有 CDN 均失败：尝试一次 Steam 官方 API 动态获取（每 appId 仅一次，超过 CDN
+  // 模板数的索引表示 API 已尝试过，直接判定失败）
+  if (currentIdx > CDN_TEMPLATES.length) return;
+  imgCdnIndices.set(game.appId, CDN_TEMPLATES.length + 1);
   try {
     const url = `https://store.steampowered.com/api/appdetails?appids=${game.appId}&l=schinese`;
     const resp = await axios.get(url, { timeout: 3500 });
     const data = resp.data?.[game.appId.toString()];
     if (data && data.data && data.data.header_image) {
+      // 先更新 URL 再保持"未失败"状态，让模板渲染新封面
       game.headerUrl = data.data.header_image;
       return;
     }
   } catch {}
+  failedImgs.add(game.appId);
 };
 
 const quickTags = ['后室', '黑神话', '艾尔登法环', '双人成行', '只狼', '博德之门', '幻兽帕鲁', '太空狼人杀'];
