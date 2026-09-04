@@ -43,7 +43,7 @@
             </button>
             <button
               @click="handleRestartNormalSteam"
-              class="px-5 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 text-slate-300 hover:text-slate-100 text-xs font-medium rounded-xl transition flex items-center justify-center gap-1.5"
+              class="px-5 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-300 hover:text-slate-100 text-xs font-medium rounded-xl transition flex items-center justify-center gap-1.5"
             >
               <RotateCcw class="w-3.5 h-3.5" />
               <span>恢复正常启动 Steam</span>
@@ -57,7 +57,7 @@
         <div class="flex items-center gap-2.5 mb-4">
           <FolderCog class="w-4 h-4 theme-text-accent" />
           <span class="text-base font-bold text-slate-100">方案二：单游戏联机补丁注入器</span>
-          <span class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 text-[10px] font-bold border border-amber-500/20">独立文件注入</span>
+          <span class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold border border-amber-500/20">独立文件注入</span>
         </div>
 
         <!-- 目录选择器 -->
@@ -71,11 +71,11 @@
               @input="checkDirectoryStatus"
               type="text"
               placeholder="例如: D:\SteamLibrary\steamapps\common\Palworld"
-              class="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 font-mono focus:outline-none focus:border-sky-400"
+              class="flex-1 bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 font-mono focus:outline-none focus:border-sky-400"
             />
             <button
               @click="handleSelectFolder"
-              class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-200 transition font-medium flex items-center gap-1.5 shrink-0"
+              class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-xs text-slate-200 transition font-medium flex items-center gap-1.5 shrink-0"
             >
               <FolderOpen class="w-3.5 h-3.5" />
               <span>浏览文件夹</span>
@@ -84,7 +84,7 @@
         </div>
 
         <!-- 目标检测状态卡片 -->
-        <div v-if="targetDir" class="mb-5 p-3.5 rounded-xl bg-slate-900/70 border border-slate-800 text-xs">
+        <div v-if="targetDir" class="mb-5 p-3.5 rounded-xl bg-slate-900/60 border border-white/10 text-xs">
           <div class="flex items-center justify-between">
             <span class="text-slate-400">当前目录状态:</span>
             <span v-if="dirStatus.isPatched" class="text-emerald-400 font-bold flex items-center gap-1.5">
@@ -95,7 +95,7 @@
               原版未注入状态 (安全)
             </span>
           </div>
-          <div v-if="dirStatus.hasBackup" class="text-sky-400/90 text-[11px] mt-1.5 flex items-center gap-1">
+          <div v-if="dirStatus.hasBackup" class="text-sky-400 text-[11px] mt-1.5 flex items-center gap-1 font-medium">
             <Check class="w-3 h-3 text-sky-400" />
             <span>已存在原版 steam_api64_o.dll 备份，随时支持一键无损还原</span>
           </div>
@@ -108,8 +108,8 @@
             @click="selectedMode = 'spacewar'"
             class="p-4 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between"
             :class="selectedMode === 'spacewar' 
-              ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50 shadow-md' 
-              : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
+              ? 'bg-sky-500/10 border-sky-500/60 ring-1 ring-sky-500/50 shadow-md' 
+              : 'theme-card hover:border-sky-500/30'"
           >
             <div>
               <div class="flex items-center justify-between mb-1.5">
@@ -129,7 +129,7 @@
                 v-model.number="appIdInput"
                 type="number"
                 placeholder="请输入数字 AppID"
-                class="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-400 font-mono"
+                class="w-full bg-slate-950/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-400 font-mono"
                 @click.stop
               />
             </div>
@@ -140,8 +140,8 @@
             @click="selectedMode = 'goldberg'"
             class="p-4 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between"
             :class="selectedMode === 'goldberg' 
-              ? 'bg-emerald-950/40 border-emerald-500/60 ring-1 ring-emerald-500/50 shadow-md' 
-              : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
+              ? 'bg-emerald-500/10 border-emerald-500/60 ring-1 ring-emerald-500/50 shadow-md' 
+              : 'theme-card hover:border-emerald-500/30'"
           >
             <div>
               <div class="flex items-center justify-between mb-1.5">
@@ -161,7 +161,7 @@
                 v-model="playerNameInput"
                 type="text"
                 placeholder="如: Player_01"
-                class="w-full bg-slate-950/80 border border-slate-700/60 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-400"
+                class="w-full bg-slate-950/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-400"
                 @click.stop
               />
             </div>
@@ -169,7 +169,7 @@
         </div>
 
         <!-- 操作按钮条 -->
-        <div class="flex items-center gap-3 pt-3 mt-auto border-t border-slate-800">
+        <div class="flex items-center gap-3 pt-3 mt-auto border-t border-white/10">
           <button
             @click="handleApplyFix"
             :disabled="!targetDir || actionLoading"
@@ -182,7 +182,7 @@
           <button
             @click="handleRestoreOriginal"
             :disabled="!targetDir || actionLoading"
-            class="px-6 py-3 bg-slate-800 hover:bg-rose-900/60 border border-slate-700/60 hover:border-rose-500/40 disabled:opacity-50 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
+            class="px-6 py-3 bg-slate-800/80 hover:bg-rose-900/60 border border-white/10 hover:border-rose-500/40 disabled:opacity-50 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
           >
             <RotateCcw class="w-3.5 h-3.5" />
             <span>一键无损还原原版</span>

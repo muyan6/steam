@@ -188,7 +188,7 @@
     />
 
     <!-- 全局系统公告弹窗 -->
-    <div v-if="popupNotice" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+    <div v-if="popupNotice" class="fixed inset-0 z-50 bg-black/65 backdrop-blur-md flex items-center justify-center p-4">
       <div class="theme-card-static rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 border">
         <div class="flex items-center gap-3.5 mb-4">
           <div class="w-10 h-10 rounded-2xl bg-sky-500/10 text-sky-400 flex items-center justify-center border border-sky-500/20">
@@ -200,7 +200,7 @@
           </div>
         </div>
 
-        <div class="text-xs text-slate-300 leading-relaxed whitespace-pre-line mb-6 bg-slate-950/60 p-4 rounded-2xl border border-white/5">
+        <div class="text-xs text-slate-300 leading-relaxed whitespace-pre-line mb-6 bg-slate-950/40 p-4 rounded-2xl border border-white/10">
           {{ popupNotice.content }}
         </div>
 
@@ -216,7 +216,7 @@
     </div>
 
     <!-- 全局版本更新弹窗 -->
-    <div v-if="versionModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div v-if="versionModal" class="fixed inset-0 z-50 bg-black/65 backdrop-blur-md flex items-center justify-center p-4">
       <div class="theme-card-static rounded-3xl w-full max-w-lg p-6 shadow-2xl border">
         <div class="flex items-center justify-between mb-4">
           <div class="flex items-center gap-3.5">
@@ -226,7 +226,7 @@
             <div>
               <h3 class="font-bold text-sm text-slate-100 flex items-center gap-2">
                 <span>发现新版本 v{{ versionModal.latest.version }}</span>
-                <span v-if="versionModal.forceUpdate" class="px-2 py-0.5 bg-rose-500/20 text-rose-300 text-[10px] rounded font-bold">强制更新</span>
+                <span v-if="versionModal.forceUpdate" class="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] rounded font-bold border border-rose-500/30">强制更新</span>
               </h3>
               <p class="text-[11px] text-slate-400">发布日期: {{ versionModal.latest.releaseDate }}</p>
             </div>
@@ -234,8 +234,8 @@
         </div>
 
         <div class="mb-4">
-          <div class="text-xs font-bold text-slate-300 mb-2">更新日志：</div>
-          <ul class="text-xs text-slate-300 space-y-1.5 bg-slate-950/60 p-4 rounded-2xl border border-white/5 max-h-48 overflow-y-auto">
+          <div class="text-xs font-bold text-slate-200 mb-2">更新日志：</div>
+          <ul class="text-xs text-slate-300 space-y-1.5 bg-slate-950/40 p-4 rounded-2xl border border-white/10 max-h-48 overflow-y-auto">
             <li v-for="(log, idx) in versionModal.latest.changelog" :key="idx" class="flex items-start gap-2">
               <span class="theme-text-accent font-bold">•</span>
               <span>{{ log }}</span>
@@ -243,7 +243,7 @@
           </ul>
         </div>
 
-        <div v-if="versionModal.forceUpdate" class="text-[11px] text-amber-400 mb-4 bg-amber-950/30 border border-amber-800/50 p-2.5 rounded-lg flex items-center gap-2">
+        <div v-if="versionModal.forceUpdate" class="text-[11px] text-amber-400 mb-4 bg-amber-950/30 border border-amber-800/50 p-2.5 rounded-xl flex items-center gap-2">
           <AlertTriangle class="w-4 h-4 shrink-0" />
           <span>当前版本已停止支持，必须更新至最新版本方可继续使用。</span>
         </div>
@@ -252,7 +252,7 @@
           <button
             v-if="!versionModal.forceUpdate"
             @click="versionModal = null"
-            class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition"
+            class="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-300 text-xs rounded-xl transition"
           >
             稍后更新
           </button>

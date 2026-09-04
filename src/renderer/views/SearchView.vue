@@ -8,7 +8,7 @@
           @input="handleSearch"
           type="text"
           placeholder="输入游戏中文名、英文名、拼音缩写或 Steam AppID (如 2358720 / wukong / 后室)..."
-          class="w-full bg-slate-900/80 border border-slate-700/70 rounded-2xl px-4 py-3 pl-11 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner backdrop-blur-md"
+          class="w-full bg-slate-900/80 border border-white/10 rounded-2xl px-4 py-3 pl-11 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner backdrop-blur-md"
         />
         <Search class="w-4 h-4 absolute left-4 top-3.5 text-slate-400 pointer-events-none" />
         <button
@@ -23,7 +23,7 @@
       <button
         @click="refreshData"
         :disabled="loading"
-        class="px-4 py-3 bg-slate-800/80 hover:bg-slate-700/90 border border-slate-700/70 rounded-2xl text-xs font-semibold text-slate-200 transition flex items-center gap-2 shadow-sm shrink-0"
+        class="px-4 py-3 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-2xl text-xs font-semibold text-slate-200 transition flex items-center gap-2 shadow-sm shrink-0"
       >
         <RotateCw class="w-3.5 h-3.5 text-slate-300" :class="{ 'animate-spin': loading }" />
         <span>刷新</span>
@@ -34,19 +34,19 @@
     <div class="flex items-center justify-between mb-4 text-xs text-slate-400 shrink-0">
       <div class="flex items-center gap-2 flex-wrap">
         <span class="flex items-center gap-1 text-slate-400">
-          <Sparkles class="w-3.5 h-3.5 text-amber-400" />
+          <Sparkles class="w-3.5 h-3.5 text-amber-500" />
           <span>热门推荐:</span>
         </span>
         <button
           v-for="tag in quickTags"
           :key="tag"
           @click="searchQuery = tag; handleSearch()"
-          class="px-2.5 py-1 rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-300 hover:text-slate-100 border border-slate-700/50 transition duration-150 text-[11px] font-medium"
+          class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-slate-100 border border-white/10 transition duration-150 text-[11px] font-medium"
         >
           {{ tag }}
         </button>
       </div>
-      <div class="font-mono text-[11px] bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-800/80">
+      <div class="font-mono text-[11px] bg-slate-900/60 px-2.5 py-1 rounded-lg border border-white/10">
         共匹配到 <span class="theme-text-accent font-bold">{{ games.length }}</span> 款游戏
       </div>
     </div>
@@ -59,13 +59,13 @@
       </div>
 
       <div v-else-if="games.length === 0" class="flex flex-col items-center justify-center h-72 text-slate-400 p-6">
-        <div class="w-14 h-14 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-center text-2xl mb-3 shadow-inner">
+        <div class="w-14 h-14 rounded-2xl bg-slate-900/80 border border-white/10 flex items-center justify-center text-2xl mb-3 shadow-inner">
           <Search class="w-6 h-6 text-slate-400" />
         </div>
         <p class="text-sm font-bold text-slate-200 mb-1">未找到与「{{ searchQuery }}」匹配的游戏</p>
         
         <div v-if="/[\u4e00-\u9fa5]/.test(searchQuery)" class="mt-3 max-w-md bg-sky-950/30 border border-sky-500/30 rounded-2xl p-4 text-center text-xs text-sky-200/90 leading-relaxed shadow">
-          <div class="font-bold flex items-center justify-center gap-1.5 mb-1 text-sky-300">
+          <div class="font-bold flex items-center justify-center gap-1.5 mb-1 text-sky-400">
             <Sparkles class="w-3.5 h-3.5 text-sky-400" />
             <span>检索小贴士</span>
           </div>
@@ -96,7 +96,7 @@
             />
             
             <!-- 精致缺图占位卡片 -->
-            <div v-else class="w-full h-full p-4 flex flex-col justify-between bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-slate-800">
+            <div v-else class="w-full h-full p-4 flex flex-col justify-between bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-white/10">
               <div class="flex items-center justify-between text-xs text-sky-400/80">
                 <Gamepad2 class="w-4 h-4 text-slate-400" />
                 <span class="font-mono text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Steam App</span>
@@ -136,7 +136,7 @@
             </div>
 
             <!-- 操作按钮 -->
-            <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+            <div class="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
               <button
                 v-if="!unlockedAppIds.includes(game.appId)"
                 @click="unlockGame(game)"
@@ -161,7 +161,7 @@
                 <button
                   @click="removeGame(game.appId)"
                   title="从入库规则中移除"
-                  class="px-3 py-2 bg-slate-800/80 hover:bg-rose-900/60 border border-slate-700/60 hover:border-rose-500/40 text-slate-400 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center justify-center"
+                  class="px-3 py-2 bg-slate-800/80 hover:bg-rose-900/60 border border-white/10 hover:border-rose-500/40 text-slate-400 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center justify-center"
                 >
                   <Trash2 class="w-3.5 h-3.5" />
                 </button>
@@ -171,7 +171,7 @@
                 :href="`https://store.steampowered.com/app/${game.appId}`"
                 target="_blank"
                 title="在 Steam 商店中查看"
-                class="p-2 bg-slate-800/80 hover:bg-slate-700 rounded-xl text-slate-400 hover:text-sky-300 transition shrink-0"
+                class="p-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-slate-400 hover:text-sky-300 transition shrink-0"
               >
                 <ExternalLink class="w-3.5 h-3.5" />
               </a>

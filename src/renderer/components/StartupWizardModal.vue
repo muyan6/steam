@@ -1,8 +1,8 @@
 <template>
-  <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 select-none">
+  <div class="fixed inset-0 z-50 bg-black/65 backdrop-blur-md flex items-center justify-center p-4 select-none">
     <div class="theme-card-static rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border">
       <!-- 顶部 Header -->
-      <div class="px-6 py-4 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between">
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl theme-btn-primary flex items-center justify-center text-slate-950 font-black text-lg shadow-lg">
             <Zap class="w-5 h-5 text-slate-950 fill-slate-950" />
@@ -10,7 +10,7 @@
           <div>
             <h2 class="font-bold text-sm text-slate-100 flex items-center gap-2">
               <span>SteamMaster 启动引导</span>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 font-mono border border-sky-500/20">环境准备</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 font-mono border border-sky-500/20">环境准备</span>
             </h2>
             <p class="text-[11px] text-slate-400">Steam 客户端环境检测与一键注入激活</p>
           </div>
@@ -22,7 +22,7 @@
             v-for="s in 4"
             :key="s"
             class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all"
-            :class="step >= s ? 'theme-btn-primary font-bold shadow' : 'bg-slate-800 text-slate-500'"
+            :class="step >= s ? 'theme-btn-primary font-bold shadow' : 'bg-slate-500/20 text-slate-400'"
           >
             {{ s }}
           </span>
@@ -32,9 +32,9 @@
       <!-- 步骤 1 & 2: 检测 Steam 路径并校验位数 / 询问是否注入 -->
       <div v-if="step === 1 || step === 2" class="p-6 space-y-5">
         <!-- 步骤 1: 路径检测结果展示 -->
-        <div class="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4">
+        <div class="bg-slate-950/40 border border-white/10 rounded-2xl p-4">
           <div class="flex items-center justify-between mb-2">
-            <div class="text-xs font-bold text-slate-300 flex items-center gap-2">
+            <div class="text-xs font-bold text-slate-200 flex items-center gap-2">
               <Folder class="w-3.5 h-3.5 theme-text-accent" />
               <span>步骤 1：检测 Steam 文件夹</span>
               <RotateCw v-if="checkingPath" class="w-3.5 h-3.5 text-sky-400 animate-spin" />
@@ -141,7 +141,7 @@
 
         <!-- 场景 B：正常 64 位 Steam (x64) 或未知路径 -> 步骤 2 正常询问注入 -->
         <div v-else class="space-y-4">
-          <div class="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4">
+          <div class="bg-slate-950/40 border border-white/10 rounded-2xl p-4">
             <div class="text-xs font-bold theme-text-accent flex items-center gap-2 mb-2">
               <Zap class="w-3.5 h-3.5" />
               <span>步骤 2：是否注入 Steam 环境？</span>
@@ -149,7 +149,7 @@
             <p class="text-xs text-slate-300 leading-relaxed mb-2">
               是否立即向当前 Steam 目录激活 OpenSteam 解锁运行环境？
             </p>
-            <ul class="text-[11px] text-slate-400 space-y-1 list-disc list-inside bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+            <ul class="text-[11px] text-slate-400 space-y-1 list-disc list-inside bg-slate-900/60 p-3 rounded-xl border border-white/10">
               <li>
                 🎯 <strong>64 位架构匹配</strong>：已自动识别为 <span class="theme-text-accent font-bold font-mono">64 位 (x64) Steam</span>，将部署 64 位 OpenSteamTool 核心组件
               </li>
@@ -160,10 +160,10 @@
           </div>
 
           <!-- 64 位操作按钮 -->
-          <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+          <div class="flex items-center justify-between pt-2 border-t border-white/10">
             <button
               @click="handleExitApp"
-              class="px-5 py-2.5 bg-slate-800/80 hover:bg-rose-900/60 border border-slate-700/80 hover:border-rose-500/40 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
+              class="px-5 py-2.5 bg-slate-800/80 hover:bg-rose-900/60 border border-white/10 hover:border-rose-500/40 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
             >
               <X class="w-3.5 h-3.5" />
               <span>否，退出程序</span>
@@ -192,7 +192,7 @@
         </div>
 
         <!-- 激活步骤清单 -->
-        <div class="space-y-3 bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-xs">
+        <div class="space-y-3 bg-slate-950/40 border border-white/10 rounded-2xl p-4 text-xs">
           <div class="flex items-center justify-between">
             <span class="text-slate-300 flex items-center gap-2">
               <span :class="activationPhase >= 1 ? 'text-emerald-400' : 'text-slate-600'">●</span>
@@ -243,7 +243,7 @@
           </p>
         </div>
 
-        <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 font-mono inline-block">
+        <div class="bg-slate-950/40 border border-white/10 rounded-xl p-3 text-xs text-slate-400 font-mono inline-block">
           Steam 目录：{{ steamPath }} (64位 x64)
         </div>
 

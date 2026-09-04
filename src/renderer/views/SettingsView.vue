@@ -24,18 +24,18 @@
           </div>
 
           <!-- 深浅分类过滤切换 -->
-          <div class="flex items-center gap-1 bg-slate-950/40 p-1 rounded-xl border border-white/5 text-xs">
+          <div class="flex items-center gap-1 bg-slate-950/40 p-1 rounded-xl border border-white/10 text-xs">
             <button
               @click="themeFilter = 'all'"
               class="px-2.5 py-1 rounded-lg transition font-medium text-[11px]"
-              :class="themeFilter === 'all' ? 'bg-white/10 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+              :class="themeFilter === 'all' ? 'theme-btn-primary font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
             >
               全部 (6)
             </button>
             <button
               @click="themeFilter = 'dark'"
               class="px-2.5 py-1 rounded-lg transition font-medium text-[11px] flex items-center gap-1"
-              :class="themeFilter === 'dark' ? 'bg-white/10 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+              :class="themeFilter === 'dark' ? 'theme-btn-primary font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
             >
               <Moon class="w-3 h-3" />
               <span>深色 (3)</span>
@@ -43,9 +43,9 @@
             <button
               @click="themeFilter = 'light'"
               class="px-2.5 py-1 rounded-lg transition font-medium text-[11px] flex items-center gap-1"
-              :class="themeFilter === 'light' ? 'bg-white/10 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+              :class="themeFilter === 'light' ? 'theme-btn-primary font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
             >
-              <Sun class="w-3 h-3 text-amber-400" />
+              <Sun class="w-3 h-3" />
               <span>浅色 (3)</span>
             </button>
           </div>
@@ -63,8 +63,8 @@
             @click="handleSelectTheme(theme.id)"
             class="p-4 rounded-2xl border transition-all duration-200 cursor-pointer relative overflow-hidden group flex flex-col justify-between"
             :class="currentTheme === theme.id 
-              ? 'ring-2 ring-offset-2 ring-offset-slate-950 shadow-lg' 
-              : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10'"
+              ? 'ring-2 ring-offset-2 ring-offset-transparent shadow-xl' 
+              : 'theme-card hover:-translate-y-0.5 hover:shadow-md'"
             :style="currentTheme === theme.id ? { borderColor: theme.accentHex, backgroundColor: theme.cardHex } : {}"
           >
             <!-- 激活标记徽章 -->
@@ -109,7 +109,7 @@
               </p>
             </div>
 
-            <div class="mt-3 pt-2.5 border-t border-black/5 flex items-center justify-between text-[11px]">
+            <div class="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px]">
               <span class="font-mono text-slate-400">#{{ theme.id }}</span>
               <span 
                 class="font-medium group-hover:underline flex items-center gap-1"
@@ -270,7 +270,7 @@
 
         <!-- 统计指标卡片 -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
-          <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+          <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex items-center justify-between">
             <div>
               <div class="text-xs text-slate-400 flex items-center gap-1.5">
                 <Database class="w-3.5 h-3.5 text-sky-400" />
@@ -290,7 +290,7 @@
             </button>
           </div>
 
-          <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+          <div class="p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex items-center justify-between">
             <div>
               <div class="text-xs text-slate-400 flex items-center gap-1.5">
                 <Key class="w-3.5 h-3.5 text-emerald-400" />
@@ -319,11 +319,11 @@
             v-model="steamPathInput"
             type="text"
             placeholder="自动从注册表探测，或点击右侧浏览手动选择..."
-            class="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-2xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50"
+            class="flex-1 bg-slate-900/90 border border-white/10 rounded-2xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50"
           />
           <button
             @click="handleBrowseSteamPath"
-            class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl text-xs text-slate-200 font-medium transition flex items-center gap-1.5"
+            class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-2xl text-xs text-slate-200 font-medium transition flex items-center gap-1.5"
           >
             <FolderOpen class="w-3.5 h-3.5 text-slate-300" />
             <span>浏览路径</span>
@@ -352,11 +352,11 @@
           <div
             @click="manifestApi = 'steamrun'"
             class="p-3.5 rounded-2xl border transition cursor-pointer"
-            :class="manifestApi === 'steamrun' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
+            :class="manifestApi === 'steamrun' ? 'bg-sky-500/10 border-sky-500/60 ring-1 ring-sky-500/50' : 'theme-card hover:border-sky-500/30'"
           >
             <div class="font-bold text-xs text-slate-200 mb-1 flex items-center gap-1.5">
               <span>SteamRun 镜像源</span>
-              <span class="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300">推荐</span>
+              <span class="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 font-bold border border-sky-500/30">推荐</span>
             </div>
             <div class="text-[11px] text-slate-400 font-mono break-all">manifest.steam.run</div>
           </div>
@@ -364,7 +364,7 @@
           <div
             @click="manifestApi = 'wudrm'"
             class="p-3.5 rounded-2xl border transition cursor-pointer"
-            :class="manifestApi === 'wudrm' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
+            :class="manifestApi === 'wudrm' ? 'bg-sky-500/10 border-sky-500/60 ring-1 ring-sky-500/50' : 'theme-card hover:border-sky-500/30'"
           >
             <div class="font-bold text-xs text-slate-200 mb-1">WUDRM 国内高速源</div>
             <div class="text-[11px] text-slate-400 font-mono break-all">gmrc.wudrm.com</div>
@@ -373,18 +373,18 @@
           <div
             @click="manifestApi = 'opensteamtool'"
             class="p-3.5 rounded-2xl border transition cursor-pointer"
-            :class="manifestApi === 'opensteamtool' ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/50' : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'"
+            :class="manifestApi === 'opensteamtool' ? 'bg-sky-500/10 border-sky-500/60 ring-1 ring-sky-500/50' : 'theme-card hover:border-sky-500/30'"
           >
             <div class="font-bold text-xs text-slate-200 mb-1">OpenSteamTool 备用源</div>
             <div class="text-[11px] text-slate-400 font-mono break-all">opensteamtool.com</div>
           </div>
         </div>
 
-        <div class="flex items-center justify-between pt-3 border-t border-slate-800">
+        <div class="flex items-center justify-between pt-3 border-t border-white/10">
           <div class="flex items-center gap-2">
             <button
               @click="emit('relaunch-wizard')"
-              class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl text-xs text-sky-300 font-medium transition flex items-center gap-1.5"
+              class="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-2xl text-xs text-sky-400 font-medium transition flex items-center gap-1.5"
             >
               <Sparkles class="w-3.5 h-3.5" />
               <span>重新运行注入向导</span>
@@ -410,9 +410,9 @@
       </div>
 
       <!-- 5. 安全免责与防杀软提示 -->
-      <div class="rounded-3xl p-5 bg-slate-900/40 border border-slate-800">
-        <h3 class="font-bold text-xs text-amber-400 mb-2 flex items-center gap-1.5">
-          <ShieldAlert class="w-4 h-4 text-amber-400" />
+      <div class="rounded-3xl p-5 bg-slate-900/40 border border-white/10">
+        <h3 class="font-bold text-xs text-amber-500 mb-2 flex items-center gap-1.5">
+          <ShieldAlert class="w-4 h-4 text-amber-500" />
           <span>安全提示与杀毒软件白名单说明</span>
         </h3>
         <ul class="text-xs text-slate-400 space-y-1.5 list-disc list-inside leading-relaxed">
