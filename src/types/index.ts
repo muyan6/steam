@@ -95,6 +95,9 @@ export interface LocalInstalledGame {
   primaryExe?: string;
   hasSteamlessBackup?: boolean;
   isRepaired?: boolean;
+  isPatched?: boolean;
+  patchMode?: 'spacewar' | 'goldberg' | 'none';
+  hasBackup?: boolean;
 }
 
 export interface SteamlessRepairResult {

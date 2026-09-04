@@ -221,7 +221,7 @@ export function registerIpcHandlers() {
     return await toolboxService.getStatus();
   });
 
-  // 8. 对话框服务
+  // 8. 对话框与系统服务
   ipcMain.handle('dialog:select-directory', async () => {
     const res = await dialog.showOpenDialog({
       properties: ['openDirectory']
@@ -230,5 +230,16 @@ export function registerIpcHandlers() {
       return res.filePaths[0];
     }
     return null;
+  });
+
+  ipcMain.handle('system:open-path', async (_, targetPath: string) => {
+    try {
+      if (!targetPath || !fs.existsSync(targetPath)) return false;
+      await shell.openPath(targetPath);
+      return true;
+    } catch (e: any) {
+      console.error('打开系统路径失败:', e);
+      return false;
+    }
   });
 }

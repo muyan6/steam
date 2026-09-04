@@ -96,8 +96,9 @@ export const electronAPI = {
   toolboxAutoSwitchManifest: (): Promise<ToolboxActionResult> => ipcRenderer.invoke('toolbox:auto-switch-manifest'),
   toolboxGetStatus: (): Promise<ToolboxStatusInfo> => ipcRenderer.invoke('toolbox:get-status'),
 
-  // 对话框
-  selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-directory')
+  // 对话框与系统操作
+  selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-directory'),
+  openFolder: (dirPath: string): Promise<boolean> => ipcRenderer.invoke('system:open-path', dirPath)
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

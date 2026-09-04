@@ -363,6 +363,9 @@ enable=1
               } catch {}
             }
 
+            // 检查联机补丁状态
+            const patchStatus = this.checkGameDirectory(fullInstallPath);
+
             seenAppIds.add(appId);
             games.push({
               appId,
@@ -373,7 +376,10 @@ enable=1
               sizeOnDisk,
               executableFiles,
               primaryExe,
-              hasSteamlessBackup
+              hasSteamlessBackup,
+              isPatched: patchStatus.isPatched,
+              patchMode: patchStatus.mode,
+              hasBackup: patchStatus.hasBackup
             });
           } catch (e: any) {
             console.warn(`[OnlineFixService] 解析 manifest ${file} 失败:`, e.message);
