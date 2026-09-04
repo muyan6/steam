@@ -184,9 +184,10 @@ app.get(['/', '/dashboard'], (req, res) => {
       <!-- 选项卡切换导航 -->
       <div class="nav-tabs">
         <button class="tab-btn active" onclick="switchTab('overview', this)">📊 系统大盘</button>
+        <button class="tab-btn" onclick="switchTab('licenses', this)">🔑 激活码管理</button>
         <button class="tab-btn" onclick="switchTab('notices', this)">📢 公告中心</button>
         <button class="tab-btn" onclick="switchTab('versions', this)">🚀 版本与推送</button>
-        <button class="tab-btn" onclick="switchTab('keys', this)">🔑 密钥检索</button>
+        <button class="tab-btn" onclick="switchTab('keys', this)">🔍 密钥检索</button>
         <button class="tab-btn" onclick="switchTab('sources', this)">🌐 多源调度</button>
         <button class="tab-btn" onclick="switchTab('security', this)">⚙️ 安全配置</button>
       </div>
@@ -242,11 +243,98 @@ app.get(['/', '/dashboard'], (req, res) => {
             <button onclick="openVersionModal()" class="btn btn-secondary">
               <span>🚀 发布新版本 & 强更</span>
             </button>
+            <button onclick="switchTab('licenses', document.querySelectorAll('.tab-btn')[1])" class="btn btn-secondary">
+              <span>🔑 批量生成/管理激活码</span>
+            </button>
           </div>
         </div>
       </div>
 
-      <!-- ==================== Tab 2: 公告中心 ==================== -->
+      <!-- ==================== Tab 2: 激活码与设备绑定管理 ==================== -->
+      <div id="tab-licenses" class="tab-content d-none" style="display: none;">
+        <!-- KPI 统计卡片 -->
+        <div class="grid-4" style="margin-bottom: 20px;">
+          <div class="card">
+            <div class="kpi-title"><span>总激活码数量</span> <span>🔑</span></div>
+            <div class="kpi-val" id="kpiLicTotal" style="color: #38bdf8;">0</div>
+            <div class="kpi-sub" id="kpiLicTypeBreakdown">月: 0 · 季: 0 · 年: 0 · 永久: 0</div>
+          </div>
+          <div class="card">
+            <div class="kpi-title"><span>未使用 (待分配)</span> <span>📦</span></div>
+            <div class="kpi-val" id="kpiLicUnused" style="color: #34d399;">0</div>
+            <div class="kpi-sub">随时可发放给新用户</div>
+          </div>
+          <div class="card">
+            <div class="kpi-title"><span>已激活 (绑定设备)</span> <span>💻</span></div>
+            <div class="kpi-val" id="kpiLicActive" style="color: #fbbf24;">0</div>
+            <div class="kpi-sub">正常在期设备授权数</div>
+          </div>
+          <div class="card">
+            <div class="kpi-title"><span>已过期 / 冻结</span> <span>⏱️</span></div>
+            <div class="kpi-val" id="kpiLicExpired" style="color: #fb7185;">0</div>
+            <div class="kpi-sub">已到期或管理员冻结</div>
+          </div>
+        </div>
+
+        <!-- 检索与操作工具栏 -->
+        <div class="card" style="margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; gap: 10px; flex: 1; min-width: 320px; flex-wrap: wrap;">
+              <input type="text" id="licSearchInput" class="input-ctrl" style="max-width: 280px;" placeholder="搜索卡密 / 设备码 / 备注..." onkeydown="if(event.key==='Enter') loadLicensesData(1);" />
+              <select id="licTypeFilter" class="input-ctrl" style="max-width: 140px;" onchange="loadLicensesData(1);">
+                <option value="all">全部卡种</option>
+                <option value="monthly">月卡 (30天)</option>
+                <option value="quarterly">季卡 (90天)</option>
+                <option value="yearly">年卡 (365天)</option>
+                <option value="lifetime">永久尊享卡</option>
+              </select>
+              <select id="licStatusFilter" class="input-ctrl" style="max-width: 130px;" onchange="loadLicensesData(1);">
+                <option value="all">全部状态</option>
+                <option value="unused">未使用</option>
+                <option value="active">已激活绑定</option>
+                <option value="expired">已过期</option>
+                <option value="disabled">已冻结</option>
+              </select>
+              <button onclick="loadLicensesData(1)" class="btn btn-secondary btn-sm">🔍 筛选</button>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+              <button onclick="copyCurrentLicenses()" class="btn btn-secondary btn-sm">📋 复制当前卡密列表</button>
+              <button onclick="openGenerateLicenseModal()" class="btn btn-primary btn-sm">⚡ + 批量生成激活码</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡密列表表格 -->
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>激活码 (Code)</th>
+                <th>卡种</th>
+                <th>状态</th>
+                <th>绑定设备码 (Device ID)</th>
+                <th>绑定时间</th>
+                <th>到期时间 / 剩余天数</th>
+                <th>备注</th>
+                <th style="text-align: right;">管理操作</th>
+              </tr>
+            </thead>
+            <tbody id="licenseTableBody">
+              <tr><td colspan="8" style="text-align: center; color: #64748b; padding: 24px;">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 分页控制器 -->
+        <div id="licensePagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 11px; color: #64748b;">
+          <span id="licensePageInfo">共 0 条记录</span>
+          <div style="display: flex; gap: 8px;">
+            <button id="licBtnPrev" onclick="changeLicensePage(-1)" class="btn btn-secondary btn-sm" disabled>上一页</button>
+            <button id="licBtnNext" onclick="changeLicensePage(1)" class="btn btn-secondary btn-sm" disabled>下一页</button>
+          </div>
+        </div>
+      </div>
       <div id="tab-notices" class="tab-content d-none" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <div>
@@ -522,8 +610,72 @@ app.get(['/', '/dashboard'], (req, res) => {
         </div>
       </div>
       <div id="previewContent" style="background: rgba(2, 6, 23, 0.8); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 12px; color: #cbd5e1; font-size: 12px; white-space: pre-line; line-height: 1.6; margin-bottom: 16px;"></div>
-      <div style="text-align: right;">
-        <button type="button" onclick="closeModal('previewModal')" class="btn btn-primary btn-sm">我知道了 (关闭预览)</button>
+  <!-- ==================== 模态框 5: 批量生成激活码 ==================== -->
+  <div id="generateLicenseModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box" style="max-width: 480px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+        <strong style="color: #fff; font-size: 14px;">⚡ 批量生成激活码 (设备绑定卡密)</strong>
+        <button type="button" onclick="closeModal('generateLicenseModal')" class="btn btn-secondary btn-sm">✕</button>
+      </div>
+      <div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>卡密类型 (Card Type)</label>
+            <select id="genLicType" class="input-ctrl">
+              <option value="monthly">月卡会员 (30天)</option>
+              <option value="quarterly">季卡会员 (90天)</option>
+              <option value="yearly">年卡会员 (365天)</option>
+              <option value="lifetime" selected>永久尊享卡 (终身有效)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>生成数量 (Count, 1~500)</label>
+            <input type="number" id="genLicCount" class="input-ctrl" value="10" min="1" max="500" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>自定义卡密前缀 (Prefix, 选填)</label>
+          <input type="text" id="genLicPrefix" class="input-ctrl" placeholder="默认如 CFD-L / CFD-M / CFD-Y" />
+        </div>
+
+        <div class="form-group">
+          <label>生成批次备注 / 渠道用途 (Remark, 选填)</label>
+          <input type="text" id="genLicRemark" class="input-ctrl" placeholder="例如: 9月促销赠品 / 淘宝批量订单#20260904" />
+        </div>
+
+        <div id="genLicNotice" class="alert-box alert-success d-none" style="margin-top: 10px;">
+          <span id="genLicNoticeText">生成成功</span>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+          <button type="button" onclick="closeModal('generateLicenseModal')" class="btn btn-secondary">取消</button>
+          <button type="button" id="btnDoGenLicense" onclick="handleGenerateLicenseSubmit()" class="btn btn-primary">立即批量生成</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 模态框 6: 卡密有效期延期 ==================== -->
+  <div id="extendLicenseModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box" style="max-width: 400px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+        <strong style="color: #fff; font-size: 14px;">⏱️ 延长卡密有效期</strong>
+        <button type="button" onclick="closeModal('extendLicenseModal')" class="btn btn-secondary btn-sm">✕</button>
+      </div>
+      <div>
+        <div class="form-group">
+          <label>目标激活码</label>
+          <input type="text" id="extLicCode" class="input-ctrl" readonly style="opacity: 0.8; font-family: monospace;" />
+        </div>
+        <div class="form-group">
+          <label>延长有效天数 (Days)</label>
+          <input type="number" id="extLicDays" class="input-ctrl" value="30" min="1" max="3650" />
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+          <button type="button" onclick="closeModal('extendLicenseModal')" class="btn btn-secondary">取消</button>
+          <button type="button" onclick="handleExtendLicenseSubmit()" class="btn btn-primary">确认延期</button>
+        </div>
       </div>
     </div>
   </div>

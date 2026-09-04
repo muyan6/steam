@@ -45,6 +45,18 @@ import {
   getServerStats,
   searchDebugKeys
 } from '../controllers/adminController.js';
+import {
+  activateLicense,
+  verifyLicense,
+  getDeviceLicenseStatus,
+  getLicenseListAdmin,
+  getLicenseStatsAdmin,
+  generateLicensesAdmin,
+  unbindLicenseAdmin,
+  toggleLicenseAdmin,
+  deleteLicenseAdmin,
+  extendLicenseAdmin
+} from '../controllers/licenseController.js';
 
 const router = Router();
 
@@ -88,6 +100,11 @@ router.get('/tokens/:appId', getTokenForApp);
 router.get('/manifests/:appId', getManifestsForApp);
 router.get('/manifests/download/:depotId/:manifestId', downloadManifestFile);
 
+// 客户端设备码绑定与激活码验证 (公开接口)
+router.post('/license/activate', activateLicense);
+router.post('/license/verify', verifyLicense);
+router.get('/license/status/:deviceId', getDeviceLicenseStatus);
+
 // ==================== 2. 管理员认证受保护 API ====================
 
 // 权限拦截中间件
@@ -105,6 +122,15 @@ router.post('/sources/sync', triggerSyncFromSources);
 // 系统统计与调试工具
 router.get('/admin/stats', getServerStats);
 router.get('/admin/search/debug', searchDebugKeys);
+
+// 卡密管理 CRUD 与批量生成
+router.get('/admin/license/list', getLicenseListAdmin);
+router.get('/admin/license/stats', getLicenseStatsAdmin);
+router.post('/admin/license/generate', generateLicensesAdmin);
+router.post('/admin/license/unbind', unbindLicenseAdmin);
+router.post('/admin/license/toggle', toggleLicenseAdmin);
+router.post('/admin/license/extend', extendLicenseAdmin);
+router.delete('/admin/license/:code', deleteLicenseAdmin);
 
 // 公告管理 CRUD
 router.get('/admin/notices', getAllNoticesAdmin);

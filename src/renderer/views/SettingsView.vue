@@ -253,6 +253,82 @@
         </div>
       </div>
 
+      <!-- 1.5 软件会员授权与设备识别码 -->
+      <div class="theme-card-static rounded-3xl p-5 shadow-lg border">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div class="flex items-center gap-2">
+            <Crown class="w-4 h-4 text-amber-400" />
+            <h3 class="font-bold text-sm text-slate-200">软件会员授权与设备绑定</h3>
+            <span
+              class="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border"
+              :class="licenseInfo.isActivated ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-white/10'"
+            >
+              {{ licenseInfo.isActivated ? (licenseInfo.isLifetime ? '👑 永久尊享会员' : `👑 ${licenseInfo.typeName || 'VIP会员'} (剩 ${licenseInfo.remainingDays || 0} 天)`) : '⚠️ 未激活' }}
+            </span>
+          </div>
+          <button
+            @click="showLicenseModal = true"
+            class="theme-btn-primary px-3.5 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow"
+          >
+            <Key class="w-3.5 h-3.5" />
+            <span>{{ licenseInfo.isActivated ? '续费 / 更换卡密' : '输入卡密激活' }}</span>
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-400 mb-4 leading-relaxed">
+          绑定本机唯一硬件设备指纹，享受 28.8万+ DepotKey 云端高速秒查、实时游戏清单下发与一键入库服务。
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <!-- 设备码展示 -->
+          <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-1.5">
+            <div class="text-slate-400 text-xs flex items-center justify-between">
+              <span class="flex items-center gap-1.5">
+                <Laptop class="w-3.5 h-3.5 text-sky-400" />
+                <span>本机设备码 (Device ID)</span>
+              </span>
+              <button
+                @click="copyDeviceId"
+                class="text-[11px] text-sky-400 hover:text-sky-300 transition"
+              >
+                {{ copiedDeviceId ? '已复制' : '复制' }}
+              </button>
+            </div>
+            <div class="font-mono text-xs text-sky-300 font-bold break-all bg-slate-950/60 px-3 py-2 rounded-xl border border-white/5 select-all">
+              {{ deviceId || '正在获取...' }}
+            </div>
+          </div>
+
+          <!-- 授权详情展示 -->
+          <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-white/10 space-y-1.5">
+            <div class="text-slate-400 text-xs flex items-center justify-between">
+              <span class="flex items-center gap-1.5">
+                <Sparkles class="w-3.5 h-3.5 text-amber-400" />
+                <span>授权有效性</span>
+              </span>
+              <button
+                @click="loadLicenseData(true)"
+                class="text-[11px] text-slate-400 hover:text-slate-200 transition"
+              >
+                刷新状态
+              </button>
+            </div>
+            <div class="text-xs text-slate-200 space-y-1 bg-slate-950/60 px-3 py-2 rounded-xl border border-white/5">
+              <div class="flex justify-between">
+                <span class="text-slate-400">已绑卡密:</span>
+                <span class="font-mono font-bold">{{ licenseInfo.code || '无' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">有效期:</span>
+                <span :class="licenseInfo.isActivated ? 'text-emerald-400 font-bold' : 'text-slate-400'">
+                  {{ licenseInfo.isLifetime ? '终身永久有效' : (licenseInfo.expiresAt ? `剩余 ${licenseInfo.remainingDays} 天` : '未激活') }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 2. 云端数据库连接面板 -->
       <div class="theme-card-static rounded-3xl p-5 shadow-lg border">
         <div class="flex items-center justify-between mb-3">
@@ -424,6 +500,15 @@
         </ul>
       </div>
     </div>
+
+    <!-- 激活码与设备绑定弹窗 -->
+    <LicenseModal
+      v-if="showLicenseModal"
+      :license-info="licenseInfo"
+      @close="showLicenseModal = false"
+      @refresh="loadLicenseData(true)"
+      @notify="(msg, type) => emit('notify', msg, type)"
+    />
   </div>
 </template>
 
@@ -450,10 +535,13 @@ import {
   Trash2, 
   ShieldAlert,
   Moon,
-  Sun
+  Sun,
+  Crown,
+  Laptop
 } from 'lucide-vue-next';
-import { EnvironmentDiagnosticResult, EnvironmentCheckItem, AppThemeId } from '../../types';
+import { EnvironmentDiagnosticResult, EnvironmentCheckItem, AppThemeId, ClientLicenseInfo } from '../../types';
 import { useTheme } from '../composables/useTheme';
+import LicenseModal from '../components/LicenseModal.vue';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -468,6 +556,15 @@ const themeFilter = ref<'all' | 'dark' | 'light'>('all');
 const filteredThemes = computed(() => {
   if (themeFilter.value === 'all') return THEME_LIST;
   return THEME_LIST.filter(t => t.type === themeFilter.value);
+});
+
+const deviceId = ref('');
+const copiedDeviceId = ref(false);
+const showLicenseModal = ref(false);
+const licenseInfo = ref<ClientLicenseInfo>({
+  isActivated: false,
+  status: 'unactivated',
+  deviceId: ''
 });
 
 const steamPathInput = ref('');
@@ -730,9 +827,37 @@ const handleUninstallOST = async () => {
   }
 };
 
+const loadLicenseData = async (forceVerify: boolean = false) => {
+  try {
+    const id = await window.electronAPI.getDeviceId();
+    if (id) deviceId.value = id;
+    const info = await window.electronAPI.getLicenseInfo(forceVerify);
+    if (info) {
+      licenseInfo.value = info;
+      if (forceVerify && info.isActivated) {
+        emit('notify', `授权状态已刷新：${info.typeName || '会员有效'}`, 'success');
+      }
+    }
+  } catch (e: any) {
+    console.warn('获取授权信息异常:', e.message);
+  }
+};
+
+const copyDeviceId = () => {
+  if (!deviceId.value) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(deviceId.value).then(() => {
+      copiedDeviceId.value = true;
+      emit('notify', '设备码已成功复制到剪贴板！', 'success');
+      setTimeout(() => { copiedDeviceId.value = false; }, 2000);
+    });
+  }
+};
+
 onMounted(() => {
   loadEnvInfo();
   loadDbStats();
   runEnvironmentHealthCheck();
+  loadLicenseData(true);
 });
 </script>

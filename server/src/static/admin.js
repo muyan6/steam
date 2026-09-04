@@ -1,7 +1,11 @@
-﻿// SteamMaster Admin Dashboard - Pure vanilla JS, zero dependencies
+// SteamMaster Admin Dashboard Script (TypeScript Exported, 100% ESM Safe & Standalone)
+export const ADMIN_JS = `
 var authToken = localStorage.getItem('steammaster_admin_token') || '';
 var noticesCache = [];
 var versionsCache = [];
+var currentLicPage = 1;
+var currentLicTotalPages = 1;
+var currentLicList = [];
 
 function getHeaders() {
   var t = authToken || localStorage.getItem('steammaster_admin_token') || '';
@@ -19,7 +23,7 @@ function showNotice(type, text) {
   var txt = document.getElementById('loginNoticeText');
   if (!box || !icon || !txt) return;
   box.className = 'alert-box ' + (type === 'error' ? 'alert-error' : type === 'success' ? 'alert-success' : 'alert-info');
-  icon.innerText = type === 'error' ? 'ERROR' : type === 'success' ? 'OK' : 'INFO';
+  icon.innerText = type === 'error' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️';
   txt.innerText = text;
   box.classList.remove('d-none');
   box.style.cssText = 'display: flex !important;';
@@ -106,6 +110,7 @@ function switchTab(tabId, el) {
   if (el) { el.classList.add('active'); } else { var f = document.querySelector('.tab-btn[onclick*="' + tabId + '"]'); if (f) f.classList.add('active'); }
   var target = document.getElementById('tab-' + tabId);
   if (target) { target.classList.remove('d-none'); target.style.cssText = 'display: block !important;'; }
+  if (tabId === 'licenses') loadLicensesData(1);
   if (tabId === 'notices') loadNotices();
   if (tabId === 'versions') loadVersions();
   if (tabId === 'sources') loadSources();
@@ -115,6 +120,7 @@ function switchTab(tabId, el) {
 async function loadStats() {
   try {
     var resp = await fetch('/api/admin/stats', { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
     var res = await resp.json();
     if (res && res.success) {
       var d = res.data;
@@ -129,9 +135,289 @@ async function loadStats() {
   } catch(e) { console.warn('loadStats error:', e); }
 }
 
+// ==================== 激活码管理模块 ====================
+
+var TYPE_MAP = {
+  'monthly': { label: '月卡 (30天)', badge: 'badge-blue' },
+  'quarterly': { label: '季卡 (90天)', badge: 'badge-green' },
+  'yearly': { label: '年卡 (365天)', badge: 'badge-amber' },
+  'lifetime': { label: '永久尊享卡', badge: 'badge-rose' }
+};
+
+var STATUS_MAP = {
+  'unused': { label: '未使用', badge: 'badge-green' },
+  'active': { label: '已激活绑定', badge: 'badge-blue' },
+  'expired': { label: '已过期', badge: 'badge-rose' },
+  'disabled': { label: '已冻结', badge: 'badge-gray' }
+};
+
+async function loadLicensesData(page) {
+  if (page) currentLicPage = page;
+  var searchInput = document.getElementById('licSearchInput');
+  var typeFilter = document.getElementById('licTypeFilter');
+  var statusFilter = document.getElementById('licStatusFilter');
+
+  var q = searchInput ? encodeURIComponent(searchInput.value.trim()) : '';
+  var t = typeFilter ? typeFilter.value : 'all';
+  var s = statusFilter ? statusFilter.value : 'all';
+
+  var tbody = document.getElementById('licenseTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">正在载入激活码列表...</td></tr>';
+
+  try {
+    var url = '/api/admin/license/list?page=' + currentLicPage + '&limit=20&search=' + q + '&type=' + t + '&status=' + s;
+    var resp = await fetch(url, { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
+    var res = await resp.json();
+    if (res && res.success && res.data) {
+      var d = res.data;
+      currentLicList = d.list || [];
+      var total = d.total || 0;
+      var limit = d.limit || 20;
+      currentLicTotalPages = Math.ceil(total / limit) || 1;
+
+      // 更新 KPI
+      var st = d.stats || {};
+      var elTot = document.getElementById('kpiLicTotal'); if (elTot) elTot.innerText = (st.total || 0).toLocaleString() + ' 张';
+      var elUnused = document.getElementById('kpiLicUnused'); if (elUnused) elUnused.innerText = (st.unused || 0).toLocaleString() + ' 张';
+      var elActive = document.getElementById('kpiLicActive'); if (elActive) elActive.innerText = (st.active || 0).toLocaleString() + ' 张';
+      var elExpired = document.getElementById('kpiLicExpired'); if (elExpired) elExpired.innerText = ((st.expired || 0) + (st.disabled || 0)).toLocaleString() + ' 张';
+      var elBreakdown = document.getElementById('kpiLicTypeBreakdown');
+      if (elBreakdown) {
+        elBreakdown.innerText = '月: ' + (st.monthlyCount || 0) + ' · 季: ' + (st.quarterlyCount || 0) + ' · 年: ' + (st.yearlyCount || 0) + ' · 永久: ' + (st.lifetimeCount || 0);
+      }
+
+      // 渲染表格
+      if (!currentLicList.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">暂无匹配的激活码记录</td></tr>';
+      } else {
+        tbody.innerHTML = currentLicList.map(function(item) {
+          var tInfo = TYPE_MAP[item.type] || { label: item.type, badge: 'badge-blue' };
+          var sInfo = STATUS_MAP[item.status] || { label: item.status, badge: 'badge-gray' };
+          var deviceStr = item.deviceId ? '<code style="color:#38bdf8;font-size:11px;word-break:break-all;">' + escapeHtml(item.deviceId) + '</code>' : '<span style="color:#64748b;">-</span>';
+          var boundStr = item.boundAt ? formatTime(item.boundAt) : '<span style="color:#64748b;">-</span>';
+          var expStr = '-';
+          if (item.type === 'lifetime') {
+            expStr = '<span class="badge badge-rose">永久有效</span>';
+          } else if (item.expiresAt) {
+            var expMs = new Date(item.expiresAt).getTime();
+            var remain = Math.ceil((expMs - Date.now()) / (24 * 3600 * 1000));
+            if (remain > 0) {
+              expStr = formatTime(item.expiresAt) + ' <span class="badge badge-blue">剩' + remain + '天</span>';
+            } else {
+              expStr = formatTime(item.expiresAt) + ' <span class="badge badge-rose">已到期</span>';
+            }
+          }
+
+          var actionBtns = [
+            '<button onclick="copyLicenseCode(\\'' + item.code + '\\')" class="btn btn-secondary btn-sm" title="复制卡密">复制</button>'
+          ];
+
+          if (item.deviceId) {
+            actionBtns.push('<button onclick="handleUnbindLicense(\\'' + item.code + '\\')" class="btn btn-secondary btn-sm" style="color:#fbbf24;" title="解绑设备">解绑</button>');
+          }
+
+          if (item.type !== 'lifetime') {
+            actionBtns.push('<button onclick="openExtendLicenseModal(\\'' + item.code + '\\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;" title="延长有效期">延期</button>');
+          }
+
+          if (item.status === 'disabled') {
+            actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',false)" class="btn btn-secondary btn-sm" style="color:#34d399;">启用</button>');
+          } else {
+            actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',true)" class="btn btn-secondary btn-sm" style="color:#fb7185;">冻结</button>');
+          }
+
+          actionBtns.push('<button onclick="handleDeleteLicense(\\'' + item.code + '\\')" class="btn btn-danger btn-sm">删除</button>');
+
+          return '<tr>' +
+            '<td><strong style="color:#fff;font-family:monospace;font-size:12px;">' + escapeHtml(item.code) + '</strong></td>' +
+            '<td><span class="badge ' + tInfo.badge + '">' + tInfo.label + '</span></td>' +
+            '<td><span class="badge ' + sInfo.badge + '">' + sInfo.label + '</span></td>' +
+            '<td>' + deviceStr + '</td>' +
+            '<td>' + boundStr + '</td>' +
+            '<td>' + expStr + '</td>' +
+            '<td style="color:#94a3b8;font-size:11px;">' + escapeHtml(item.remark || '-') + '</td>' +
+            '<td style="text-align:right;white-space:nowrap;">' + actionBtns.join(' ') + '</td>' +
+          '</tr>';
+        }).join('');
+      }
+
+      // 更新分页
+      var elPg = document.getElementById('licensePageInfo');
+      if (elPg) elPg.innerText = '第 ' + currentLicPage + ' / ' + currentLicTotalPages + ' 页 · 共 ' + total + ' 条记录';
+      var btnPrev = document.getElementById('licBtnPrev');
+      var btnNext = document.getElementById('licBtnNext');
+      if (btnPrev) btnPrev.disabled = currentLicPage <= 1;
+      if (btnNext) btnNext.disabled = currentLicPage >= currentLicTotalPages;
+    }
+  } catch(e) {
+    console.error('loadLicensesData error:', e);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#fb7185;padding:24px;">载入异常: ' + e.message + '</td></tr>';
+  }
+}
+
+function changeLicensePage(delta) {
+  var target = currentLicPage + delta;
+  if (target >= 1 && target <= currentLicTotalPages) {
+    loadLicensesData(target);
+  }
+}
+
+function openGenerateLicenseModal() {
+  var notice = document.getElementById('genLicNotice');
+  if (notice) notice.classList.add('d-none');
+  document.getElementById('generateLicenseModal').style.display = 'flex';
+}
+
+async function handleGenerateLicenseSubmit() {
+  var type = document.getElementById('genLicType').value;
+  var count = parseInt(document.getElementById('genLicCount').value, 10) || 1;
+  var prefix = (document.getElementById('genLicPrefix').value || '').trim();
+  var remark = (document.getElementById('genLicRemark').value || '').trim();
+  var btn = document.getElementById('btnDoGenLicense');
+
+  if (btn) { btn.disabled = true; btn.innerText = '正在批量生成...'; }
+  try {
+    var resp = await fetch('/api/admin/license/generate', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ type: type, count: count, prefix: prefix, remark: remark })
+    });
+    var res = await resp.json();
+    if (res && res.success) {
+      var notice = document.getElementById('genLicNotice');
+      var txt = document.getElementById('genLicNoticeText');
+      if (notice && txt) {
+        txt.innerText = res.message || '生成成功！';
+        notice.classList.remove('d-none');
+      }
+      setTimeout(function() {
+        closeModal('generateLicenseModal');
+        loadLicensesData(1);
+      }, 800);
+    } else {
+      alert('生成失败: ' + (res.message || '未知错误'));
+    }
+  } catch(e) {
+    alert('请求异常: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = '立即批量生成'; }
+  }
+}
+
+function openExtendLicenseModal(code) {
+  document.getElementById('extLicCode').value = code;
+  document.getElementById('extendLicenseModal').style.display = 'flex';
+}
+
+async function handleExtendLicenseSubmit() {
+  var code = document.getElementById('extLicCode').value;
+  var days = parseInt(document.getElementById('extLicDays').value, 10) || 30;
+  try {
+    var resp = await fetch('/api/admin/license/extend', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ code: code, additionalDays: days })
+    });
+    var res = await resp.json();
+    if (res && res.success) {
+      closeModal('extendLicenseModal');
+      loadLicensesData(currentLicPage);
+      alert(res.message);
+    } else {
+      alert('延期失败: ' + (res.message || '未知错误'));
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
+}
+
+async function handleUnbindLicense(code) {
+  if (!confirm('确定要解除卡密 ' + code + ' 与已绑定电脑的关联吗？\\n解绑后该卡密可在任意新设备重新激活。')) return;
+  try {
+    var resp = await fetch('/api/admin/license/unbind', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ code: code })
+    });
+    var res = await resp.json();
+    if (res && res.success) {
+      loadLicensesData(currentLicPage);
+      alert(res.message);
+    } else {
+      alert('解绑失败: ' + (res.message || '未知错误'));
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
+}
+
+async function handleToggleLicense(code, disabled) {
+  var actionStr = disabled ? '冻结停用' : '恢复启用';
+  if (!confirm('确定要' + actionStr + '激活码 ' + code + ' 吗？')) return;
+  try {
+    var resp = await fetch('/api/admin/license/toggle', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ code: code, disabled: disabled })
+    });
+    var res = await resp.json();
+    if (res && res.success) {
+      loadLicensesData(currentLicPage);
+    } else {
+      alert('操作失败: ' + (res.message || '未知错误'));
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
+}
+
+async function handleDeleteLicense(code) {
+  if (!confirm('确定要永久删除激活码 ' + code + ' 吗？此操作不可恢复！')) return;
+  try {
+    var resp = await fetch('/api/admin/license/' + encodeURIComponent(code), {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    var res = await resp.json();
+    if (res && res.success) {
+      loadLicensesData(currentLicPage);
+    } else {
+      alert('删除失败: ' + (res.message || '未知错误'));
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
+}
+
+function copyLicenseCode(code) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).then(function() {
+      alert('激活码已复制到剪贴板: ' + code);
+    });
+  } else {
+    prompt('请复制激活码:', code);
+  }
+}
+
+function copyCurrentLicenses() {
+  if (!currentLicList || !currentLicList.length) {
+    alert('当前没有可复制的卡密记录');
+    return;
+  }
+  var lines = currentLicList.map(function(item) {
+    var tLabel = (TYPE_MAP[item.type] ? TYPE_MAP[item.type].label : item.type);
+    var sLabel = (STATUS_MAP[item.status] ? STATUS_MAP[item.status].label : item.status);
+    return item.code + ' | ' + tLabel + ' | ' + sLabel + (item.remark ? ' | ' + item.remark : '');
+  }).join('\\n');
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(lines).then(function() {
+      alert('已成功复制当前页全部 ' + currentLicList.length + ' 个卡密及状态到剪贴板！');
+    });
+  } else {
+    prompt('当前页卡密列表:', lines);
+  }
+}
+
+// ==================== 公告与版本管理 ====================
+
 async function loadNotices() {
   try {
     var resp = await fetch('/api/admin/notices', { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
     var res = await resp.json();
     var tbody = document.getElementById('noticeTableBody');
     if (res && res.success && tbody) {
@@ -147,9 +433,9 @@ async function loadNotices() {
           '<td>' + (n.targetVersion || '*') + '</td>' +
           '<td>' + formatTime(n.updatedAt) + '</td>' +
           '<td style="text-align:right;">' +
-            '<button onclick="previewNotice(\'' + n.id + '\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;">预览</button> ' +
-            '<button onclick="toggleNotice(\'' + n.id + '\',' + (!n.enabled) + ')" class="btn btn-secondary btn-sm">' + (n.enabled ? '停用' : '启用') + '</button> ' +
-            '<button onclick="deleteNotice(\'' + n.id + '\')" class="btn btn-danger btn-sm">删除</button>' +
+            '<button onclick="previewNotice(\\'' + n.id + '\\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;">预览</button> ' +
+            '<button onclick="toggleNotice(\\'' + n.id + '\\',' + (!n.enabled) + ')" class="btn btn-secondary btn-sm">' + (n.enabled ? '停用' : '启用') + '</button> ' +
+            '<button onclick="deleteNotice(\\'' + n.id + '\\')" class="btn btn-danger btn-sm">删除</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -160,22 +446,22 @@ async function loadNotices() {
 async function loadVersions() {
   try {
     var resp = await fetch('/api/admin/versions', { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
     var res = await resp.json();
     var tbody = document.getElementById('versionTableBody');
     if (res && res.success && tbody) {
       versionsCache = res.data || [];
-      if (!versionsCache.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:24px;">暂无版本发布记录</td></tr>'; return; }
+      if (!versionsCache.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:24px;">暂无版本记录</td></tr>'; return; }
       tbody.innerHTML = versionsCache.map(function(v) {
         return '<tr>' +
-          '<td style="font-family:monospace;font-weight:800;color:#fff;">v' + v.version + '</td>' +
-          '<td><span class="badge badge-blue">' + (v.channel || 'stable') + '</span></td>' +
-          '<td>' + v.releaseDate + '</td>' +
-          '<td><strong>' + escapeHtml(v.title) + '</strong></td>' +
-          '<td>' + (v.forceUpdate ? '<span class="badge badge-rose">强更</span>' : '<span class="badge badge-gray">普通</span>') + '</td>' +
-          '<td><span class="badge ' + (v.enabled !== false ? 'badge-green' : 'badge-gray') + '">' + (v.enabled !== false ? '上架' : '下架') + '</span></td>' +
+          '<td><strong style="color:#38bdf8;font-family:monospace;">v' + escapeHtml(v.version) + '</strong></td>' +
+          '<td>' + escapeHtml(v.releaseDate || '-') + '</td>' +
+          '<td>' + escapeHtml(v.title || '-') + '</td>' +
+          '<td>' + (v.forceUpdate ? '<span class="badge badge-rose">强制全量</span>' : '<span class="badge badge-blue">推荐更新</span>') + '</td>' +
+          '<td><span class="badge ' + (v.enabled ? 'badge-green' : 'badge-gray') + '">' + (v.enabled ? '活跃上线' : '已归档') + '</span></td>' +
           '<td style="text-align:right;">' +
-            '<button onclick="quickPushVersion(\'' + v.version + '\')" class="btn btn-secondary btn-sm" style="color:#a855f7;">广播</button> ' +
-            '<button onclick="deleteVersion(\'' + v.version + '\')" class="btn btn-danger btn-sm">删除</button>' +
+            '<button onclick="openPushModal(\\'' + v.version + '\\')" class="btn btn-secondary btn-sm" style="color:#fbbf24;">全网广播</button> ' +
+            '<button onclick="deleteVersion(\\'' + v.version + '\\')" class="btn btn-danger btn-sm">删除</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -183,112 +469,127 @@ async function loadVersions() {
   } catch(e) { console.warn('loadVersions error:', e); }
 }
 
-async function searchKey() {
-  var q = (document.getElementById('keySearchInput').value || '').trim();
-  if (!q) return;
-  var resBox = document.getElementById('keySearchResult');
-  var btn = document.getElementById('btnSearchKey');
-  if (btn) btn.innerText = '检索中...';
-  try {
-    var resp = await fetch('/api/admin/search/debug?q=' + encodeURIComponent(q), { headers: getHeaders() });
-    var res = await resp.json();
-    if (res && res.success) {
-      var d = res.data;
-      resBox.style.display = 'block';
-      var html = '<div style="font-weight:bold;color:#fff;margin-bottom:12px;">检索: ' + escapeHtml(q) + '</div>';
-      if (d.game) html += '<div style="background:rgba(2,6,23,0.6);padding:12px;border-radius:10px;margin-bottom:12px;border:1px solid rgba(255,255,255,0.06);"><strong style="color:#38bdf8;">' + escapeHtml(d.game.nameZh || d.game.name) + '</strong> AppID: ' + d.game.appId + '</div>';
-      html += '<div class="grid-2"><div style="background:rgba(2,6,23,0.6);padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);"><div style="color:#94a3b8;font-size:11px;margin-bottom:6px;">DepotKey</div><div style="font-family:monospace;color:#34d399;word-break:break-all;">' + escapeHtml(d.depotKey || '无') + '</div></div><div style="background:rgba(2,6,23,0.6);padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);"><div style="color:#94a3b8;font-size:11px;margin-bottom:6px;">AccessToken</div><div style="font-family:monospace;color:#38bdf8;word-break:break-all;">' + escapeHtml(d.token || '公开分包') + '</div></div></div>';
-      resBox.innerHTML = html;
-    }
-  } catch(e) { alert('查询失败: ' + e.message); }
-  finally { if (btn) btn.innerText = '查询'; }
-}
-
 async function loadSources() {
   try {
-    var resp = await fetch('/api/sources');
+    var resp = await fetch('/api/sources', { headers: getHeaders() });
     var res = await resp.json();
     var grid = document.getElementById('sourcesGrid');
-    if (res && res.success && res.data && res.data.sources && grid) {
-      grid.innerHTML = res.data.sources.map(function(s) {
-        return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;"><strong style="color:#fff;">' + escapeHtml(s.name) + '</strong><span class="badge badge-green">' + escapeHtml(s.status) + '</span></div><p style="color:#94a3b8;font-size:12px;margin-bottom:10px;">' + escapeHtml(s.description) + '</p><div style="font-size:11px;color:#64748b;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px;">来源: ' + escapeHtml(s.author) + ' · 周期: ' + escapeHtml(s.syncFrequency) + '</div></div>';
+    if (res && res.success && grid) {
+      var sources = res.data || [];
+      grid.innerHTML = sources.map(function(s) {
+        return '<div class="card" style="display:flex;flex-direction:column;justify-content:space-between;">' +
+          '<div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+              '<strong style="color:#fff;font-size:13px;">' + escapeHtml(s.name) + '</strong>' +
+              '<span class="badge badge-green">● 正常</span>' +
+            '</div>' +
+            '<p style="color:#94a3b8;font-size:11px;margin-bottom:12px;line-height:1.5;">' + escapeHtml(s.description) + '</p>' +
+            '<div style="font-size:11px;color:#64748b;font-family:monospace;margin-bottom:6px;">收录总量: <strong style="color:#38bdf8;">' + (s.totalRecordsCount || 0).toLocaleString() + ' 条</strong></div>' +
+            '<div style="font-size:11px;color:#64748b;">同步频率: ' + escapeHtml(s.syncFrequency || '24h') + '</div>' +
+          '</div>' +
+          '<div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">' +
+            '<span style="font-size:10px;color:#64748b;">维护: ' + escapeHtml(s.author || '社区') + '</span>' +
+            '<a href="' + escapeHtml(s.sourceUrl || '#') + '" target="_blank" style="font-size:11px;color:#38bdf8;">上游主页 ➔</a>' +
+          '</div>' +
+        '</div>';
       }).join('');
     }
   } catch(e) { console.warn('loadSources error:', e); }
 }
 
-async function triggerSyncAll() {
-  var btn = document.getElementById('btnSyncAll');
-  if (btn) btn.innerHTML = '<span>正在同步...</span>';
-  try {
-    var resp = await fetch('/api/admin/sync/all', { method: 'POST', headers: getHeaders() });
-    var res = await resp.json();
-    alert(res.message || '同步完成！');
-    loadStats();
-  } catch(e) { alert('同步失败: ' + e.message); }
-  finally { if (btn) btn.innerHTML = '<span>立即触发全量同步</span>'; }
-}
-
 async function loadAuditLogs() {
   try {
-    var resp = await fetch('/api/auth/audit-logs?limit=50', { headers: getHeaders() });
+    var resp = await fetch('/api/auth/audit-logs', { headers: getHeaders() });
     var res = await resp.json();
-    var tbody = document.getElementById('auditTableBody');
-    if (res && res.success && res.data && tbody) {
-      tbody.innerHTML = res.data.map(function(l) {
-        return '<tr style="font-size:11px;font-family:monospace;"><td style="color:#64748b;">' + formatTime(l.timestamp) + '</td><td style="color:#38bdf8;font-weight:bold;">' + escapeHtml(l.action) + '</td><td>' + escapeHtml(l.operator) + '</td><td style="color:#64748b;">' + escapeHtml(l.ip) + '</td><td style="font-family:inherit;color:#cbd5e1;">' + escapeHtml(l.details || '') + '</td><td><span class="badge ' + (l.success ? 'badge-green' : 'badge-rose') + '">' + (l.success ? '成功' : '失败') + '</span></td></tr>';
+    var el = document.getElementById('auditLogsContainer');
+    if (res && res.success && el) {
+      var logs = res.data || [];
+      if (!logs.length) { el.innerHTML = '<div style="color:#64748b;font-size:11px;">暂无审计日志</div>'; return; }
+      el.innerHTML = logs.slice(0, 10).map(function(l) {
+        return '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;font-size:11px;">' +
+          '<span><strong>' + escapeHtml(l.action) + '</strong> - <span style="color:#94a3b8;">' + escapeHtml(l.detail) + '</span></span>' +
+          '<span style="color:#64748b;font-family:monospace;">' + formatTime(l.time) + '</span>' +
+        '</div>';
       }).join('');
     }
-  } catch(e) { console.warn('loadAuditLogs error:', e); }
+  } catch(e) {}
 }
 
 async function handleChangePassword() {
-  var cur = (document.getElementById('curPass').value || '').trim();
-  var user = (document.getElementById('newUsername').value || '').trim();
-  var pass = (document.getElementById('newPass').value || '').trim();
+  var curPass = (document.getElementById('curPass').value || '').trim();
+  var newUsername = (document.getElementById('newUsername').value || '').trim();
+  var newPass = (document.getElementById('newPass').value || '').trim();
   var msg = document.getElementById('pwdMsg');
-  if (!cur || !pass) { msg.style.display='block'; msg.className='badge-rose'; msg.innerText='请输入当前密码与新密码'; return; }
+  if (!curPass) { alert('请输入当前原密码'); return; }
   try {
-    var resp = await fetch('/api/auth/change-password', { method: 'POST', headers: getHeaders(), body: JSON.stringify({ currentPassword: cur, newUsername: user, newPassword: pass }) });
+    var resp = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ currentPassword: curPass, newUsername: newUsername, newPassword: newPass })
+    });
     var res = await resp.json();
-    msg.style.display = 'block';
-    if (res && res.success) { msg.className='badge-green'; msg.innerText='修改成功: ' + res.message; if (res.token) { authToken=res.token; localStorage.setItem('steammaster_admin_token', res.token); } }
-    else { msg.className='badge-rose'; msg.innerText='失败: ' + (res.message || '未知错误'); }
-  } catch(err) { msg.style.display='block'; msg.className='badge-rose'; msg.innerText='请求异常: ' + err.message; }
+    if (res && res.success) {
+      if (msg) { msg.style.display = 'block'; msg.className = 'alert-box alert-success'; msg.innerText = res.message; }
+      alert('安全配置已更新！');
+      if (res.token) {
+        authToken = res.token;
+        localStorage.setItem('steammaster_admin_token', authToken);
+      }
+    } else {
+      alert('修改失败: ' + (res.message || '原密码错误'));
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
 }
 
-function openNoticeModal() {
-  document.getElementById('noticeId').value = '';
-  document.getElementById('noticeTitle').value = '';
-  document.getElementById('noticeContent').value = '';
-  document.getElementById('noticeModal').style.display = 'flex';
+async function triggerSyncAll() {
+  if (!confirm('确定立即触发全量多源同步？（可能需要几秒到十几秒）')) return;
+  var btn = document.getElementById('btnSyncAll');
+  if (btn) { btn.disabled = true; btn.innerText = '正在执行全量同步...'; }
+  try {
+    var resp = await fetch('/api/admin/sync/all', { method: 'POST', headers: getHeaders() });
+    var res = await resp.json();
+    alert(res.message || '全量同步已完成！');
+    loadStats();
+    loadSources();
+  } catch(e) { alert('同步异常: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.innerText = '🔄 立即触发全量多源聚合同步'; } }
 }
 
-function openVersionModal() {
-  document.getElementById('verNumber').value = '';
-  document.getElementById('verDate').value = new Date().toISOString().split('T')[0];
-  document.getElementById('verTitle').value = '';
-  document.getElementById('verChangelog').value = '';
-  document.getElementById('versionModal').style.display = 'flex';
+async function searchKey() {
+  var input = document.getElementById('keySearchInput');
+  var val = (input ? input.value : '').trim();
+  if (!val) return;
+  var container = document.getElementById('keySearchResult');
+  if (container) { container.style.display = 'block'; container.innerHTML = '<div style="color:#64748b;">正在检索云端 28.8万条密钥库...</div>'; }
+  try {
+    var resp = await fetch('/api/metadata/' + encodeURIComponent(val) + '?name=' + encodeURIComponent(val), { headers: getHeaders() });
+    var res = await resp.json();
+    if (res && res.success && res.data) {
+      var d = res.data;
+      var depotsHtml = (d.depots || []).map(function(dp) {
+        return '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;align-items:center;font-size:11px;">' +
+          '<span>DepotID: <strong style="color:#38bdf8;">' + dp.depotId + '</strong></span>' +
+          '<code style="color:' + (dp.depotKey ? '#34d399' : '#64748b') + ';font-size:11px;">' + (dp.depotKey || '未匹配到 AES 密钥') + '</code>' +
+        '</div>';
+      }).join('');
+
+      container.innerHTML = '<div style="margin-bottom:12px;">' +
+        '<strong style="color:#fff;font-size:15px;">' + escapeHtml(d.name || d.appId) + '</strong> ' +
+        '<span class="badge badge-blue">AppID: ' + d.appId + '</span> ' +
+        (d.accessToken ? '<span class="badge badge-green">Token: ' + d.accessToken + '</span>' : '') +
+      '</div>' +
+      '<div>' + (depotsHtml || '<div style="color:#64748b;">无分包数据</div>') + '</div>';
+    } else {
+      if (container) container.innerHTML = '<div style="color:#fb7185;">未检索到 AppID ' + val + ' 的元数据记录</div>';
+    }
+  } catch(e) { if (container) container.innerHTML = '<div style="color:#fb7185;">检索异常: ' + e.message + '</div>'; }
 }
 
-function openPushModal() {
-  var latest = (versionsCache[0] && versionsCache[0].version) || '1.0.0';
-  document.getElementById('pushVersion').value = latest;
-  document.getElementById('pushTitle').value = 'SteamMaster 发现全新版本 v' + latest;
-  document.getElementById('pushContent').value = '全新版本已上线，建议立即升级体验最新功能！';
-  document.getElementById('pushModal').style.display = 'flex';
-}
-
-function quickPushVersion(ver) {
-  document.getElementById('pushVersion').value = ver;
-  document.getElementById('pushTitle').value = 'SteamMaster 发现重要新版本 v' + ver;
-  document.getElementById('pushContent').value = 'SteamMaster v' + ver + ' 现已发布，建议立即更新。';
-  document.getElementById('pushModal').style.display = 'flex';
-}
-
+function openNoticeModal() { document.getElementById('noticeModal').style.display = 'flex'; }
+function openVersionModal() { document.getElementById('versionModal').style.display = 'flex'; }
+function openPushModal(ver) { document.getElementById('pushVersion').value = ver || ''; document.getElementById('pushModal').style.display = 'flex'; }
 function previewNotice(id) {
-  var n = noticesCache.find(function(x) { return x.id === id; });
+  var n = noticesCache.find(function(x) { return String(x.id) === String(id); });
   if (!n) return;
   document.getElementById('previewTitle').innerText = n.title;
   document.getElementById('previewContent').innerText = n.content;
@@ -314,7 +615,7 @@ async function handleVersionSubmit() {
   var ver = (document.getElementById('verNumber').value || '').trim();
   var title = (document.getElementById('verTitle').value || '').trim();
   if (!ver || !title) { alert('请填写版本号与标题'); return; }
-  var changelog = document.getElementById('verChangelog').value.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+  var changelog = document.getElementById('verChangelog').value.split('\\n').map(function(s) { return s.trim(); }).filter(Boolean);
   var payload = { version: ver, releaseDate: document.getElementById('verDate').value, title: title, downloadUrl: document.getElementById('verUrl').value, forceUpdate: document.getElementById('verForce').checked, changelog: changelog, enabled: true };
   try {
     var resp = await fetch('/api/admin/versions', { method: 'POST', headers: getHeaders(), body: JSON.stringify(payload) });
@@ -365,6 +666,17 @@ function escapeHtml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function loadAllData() { loadStats(); loadNotices(); loadVersions(); }
+function loadAllData() {
+  loadStats();
+  loadLicensesData(1);
+  loadNotices();
+  loadVersions();
+}
 
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', checkAuth);
+} else {
+  checkAuth();
+}
 window.onload = checkAuth;
+`;

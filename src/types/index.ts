@@ -136,3 +136,47 @@ export interface IpcResponse<T = any> {
   data?: T;
   message?: string;
 }
+
+export type LicenseType = 'monthly' | 'quarterly' | 'yearly' | 'lifetime';
+export type LicenseStatus = 'unused' | 'active' | 'expired' | 'disabled';
+
+export interface LicenseKey {
+  id: string;
+  code: string;
+  type: LicenseType;
+  durationDays: number;
+  status: LicenseStatus;
+  createdAt: string;
+  deviceId?: string;
+  boundAt?: string;
+  expiresAt?: string | null;
+  remark?: string;
+  createdBy?: string;
+}
+
+export interface ClientLicenseInfo {
+  isActivated: boolean;
+  status: 'unactivated' | 'active' | 'expired' | 'disabled' | 'error';
+  type?: LicenseType;
+  typeName?: string;
+  code?: string;
+  deviceId: string;
+  boundAt?: string;
+  expiresAt?: string | null;
+  remainingDays?: number;
+  isLifetime?: boolean;
+  message?: string;
+}
+
+export interface LicenseStats {
+  total: number;
+  unused: number;
+  active: number;
+  expired: number;
+  disabled: number;
+  monthlyCount: number;
+  quarterlyCount: number;
+  yearlyCount: number;
+  lifetimeCount: number;
+}
+

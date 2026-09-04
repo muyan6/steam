@@ -55,6 +55,13 @@ export const electronAPI = {
   getSourcesList: (): Promise<any> => ipcRenderer.invoke('app:get-sources'),
   syncSources: (): Promise<any> => ipcRenderer.invoke('app:sync-sources'),
 
+  // 商业版：设备码与激活码系统
+  getDeviceId: (): Promise<string> => ipcRenderer.invoke('license:get-device-id'),
+  getLicenseInfo: (forceVerify?: boolean): Promise<any> => ipcRenderer.invoke('license:get-info', forceVerify),
+  activateLicense: (code: string): Promise<{ success: boolean; message: string; license?: any }> =>
+    ipcRenderer.invoke('license:activate', code),
+  unbindLicense: (): Promise<{ success: boolean; message: string }> => ipcRenderer.invoke('license:unbind'),
+
   // 对话框
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-directory')
 };

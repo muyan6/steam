@@ -5,6 +5,7 @@ import { manifestService } from './services/manifestService';
 import { searchService } from './services/searchService';
 import { onlineFixService } from './services/onlineFixService';
 import { updateService } from './services/updateService';
+import { licenseClientService } from './services/licenseClientService';
 import { SteamGame } from '../types';
 
 export function registerIpcHandlers() {
@@ -144,7 +145,24 @@ export function registerIpcHandlers() {
     return await updateService.triggerSyncSources();
   });
 
-  // 6. 对话框服务
+  // 6. 设备码与激活码授权服务
+  ipcMain.handle('license:get-device-id', () => {
+    return licenseClientService.getDeviceId();
+  });
+
+  ipcMain.handle('license:get-info', async (_, forceVerify?: boolean) => {
+    return await licenseClientService.getLicenseInfo(forceVerify);
+  });
+
+  ipcMain.handle('license:activate', async (_, code: string) => {
+    return await licenseClientService.activateLicense(code);
+  });
+
+  ipcMain.handle('license:unbind', () => {
+    return licenseClientService.unbindLocal();
+  });
+
+  // 7. 对话框服务
   ipcMain.handle('dialog:select-directory', async () => {
     const res = await dialog.showOpenDialog({
       properties: ['openDirectory']

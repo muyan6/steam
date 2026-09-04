@@ -102,6 +102,17 @@
         <!-- 右侧：云端引擎状态与无边框原生感窗口控制按钮 -->
         <div class="flex items-center gap-2.5 shrink-0">
           <div class="flex items-center gap-2 text-xs app-no-drag">
+            <!-- 授权状态指示徽章 -->
+            <button
+              @click="showLicenseModal = true"
+              class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-[10px] border transition shadow-sm hover:scale-105 active:scale-95"
+              :class="getLicenseHeaderBadgeClass(licenseInfo)"
+              :title="licenseInfo.isActivated ? (licenseInfo.isLifetime ? '永久卡会员' : `会员到期剩余 ${licenseInfo.remainingDays} 天`) : '点击输入激活码'"
+            >
+              <Crown class="w-3 h-3" :class="licenseInfo.isActivated ? 'text-amber-400' : 'text-slate-400'" />
+              <span>{{ getLicenseHeaderBadgeText(licenseInfo) }}</span>
+            </button>
+
             <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 font-mono text-[10px] border border-sky-500/20">
               <Cloud class="w-3 h-3" />
               <span>18万+ 云端库</span>
@@ -268,6 +279,15 @@
       </div>
     </div>
 
+    <!-- 激活码与设备绑定弹窗 -->
+    <LicenseModal
+      v-if="showLicenseModal"
+      :license-info="licenseInfo"
+      @close="showLicenseModal = false"
+      @refresh="loadLicenseInfo(true)"
+      @notify="showToast"
+    />
+
     <!-- 全局 Toast 提示 -->
     <Toast :toasts="toasts" />
   </div>
@@ -292,21 +312,30 @@ import {
   AlertTriangle,
   Minus,
   Square,
-  Copy
+  Copy,
+  Crown
 } from 'lucide-vue-next';
 import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
 import OnlineFixView from './views/OnlineFixView.vue';
 import SettingsView from './views/SettingsView.vue';
 import StartupWizardModal from './components/StartupWizardModal.vue';
+import LicenseModal from './components/LicenseModal.vue';
 import Toast, { ToastItem } from './components/Toast.vue';
-import { SteamEnvironmentInfo } from '../types';
+import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
 
 const appVersion = '1.0.0';
 const currentTab = ref<'search' | 'library' | 'onlinefix' | 'settings'>('search');
 const showStartupWizard = ref(false);
+const showLicenseModal = ref(false);
 const isMaximized = ref(false);
+
+const licenseInfo = ref<ClientLicenseInfo>({
+  isActivated: false,
+  status: 'unactivated',
+  deviceId: ''
+});
 
 const { initTheme } = useTheme();
 
@@ -430,6 +459,44 @@ const checkNoticeAndVersion = async () => {
   }
 };
 
+const loadLicenseInfo = async (forceVerify: boolean = false) => {
+  try {
+    const info = await window.electronAPI.getLicenseInfo(forceVerify);
+    if (info) {
+      licenseInfo.value = info;
+    }
+  } catch (e: any) {
+    console.warn('获取授权状态失败:', e.message);
+  }
+};
+
+const getLicenseHeaderBadgeClass = (info: ClientLicenseInfo) => {
+  if (info.isActivated) {
+    if (info.type === 'lifetime' || info.isLifetime) {
+      return 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20';
+    }
+    return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20';
+  }
+  if (info.status === 'expired') {
+    return 'bg-rose-500/10 text-rose-300 border-rose-500/30 hover:bg-rose-500/20';
+  }
+  return 'bg-slate-800/80 text-slate-300 border-white/10 hover:bg-white/10';
+};
+
+const getLicenseHeaderBadgeText = (info: ClientLicenseInfo) => {
+  if (info.isActivated) {
+    if (info.type === 'lifetime' || info.isLifetime) {
+      return '👑 永久会员';
+    }
+    const days = info.remainingDays ?? 0;
+    return `👑 ${info.typeName?.replace('会员', '') || 'VIP'} (剩${days}天)`;
+  }
+  if (info.status === 'expired') {
+    return '⏱️ 授权已到期';
+  }
+  return '🔑 未激活';
+};
+
 const initApp = async () => {
   initTheme();
   try {
@@ -444,10 +511,12 @@ const initApp = async () => {
   }
 
   checkNoticeAndVersion();
+  loadLicenseInfo(true);
 };
 
 onMounted(() => {
   initApp();
   setInterval(fetchSteamInfo, 5000);
+  setInterval(() => loadLicenseInfo(false), 30000);
 });
 </script>
