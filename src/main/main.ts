@@ -19,11 +19,12 @@ function createWindow() {
   }
 
   mainWindow = new BrowserWindow({
-    width: 1160,
-    height: 780,
-    minWidth: 960,
-    minHeight: 640,
-    backgroundColor: '#0e141b',
+    width: 1200,
+    height: 800,
+    minWidth: 980,
+    minHeight: 660,
+    frame: false, // 沉浸式无边框窗口
+    backgroundColor: '#101726',
     title: 'SteamMaster - 游戏一键入库与联机工具',
     webPreferences: {
       preload: preloadPath,

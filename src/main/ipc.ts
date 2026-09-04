@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog } from 'electron';
+import { app, ipcMain, dialog, BrowserWindow } from 'electron';
 import { steamService } from './services/steamService';
 import { ostService } from './services/ostService';
 import { manifestService } from './services/manifestService';
@@ -8,9 +8,34 @@ import { updateService } from './services/updateService';
 import { SteamGame } from '../types';
 
 export function registerIpcHandlers() {
-  // 0. 应用生命周期与退出
+  // 0. 应用生命周期与无边框窗口控制
   ipcMain.handle('app:quit', () => {
     app.quit();
+  });
+
+  ipcMain.handle('window:minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.minimize();
+  });
+
+  ipcMain.handle('window:maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win?.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win?.maximize();
+    }
+    return win?.isMaximized() ?? false;
+  });
+
+  ipcMain.handle('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.close();
+  });
+
+  ipcMain.handle('window:isMaximized', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return win?.isMaximized() ?? false;
   });
 
   // 1. Steam 环境相关与健康检测

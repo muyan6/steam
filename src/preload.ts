@@ -2,8 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { SteamGame, SteamEnvironmentInfo, OnlineFixStatus } from './types';
 
 export const electronAPI = {
-  // 应用生命周期
+  // 应用生命周期与窗口控制
   quitApp: (): Promise<void> => ipcRenderer.invoke('app:quit'),
+  windowMinimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
+  windowMaximize: (): Promise<boolean> => ipcRenderer.invoke('window:maximize'),
+  windowClose: (): Promise<void> => ipcRenderer.invoke('window:close'),
+  isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
 
   // Steam 环境与进程
   getSteamInfo: (): Promise<SteamEnvironmentInfo> => ipcRenderer.invoke('steam:get-info'),

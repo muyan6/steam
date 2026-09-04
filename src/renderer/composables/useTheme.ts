@@ -4,33 +4,33 @@ import { AppThemeId, ThemeConfig } from '../../types';
 export const THEME_LIST: ThemeConfig[] = [
   {
     id: 'midnight',
-    name: '极客深邃',
-    nameEn: 'Midnight Cyber',
-    description: '经典 Steam 墨蓝沉浸暗夜，天青电光蓝点缀，清晰锐利、低眩光',
-    bgHex: '#080c14',
-    cardHex: '#101827',
+    name: '极光钛蓝',
+    nameEn: 'Titanium Sapphire',
+    description: '深邃高奢钛蓝与冰晶电光蓝，现代工作室旗舰质感，通透明亮，视野清晰',
+    bgHex: '#0f1624',
+    cardHex: '#1b263b',
     accentHex: '#38bdf8',
     secondaryHex: '#2dd4bf'
   },
   {
     id: 'neon',
-    name: '赛博幻紫',
-    nameEn: 'Cyber Neon',
-    description: '黑曜石深邃暗紫搭配霓虹粉紫光效，赛博电竞质感，极具未来科幻冲击力',
-    bgHex: '#070510',
-    cardHex: '#16102c',
+    name: '幻曜紫晶',
+    nameEn: 'Amethyst Velvet',
+    description: '奢华曜紫丝绒搭配极光粉紫微光，高端电竞赛博沉浸感，质感非凡',
+    bgHex: '#130f24',
+    cardHex: '#231b40',
     accentHex: '#c084fc',
     secondaryHex: '#f43f5e'
   },
   {
     id: 'emerald',
-    name: '翡翠矩阵',
-    nameEn: 'Emerald Matrix',
-    description: '黑钛幽境暗绿与矩阵荧光薄荷青，黑客终端风格，通透清爽护眼',
-    bgHex: '#030a06',
-    cardHex: '#0b1c13',
+    name: '皓月翡翠',
+    nameEn: 'Emerald Platinum',
+    description: '钛金墨玉底色搭配铂金荧光薄荷绿，清新雅致，通透护眼，极具高科技质感',
+    bgHex: '#0b1814',
+    cardHex: '#17322a',
     accentHex: '#34d399',
-    secondaryHex: '#06b6d4'
+    secondaryHex: '#22d3ee'
   }
 ];
 

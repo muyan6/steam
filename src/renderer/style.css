@@ -3,94 +3,97 @@
 @tailwind utilities;
 
 /* ==========================================================================
-   三套主题配色系统 (Theme System Variables)
+   高端旗舰三套主题配色系统 (Luxury Theme Design System)
+   采用丰富层次的钛金深空、紫晶丝绒与铂金翡翠底色，杜绝廉价死黑，呈现高质感
    ========================================================================== */
 
 :root,
 [data-theme="midnight"] {
-  --color-bg-base: #080c14;
-  --color-bg-subtle: #0d131f;
-  --color-bg-card: rgba(16, 24, 39, 0.75);
-  --color-bg-card-hover: rgba(23, 34, 54, 0.85);
-  --color-bg-card-solid: #111a2b;
-  --color-bg-elevated: rgba(22, 33, 52, 0.8);
-  --color-border: rgba(56, 189, 248, 0.14);
-  --color-border-subtle: rgba(255, 255, 255, 0.07);
-  --color-border-hover: rgba(56, 189, 248, 0.35);
+  --color-bg-base: #0f1624;
+  --color-bg-subtle: #141d2e;
+  --color-bg-card: rgba(26, 38, 59, 0.72);
+  --color-bg-card-hover: rgba(35, 51, 79, 0.85);
+  --color-bg-card-solid: #1b263b;
+  --color-bg-elevated: rgba(30, 44, 69, 0.8);
+  --color-border: rgba(56, 189, 248, 0.2);
+  --color-border-subtle: rgba(255, 255, 255, 0.09);
+  --color-border-hover: rgba(56, 189, 248, 0.45);
 
   --color-accent-primary: #38bdf8;
-  --color-accent-primary-hover: #0ea5e9;
+  --color-accent-primary-hover: #60a5fa;
   --color-accent-secondary: #2dd4bf;
-  --color-accent-glow: rgba(56, 189, 248, 0.22);
-  --color-accent-gradient: linear-gradient(135deg, #0284c7 0%, #0ea5e9 50%, #2dd4bf 100%);
+  --color-accent-glow: rgba(56, 189, 248, 0.25);
+  --color-accent-gradient: linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #2dd4bf 100%);
   --color-accent-gradient-hover: linear-gradient(135deg, #0369a1 0%, #0284c7 50%, #14b8a6 100%);
 
-  --color-nav-active-bg: linear-gradient(90deg, rgba(14, 165, 233, 0.18) 0%, rgba(45, 212, 191, 0.1) 100%);
-  --color-nav-active-border: rgba(56, 189, 248, 0.35);
-  --color-nav-active-text: #7dd3fc;
+  --color-nav-active-bg: linear-gradient(90deg, rgba(14, 165, 233, 0.22) 0%, rgba(45, 212, 191, 0.12) 100%);
+  --color-nav-active-border: rgba(56, 189, 248, 0.45);
+  --color-nav-active-text: #bae6fd;
 
-  --color-scrollbar-thumb: rgba(56, 189, 248, 0.2);
-  --color-scrollbar-hover: rgba(56, 189, 248, 0.45);
+  --color-scrollbar-thumb: rgba(56, 189, 248, 0.25);
+  --color-scrollbar-hover: rgba(56, 189, 248, 0.5);
 }
 
 [data-theme="neon"] {
-  --color-bg-base: #070510;
-  --color-bg-subtle: #0e0a1f;
-  --color-bg-card: rgba(22, 16, 44, 0.75);
-  --color-bg-card-hover: rgba(32, 23, 64, 0.85);
-  --color-bg-card-solid: #181133;
-  --color-bg-elevated: rgba(30, 21, 60, 0.8);
-  --color-border: rgba(192, 132, 252, 0.16);
-  --color-border-subtle: rgba(255, 255, 255, 0.07);
-  --color-border-hover: rgba(192, 132, 252, 0.4);
+  --color-bg-base: #130f24;
+  --color-bg-subtle: #19142f;
+  --color-bg-card: rgba(34, 26, 62, 0.72);
+  --color-bg-card-hover: rgba(46, 35, 83, 0.85);
+  --color-bg-card-solid: #231b40;
+  --color-bg-elevated: rgba(40, 30, 73, 0.8);
+  --color-border: rgba(192, 132, 252, 0.22);
+  --color-border-subtle: rgba(255, 255, 255, 0.09);
+  --color-border-hover: rgba(192, 132, 252, 0.5);
 
   --color-accent-primary: #c084fc;
-  --color-accent-primary-hover: #a855f7;
+  --color-accent-primary-hover: #e879f9;
   --color-accent-secondary: #f43f5e;
-  --color-accent-glow: rgba(192, 132, 252, 0.25);
-  --color-accent-gradient: linear-gradient(135deg, #7e22ce 0%, #a855f7 50%, #ec4899 100%);
-  --color-accent-gradient-hover: linear-gradient(135deg, #6b21a8 0%, #9333ea 50%, #db2777 100%);
+  --color-accent-glow: rgba(192, 132, 252, 0.28);
+  --color-accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #c084fc 50%, #f43f5e 100%);
+  --color-accent-gradient-hover: linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #e11d48 100%);
 
-  --color-nav-active-bg: linear-gradient(90deg, rgba(168, 85, 247, 0.2) 0%, rgba(236, 72, 153, 0.12) 100%);
-  --color-nav-active-border: rgba(192, 132, 252, 0.4);
-  --color-nav-active-text: #e9d5ff;
+  --color-nav-active-bg: linear-gradient(90deg, rgba(168, 85, 247, 0.24) 0%, rgba(244, 63, 94, 0.14) 100%);
+  --color-nav-active-border: rgba(192, 132, 252, 0.48);
+  --color-nav-active-text: #f3e8ff;
 
-  --color-scrollbar-thumb: rgba(192, 132, 252, 0.22);
-  --color-scrollbar-hover: rgba(192, 132, 252, 0.48);
+  --color-scrollbar-thumb: rgba(192, 132, 252, 0.28);
+  --color-scrollbar-hover: rgba(192, 132, 252, 0.55);
 }
 
 [data-theme="emerald"] {
-  --color-bg-base: #030a06;
-  --color-bg-subtle: #07150e;
-  --color-bg-card: rgba(11, 28, 19, 0.75);
-  --color-bg-card-hover: rgba(16, 42, 28, 0.85);
-  --color-bg-card-solid: #0c2016;
-  --color-bg-elevated: rgba(15, 38, 26, 0.8);
-  --color-border: rgba(52, 211, 153, 0.16);
-  --color-border-subtle: rgba(255, 255, 255, 0.07);
-  --color-border-hover: rgba(52, 211, 153, 0.4);
+  --color-bg-base: #0b1814;
+  --color-bg-subtle: #10221c;
+  --color-bg-card: rgba(23, 48, 40, 0.72);
+  --color-bg-card-hover: rgba(31, 64, 53, 0.85);
+  --color-bg-card-solid: #17322a;
+  --color-bg-elevated: rgba(27, 56, 47, 0.8);
+  --color-border: rgba(52, 211, 153, 0.22);
+  --color-border-subtle: rgba(255, 255, 255, 0.09);
+  --color-border-hover: rgba(52, 211, 153, 0.48);
 
   --color-accent-primary: #34d399;
-  --color-accent-primary-hover: #10b981;
-  --color-accent-secondary: #06b6d4;
-  --color-accent-glow: rgba(52, 211, 153, 0.22);
-  --color-accent-gradient: linear-gradient(135deg, #047857 0%, #059669 50%, #0d9488 100%);
-  --color-accent-gradient-hover: linear-gradient(135deg, #065f46 0%, #047857 50%, #0f766e 100%);
+  --color-accent-primary-hover: #2dd4bf;
+  --color-accent-secondary: #22d3ee;
+  --color-accent-glow: rgba(52, 211, 153, 0.25);
+  --color-accent-gradient: linear-gradient(135deg, #059669 0%, #34d399 50%, #22d3ee 100%);
+  --color-accent-gradient-hover: linear-gradient(135deg, #047857 0%, #10b981 50%, #06b6d4 100%);
 
-  --color-nav-active-bg: linear-gradient(90deg, rgba(16, 185, 129, 0.18) 0%, rgba(6, 182, 212, 0.1) 100%);
-  --color-nav-active-border: rgba(52, 211, 153, 0.38);
-  --color-nav-active-text: #a7f3d0;
+  --color-nav-active-bg: linear-gradient(90deg, rgba(16, 185, 129, 0.22) 0%, rgba(34, 211, 238, 0.12) 100%);
+  --color-nav-active-border: rgba(52, 211, 153, 0.45);
+  --color-nav-active-text: #d1fae5;
 
-  --color-scrollbar-thumb: rgba(52, 211, 153, 0.2);
-  --color-scrollbar-hover: rgba(52, 211, 153, 0.45);
+  --color-scrollbar-thumb: rgba(52, 211, 153, 0.25);
+  --color-scrollbar-hover: rgba(52, 211, 153, 0.5);
 }
 
 @layer base {
   body {
     background-color: var(--color-bg-base);
-    color: #f1f5f9;
+    color: #f8fafc;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    transition: background-color 0.3s ease, color 0.3s ease;
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+    overflow: hidden;
   }
 
   ::-webkit-scrollbar {
@@ -111,40 +114,54 @@
 }
 
 /* ==========================================================================
-   全局组件与特效实用类 (Utility Classes)
+   无边框沉浸式窗口拖拽支持 (Frameless Window Drag)
+   ========================================================================== */
+
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ==========================================================================
+   高端视觉质感实用类 (Luxury Surface & Glass Effects)
    ========================================================================== */
 
 .theme-card {
   background-color: var(--color-bg-card);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--color-border-subtle);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 20px -3px rgba(0, 0, 0, 0.25);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .theme-card:hover {
   background-color: var(--color-bg-card-hover);
   border-color: var(--color-border-hover);
-  box-shadow: 0 10px 25px -5px var(--color-accent-glow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 12px 28px -5px var(--color-accent-glow);
 }
 
 .theme-card-static {
   background-color: var(--color-bg-card);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--color-border-subtle);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 20px -3px rgba(0, 0, 0, 0.25);
 }
 
 .theme-btn-primary {
   background: var(--color-accent-gradient);
-  box-shadow: 0 4px 14px 0 var(--color-accent-glow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 14px 0 var(--color-accent-glow);
   color: #ffffff;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .theme-btn-primary:hover:not(:disabled) {
   background: var(--color-accent-gradient-hover);
-  box-shadow: 0 6px 20px 2px var(--color-accent-glow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 22px 2px var(--color-accent-glow);
   transform: translateY(-1px);
 }
 
@@ -161,7 +178,7 @@
 }
 
 .theme-glow {
-  box-shadow: 0 0 20px var(--color-accent-glow);
+  box-shadow: 0 0 24px var(--color-accent-glow);
 }
 
 .theme-bg-base {
@@ -176,7 +193,7 @@
   background: var(--color-nav-active-bg);
   border-color: var(--color-nav-active-border);
   color: var(--color-nav-active-text);
-  box-shadow: 0 2px 10px var(--color-accent-glow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 12px var(--color-accent-glow);
 }
 
 /* 动效增强 */
