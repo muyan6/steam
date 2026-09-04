@@ -35,11 +35,23 @@
 
         <button
           @click="handleRestartSteam"
-          class="theme-btn-primary px-5 py-2.5 text-xs font-bold rounded-xl shadow transition flex items-center gap-2"
+          class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-xs font-semibold text-slate-300 hover:text-white transition flex items-center gap-2 shadow-sm cursor-pointer"
+          title="入库即时生效无须重启；仅在 Steam 偶发未识别或卡死时作为备用手段重启"
         >
-          <RotateCw class="w-4 h-4" />
-          <span>重启 Steam 生效</span>
+          <RotateCw class="w-4 h-4 text-slate-400" />
+          <span>重启 Steam (备用)</span>
         </button>
+      </div>
+    </div>
+
+    <!-- 入库即时生效温馨提示横幅 -->
+    <div class="mb-4 p-3.5 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-start gap-3 shrink-0">
+      <div class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 mt-0.5 font-bold">
+        💡
+      </div>
+      <div class="leading-relaxed">
+        <strong class="text-sky-300 font-semibold">入库即时生效提示：</strong>
+        本项目添加游戏后<strong class="text-emerald-400 font-bold">无须重启 Steam</strong>，会自动出现在库中，搜索进行下载即可。如果没有，则可能是注入环境出现问题，请在「系统与环境设置」中检测环境。
       </div>
     </div>
 
@@ -65,6 +77,9 @@
         </div>
         <p class="text-base font-bold text-slate-200 mb-1">当前游戏库为空</p>
         <p class="text-xs text-slate-400">前往「游戏检索与入库」页面，点击任意游戏的「一键入库」即可瞬间点亮</p>
+        <p class="text-[11px] text-sky-400/80 mt-2 bg-sky-500/5 px-3 py-1 rounded-full border border-sky-500/15">
+          💡 提示：添加游戏后无须重启 Steam，直接在 Steam 客户端搜索下载即可
+        </p>
       </div>
 
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-8">

@@ -308,7 +308,7 @@ server = "${manifestApi || 'steamrun'}"
 
     return {
       success: true,
-      message: `成功为「${metadata.name}」写入标准入库规则！已匹配 ${keysCount} 个分包密钥${manifestMsg}！`,
+      message: `成功为「${metadata.name}」写入标准入库规则！已自动热生效 (无须重启 Steam，直接在库中搜索即可下载)！已匹配 ${keysCount} 个分包密钥${manifestMsg}！`,
       scriptPath: saveRes.filePath,
       matchedKeysCount: keysCount,
       manifestCount
