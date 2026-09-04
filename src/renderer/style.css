@@ -417,7 +417,13 @@
 [data-theme="mint"] .text-emerald-300,
 [data-theme="frost"] .text-emerald-400,
 [data-theme="dawn"] .text-emerald-400,
-[data-theme="mint"] .text-emerald-400 {
+[data-theme="mint"] .text-emerald-400,
+[data-theme="frost"] [class*="text-emerald-200"],
+[data-theme="dawn"] [class*="text-emerald-200"],
+[data-theme="mint"] [class*="text-emerald-200"],
+[data-theme="frost"] [class*="text-emerald-300"],
+[data-theme="dawn"] [class*="text-emerald-300"],
+[data-theme="mint"] [class*="text-emerald-300"] {
   color: #047857 !important;
 }
 
@@ -437,6 +443,7 @@
   border-color: #fde68a !important;
 }
 
+/* 浅色模式下琥珀色/黄色系告示文本与元素全面高对比度强化 */
 [data-theme="frost"] .text-amber-200,
 [data-theme="dawn"] .text-amber-200,
 [data-theme="mint"] .text-amber-200,
@@ -445,8 +452,41 @@
 [data-theme="mint"] .text-amber-300,
 [data-theme="frost"] .text-amber-400,
 [data-theme="dawn"] .text-amber-400,
-[data-theme="mint"] .text-amber-400 {
-  color: #b45309 !important;
+[data-theme="mint"] .text-amber-400,
+[data-theme="frost"] [class*="text-amber-200"],
+[data-theme="dawn"] [class*="text-amber-200"],
+[data-theme="mint"] [class*="text-amber-200"],
+[data-theme="frost"] [class*="text-amber-300"],
+[data-theme="dawn"] [class*="text-amber-300"],
+[data-theme="mint"] [class*="text-amber-300"],
+[data-theme="frost"] [class*="text-amber-400"],
+[data-theme="dawn"] [class*="text-amber-400"],
+[data-theme="mint"] [class*="text-amber-400"] {
+  color: #92400e !important;
+}
+
+/* 浅色模式下告示中的 strong 和 code */
+[data-theme="frost"] .bg-amber-500\/10 strong,
+[data-theme="dawn"] .bg-amber-500\/10 strong,
+[data-theme="mint"] .bg-amber-500\/10 strong,
+[data-theme="frost"] .notice-banner strong,
+[data-theme="dawn"] .notice-banner strong,
+[data-theme="mint"] .notice-banner strong {
+  color: #78350f !important;
+  font-weight: 700;
+}
+
+[data-theme="frost"] .bg-amber-500\/10 code,
+[data-theme="dawn"] .bg-amber-500\/10 code,
+[data-theme="mint"] .bg-amber-500\/10 code,
+[data-theme="frost"] .notice-banner code,
+[data-theme="dawn"] .notice-banner code,
+[data-theme="mint"] .notice-banner code {
+  background-color: rgba(217, 119, 6, 0.12) !important;
+  color: #78350f !important;
+  border: 1px solid rgba(217, 119, 6, 0.25) !important;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.375rem;
 }
 
 [data-theme="frost"] .bg-sky-950\/20,
@@ -476,7 +516,13 @@
 [data-theme="mint"] .text-sky-300,
 [data-theme="frost"] .text-sky-400,
 [data-theme="dawn"] .text-sky-400,
-[data-theme="mint"] .text-sky-400 {
+[data-theme="mint"] .text-sky-400,
+[data-theme="frost"] [class*="text-sky-200"],
+[data-theme="dawn"] [class*="text-sky-200"],
+[data-theme="mint"] [class*="text-sky-200"],
+[data-theme="frost"] [class*="text-sky-300"],
+[data-theme="dawn"] [class*="text-sky-300"],
+[data-theme="mint"] [class*="text-sky-300"] {
   color: #0369a1 !important;
 }
 
@@ -504,7 +550,13 @@
 [data-theme="mint"] .text-rose-300,
 [data-theme="frost"] .text-rose-400,
 [data-theme="dawn"] .text-rose-400,
-[data-theme="mint"] .text-rose-400 {
+[data-theme="mint"] .text-rose-400,
+[data-theme="frost"] [class*="text-rose-200"],
+[data-theme="dawn"] [class*="text-rose-200"],
+[data-theme="mint"] [class*="text-rose-200"],
+[data-theme="frost"] [class*="text-rose-300"],
+[data-theme="dawn"] [class*="text-rose-300"],
+[data-theme="mint"] [class*="text-rose-300"] {
   color: #be123c !important;
 }
 
@@ -517,7 +569,10 @@
 
 [data-theme="frost"] .text-purple-300,
 [data-theme="dawn"] .text-purple-300,
-[data-theme="mint"] .text-purple-300 {
+[data-theme="mint"] .text-purple-300,
+[data-theme="frost"] [class*="text-purple-300"],
+[data-theme="dawn"] [class*="text-purple-300"],
+[data-theme="mint"] [class*="text-purple-300"] {
   color: #7e22ce !important;
 }
 
@@ -678,4 +733,91 @@
 .animate-pulse-subtle {
   animation: pulse-subtle 2.5s infinite ease-in-out;
 }
+
+/* ==========================================================================
+   一体化沉浸式游戏卡片与通用告示体系 (Integrated Game Card & Alert System)
+   ========================================================================== */
+
+.game-card-surface {
+  background: var(--color-bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.game-card-surface:hover {
+  background: var(--color-bg-card-hover);
+  border-color: var(--color-border-hover);
+  transform: translateY(-3px);
+  box-shadow: 0 14px 30px -4px var(--color-accent-glow), 0 4px 12px 0 rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="frost"] .game-card-surface,
+[data-theme="dawn"] .game-card-surface,
+[data-theme="mint"] .game-card-surface {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.06), 0 1px 3px 0 rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-theme="frost"] .game-card-surface:hover,
+[data-theme="dawn"] .game-card-surface:hover,
+[data-theme="mint"] .game-card-surface:hover {
+  background: #ffffff !important;
+  border-color: var(--color-accent-primary) !important;
+  box-shadow: 0 16px 32px -4px var(--color-accent-glow), 0 6px 14px -2px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* 通用高对比度使用须知/告示框 (深浅双模极致调优) */
+.notice-alert-card {
+  border-radius: 1.25rem;
+  padding: 1.25rem 1.5rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  box-shadow: 0 4px 14px 0 rgba(245, 158, 11, 0.06);
+}
+
+[data-theme="frost"] .notice-alert-card,
+[data-theme="dawn"] .notice-alert-card,
+[data-theme="mint"] .notice-alert-card {
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+  box-shadow: 0 4px 14px 0 rgba(217, 119, 6, 0.08) !important;
+}
+
+/* 按钮微拟物与浅色适配 */
+.btn-soft-action {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-soft-action:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+[data-theme="frost"] .btn-soft-action,
+[data-theme="dawn"] .btn-soft-action,
+[data-theme="mint"] .btn-soft-action {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+[data-theme="frost"] .btn-soft-action:hover,
+[data-theme="dawn"] .btn-soft-action:hover,
+[data-theme="mint"] .btn-soft-action:hover {
+  background: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
 

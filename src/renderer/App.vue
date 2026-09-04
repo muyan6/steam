@@ -148,13 +148,13 @@
       </header>
 
       <!-- 顶部横幅公告 (如果类型为 banner) -->
-      <div v-if="bannerNotice && bannerNotice.enabled" class="bg-gradient-to-r from-sky-950/80 via-slate-900/90 to-sky-950/80 border-b border-sky-500/30 px-6 py-2 flex items-center justify-between text-xs text-sky-200 shrink-0 backdrop-blur-md z-10">
+      <div v-if="bannerNotice && bannerNotice.enabled" class="bg-sky-500/10 border-b border-sky-500/30 px-6 py-2 flex items-center justify-between text-xs text-sky-300 shrink-0 backdrop-blur-md z-10">
         <div class="flex items-center gap-2 truncate">
           <Bell class="w-3.5 h-3.5 text-sky-400 shrink-0" />
-          <span class="font-bold shrink-0">{{ bannerNotice.title }}:</span>
-          <span class="text-slate-300 truncate">{{ bannerNotice.content }}</span>
+          <span class="font-bold shrink-0 text-sky-400">{{ bannerNotice.title }}:</span>
+          <span class="text-slate-200 truncate">{{ bannerNotice.content }}</span>
         </div>
-        <button @click="bannerNotice = null" class="text-slate-400 hover:text-slate-200 ml-4 shrink-0 p-1 hover:bg-slate-800/60 rounded">
+        <button @click="bannerNotice = null" class="text-slate-400 hover:text-slate-200 ml-4 shrink-0 p-1 hover:bg-white/10 rounded cursor-pointer">
           <X class="w-3.5 h-3.5" />
         </button>
       </div>

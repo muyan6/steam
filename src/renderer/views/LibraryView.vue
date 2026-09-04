@@ -67,33 +67,33 @@
         <p class="text-xs text-slate-400">前往「游戏检索与入库」页面，点击任意游戏的「一键入库」即可瞬间点亮</p>
       </div>
 
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4.5 pb-8">
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-8">
         <div
           v-for="game in filteredGames"
           :key="game.appId"
-          class="theme-card rounded-2xl p-4 xl:p-5 flex flex-col justify-between gap-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+          class="game-card-surface p-4 xl:p-4.5 flex flex-col justify-between gap-3.5 group"
         >
           <!-- 封面小图与信息 -->
           <div class="flex items-center gap-3.5 min-w-0">
             <img
               :src="`https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${game.appId}/capsule_184x69.jpg`"
-              class="w-22 h-11 object-cover rounded-xl bg-slate-900 shadow shrink-0 border border-white/10"
+              class="w-20 h-10 object-cover rounded-xl bg-slate-900 shadow-sm shrink-0 border border-white/10 group-hover:scale-105 transition-transform duration-300"
               loading="lazy"
               @error="handleImgError"
             />
             <div class="min-w-0 flex-1">
-              <div class="font-bold text-sm text-slate-100 truncate" :title="game.name">
+              <div class="font-bold text-sm text-slate-100 truncate group-hover:theme-text-accent transition-colors" :title="game.name">
                 {{ game.name }}
               </div>
               <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                <span class="text-xs font-mono theme-text-accent bg-sky-500/10 px-2 py-0.5 rounded-md border border-sky-500/20 font-bold">
+                <span class="text-[11px] font-mono theme-text-accent bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20 font-bold">
                   ID: {{ game.appId }}
                 </span>
 
                 <!-- 密钥状态 -->
                 <span
                   v-if="game.hasDepotKeys"
-                  class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/30 font-semibold"
+                  class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/30 font-semibold"
                   title="已注入 Depot 解密密钥"
                 >
                   <Key class="w-3 h-3" />
@@ -103,7 +103,7 @@
                 <!-- Token 状态 -->
                 <span
                   v-if="game.hasToken"
-                  class="text-xs px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-400 font-mono flex items-center gap-1 border border-purple-500/30 font-semibold"
+                  class="text-[11px] px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-400 font-mono flex items-center gap-1 border border-purple-500/30 font-semibold"
                   title="已配置 PICS Token"
                 >
                   <Zap class="w-3 h-3" />
@@ -113,7 +113,7 @@
                 <!-- 清单状态 -->
                 <span
                   v-if="manifestStatuses[game.appId]?.hasManifest || game.hasManifest"
-                  class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/30 font-semibold"
+                  class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/30 font-semibold"
                   title="本地 depotcache 清单文件已就绪"
                 >
                   <Box class="w-3 h-3" />
@@ -121,7 +121,7 @@
                 </span>
                 <span
                   v-else
-                  class="text-xs px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-400 font-mono flex items-center gap-1 border border-sky-500/30 font-semibold"
+                  class="text-[11px] px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-400 font-mono flex items-center gap-1 border border-sky-500/30 font-semibold"
                   title="OpenSteamTool 动态清单就绪，点击下载时 DLL 将自动拉取清单"
                 >
                   <Zap class="w-3 h-3" />
@@ -137,7 +137,7 @@
               <a
                 :href="`steam://install/${game.appId}`"
                 title="在 Steam 客户端直接触发下载"
-                class="px-3.5 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow"
+                class="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm"
               >
                 <Download class="w-3.5 h-3.5" />
                 <span>下载</span>
@@ -146,7 +146,7 @@
               <a
                 :href="`steam://rungameid/${game.appId}`"
                 title="在 Steam 客户端启动游戏"
-                class="px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
+                class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
               >
                 <Play class="w-3.5 h-3.5 fill-current" />
                 <span>运行</span>
@@ -157,7 +157,7 @@
                 @click="handleRepairManifest(game.appId)"
                 :disabled="repairingAppId === game.appId"
                 title="手动将清单预缓存到本地 Steam/depotcache 目录"
-                class="px-2.5 py-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-300 text-xs font-semibold rounded-xl transition flex items-center gap-1.5"
+                class="px-2.5 py-1.5 btn-soft-action text-xs font-semibold rounded-xl flex items-center gap-1.5"
               >
                 <RotateCw v-if="repairingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <FolderSync v-else class="w-3.5 h-3.5" />
@@ -168,7 +168,7 @@
             <button
               @click="removeGame(game.appId, game.name)"
               title="将该游戏移出库（删除 Lua 规则）"
-              class="px-3 py-2 bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl transition flex items-center gap-1.5"
+              class="px-3 py-1.5 bg-rose-600/15 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
             >
               <Trash2 class="w-3.5 h-3.5" />
               <span>出库</span>

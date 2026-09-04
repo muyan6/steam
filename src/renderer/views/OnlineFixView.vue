@@ -280,10 +280,10 @@
               </p>
             </div>
 
-            <!-- 游戏卡片网格列表 (自适应缩放列) -->
+            <!-- 游戏卡片网格列表 (一体化现代游戏展台布局) -->
             <div
               v-else
-              class="grid gap-4.5 pb-8 transition-all duration-200"
+              class="grid gap-4 pb-8 transition-all duration-200"
               :class="{
                 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5': cardScale <= 90,
                 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4': cardScale > 90 && cardScale <= 110,
@@ -293,57 +293,61 @@
               <div
                 v-for="game in filteredGames"
                 :key="game.appId"
-                class="theme-card rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
+                class="game-card-surface flex flex-col justify-between group"
               >
-                <!-- 游戏封面 (16:9 横版大图) -->
-                <div class="relative w-full aspect-[16/9] rounded-xl overflow-hidden bg-slate-950 border border-white/10 shadow-inner">
+                <!-- 顶部封面无缝区 (16:9 横版大图带暗角过渡) -->
+                <div class="relative w-full aspect-[16/9] bg-slate-950 overflow-hidden shrink-0">
                   <img
                     :src="'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/' + game.appId + '/capsule_616x353.jpg'"
-                    class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-108"
                     loading="lazy"
                     @error="handleCardImgError($event, game.appId)"
                   />
-                  <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none"></div>
-                  <span class="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-slate-950/80 backdrop-blur-md border border-white/10 text-[11px] font-mono text-sky-400 font-bold">
+                  <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent pointer-events-none"></div>
+                  
+                  <!-- 右上角 AppID 胶囊 -->
+                  <div class="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 text-[11px] font-mono theme-text-accent font-bold shadow-sm">
                     ID: {{ game.appId }}
-                  </span>
-                </div>
-
-                <!-- 游戏信息 -->
-                <div class="space-y-1">
-                  <h4 class="font-bold text-sm text-slate-100 truncate" :title="game.name">
-                    {{ game.name }}
-                  </h4>
-                  <div class="text-xs font-mono text-slate-400 truncate">
-                    <span>APPID: </span>
-                    <span class="text-slate-300">{{ game.appId }}</span>
-                  </div>
-                  <div class="text-xs text-slate-400 truncate" :title="game.installDir">
-                    <span>安装目录: </span>
-                    <span class="text-slate-300 font-mono">{{ game.installDir }}</span>
                   </div>
                 </div>
 
-                <!-- 底部操作按钮条 (▶ 联机启动 + 🔧 修复报错) -->
-                <div class="grid grid-cols-2 gap-2 pt-3 border-t border-white/10">
-                  <!-- 联机启动按钮 -->
-                  <button
-                    @click="handleLaunchGame(game)"
-                    :disabled="launchingAppId === game.appId"
-                    class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 border border-white/10 text-slate-200 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
-                  >
-                    <Play class="w-3.5 h-3.5 fill-current text-sky-400" />
-                    <span>{{ launchingAppId === game.appId ? '启动中...' : '联机启动' }}</span>
-                  </button>
+                <!-- 卡片中部游戏元信息 -->
+                <div class="p-4 flex-1 flex flex-col justify-between gap-3">
+                  <div class="space-y-1">
+                    <h4 class="font-bold text-sm text-slate-100 truncate group-hover:theme-text-accent transition-colors" :title="game.name">
+                      {{ game.name }}
+                    </h4>
+                    <div class="flex items-center gap-2 text-xs font-mono text-slate-400">
+                      <span>APPID:</span>
+                      <span class="text-slate-300 font-bold">{{ game.appId }}</span>
+                    </div>
+                    <div class="text-xs text-slate-400 truncate flex items-center gap-1.5" :title="game.installDir">
+                      <span class="shrink-0">目录:</span>
+                      <span class="text-slate-300 font-mono truncate">{{ game.installDir }}</span>
+                    </div>
+                  </div>
 
-                  <!-- 修复报错按钮 (橙色高亮，点击弹出脱壳解密确认) -->
-                  <button
-                    @click="promptRepairSteamless(game)"
-                    class="py-2.5 px-3 bg-amber-500/15 hover:bg-amber-500/25 active:bg-amber-500/35 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    <Wrench class="w-3.5 h-3.5 text-amber-400" />
-                    <span>修复报错</span>
-                  </button>
+                  <!-- 底部操作按钮条 (▶ 联机启动 + 🔧 修复报错) -->
+                  <div class="grid grid-cols-2 gap-2 pt-3 border-t border-white/10">
+                    <!-- 联机启动按钮 -->
+                    <button
+                      @click="handleLaunchGame(game)"
+                      :disabled="launchingAppId === game.appId"
+                      class="py-2 px-3 btn-soft-action hover:border-sky-400/40 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                    >
+                      <Play class="w-3.5 h-3.5 fill-current text-sky-400" />
+                      <span>{{ launchingAppId === game.appId ? '启动中...' : '联机启动' }}</span>
+                    </button>
+
+                    <!-- 修复报错按钮 (橙色高亮，点击弹出脱壳解密确认) -->
+                    <button
+                      @click="promptRepairSteamless(game)"
+                      class="py-2 px-3 bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Wrench class="w-3.5 h-3.5 text-amber-400" />
+                      <span>修复报错</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -394,13 +398,13 @@
         </div>
       </div>
 
-      <!-- 1:1 黄色使用须知提示栏 (对齐用户截图) -->
-      <div class="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200/95 space-y-2.5 shadow-lg">
-        <div class="flex items-center gap-2 font-bold text-sm text-amber-300">
-          <AlertTriangle class="w-4 h-4 text-amber-400 shrink-0" />
+      <!-- 高质感使用须知告示栏 (深浅双模极致清晰高对比度) -->
+      <div class="notice-alert-card space-y-2.5">
+        <div class="flex items-center gap-2 font-bold text-sm text-amber-400">
+          <AlertTriangle class="w-4.5 h-4.5 text-amber-500 shrink-0" />
           <span>使用须知</span>
         </div>
-        <ol class="text-xs leading-relaxed text-amber-200/90 space-y-1.5 list-decimal list-inside pl-1">
+        <ol class="text-xs leading-relaxed text-amber-300 space-y-1.5 list-decimal list-inside pl-1 font-medium">
           <li>联机补丁模式将自动在 <strong>online-fix.me</strong> 补丁网检索并下载该游戏的最新通用联机补丁 (<code>Fix_Repair_Steam_*.rar</code>)。</li>
           <li>下载后系统会自动以密码 <code>online-fix.me</code> 解压并部署到游戏根目录，无需手动去老外网站点广告下载。</li>
           <li>安装前系统会自动备份原始 DLL 文件（<code>steam_api64_o.dll</code> / <code>steam_api_o.dll</code>），随时可点击“还原原版”一键恢复。</li>
@@ -514,95 +518,97 @@
               </p>
             </div>
 
-            <!-- 补丁卡片网格列表 (对齐 1:1 设计) -->
+            <!-- 补丁卡片网格列表 (一体化流线展台布局) -->
             <div
               v-else
-              class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4.5 pb-8"
+              class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-8"
             >
               <div
                 v-for="game in filteredGames"
                 :key="game.appId"
-                class="theme-card rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl group"
+                class="game-card-surface flex flex-col justify-between group"
               >
                 <!-- 游戏封面 (16:9 横版大图) -->
-                <div class="relative w-full aspect-[16/9] rounded-xl overflow-hidden bg-slate-950 border border-white/10 shadow-inner">
+                <div class="relative w-full aspect-[16/9] bg-slate-950 overflow-hidden shrink-0">
                   <img
                     :src="'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/' + game.appId + '/capsule_616x353.jpg'"
-                    class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-108"
                     loading="lazy"
                     @error="handleCardImgError($event, game.appId)"
                   />
-                  <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none"></div>
+                  <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent pointer-events-none"></div>
 
                   <!-- 补丁状态标签 -->
                   <div class="absolute top-2.5 left-2.5">
                     <span
                       v-if="game.isPatched"
-                      class="px-2 py-0.5 rounded-md bg-emerald-500/90 backdrop-blur-md text-slate-950 text-[11px] font-bold flex items-center gap-1 shadow"
+                      class="px-2.5 py-0.5 rounded-lg bg-emerald-500/90 backdrop-blur-md text-slate-950 text-[11px] font-bold flex items-center gap-1 shadow-sm"
                     >
                       <Check class="w-3 h-3" />
                       <span>已安装补丁</span>
                     </span>
                     <span
                       v-else
-                      class="px-2 py-0.5 rounded-md bg-slate-900/80 backdrop-blur-md border border-white/10 text-slate-400 text-[11px] font-medium"
+                      class="px-2.5 py-0.5 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 text-slate-400 text-[11px] font-medium"
                     >
                       未打补丁
                     </span>
                   </div>
 
-                  <span class="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-slate-950/80 backdrop-blur-md border border-white/10 text-[11px] font-mono text-sky-400 font-bold">
+                  <span class="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 text-[11px] font-mono theme-text-accent font-bold shadow-sm">
                     ID: {{ game.appId }}
                   </span>
                 </div>
 
-                <!-- 游戏信息 -->
-                <div class="space-y-1">
-                  <h4 class="font-bold text-sm text-slate-100 truncate" :title="game.name">
-                    {{ game.name }}
-                  </h4>
-                  <div class="text-xs font-mono text-slate-400 truncate">
-                    <span>APPID: </span>
-                    <span class="text-slate-300">{{ game.appId }}</span>
+                <!-- 游戏信息与操作栏 -->
+                <div class="p-4 flex-1 flex flex-col justify-between gap-3">
+                  <div class="space-y-1">
+                    <h4 class="font-bold text-sm text-slate-100 truncate group-hover:theme-text-accent transition-colors" :title="game.name">
+                      {{ game.name }}
+                    </h4>
+                    <div class="flex items-center gap-2 text-xs font-mono text-slate-400">
+                      <span>APPID:</span>
+                      <span class="text-slate-300 font-bold">{{ game.appId }}</span>
+                    </div>
+                    <div class="text-xs text-slate-400 truncate flex items-center gap-1.5" :title="game.installDir">
+                      <span class="shrink-0">目录:</span>
+                      <span class="text-slate-300 font-mono truncate">{{ game.installDir }}</span>
+                    </div>
                   </div>
-                  <div class="text-xs text-slate-400 truncate" :title="game.installDir">
-                    <span>目录: </span>
-                    <span class="text-slate-300 font-mono">{{ game.installDir }}</span>
+
+                  <!-- 底部操作按钮条 (📥 安装联机补丁 + ↩️ 还原原版 + 📁 打开目录) -->
+                  <div class="flex items-center gap-2 pt-3 border-t border-white/10">
+                    <!-- 安装联机补丁按钮 (自动从 online-fix.me 下载并解压) -->
+                    <button
+                      @click="handleInstallOnlineFixWebPatch(game)"
+                      :disabled="downloadingAppId === game.appId || actionLoading"
+                      class="flex-1 py-2 px-2.5 theme-btn-primary text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                    >
+                      <RotateCw v-if="downloadingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
+                      <Download v-else class="w-3.5 h-3.5" />
+                      <span>{{ downloadingAppId === game.appId ? '下载安装中...' : (game.isPatched ? '重新安装' : '安装联机补丁') }}</span>
+                    </button>
+
+                    <!-- 还原原版按钮 -->
+                    <button
+                      @click="handleRestorePatchForGame(game)"
+                      :disabled="downloadingAppId === game.appId || actionLoading || (!game.isPatched && !game.hasBackup)"
+                      class="py-2 px-3 btn-soft-action hover:bg-rose-900/40 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+                      title="还原原始 DLL 文件"
+                    >
+                      <RotateCcw class="w-3.5 h-3.5" />
+                      <span class="hidden sm:inline">还原原版</span>
+                    </button>
+
+                    <!-- 打开游戏目录按钮 -->
+                    <button
+                      @click="handleOpenGameFolder(game)"
+                      class="p-2 btn-soft-action rounded-xl flex items-center justify-center cursor-pointer shrink-0"
+                      title="打开游戏目录"
+                    >
+                      <FolderOpen class="w-4 h-4" />
+                    </button>
                   </div>
-                </div>
-
-                <!-- 底部操作按钮条 (📥 安装联机补丁 + ↩️ 还原原版 + 📁 打开目录) -->
-                <div class="flex items-center gap-2 pt-3 border-t border-white/10">
-                  <!-- 安装联机补丁按钮 (自动从 online-fix.me 下载并解压) -->
-                  <button
-                    @click="handleInstallOnlineFixWebPatch(game)"
-                    :disabled="downloadingAppId === game.appId || actionLoading"
-                    class="flex-1 py-2.5 px-2.5 theme-btn-primary text-slate-950 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
-                  >
-                    <RotateCw v-if="downloadingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
-                    <Download v-else class="w-3.5 h-3.5" />
-                    <span>{{ downloadingAppId === game.appId ? '下载安装中...' : (game.isPatched ? '重新安装' : '安装联机补丁') }}</span>
-                  </button>
-
-                  <!-- 还原原版按钮 -->
-                  <button
-                    @click="handleRestorePatchForGame(game)"
-                    :disabled="downloadingAppId === game.appId || actionLoading || (!game.isPatched && !game.hasBackup)"
-                    class="py-2.5 px-3 bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-200 border border-white/10 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
-                    title="还原原始 DLL 文件"
-                  >
-                    <RotateCcw class="w-3.5 h-3.5" />
-                    <span class="hidden sm:inline">还原原版</span>
-                  </button>
-
-                  <!-- 打开游戏目录按钮 -->
-                  <button
-                    @click="handleOpenGameFolder(game)"
-                    class="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 border border-white/10 rounded-xl transition flex items-center justify-center cursor-pointer shrink-0"
-                    title="打开游戏目录"
-                  >
-                    <FolderOpen class="w-4 h-4" />
-                  </button>
                 </div>
               </div>
             </div>
