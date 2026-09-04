@@ -14,9 +14,50 @@ pub struct SteamEnvironmentInfo {
     pub ost_installed: bool,
     pub scripts_count: usize,
     pub platform: String,
+    pub global_online_fix_enabled: bool,
+}
+
+// 自定义 Steam 路径持久化文件（存于 %APPDATA%\com.chunfengdu.app\）
+fn custom_path_file() -> Option<PathBuf> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    Some(PathBuf::from(appdata).join("com.chunfengdu.app").join("steam_path.json"))
+}
+
+pub fn load_custom_steam_path() -> Option<PathBuf> {
+    let file = custom_path_file()?;
+    let content = std::fs::read_to_string(file).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let path = parsed.get("steamPath")?.as_str()?.to_string();
+    let p = PathBuf::from(&path);
+    if p.join("steam.exe").exists() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+pub fn save_custom_steam_path(path: &str) {
+    if let Some(file) = custom_path_file() {
+        if let Some(dir) = file.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let payload = serde_json::json!({ "steamPath": path });
+        let _ = std::fs::write(file, payload.to_string());
+    }
+}
+
+pub fn clear_custom_steam_path() {
+    if let Some(file) = custom_path_file() {
+        let _ = std::fs::remove_file(file);
+    }
 }
 
 pub fn detect_steam_path() -> Option<PathBuf> {
+    // 0. 用户手动指定的自定义路径优先
+    if let Some(custom) = load_custom_steam_path() {
+        return Some(custom);
+    }
+
     // 1. 尝试从 HKCU 注册表读取
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok(steam_key) = hkcu.open_subkey("Software\\Valve\\Steam") {
@@ -83,6 +124,44 @@ pub fn is_steam_running() -> bool {
     }
 }
 
+pub fn is_onlinefix_running() -> bool {
+    // 通过 wmic 检查 steam.exe 启动命令行是否带 -onlinefix 参数（wmic 不可用时视为否）
+    let output = Command::new("wmic")
+        .args(["process", "where", "name='steam.exe'", "get", "commandline"])
+        .output();
+
+    if let Ok(out) = output {
+        let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        text.contains("-onlinefix")
+    } else {
+        false
+    }
+}
+
+/// 解析 PE 头 Machine 字段判断 steam.exe 位数（0x8664 = x64, 0x014c = x86）
+pub fn detect_steam_bitness(steam_path: &Path) -> String {
+    let exe = steam_path.join("steam.exe");
+    if let Ok(data) = std::fs::read(&exe) {
+        if data.len() > 0x40 && &data[0..2] == b"MZ" {
+            let e_lfanew = u32::from_le_bytes([
+                data[0x3C],
+                data[0x3D],
+                data[0x3E],
+                data[0x3F],
+            ]) as usize;
+            if e_lfanew + 6 <= data.len() && &data[e_lfanew..e_lfanew + 4] == b"PE\0\0" {
+                let machine = u16::from_le_bytes([data[e_lfanew + 4], data[e_lfanew + 5]]);
+                return match machine {
+                    0x8664 => "x64".to_string(),
+                    0x014C => "x86".to_string(),
+                    _ => "unknown".to_string(),
+                };
+            }
+        }
+    }
+    "unknown".to_string()
+}
+
 pub fn count_unlocked_scripts(steam_path: &Path) -> usize {
     let lua_dir = steam_path.join("config").join("lua");
     if !lua_dir.exists() {
@@ -113,44 +192,61 @@ pub fn check_ost_installed(steam_path: &Path) -> bool {
 pub fn get_steam_info(custom_path: Option<&str>) -> SteamEnvironmentInfo {
     let steam_path_buf = custom_path
         .map(PathBuf::from)
-        .filter(|p| p.exists())
+        .filter(|p| p.join("steam.exe").exists())
+        .or_else(load_custom_steam_path)
         .or_else(detect_steam_path);
 
     let is_running = is_steam_running();
-    let (steam_path_str, steam_exe_path, ost_installed, scripts_count) = match &steam_path_buf {
+    let (steam_path_str, steam_exe_path, ost_installed, scripts_count, bitness) = match &steam_path_buf {
         Some(p) => {
             let exe = p.join("steam.exe");
             let ost = check_ost_installed(p);
             let count = count_unlocked_scripts(p);
+            let bitness = detect_steam_bitness(p);
             (
                 Some(p.to_string_lossy().to_string()),
                 if exe.exists() { Some(exe.to_string_lossy().to_string()) } else { None },
                 ost,
                 count,
+                bitness,
             )
         }
-        None => (None, None, false, 0),
+        None => (None, None, false, 0, "unknown".to_string()),
     };
 
     SteamEnvironmentInfo {
         is_running,
         steam_path: steam_path_str,
         steam_exe_path,
-        steam_bitness: "x64".to_string(),
+        steam_bitness: bitness,
         ost_installed,
         scripts_count,
         platform: "win32".to_string(),
+        global_online_fix_enabled: is_onlinefix_running(),
     }
 }
 
 pub fn kill_steam() -> bool {
-    let _ = Command::new("taskkill")
-        .args(["/F", "/IM", "steam.exe"])
-        .output();
-    let _ = Command::new("taskkill")
-        .args(["/F", "/IM", "steamservice.exe"])
-        .output();
-    std::thread::sleep(std::time::Duration::from_millis(600));
+    // 1. 先尝试 Steam 官方安全退出，避免强杀中断下载任务
+    if let Some(steam_path) = detect_steam_path() {
+        let shutdown = steam_path.join("steam.exe");
+        if shutdown.exists() {
+            let _ = Command::new(&shutdown).arg("-shutdown").spawn();
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+
+    // 2. 若仍在运行，再降级强制结束
+    if is_steam_running() {
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "steam.exe"])
+            .output();
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "steamservice.exe"])
+            .output();
+        std::thread::sleep(std::time::Duration::from_millis(600));
+    }
+
     !is_steam_running()
 }
 

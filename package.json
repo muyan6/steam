@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build:web": "vite build",
+    "typecheck": "vue-tsc --noEmit",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "build": "vite build && electron-builder",

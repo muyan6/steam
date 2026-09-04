@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
+use crate::steam::is_steam_running;
+
 // 内嵌 OST 核心二进制库（构建时打包进 EXE，零外部依赖）
 const OST_DLL: &[u8] = include_bytes!("../assets/opensteam/OpenSteamTool.dll");
 const DWMAPI_DLL: &[u8] = include_bytes!("../assets/opensteam/dwmapi.dll");
@@ -26,17 +28,34 @@ pub struct UnlockGamePayload {
     pub dlcs: Option<Vec<u32>>,
 }
 
-pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
-    let ost_target = steam_path.join("OpenSteamTool.dll");
-    let dwmapi_target = steam_path.join("dwmapi.dll");
-    let xinput_target = steam_path.join("xinput1_4.dll");
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClearRulesResult {
+    pub removed: usize,
+    pub failed: usize,
+}
 
-    fs::write(&ost_target, OST_DLL)
-        .map_err(|e| format!("写入 OpenSteamTool.dll 失败: {}", e))?;
-    fs::write(&dwmapi_target, DWMAPI_DLL)
-        .map_err(|e| format!("写入 dwmapi.dll 失败: {}", e))?;
-    fs::write(&xinput_target, XINPUT_DLL)
-        .map_err(|e| format!("写入 xinput1_4.dll 失败: {}", e))?;
+pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
+    // Steam 运行中时核心 DLL 会被进程锁定，覆写必然失败；提前给出可行动的错误信息
+    if is_steam_running() {
+        return Err("Steam 客户端正在运行，核心 DLL 被进程锁定无法写入。请先退出 Steam（可在工具箱中一键结束进程）后重试。".to_string());
+    }
+
+    let targets = [
+        ("OpenSteamTool.dll", OST_DLL),
+        ("dwmapi.dll", DWMAPI_DLL),
+        ("xinput1_4.dll", XINPUT_DLL),
+    ];
+
+    for (name, payload) in targets {
+        let target = steam_path.join(name);
+        fs::write(&target, payload).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                format!("写入 {} 失败: {}（权限不足，Steam 安装在受保护目录时请以管理员身份运行本程序）", name, e)
+            } else {
+                format!("写入 {} 失败: {}", name, e)
+            }
+        })?;
+    }
 
     Ok(())
 }
@@ -141,37 +160,47 @@ pub fn remove_unlocked_rule(steam_path: &Path, app_id: u32) -> Result<(), String
     Ok(())
 }
 
-pub fn clear_all_rules(steam_path: &Path) -> Result<usize, String> {
+pub fn clear_all_rules(steam_path: &Path) -> Result<ClearRulesResult, String> {
     let lua_dir = steam_path.join("config").join("lua");
     if !lua_dir.exists() {
-        return Ok(0);
+        return Ok(ClearRulesResult { removed: 0, failed: 0 });
     }
-    let mut count = 0;
+    let mut removed = 0;
+    let mut failed = 0;
     if let Ok(entries) = fs::read_dir(lua_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let p = entry.path();
             if p.extension().map(|e| e == "lua").unwrap_or(false) {
-                if fs::remove_file(p).is_ok() {
-                    count += 1;
+                if fs::remove_file(&p).is_ok() {
+                    removed += 1;
+                } else {
+                    failed += 1;
                 }
             }
         }
     }
-    Ok(count)
+    Ok(ClearRulesResult { removed, failed })
 }
 
-pub fn uninstall_injection_files(steam_path: &Path) -> Result<(), String> {
+pub fn uninstall_injection_files(steam_path: &Path) -> Result<Vec<String>, String> {
     let files = [
         "OpenSteamTool.dll",
         "dwmapi.dll",
         "xinput1_4.dll",
         "opensteamtool.toml",
     ];
+    let mut failed = Vec::new();
     for file_name in files {
         let p = steam_path.join(file_name);
         if p.exists() {
-            let _ = fs::remove_file(p);
+            if let Err(e) = fs::remove_file(&p) {
+                failed.push(format!("{}: {}（可能被正在运行的 Steam 锁定）", file_name, e));
+            }
         }
     }
-    Ok(())
+    if failed.is_empty() {
+        Ok(Vec::new())
+    } else {
+        Err(failed.join("; "))
+    }
 }
