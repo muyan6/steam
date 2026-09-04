@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { app } from 'electron';
 import { steamService } from './steamService';
 import { metadataService } from './metadataService';
 import { luaGameService } from './luaGameService';
@@ -25,13 +26,23 @@ export class OSTService {
       baseDir = process.cwd();
     }
 
-    // 1. 查找内置资源目录
+    const appPath = typeof app !== 'undefined' && app && typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd();
+    const resourcesPath = (process as any).resourcesPath || '';
+
+    // 1. 查找内置资源目录 (兼容开发环境、构建环境及生产打包环境)
     const candidateAssetDirs = [
-      path.join(baseDir, '../assets/opensteam'),
+      path.join(appPath, 'src/main/assets/opensteam'),
+      path.join(appPath, 'assets/opensteam'),
+      path.join(resourcesPath, 'assets/opensteam'),
+      path.join(resourcesPath, 'opensteam'),
+      path.join(baseDir, '../src/main/assets/opensteam'),
       path.join(baseDir, '../../src/main/assets/opensteam'),
+      path.join(baseDir, '../assets/opensteam'),
+      path.join(baseDir, 'assets/opensteam'),
       path.join(process.cwd(), 'src/main/assets/opensteam'),
-      path.join((process as any).resourcesPath || '', 'assets/opensteam'),
-      path.join((process as any).resourcesPath || '', 'opensteam')
+      path.join(process.cwd(), 'assets/opensteam'),
+      path.join(process.cwd(), 'server/data/OpenSteamTool-Release'),
+      path.join(appPath, 'server/data/OpenSteamTool-Release')
     ];
 
     let foundAssetDir: string | null = null;
@@ -50,6 +61,14 @@ export class OSTService {
       };
     }
 
+    // 1.5 如果 Steam 正在运行，先确保关闭以释放可能已被 steam.exe 占用的 DLL 文件句柄
+    const isRunning = await steamService.isSteamRunning();
+    if (isRunning) {
+      console.log('[OSTService] 检测到 Steam 正在运行，正在先关闭 Steam 释放文件句柄...');
+      await steamService.killSteam();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+
     // 2. 部署 3 个 64 位核心 DLL (OpenSteamTool.dll, dwmapi.dll, xinput1_4.dll)
     const requiredDlls = ['OpenSteamTool.dll', 'dwmapi.dll', 'xinput1_4.dll'];
     for (const dll of requiredDlls) {
@@ -57,10 +76,14 @@ export class OSTService {
       const destFile = path.join(steamPath, dll);
       if (fs.existsSync(srcFile)) {
         try {
+          if (fs.existsSync(destFile)) {
+            try { fs.chmodSync(destFile, 0o666); } catch {}
+          }
           fs.copyFileSync(srcFile, destFile);
           deployedCount++;
+          console.log(`[OSTService] 成功部署模块: ${dll} -> ${destFile}`);
         } catch (e: any) {
-          console.warn(`[OSTService] 复制 ${dll} 到 Steam 失败:`, e.message);
+          console.error(`[OSTService] 复制 ${dll} 到 Steam 失败:`, e.message);
         }
       }
     }
@@ -80,10 +103,13 @@ export class OSTService {
     luaGameService.ensureLuaDir(steamPath);
     manifestDownloadService.ensureDepotCacheDir(steamPath);
 
+    const isSuccess = deployedCount >= 2;
     return {
-      success: deployedCount >= 2,
+      success: isSuccess,
       deployedCount,
-      message: `已成功为 Steam 部署 OpenSteamTool 核心组件 (${deployedCount}/3 个模块) 及 Lua 规则环境！`
+      message: isSuccess
+        ? `已成功为 Steam 部署 OpenSteamTool 核心组件 (${deployedCount}/3 个模块) 及 Lua 规则环境！`
+        : `部署 OpenSteamTool 核心组件失败 (${deployedCount}/3 个模块)。原因：文件可能被占用或权限不足，请先退出 Steam 客户端后再重试！`
     };
   }
 
@@ -136,15 +162,24 @@ export class OSTService {
       return { success: false, message: '未找到 Steam 安装路径，请先定位 Steam 目录。' };
     }
 
+    // 1. 若 Steam 正在运行，先确保关闭以防 DLL 锁死
+    const isRunning = await steamService.isSteamRunning();
+    if (isRunning) {
+      await steamService.killSteam();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+
+    // 2. 部署核心 DLL 与规则环境
     const envRes = await this.ensureOSTEnvironment(manifestApi, customApiUrl, true);
     if (!envRes.success) {
       return { success: false, message: envRes.message, steamPath };
     }
 
+    // 3. 重新拉起 Steam 客户端
     let steamRestarted = false;
     if (shouldRestartSteam) {
       try {
-        await steamService.restartSteam();
+        await steamService.launchSteam();
         steamRestarted = true;
       } catch (err: any) {
         console.warn('[OSTService] 自动重启 Steam 失败:', err);
