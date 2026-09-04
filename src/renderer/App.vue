@@ -203,29 +203,48 @@
       @notify="addToast"
     />
 
-    <!-- 全局系统公告弹窗 -->
-    <div v-if="popupNotice" class="fixed inset-0 z-50 bg-black/65 backdrop-blur-md flex items-center justify-center p-4">
-      <div class="theme-card-static rounded-3xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 border">
-        <div class="flex items-center gap-3.5 mb-4">
-          <div class="w-10 h-10 rounded-2xl bg-sky-500/10 text-sky-400 flex items-center justify-center border border-sky-500/20">
-            <Bell class="w-5 h-5" />
+    <!-- 全局系统公告 / 免责声明弹窗 -->
+    <div v-if="popupNotice" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+      <div class="theme-card-static rounded-3xl w-full max-w-lg p-7 shadow-2xl animate-in fade-in zoom-in-95 duration-200 border flex flex-col items-center">
+        <!-- 顶部黄色警告感叹号圆圈图标 -->
+        <div class="w-16 h-16 rounded-full bg-amber-400/95 text-slate-950 flex items-center justify-center shadow-lg shadow-amber-400/30 mb-3 select-none">
+          <span class="text-3xl font-black font-sans leading-none">!</span>
+        </div>
+
+        <!-- 标题 -->
+        <h2 class="text-xl font-bold text-slate-100 text-center mb-5 tracking-wide">
+          {{ popupNotice.title || '免责声明' }}
+        </h2>
+
+        <!-- 免责条款列表 (浅底色容器) -->
+        <div class="w-full text-xs text-slate-300 leading-relaxed space-y-3 bg-slate-950/60 p-5 rounded-2xl border border-white/10 mb-6 font-medium max-h-72 overflow-y-auto">
+          <div v-if="popupNotice.content && popupNotice.content.includes('1.')" class="space-y-3">
+            <p class="text-justify">1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。</p>
+            <p class="text-justify">2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。</p>
+            <p class="text-justify">3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。</p>
+            <p class="text-justify">4. 本工具不提供任何破解、盗版相关的技术支持或服务。</p>
+            <p class="text-justify">5. 如有权利方认为本工具涉及侵权，请联系官网邮箱进行下架处理。</p>
           </div>
-          <div>
-            <h3 class="font-bold text-sm text-slate-100">{{ popupNotice.title }}</h3>
-            <p class="text-[11px] text-slate-400">系统官方公告</p>
+          <div v-else class="whitespace-pre-line text-justify">
+            {{ popupNotice.content }}
           </div>
         </div>
 
-        <div class="text-xs text-slate-300 leading-relaxed whitespace-pre-line mb-6 bg-slate-950/40 p-4 rounded-2xl border border-white/10">
-          {{ popupNotice.content }}
-        </div>
-
-        <div class="flex items-center justify-end gap-3">
+        <!-- 底部按钮组 (左: ✓ 同意, 右: ✕ 拒绝 -> 退出软件) -->
+        <div class="w-full grid grid-cols-2 gap-4">
           <button
-            @click="closePopupNotice"
-            class="theme-btn-primary px-5 py-2.5 text-xs font-bold rounded-xl transition shadow"
+            @click="handleAgreeNotice"
+            class="w-full py-3 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white text-xs font-bold rounded-2xl transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5"
           >
-            我知道了
+            <Check class="w-4 h-4 stroke-[3]" />
+            <span>同意</span>
+          </button>
+          <button
+            @click="handleDeclineNotice"
+            class="w-full py-3 bg-slate-700/90 hover:bg-slate-600 active:scale-[0.98] text-slate-200 hover:text-white text-xs font-bold rounded-2xl transition shadow flex items-center justify-center gap-1.5 border border-white/10"
+          >
+            <X class="w-4 h-4 stroke-[3]" />
+            <span>拒绝</span>
           </button>
         </div>
       </div>
@@ -319,7 +338,8 @@ import {
   Square,
   Copy,
   Crown,
-  Wrench
+  Wrench,
+  Check
 } from 'lucide-vue-next';
 import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
@@ -441,7 +461,21 @@ const closePopupNotice = () => {
   if (popupNotice.value && popupNotice.value.popupOnce) {
     localStorage.setItem(`read_notice_${popupNotice.value.id}`, 'true');
   }
+  sessionStorage.setItem('disclaimer_agreed', 'true');
   popupNotice.value = null;
+};
+
+const handleAgreeNotice = () => {
+  closePopupNotice();
+  addToast('您已同意免责声明，欢迎使用春风渡！', 'success');
+};
+
+const handleDeclineNotice = async () => {
+  try {
+    await window.electronAPI.quitApp();
+  } catch {
+    window.close();
+  }
 };
 
 const checkNoticeAndVersion = async () => {
@@ -456,6 +490,14 @@ const checkNoticeAndVersion = async () => {
           popupNotice.value = notice;
         }
       }
+    } else if (!sessionStorage.getItem('disclaimer_agreed')) {
+      // 离线环境兜底免责声明
+      popupNotice.value = {
+        id: 'notice_disclaimer_01',
+        title: '免责声明',
+        content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n5. 如有权利方认为本工具涉及侵权，请联系官网邮箱进行下架处理。',
+        popupOnce: false
+      };
     }
 
     const versionRes = await window.electronAPI.checkVersion(appVersion);

@@ -50,13 +50,14 @@ export class NoticeService {
       if (initialNotices.length === 0) {
         initialNotices = [
           {
-            id: 'notice_welcome_01',
-            title: '🎉 欢迎使用 SteamMaster 商业版！',
-            content: 'SteamMaster 商业版云端引擎已全面就绪！\n• 支持 18 万+ 游戏秒搜与 28 万+ DepotKey 实时匹配。\n• 支持 Spacewar 官方大厅与 Goldberg 局域网联机修复。\n• 云端自动同步 24 小时保持最新。',
+            id: 'notice_disclaimer_01',
+            title: '免责声明',
+            content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n\n5. 如有权利方认为本工具涉及侵权，请联系官网邮箱进行下架处理。',
             type: 'popup',
-            level: 'success',
+            level: 'warning',
             priority: 100,
             popupOnce: false,
+            link: '',
             targetVersion: '*',
             enabled: true,
             createdAt: new Date().toISOString(),
