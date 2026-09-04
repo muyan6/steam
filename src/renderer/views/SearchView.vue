@@ -10,7 +10,7 @@
           placeholder="输入游戏中文名、英文名、拼音缩写或 Steam AppID (如 BOMBANANA / 2358720 / wukong / 后室)..."
           class="w-full theme-card-static rounded-2xl px-4 py-2.5 pl-11 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner"
         />
-        <Search class="w-4.5 h-4.5 absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
+        <Search class="w-[18px] h-[18px] absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
         <button
           v-if="searchQuery"
           @click="searchQuery = ''; handleSearch(1)"
@@ -64,6 +64,7 @@
             <button
               v-for="src in searchSources"
               :key="src.id"
+              :disabled="loading"
               @click="selectSource(src.id)"
               class="w-full text-left p-2.5 rounded-xl transition flex items-center justify-between text-xs cursor-pointer group"
               :class="currentSource === src.id ? 'bg-sky-500/15 border border-sky-500/30 text-sky-300 font-bold' : 'text-slate-300 hover:bg-white/5'"
@@ -71,7 +72,7 @@
               <div>
                 <div class="flex items-center gap-1.5">
                   <span>{{ src.name }}</span>
-                  <span v-if="src.id === 'local_db'" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">18万+</span>
+                  <span v-if="src.id === 'local_db'" class="text-[10px] px-1.5 py-[2px] rounded bg-amber-500/20 text-amber-300 font-mono">18万+</span>
                 </div>
                 <div class="text-[11px] text-slate-400 font-normal mt-0.5">{{ src.desc }}</div>
               </div>
@@ -92,6 +93,7 @@
         <button
           v-for="tag in quickTags"
           :key="tag"
+          :disabled="loading"
           @click="searchQuery = tag; handleSearch(1)"
           class="px-3 py-1 rounded-xl btn-soft-action transition text-xs font-medium cursor-pointer"
         >
@@ -144,7 +146,7 @@
               v-if="!failedImgs.has(game.appId)"
               :src="game.headerUrl || getGameCdnUrl(game.appId, 0)"
               :alt="game.name"
-              class="w-full h-full object-cover group-hover:scale-108 transition-transform duration-500 ease-out"
+              class="w-full h-full object-cover group-hover:scale-[1.08] transition-transform duration-500 ease-out"
               loading="lazy"
               @error="handleImgError(game)"
             />
@@ -196,12 +198,12 @@
               <button
                 v-if="!unlockedAppIds.includes(game.appId)"
                 @click="unlockGame(game)"
-                :disabled="unlockingId === game.appId"
+                :disabled="unlockingId !== null"
                 class="flex-1 py-2.5 theme-btn-primary disabled:opacity-50 text-xs font-bold rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <RotateCw v-if="unlockingId === game.appId" class="w-4 h-4 animate-spin" />
+                <RotateCw v-if="unlockingId !== null" class="w-4 h-4 animate-spin" />
                 <PlusCircle v-else class="w-4 h-4" />
-                <span>{{ unlockingId === game.appId ? '匹配清单与密钥...' : '一键入库 (含清单)' }}</span>
+                <span>{{ unlockingId === game.appId ? '匹配清单与密钥...' : (unlockingId !== null ? '等待队列中...' : '一键入库 (含清单)') }}</span>
               </button>
 
               <template v-else>
@@ -421,6 +423,9 @@ const getGameCdnUrl = (appId: number, cdnIndex = 0): string => {
 };
 
 const handleImgError = async (game: SteamGame) => {
+  // 已判定彻底失败的游戏不再重试，避免 error -> 请求 -> error 死循环
+  if (failedImgs.has(game.appId)) return;
+
   const currentIdx = imgCdnIndices.get(game.appId) || 0;
   if (currentIdx + 1 < CDN_TEMPLATES.length) {
     const nextIdx = currentIdx + 1;
@@ -429,7 +434,8 @@ const handleImgError = async (game: SteamGame) => {
     return;
   }
 
-  // 若所有 CDN 均失败，尝试一次 Steam 官方 API 动态获取
+  // 所有 CDN 均失败：先登记，再尝试一次 Steam 官方 API 动态获取（每 appId 仅一次）
+  failedImgs.add(game.appId);
   try {
     const url = `https://store.steampowered.com/api/appdetails?appids=${game.appId}&l=schinese`;
     const resp = await axios.get(url, { timeout: 3500 });
@@ -439,14 +445,16 @@ const handleImgError = async (game: SteamGame) => {
       return;
     }
   } catch {}
-
-  failedImgs.add(game.appId);
 };
 
 const quickTags = ['后室', '黑神话', '艾尔登法环', '双人成行', '只狼', '博德之门', '幻兽帕鲁', '太空狼人杀'];
 
+// 搜索竞态守卫：只有最新一次请求的结果才允许落地
+let searchRequestId = 0;
+
 // 执行搜索
 const handleSearch = async (page = 1) => {
+  const requestId = ++searchRequestId;
   loading.value = true;
   currentPage.value = page;
   showSourceDropdown.value = false;
@@ -455,9 +463,11 @@ const handleSearch = async (page = 1) => {
     const res = await window.electronAPI.searchGames({
       query: searchQuery.value,
       source: currentSource.value,
-      page: currentPage.value,
+      page,
       pageSize: pageSize.value
     });
+
+    if (requestId !== searchRequestId) return; // 已有更新的请求，丢弃过期结果
 
     if (res && res.items) {
       games.value = res.items;
@@ -470,10 +480,14 @@ const handleSearch = async (page = 1) => {
       totalPages.value = 1;
       currentPage.value = 1;
     }
+
+    // 新结果集就绪后重置图片容错状态，避免跨搜索/跨分页无限增长
+    failedImgs.clear();
+    imgCdnIndices.clear();
   } catch (e: any) {
-    emit('notify', `搜索失败: ${e.message}`, 'error');
+    if (requestId === searchRequestId) emit('notify', `搜索失败: ${e.message}`, 'error');
   } finally {
-    loading.value = false;
+    if (requestId === searchRequestId) loading.value = false;
   }
 };
 

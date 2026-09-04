@@ -75,6 +75,19 @@ export const THEME_LIST: ThemeConfig[] = [
 
 const currentTheme = ref<AppThemeId>('midnight');
 
+// 主题需在应用挂载前初始化，避免浅色主题用户冷启动时看到深色首帧闪变
+export function initThemeEarly() {
+  try {
+    const saved = localStorage.getItem('app_theme') as AppThemeId;
+    if (saved && THEME_LIST.some(t => t.id === saved)) {
+      currentTheme.value = saved;
+    } else {
+      currentTheme.value = 'midnight';
+    }
+    document.documentElement.setAttribute('data-theme', currentTheme.value);
+  } catch {}
+}
+
 export function useTheme() {
   const initTheme = () => {
     const saved = localStorage.getItem('app_theme') as AppThemeId;

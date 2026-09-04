@@ -220,7 +220,7 @@
 
         <!-- 免责条款列表 (浅底色容器) -->
         <div class="w-full text-xs text-slate-300 leading-relaxed space-y-3 bg-slate-950/60 p-5 rounded-2xl border border-white/10 mb-6 font-medium max-h-72 overflow-y-auto">
-          <div v-if="popupNotice.content && popupNotice.content.includes('1.')" class="space-y-3">
+          <div v-if="popupNotice.kind === 'disclaimer'" class="space-y-3">
             <p class="text-justify">1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。</p>
             <p class="text-justify">2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。</p>
             <p class="text-justify">3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。</p>
@@ -320,7 +320,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, provide } from 'vue';
+import { ref, onMounted, onUnmounted, provide } from 'vue';
 import { 
   Search, 
   Library, 
@@ -371,24 +371,24 @@ const currentUiScale = ref<UiScaleOption>((localStorage.getItem('chunfengdu_ui_s
 const computedZoomValue = ref<number>(1.0);
 const windowResolution = ref({ width: window.innerWidth, height: window.innerHeight });
 
-const calculateDynamicZoom = (width: number): number => {
+const calculateDynamicZoom = (screenWidth: number): number => {
   // 窗口以 1200x800 为基准标准比例(1.0x)
-  // 当窗口全屏或高分屏时，平滑小幅度缩放，保证卡片与字体协调优美
-  if (width < 1280) return 1.0;
-  if (width < 1550) return 1.05;
-  if (width < 1850) return 1.10;
-  if (width < 2200) return 1.15;
+  // 基于屏幕物理分辨率（不随页面 zoom 变化）计算，避免 zoom 改变 outerWidth 引发的死循环振荡
+  if (screenWidth < 1280) return 1.0;
+  if (screenWidth < 1550) return 1.05;
+  if (screenWidth < 1850) return 1.10;
+  if (screenWidth < 2200) return 1.15;
   return 1.25; // 2K/4K 超大屏
 };
 
 const applyUiScale = () => {
-  const width = window.outerWidth || window.innerWidth;
-  const height = window.outerHeight || window.innerHeight;
   windowResolution.value = { width: window.innerWidth, height: window.innerHeight };
 
   let zoom = 1.0;
   if (currentUiScale.value === 'auto') {
-    zoom = calculateDynamicZoom(width);
+    // 使用不随 zoom 变化的 screen 尺寸作为依据
+    const screenW = (typeof screen !== 'undefined' && screen.availWidth) || window.innerWidth;
+    zoom = calculateDynamicZoom(screenW);
   } else {
     switch (currentUiScale.value) {
       case '100%': zoom = 1.0; break;
@@ -400,6 +400,8 @@ const applyUiScale = () => {
     }
   }
 
+  // zoom 未变化时不重复设置，避免 setZoomFactor -> resize 反复触发
+  if (zoom === computedZoomValue.value) return;
   computedZoomValue.value = zoom;
   if (window.electronAPI && typeof window.electronAPI.setZoomFactor === 'function') {
     window.electronAPI.setZoomFactor(zoom);
@@ -435,11 +437,6 @@ const navItems = [
   { id: 'about' as const, label: '功能详解与关于', iconComponent: Info },
   { id: 'settings' as const, label: '系统与环境设置', iconComponent: Settings2 },
 ];
-
-const currentTabTitle = computed(() => {
-  const match = navItems.find(i => i.id === currentTab.value);
-  return match?.label || '控制台';
-});
 
 const steamInfo = ref<SteamEnvironmentInfo>({
   steamPath: null,
@@ -482,8 +479,18 @@ const handleWindowClose = async () => {
 };
 
 // 公告与版本更新状态
-const popupNotice = ref<any>(null);
-const bannerNotice = ref<any>(null);
+interface NoticePayload {
+  id?: string;
+  title?: string;
+  content?: string;
+  type?: 'popup' | 'banner';
+  popupOnce?: boolean;
+  link?: string;
+  enabled?: boolean;
+  kind?: 'disclaimer' | 'notice';
+}
+const popupNotice = ref<NoticePayload | null>(null);
+const bannerNotice = ref<NoticePayload | null>(null);
 const versionModal = ref<any>(null);
 
 const toasts = ref<ToastItem[]>([]);
@@ -525,9 +532,20 @@ const openDisclaimerModal = () => {
   popupNotice.value = {
     id: 'notice_disclaimer_01',
     title: '免责声明',
+    kind: 'disclaimer',
     content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n5. 如有权利方认为本工具涉及侵权，请联系官网邮箱进行下架处理。',
     popupOnce: false
   };
+};
+
+// 免责声明展示完毕后待展示的公告队列
+let queuedNotice: NoticePayload | null = null;
+
+const showQueuedNoticeIfAny = () => {
+  if (!popupNotice.value && queuedNotice) {
+    popupNotice.value = queuedNotice;
+    queuedNotice = null;
+  }
 };
 
 const closePopupNotice = () => {
@@ -535,6 +553,7 @@ const closePopupNotice = () => {
     localStorage.setItem(`read_notice_${popupNotice.value.id}`, 'true');
   }
   popupNotice.value = null;
+  showQueuedNoticeIfAny();
 };
 
 const handleAgreeNotice = () => {
@@ -556,18 +575,24 @@ const checkNoticeAndVersion = async () => {
     const hasAcceptedDisclaimer = localStorage.getItem(DISCLAIMER_STORAGE_KEY) === 'true';
 
     const notice = await window.electronAPI.checkNotice();
+    let activeNotice: NoticePayload | null = null;
     if (notice && notice.enabled) {
       if (notice.type === 'banner') {
         bannerNotice.value = notice;
       } else {
         const isRead = notice.popupOnce && localStorage.getItem(`read_notice_${notice.id}`);
         if (!isRead) {
-          popupNotice.value = notice;
+          activeNotice = notice;
         }
       }
-    } else if (!hasAcceptedDisclaimer) {
-      // 离线环境且本机从未确认过免责声明时弹出（每台电脑仅首次弹出一次）
+    }
+
+    // 免责声明独立于公告判断：从未同意过免责声明时必须展示（公告排队在其后）
+    if (!hasAcceptedDisclaimer) {
+      queuedNotice = activeNotice;
       openDisclaimerModal();
+    } else if (activeNotice) {
+      popupNotice.value = activeNotice;
     }
 
     const versionRes = await window.electronAPI.checkVersion(appVersion);
@@ -576,6 +601,10 @@ const checkNoticeAndVersion = async () => {
     }
   } catch (e) {
     console.warn('检查公告与版本失败:', e);
+    // 云端不可达时仍需保证免责声明可展示
+    if (localStorage.getItem(DISCLAIMER_STORAGE_KEY) !== 'true') {
+      openDisclaimerModal();
+    }
   }
 };
 
@@ -634,15 +663,31 @@ const initApp = async () => {
   loadLicenseInfo(true);
 };
 
+const syncMaximizedState = async () => {
+  try {
+    if (window.electronAPI && typeof window.electronAPI.isWindowMaximized === 'function') {
+      isMaximized.value = await window.electronAPI.isWindowMaximized();
+    }
+  } catch {}
+};
+
+let steamInfoTimer: ReturnType<typeof setInterval> | null = null;
+let licenseTimer: ReturnType<typeof setInterval> | null = null;
+
 onMounted(() => {
   initApp();
   applyUiScale();
+  syncMaximizedState();
   window.addEventListener('resize', applyUiScale);
-  setInterval(fetchSteamInfo, 5000);
-  setInterval(() => loadLicenseInfo(false), 30000);
+  window.addEventListener('resize', syncMaximizedState);
+  steamInfoTimer = setInterval(fetchSteamInfo, 5000);
+  licenseTimer = setInterval(() => loadLicenseInfo(false), 30000);
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', applyUiScale);
+  window.removeEventListener('resize', syncMaximizedState);
+  if (steamInfoTimer) { clearInterval(steamInfoTimer); steamInfoTimer = null; }
+  if (licenseTimer) { clearInterval(licenseTimer); licenseTimer = null; }
 });
 </script>

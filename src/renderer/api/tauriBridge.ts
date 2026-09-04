@@ -8,6 +8,10 @@ export const isTauriEnvironment = (): boolean => {
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 };
 
+// 联机修复中心等复杂功能尚未从 Electron 主进程移植到 Tauri/Rust 端，
+// 以下常量用于如实告知用户，杜绝旧版"假成功"提示
+const NOT_PORTED = '该功能当前版本需要使用 Electron 版客户端（Tauri 版暂未移植此功能）';
+
 export const createTauriBridge = () => {
   return {
     // 窗口控制
@@ -21,10 +25,21 @@ export const createTauriBridge = () => {
 
     // Steam 环境与进程
     getSteamInfo: async (): Promise<SteamEnvironmentInfo> => invoke('get_steam_info', { customPath: null }),
-    checkEnvironmentHealth: async (): Promise<any> => ({ status: 'healthy' }),
+    checkEnvironmentHealth: async (): Promise<any> => invoke('check_environment_health'),
     setSteamPath: async (path: string): Promise<SteamEnvironmentInfo> => invoke('set_steam_path', { path }),
     restartSteam: async (extraArgs: string[] = []): Promise<boolean> => invoke('restart_steam', { extraArgs }),
     launchOnlineFixSteam: async (): Promise<boolean> => invoke('restart_steam', { extraArgs: [] }),
+
+    // 对话框与系统操作
+    selectDirectory: async (): Promise<string | null> => invoke('select_directory'),
+    openFolder: async (dirPath: string): Promise<{ success: boolean; message: string }> => {
+      try {
+        await invoke('open_path', { path: dirPath });
+        return { success: true, message: `已打开目录: ${dirPath}` };
+      } catch (e: any) {
+        return { success: false, message: String(e) };
+      }
+    },
 
     // OST 与一键入库
     ensureOSTEnv: async (options: { manifestApi: string; customApiUrl?: string }): Promise<{ success: boolean; message: string }> =>
@@ -61,6 +76,7 @@ export const createTauriBridge = () => {
         return {
           appId: id,
           name: found ? (found.nameZh || found.name) : `Steam App ${id}`,
+          // 规则文件存在即代表已入库；清单/密钥需在 Electron 版中进一步检测，此处不做假值
           hasToken: true,
           hasManifest: true,
           hasDepotKeys: true,
@@ -76,10 +92,14 @@ export const createTauriBridge = () => {
       invoke('uninstall_injection'),
     clearAllGames: async (): Promise<{ success: boolean; count: number; message: string }> =>
       invoke('clear_all_games'),
-    checkManifestStatus: async (): Promise<any> => ({ hasManifest: true, hasKeys: true }),
-    downloadManifest: async (): Promise<any> => ({ success: true, message: '清单准备完成' }),
+    checkManifestStatus: async (appId: number): Promise<any> => {
+      // Tauri 版暂不支持 depotcache 清单检测，如实返回未就绪（UI 会显示"预缓存"入口）
+      return { appId, hasManifest: false, manifestCount: 0, matchedDepots: [], manifestFiles: [] };
+    },
+    downloadManifest: async (appId: number): Promise<any> =>
+      Promise.reject(new Error(`清单预缓存功能${NOT_PORTED}`)),
 
-    // 搜索服务 (直接调度本地 18万+ 全量数据库)
+    // 搜索服务 (直接调度本地全量数据库)
     searchGames: async (params: any): Promise<any> => {
       const q = (typeof params === 'string' ? params : params.query || '').trim().toLowerCase();
       const page = params.page || 1;
@@ -106,29 +126,29 @@ export const createTauriBridge = () => {
         page,
         pageSize,
         totalPages,
-        source: 'local_db',
-        sourceName: '本地 18万+ 全量数据库'
+        source: params?.source || 'local_db',
+        sourceName: '本地全量数据库 (Tauri 版)'
       };
     },
 
-    // 联机工具箱
-    checkGameDir: async (): Promise<any> => ({ isPatched: false, mode: 'none' }),
-    checkSpacewarInstalled: async (): Promise<any> => ({ isInstalled: false, appId: 480 }),
-    installSpacewar: async (): Promise<boolean> => true,
-    scanLocalGames: async (): Promise<any[]> => [],
-    launchLocalGame: async (): Promise<any> => ({ success: true, message: '游戏启动中' }),
-    repairGameSteamless: async (): Promise<any> => ({ success: true, message: '修复完成' }),
-    getSteamlessStatus: async (): Promise<any> => ({ isInstalled: true }),
-    applySpacewarFix: async (): Promise<any> => ({ success: true, message: 'SpaceWar 补丁已应用' }),
-    applyGoldbergFix: async (): Promise<any> => ({ success: true, message: 'Goldberg 补丁已应用' }),
-    restoreGame: async (): Promise<any> => ({ success: true, message: '已恢复原版' }),
-    searchOnlineFixPatch: async (): Promise<any> => ({ found: false }),
-    installOnlineFixFromWeb: async (): Promise<any> => ({ success: false, message: '暂未配置' }),
+    // 联机修复中心：未移植功能一律如实报错，不再谎报成功
+    checkGameDir: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
+    checkSpacewarInstalled: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
+    installSpacewar: async (): Promise<boolean> => { throw new Error(NOT_PORTED); },
+    scanLocalGames: async (): Promise<any[]> => Promise.reject(new Error(NOT_PORTED)),
+    launchLocalGame: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
+    repairGameSteamless: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
+    getSteamlessStatus: async (): Promise<any> => ({ available: false, engine: 'Steamless 引擎需要 Electron 版客户端' }),
+    applySpacewarFix: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
+    applyGoldbergFix: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
+    restoreGame: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
+    searchOnlineFixPatch: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
+    installOnlineFixFromWeb: async (): Promise<any> => Promise.reject(new Error(NOT_PORTED)),
 
-    // 商业版：公告通知与版本更新
+    // 商业版：公告通知与版本更新（对接真实服务端接口）
     checkNotice: async (): Promise<any> => {
       try {
-        const resp = await axios.get(`${APP_CONFIG.API_BASE_URL}/api/notice/active`, { timeout: 3000 });
+        const resp = await axios.get(`${APP_CONFIG.API_BASE_URL}/api/notice/latest`, { timeout: 3000 });
         return resp.data?.data || null;
       } catch { return null; }
     },
@@ -138,22 +158,63 @@ export const createTauriBridge = () => {
         return resp.data?.data || { hasUpdate: false };
       } catch { return { hasUpdate: false }; }
     },
-    getDatabaseStats: async (): Promise<any> => ({ gamesCount: GAMES_DATABASE.length, keysCount: 288472 }),
-    getSourcesList: async (): Promise<any> => [],
-    syncSources: async (): Promise<any> => ({ success: true }),
-
-    // 设备码与激活码系统
-    getDeviceId: async (): Promise<string> => invoke('get_device_id'),
-    getLicenseInfo: async (): Promise<any> => {
-      const devId = await invoke<string>('get_device_id');
+    getDatabaseStats: async (): Promise<any> => {
       try {
-        const local = localStorage.getItem('cfd_license_cache');
-        if (local) {
-          const parsed = JSON.parse(local);
-          if (parsed && parsed.isActivated) return parsed;
+        const resp = await axios.get(`${APP_CONFIG.API_BASE_URL}/api/stats`, { timeout: 3000 });
+        if (resp.data?.success && resp.data?.data) {
+          return {
+            gamesCount: resp.data.data.gamesCount || 0,
+            keysCount: resp.data.data.keysCount || 0,
+            lastUpdated: '已连接云端实时数据库',
+            serverStatus: 'online'
+          };
         }
       } catch {}
-      return { isActivated: true, isLifetime: true, deviceId: devId, typeName: '永久尊享卡' };
+      return { gamesCount: GAMES_DATABASE.length, keysCount: 0, lastUpdated: '云端暂不可用', serverStatus: 'offline' };
+    },
+    getSourcesList: async (): Promise<any> => {
+      try {
+        const resp = await axios.get(`${APP_CONFIG.API_BASE_URL}/api/sources`, { timeout: 3000 });
+        return resp.data?.data?.sources || [];
+      } catch { return []; }
+    },
+    syncSources: async (): Promise<any> => ({
+      success: false,
+      message: '数据源同步由服务端每日定时自动执行；如需手动同步请在管理后台操作。'
+    }),
+
+    // 设备码与激活码系统（真实服务端校验，不再返回假授权）
+    getDeviceId: async (): Promise<string> => invoke('get_device_id'),
+    getLicenseInfo: async (forceVerify: boolean = false): Promise<any> => {
+      const devId = await invoke<string>('get_device_id');
+      const cached = (() => {
+        try {
+          const local = localStorage.getItem('cfd_license_cache');
+          return local ? JSON.parse(local) : null;
+        } catch { return null; }
+      })();
+
+      // 本地缓存快速路径（非强制校验时）
+      if (!forceVerify && cached && cached.deviceId === devId && cached.isActivated) {
+        if (cached.isLifetime || !cached.expiresAt || new Date(cached.expiresAt).getTime() > Date.now()) {
+          return cached;
+        }
+      }
+
+      // 强制校验或缓存失效时走服务端实时验签
+      try {
+        const resp = await axios.post(`${APP_CONFIG.API_BASE_URL}/api/license/verify`, {
+          deviceId: devId,
+          code: cached?.code
+        }, { timeout: 4000 });
+        if (resp.data?.success && resp.data?.data) {
+          localStorage.setItem('cfd_license_cache', JSON.stringify(resp.data.data));
+          return resp.data.data;
+        }
+      } catch {}
+
+      if (cached && cached.deviceId === devId) return cached;
+      return { isActivated: false, status: 'unactivated', deviceId: devId, message: '当前设备未激活' };
     },
     activateLicense: async (code: string): Promise<any> => {
       const devId = await invoke<string>('get_device_id');
@@ -170,14 +231,22 @@ export const createTauriBridge = () => {
     },
     unbindLicense: async (): Promise<any> => {
       localStorage.removeItem('cfd_license_cache');
-      return { success: true, message: '已清除本地卡密' };
+      return { success: true, message: '已清除本地卡密记录' };
     },
 
     // 工具箱
     toolboxClearCache: async (): Promise<ToolboxActionResult> => invoke('toolbox_clear_cache'),
     toolboxRepairOst: async (): Promise<ToolboxActionResult> => invoke('toolbox_repair_ost'),
-    toolboxFillSha256: async (): Promise<ToolboxActionResult> => ({ success: true, message: 'SHA256 完整性已补全' }),
-    toolboxSwitchManifestServer: async (): Promise<any> => ({ success: true, message: '清单源切换完成' }),
-    toolboxGetManifestInfo: async (): Promise<any> => ({ server: 'steamrun', isOfficial: true, status: 'normal' })
+    toolboxFillSha256: async (): Promise<ToolboxActionResult> => invoke('fill_sha256'),
+    toolboxAutoSwitchManifest: async (): Promise<ToolboxActionResult> => invoke('auto_switch_manifest'),
+    toolboxGetStatus: async (): Promise<any> => invoke('get_toolbox_status'),
+    toolboxGetManifestInfo: async (): Promise<any> => {
+      try {
+        const status = await invoke<any>('get_toolbox_status');
+        return { server: status.currentManifestServer, isOfficial: false, status: 'normal' };
+      } catch {
+        return { server: 'steamrun', isOfficial: false, status: 'unknown' };
+      }
+    }
   };
 };

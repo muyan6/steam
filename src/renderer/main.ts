@@ -2,10 +2,13 @@ import { createApp } from 'vue';
 import './style.css';
 import App from './App.vue';
 import { createTauriBridge, isTauriEnvironment } from './api/tauriBridge';
+import { initThemeEarly } from './composables/useTheme';
 
 if (typeof window !== 'undefined' && (!window.electronAPI || isTauriEnvironment())) {
   (window as any).electronAPI = createTauriBridge();
 }
 
-createApp(App).mount('#app');
+// 在挂载前应用主题，避免浅色主题冷启动闪变
+initThemeEarly();
 
+createApp(App).mount('#app');

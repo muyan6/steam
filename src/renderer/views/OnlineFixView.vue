@@ -49,12 +49,12 @@
     <!-- 核心联机操作提示横幅 -->
     <div class="mb-5 p-4 rounded-2xl bg-sky-500/10 border border-sky-500/30 text-sky-200 flex items-start gap-3.5 shadow-sm shrink-0">
       <div class="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/30 mt-0.5">
-        <Sparkles class="w-4.5 h-4.5" />
+        <Sparkles class="w-[18px] h-[18px]" />
       </div>
       <div class="text-xs leading-relaxed min-w-0">
         <div class="font-bold text-sky-300 text-sm mb-1 flex items-center gap-2">
           <span>联机核心操作指引</span>
-          <span class="text-[11px] font-normal px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">优先推荐</span>
+          <span class="text-[11px] font-normal px-2 py-[2px] rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">优先推荐</span>
         </div>
         <p class="text-slate-200">
           入库后游戏建议<strong>优先使用 OpenSteamTool 原生内核直接启动</strong>体验原生好友邀请与联机；
@@ -316,7 +316,7 @@
                 <div class="relative w-full aspect-[16/9] bg-slate-950 overflow-hidden shrink-0">
                   <img
                     :src="'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/' + game.appId + '/capsule_616x353.jpg'"
-                    class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-108"
+                    class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.08]"
                     loading="lazy"
                     @error="handleCardImgError($event, game.appId)"
                   />
@@ -418,7 +418,7 @@
       <!-- 高质感使用须知告示栏 (深浅双模极致清晰高对比度) -->
       <div class="notice-alert-card space-y-2.5">
         <div class="flex items-center gap-2 font-bold text-sm text-amber-400">
-          <AlertTriangle class="w-4.5 h-4.5 text-amber-500 shrink-0" />
+          <AlertTriangle class="w-[18px] h-[18px] text-amber-500 shrink-0" />
           <span>使用须知</span>
         </div>
         <ol class="text-xs leading-relaxed text-amber-300 space-y-1.5 list-decimal list-inside pl-1 font-medium">
@@ -549,7 +549,7 @@
                 <div class="relative w-full aspect-[16/9] bg-slate-950 overflow-hidden shrink-0">
                   <img
                     :src="'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/' + game.appId + '/capsule_616x353.jpg'"
-                    class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-108"
+                    class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.08]"
                     loading="lazy"
                     @error="handleCardImgError($event, game.appId)"
                   />
@@ -898,7 +898,7 @@ const handleLaunchGame = async (game: LocalInstalledGame) => {
       gamePath: game.fullInstallPath,
       primaryExe: game.primaryExe,
       mode: selectedLaunchMode.value,
-      onlineAppId: onlineAppId.value || 480
+      onlineAppId: Math.max(1, Math.trunc(Number(onlineAppId.value) || 480))
     });
 
     if (res.success) {

@@ -275,6 +275,8 @@ const handleCopyDeviceId = () => {
       copiedDeviceId.value = true;
       emit('notify', '设备码已成功复制到剪贴板！', 'success');
       setTimeout(() => { copiedDeviceId.value = false; }, 2000);
+    }).catch(() => {
+      emit('notify', '复制失败：剪贴板不可用，请手动选择复制', 'error');
     });
   }
 };

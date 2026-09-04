@@ -233,6 +233,8 @@ const loadLibrary = async () => {
   try {
     const details = await window.electronAPI.getUnlockedDetails();
     unlockedGames.value = details || [];
+    // 重建清单状态表，清掉已出库游戏的残留条目
+    Object.keys(manifestStatuses).forEach((k) => delete manifestStatuses[Number(k)]);
     emit('refresh-status');
 
     for (const g of unlockedGames.value) {
@@ -310,7 +312,10 @@ const handleRestartSteam = async () => {
 
 const handleImgError = (e: Event) => {
   const target = e.target as HTMLImageElement;
-  target.src = 'https://store.cloudflare.steamstatic.com/public/shared/images/header/globalheader_logo.png';
+  const fallback = 'https://store.cloudflare.steamstatic.com/public/shared/images/header/globalheader_logo.png';
+  if (target.src === fallback || target.dataset.fallbackTried === '1') return;
+  target.dataset.fallbackTried = '1';
+  target.src = fallback;
 };
 
 onMounted(() => {

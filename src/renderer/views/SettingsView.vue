@@ -465,7 +465,7 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-4">
           <div
-            @click="manifestApi = 'steamrun'"
+            @click="setManifestApi('steamrun')"
             class="p-4 rounded-2xl border transition cursor-pointer"
             :class="manifestApi === 'steamrun' ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md' : 'theme-card hover:border-sky-500/30'"
           >
@@ -477,7 +477,7 @@
           </div>
 
           <div
-            @click="manifestApi = 'wudrm'"
+            @click="setManifestApi('wudrm')"
             class="p-4 rounded-2xl border transition cursor-pointer"
             :class="manifestApi === 'wudrm' ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md' : 'theme-card hover:border-sky-500/30'"
           >
@@ -486,7 +486,7 @@
           </div>
 
           <div
-            @click="manifestApi = 'opensteamtool'"
+            @click="setManifestApi('opensteamtool')"
             class="p-4 rounded-2xl border transition cursor-pointer"
             :class="manifestApi === 'opensteamtool' ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md' : 'theme-card hover:border-sky-500/30'"
           >
@@ -623,7 +623,13 @@ const licenseInfo = ref<ClientLicenseInfo>({
 });
 
 const steamPathInput = ref('');
-const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>('steamrun');
+const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>(
+  (localStorage.getItem('chunfengdu_manifest_api') as 'opensteamtool' | 'steamrun' | 'wudrm') || 'steamrun'
+);
+const setManifestApi = (v: 'opensteamtool' | 'steamrun' | 'wudrm') => {
+  manifestApi.value = v;
+  localStorage.setItem('chunfengdu_manifest_api', v);
+};
 const deploying = ref(false);
 const refreshing = ref(false);
 const checkingHealth = ref(false);
@@ -905,6 +911,8 @@ const copyDeviceId = () => {
       copiedDeviceId.value = true;
       emit('notify', '设备码已成功复制到剪贴板！', 'success');
       setTimeout(() => { copiedDeviceId.value = false; }, 2000);
+    }).catch(() => {
+      emit('notify', '复制失败：浏览器剪贴板不可用，请手动选择复制', 'error');
     });
   }
 };
