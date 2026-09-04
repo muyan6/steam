@@ -6,6 +6,7 @@ import { searchService } from './services/searchService';
 import { onlineFixService } from './services/onlineFixService';
 import { updateService } from './services/updateService';
 import { licenseClientService } from './services/licenseClientService';
+import { toolboxService } from './services/toolboxService';
 import { SteamGame } from '../types';
 
 export function registerIpcHandlers() {
@@ -162,7 +163,28 @@ export function registerIpcHandlers() {
     return licenseClientService.unbindLocal();
   });
 
-  // 7. 对话框服务
+  // 7. 工具箱服务 (Steam 缓存清理 / OpenSteamTool 内核修复 / SHA256 补齐 / 清单自动切换)
+  ipcMain.handle('toolbox:clear-cache', async () => {
+    return await toolboxService.clearSteamCache();
+  });
+
+  ipcMain.handle('toolbox:repair-ost', async () => {
+    return await toolboxService.repairOstKernel();
+  });
+
+  ipcMain.handle('toolbox:fill-sha256', async () => {
+    return await toolboxService.fillSha256Checksums();
+  });
+
+  ipcMain.handle('toolbox:auto-switch-manifest', async () => {
+    return await toolboxService.enableAutoSwitchManifestServers();
+  });
+
+  ipcMain.handle('toolbox:get-status', async () => {
+    return await toolboxService.getStatus();
+  });
+
+  // 8. 对话框服务
   ipcMain.handle('dialog:select-directory', async () => {
     const res = await dialog.showOpenDialog({
       properties: ['openDirectory']

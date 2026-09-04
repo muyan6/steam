@@ -180,3 +180,38 @@ export interface LicenseStats {
   lifetimeCount: number;
 }
 
+export interface ToolboxActionResult {
+  success: boolean;
+  message: string;
+  steps: string[];
+  cleanedFilesCount?: number;
+  restartedSteam?: boolean;
+}
+
+export interface ManifestServerNode {
+  id: string;
+  name: string;
+  endpoint: string;
+  region: string;
+  isRecommended: boolean;
+  status: 'online' | 'degraded' | 'offline';
+  latencyMs?: number;
+}
+
+export interface ToolboxStatusInfo {
+  steamPath: string | null;
+  isRunning: boolean;
+  hasOpenSteamTool: boolean;
+  hasSha256Cache: boolean;
+  autoSwitchEnabled: boolean;
+  currentManifestServer: string;
+}
+
+export interface ToolboxRepairLog {
+  actionType: 'clear_cache' | 'repair_kernel' | 'fill_sha256' | 'auto_switch_manifest';
+  success: boolean;
+  deviceId?: string;
+  details?: string;
+  timestamp: string;
+}
+

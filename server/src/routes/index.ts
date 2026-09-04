@@ -57,6 +57,12 @@ import {
   deleteLicenseAdmin,
   extendLicenseAdmin
 } from '../controllers/licenseController.js';
+import {
+  getManifestNodes,
+  getSha256PackageInfo,
+  reportRepairLog,
+  getToolboxAdminStats
+} from '../controllers/toolboxController.js';
 
 const router = Router();
 
@@ -105,6 +111,11 @@ router.post('/license/activate', activateLicense);
 router.post('/license/verify', verifyLicense);
 router.get('/license/status/:deviceId', getDeviceLicenseStatus);
 
+// 工具箱 (Toolbox) 与清单高可用节点 (公开接口)
+router.get('/toolbox/nodes', getManifestNodes);
+router.get('/toolbox/sha256-data', getSha256PackageInfo);
+router.post('/toolbox/repair-log', reportRepairLog);
+
 // ==================== 2. 管理员认证受保护 API ====================
 
 // 权限拦截中间件
@@ -122,6 +133,7 @@ router.post('/sources/sync', triggerSyncFromSources);
 // 系统统计与调试工具
 router.get('/admin/stats', getServerStats);
 router.get('/admin/search/debug', searchDebugKeys);
+router.get('/admin/toolbox/stats', getToolboxAdminStats);
 
 // 卡密管理 CRUD 与批量生成
 router.get('/admin/license/list', getLicenseListAdmin);

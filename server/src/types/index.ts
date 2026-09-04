@@ -110,3 +110,32 @@ export interface PushUpdateRecord {
   pushedAt: string;
   operator: string;
 }
+
+export interface ManifestServerNode {
+  id: string;
+  name: string;
+  endpoint: string;
+  region: string;
+  isRecommended: boolean;
+  status: 'online' | 'degraded' | 'offline';
+  latencyMs?: number;
+}
+
+export interface ToolboxRepairLog {
+  id: string;
+  actionType: 'clear_cache' | 'repair_kernel' | 'fill_sha256' | 'auto_switch_manifest';
+  success: boolean;
+  deviceId?: string;
+  ip?: string;
+  details?: string;
+  timestamp: string;
+}
+
+export interface ToolboxStatsResponse {
+  totalRepairs: number;
+  clearCacheCount: number;
+  repairKernelCount: number;
+  fillSha256Count: number;
+  autoSwitchCount: number;
+  nodes: ManifestServerNode[];
+}

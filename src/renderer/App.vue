@@ -182,6 +182,11 @@
           v-else-if="currentTab === 'onlinefix'"
           @notify="addToast"
         />
+        <ToolboxView
+          v-else-if="currentTab === 'toolbox'"
+          @notify="addToast"
+          @refresh-status="fetchSteamInfo"
+        />
         <SettingsView
           v-else-if="currentTab === 'settings'"
           @notify="addToast"
@@ -313,11 +318,13 @@ import {
   Minus,
   Square,
   Copy,
-  Crown
+  Crown,
+  Wrench
 } from 'lucide-vue-next';
 import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
 import OnlineFixView from './views/OnlineFixView.vue';
+import ToolboxView from './views/ToolboxView.vue';
 import SettingsView from './views/SettingsView.vue';
 import StartupWizardModal from './components/StartupWizardModal.vue';
 import LicenseModal from './components/LicenseModal.vue';
@@ -326,7 +333,7 @@ import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
 
 const appVersion = '1.0.0';
-const currentTab = ref<'search' | 'library' | 'onlinefix' | 'settings'>('search');
+const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'settings'>('search');
 const showStartupWizard = ref(false);
 const showLicenseModal = ref(false);
 const isMaximized = ref(false);
@@ -343,6 +350,7 @@ const navItems = [
   { id: 'search' as const, label: '游戏检索与入库', iconComponent: Search },
   { id: 'library' as const, label: '已入库规则管理', iconComponent: Library },
   { id: 'onlinefix' as const, label: '联机修复中心', iconComponent: Gamepad2 },
+  { id: 'toolbox' as const, label: '实用工具箱', iconComponent: Wrench },
   { id: 'settings' as const, label: '系统与环境设置', iconComponent: Settings2 },
 ];
 

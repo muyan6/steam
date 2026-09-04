@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { SteamGame, SteamEnvironmentInfo, OnlineFixStatus } from './types';
+import { SteamGame, SteamEnvironmentInfo, OnlineFixStatus, ToolboxActionResult, ToolboxStatusInfo } from './types';
 
 export const electronAPI = {
   // 应用生命周期与窗口控制
@@ -61,6 +61,13 @@ export const electronAPI = {
   activateLicense: (code: string): Promise<{ success: boolean; message: string; license?: any }> =>
     ipcRenderer.invoke('license:activate', code),
   unbindLicense: (): Promise<{ success: boolean; message: string }> => ipcRenderer.invoke('license:unbind'),
+
+  // 工具箱 (Steam 缓存清理 / OpenSteamTool 内核修复 / SHA256 补齐 / 清单自动切换)
+  toolboxClearCache: (): Promise<ToolboxActionResult> => ipcRenderer.invoke('toolbox:clear-cache'),
+  toolboxRepairOst: (): Promise<ToolboxActionResult> => ipcRenderer.invoke('toolbox:repair-ost'),
+  toolboxFillSha256: (): Promise<ToolboxActionResult> => ipcRenderer.invoke('toolbox:fill-sha256'),
+  toolboxAutoSwitchManifest: (): Promise<ToolboxActionResult> => ipcRenderer.invoke('toolbox:auto-switch-manifest'),
+  toolboxGetStatus: (): Promise<ToolboxStatusInfo> => ipcRenderer.invoke('toolbox:get-status'),
 
   // 对话框
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-directory')
