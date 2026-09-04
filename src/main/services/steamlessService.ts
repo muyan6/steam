@@ -270,14 +270,15 @@ export class SteamlessService {
       }
     }
 
-    const isSuccess = repairedCount > 0 || details.every((d) => d.status !== 'error');
+    // 只有真实完成解密才算成功；全部跳过/失败时如实报告
+    const isSuccess = repairedCount > 0;
     const title = gameName ? `《${gameName}》` : '游戏';
 
     return {
       success: isSuccess,
       message: isSuccess
-        ? `已成功对 ${title} 目录下 ${exeFiles.length} 个可执行文件完成 Steamless 解密脱壳与修复！`
-        : `部分可执行文件解密修复时遇到异常，请查看明细日志。`,
+        ? `已成功对 ${title} 目录下 ${repairedCount}/${exeFiles.length} 个可执行文件完成 Steamless 解密脱壳与修复！`
+        : `未能完成任何脱壳修复（${exeFiles.length} 个文件全部跳过或失败），请查看明细日志。`,
       totalFound: exeFiles.length,
       repairedCount,
       backupCount,

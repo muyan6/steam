@@ -47,10 +47,7 @@ export class ManifestService {
       // 指定 DLC 列表时只附加列表内的 DLC depot
       const wanted = new Set(dlcs.map(String));
       const matched = dlcDepots.filter((d: any) => wanted.has(String(d.depotId)));
-      // 元数据中未列出 depotId 的 DLC 也尽量纳入（保留旧语义）
-      const known = new Set([...depots, ...matched].map((d: any) => String(d.depotId)));
-      const extras = dlcDepots.filter((d: any) => !known.has(String(d.depotId)));
-      depots = [...depots, ...matched, ...extras];
+      depots = [...depots, ...matched];
     } else {
       depots = [...depots, ...dlcDepots];
     }

@@ -30,8 +30,9 @@ export class MetadataService {
     // 1. 优先向云端后端发起按需聚合查询（由后端统一完成 28.8万条密钥与 Token 匹配并精准下发）
     try {
       const url = `${APP_CONFIG.API_BASE_URL}/api/metadata/${sAppId}`;
+      // 服务端校验设备授权后才下发密钥数据
       const resp = await axios.get(url, {
-        params: { name: hintName },
+        params: { name: hintName, deviceId: licenseClientService.getDeviceId() },
         timeout: 5000,
         headers: this.axiosHeaders
       });

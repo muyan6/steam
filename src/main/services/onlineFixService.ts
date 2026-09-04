@@ -223,13 +223,23 @@ export class OnlineFixService {
       }
 
       const hosterUrl = hosterMatch[1];
-      const hosterRes = await fetch(hosterUrl, {
-        headers: {
-          'Cookie': cookie,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': gameArticleUrl
-        }
-      });
+      const fetchHosterPage = () =>
+        fetch(hosterUrl, {
+          headers: {
+            'Cookie': cookie,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': gameArticleUrl
+          },
+          signal: AbortSignal.timeout(12000)
+        });
+
+      let hosterRes = await fetchHosterPage();
+      // 分流页 403 时重置会话重登一次
+      if (hosterRes.status === 403 && cookie) {
+        this.resetAuth();
+        cookie = await this.ensureAuth();
+        hosterRes = await fetchHosterPage();
+      }
       const hosterHtml = await hosterRes.text();
       const dataLinksMatches = [...hosterHtml.matchAll(/data-links='([^']+)'/g)].map((m) => m[1]);
 
