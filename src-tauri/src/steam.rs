@@ -138,6 +138,13 @@ pub fn is_onlinefix_running() -> bool {
     }
 }
 
+/// 检测宿主 Windows 是否为 64 位（与 Electron 版语义一致：
+/// steam.exe 引导文件历史沿用 x86，运行时能力取决于宿主系统架构）
+pub fn is_64bit_windows() -> bool {
+    std::env::var("PROCESSOR_ARCHITEW6432").is_ok()
+        || std::env::var("PROCESSOR_ARCHITECTURE").map(|v| v == "AMD64").unwrap_or(false)
+}
+
 /// 解析 PE 头 Machine 字段判断 steam.exe 位数（0x8664 = x64, 0x014c = x86）
 pub fn detect_steam_bitness(steam_path: &Path) -> String {
     let exe = steam_path.join("steam.exe");
@@ -197,21 +204,22 @@ pub fn get_steam_info(custom_path: Option<&str>) -> SteamEnvironmentInfo {
         .or_else(detect_steam_path);
 
     let is_running = is_steam_running();
-    let (steam_path_str, steam_exe_path, ost_installed, scripts_count, bitness) = match &steam_path_buf {
+    // 报告值与 Electron 版一致：64 位宿主系统下 Steam 运行时（CEF/WebHelper）为 64 位，
+    // 可正常加载 64 位 OpenSteamTool 组件；PE 头检测仅作为参考信息保留
+    let bitness = if is_64bit_windows() { "x64".to_string() } else { "x86".to_string() };
+    let (steam_path_str, steam_exe_path, ost_installed, scripts_count) = match &steam_path_buf {
         Some(p) => {
             let exe = p.join("steam.exe");
             let ost = check_ost_installed(p);
             let count = count_unlocked_scripts(p);
-            let bitness = detect_steam_bitness(p);
             (
                 Some(p.to_string_lossy().to_string()),
                 if exe.exists() { Some(exe.to_string_lossy().to_string()) } else { None },
                 ost,
                 count,
-                bitness,
             )
         }
-        None => (None, None, false, 0, "unknown".to_string()),
+        None => (None, None, false, 0),
     };
 
     SteamEnvironmentInfo {

@@ -2,15 +2,33 @@ pub mod steam;
 pub mod ost;
 pub mod device;
 pub mod toolbox;
+pub mod localgames;
+pub mod manifests;
+pub mod onlinefix;
+pub mod steamless;
 
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Window};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use crate::steam::SteamEnvironmentInfo;
 use crate::ost::UnlockGamePayload;
 use crate::toolbox::ToolboxActionResult;
+
+/// 打开任意 URL（steam:// 协议等），供本地模块复用
+pub fn open_url_cmd(url: &str) -> Result<(), String> {
+    // AppHandle::current() 仅在命令/事件回调线程中可用；此处通过全局句柄兜底
+    match APP_HANDLE.get() {
+        Some(app) => app
+            .opener()
+            .open_url(url.to_string(), None::<&str>)
+            .map_err(|e| format!("打开链接失败: {}", e)),
+        None => Err("应用句柄未就绪".to_string()),
+    }
+}
+
+static APP_HANDLE: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
 
 // 窗口控制命令
 #[tauri::command]
@@ -263,7 +281,8 @@ fn check_environment_health() -> serde_json::Value {
         }
         Some(p) => {
             let exe_ok = p.join("steam.exe").exists();
-            let bitness = steam::detect_steam_bitness(p);
+            // 与 Electron 版语义一致：按宿主系统架构报告
+            let bitness = if steam::is_64bit_windows() { "x64".to_string() } else { "x86".to_string() };
             let bitness_text = if bitness == "x86" { "32 位 (x86)" } else { "64 位 (x64)" };
             items.push(json!({
                 "name": "Steam 核心主程序",
@@ -560,11 +579,178 @@ fn fill_sha256() -> ToolboxActionResult {
     }
 }
 
+// ==================== 联机修复中心 / 清单预缓存 / Steamless ====================
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    open_url_cmd(&url)
+}
+
+#[tauri::command]
+fn check_manifest_status(app_id: u32, dlcs: Option<Vec<u32>>) -> serde_json::Value {
+    match steam::detect_steam_path() {
+        Some(sp) => {
+            let dlcs = dlcs.unwrap_or_default();
+            let s = manifests::check_manifest_status(&sp, app_id, &dlcs);
+            serde_json::to_value(s).unwrap_or(json!({}))
+        }
+        None => json!({ "appId": app_id, "hasManifest": false, "manifestCount": 0, "matchedDepots": [], "manifestFiles": [] }),
+    }
+}
+
+#[tauri::command]
+fn download_manifests(app_id: u32, dlcs: Option<Vec<u32>>) -> serde_json::Value {
+    match steam::detect_steam_path() {
+        Some(sp) => {
+            let result = manifests::download_depot_manifests(&sp, app_id, &dlcs.unwrap_or_default());
+            serde_json::to_value(result).unwrap_or(json!({}))
+        }
+        None => json!({
+            "success": false, "appId": app_id, "downloadedCount": 0, "totalDepots": 0,
+            "depotKeys": {}, "manifestFiles": [], "source": "none",
+            "message": "未检测到 Steam 客户端安装目录"
+        }),
+    }
+}
+
+#[tauri::command]
+fn is_spacewar_installed() -> serde_json::Value {
+    match steam::detect_steam_path() {
+        Some(sp) => {
+            let (installed, path) = localgames::is_spacewar_installed(&sp);
+            json!({ "isInstalled": installed, "path": path, "appName": "Spacewar", "appId": 480 })
+        }
+        None => json!({ "isInstalled": false, "appName": "Spacewar", "appId": 480 }),
+    }
+}
+
+#[tauri::command]
+fn scan_local_games() -> Vec<localgames::LocalInstalledGame> {
+    match steam::detect_steam_path() {
+        Some(sp) => localgames::scan_installed_games(&sp),
+        None => vec![],
+    }
+}
+
+#[tauri::command]
+fn check_game_dir(dir_path: String) -> serde_json::Value {
+    let p = PathBuf::from(&dir_path);
+    let has_backup = p.join("steam_api64_o.dll").exists() || p.join("steam_api_o.dll").exists();
+    let (is_patched, mode, app_id) = localgames::check_game_directory(&p);
+    json!({ "gamePath": dir_path, "hasBackup": has_backup, "isPatched": is_patched, "mode": mode, "appId": app_id })
+}
+
+#[tauri::command]
+fn apply_spacewar_fix(dir_path: String, real_app_id: u32) -> serde_json::Value {
+    match localgames::apply_spacewar_fix(Path::new(&dir_path), real_app_id) {
+        Ok(msg) => json!({ "success": true, "message": msg }),
+        Err(e) => json!({ "success": false, "message": e }),
+    }
+}
+
+#[tauri::command]
+fn apply_goldberg_fix(dir_path: String, app_id: u32, player_name: Option<String>) -> serde_json::Value {
+    match localgames::apply_goldberg_fix(Path::new(&dir_path), app_id, player_name.as_deref().unwrap_or("春风渡玩家")) {
+        Ok(msg) => json!({ "success": true, "message": msg }),
+        Err(e) => json!({ "success": false, "message": e }),
+    }
+}
+
+#[tauri::command]
+fn restore_game(dir_path: String) -> serde_json::Value {
+    match localgames::restore_original_game(Path::new(&dir_path)) {
+        Ok(msg) => json!({ "success": true, "message": msg }),
+        Err(e) => json!({ "success": false, "message": e }),
+    }
+}
+
+#[tauri::command]
+fn launch_local_game(
+    app_id: u32,
+    game_path: String,
+    primary_exe: Option<String>,
+    mode: String,
+    online_app_id: u32,
+) -> serde_json::Value {
+    match localgames::launch_game_online(app_id, &game_path, primary_exe, &mode, online_app_id) {
+        Ok(msg) => json!({ "success": true, "message": msg }),
+        Err(e) => json!({ "success": false, "message": e }),
+    }
+}
+
+#[tauri::command]
+fn search_onlinefix_patch(app_id: u32, game_name: Option<String>) -> serde_json::Value {
+    let r = onlinefix::search_onlinefix_patch(app_id, game_name.as_deref());
+    serde_json::to_value(r).unwrap_or(json!({ "found": false }))
+}
+
+#[tauri::command]
+fn set_onlinefix_account(username: String, password: String) -> serde_json::Value {
+    onlinefix::set_account(&username, &password);
+    json!({ "success": true })
+}
+
+#[tauri::command]
+fn onlinefix_prepare(
+    game_path: String,
+    app_id: u32,
+    game_name: Option<String>,
+) -> Result<serde_json::Value, onlinefix::OnlineFixPatchResult> {
+    match onlinefix::prepare_patch(&game_path, app_id, game_name.as_deref()) {
+        Ok(prep) => Ok(serde_json::to_value(prep).unwrap_or(json!({}))),
+        Err(fail) => Err(fail),
+    }
+}
+
+/// 读取临时目录中的补丁归档（原始字节，仅限应用临时下载目录）
+#[tauri::command]
+fn read_file_raw(path: String) -> Result<tauri::ipc::Response, String> {
+    if !onlinefix::is_temp_archive(&path) {
+        return Err("非法的文件访问路径".to_string());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取归档失败: {}", e))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
+fn zip_extract(archive_path: String, dest_dir: String) -> Result<serde_json::Value, String> {
+    if !onlinefix::is_temp_archive(&archive_path) {
+        return Err("非法的归档路径".to_string());
+    }
+    let count = onlinefix::extract_zip_archive(&archive_path, &dest_dir)?;
+    Ok(json!({ "extractedCount": count }))
+}
+
+#[tauri::command]
+fn onlinefix_deploy(
+    game_path: String,
+    entries: Vec<onlinefix::PatchEntry>,
+    archive_path: Option<String>,
+) -> serde_json::Value {
+    let r = onlinefix::deploy_patch_entries(&game_path, &entries, archive_path.as_deref());
+    serde_json::to_value(r).unwrap_or(json!({ "success": false, "message": "部署失败" }))
+}
+
+#[tauri::command]
+fn get_steamless_status() -> steamless::SteamlessStatusInfo {
+    steamless::get_status()
+}
+
+#[tauri::command]
+fn repair_game_steamless(game_path: String, game_name: Option<String>) -> steamless::SteamlessRepairResult {
+    steamless::repair_game(&game_path, game_name.as_deref())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_http::init())
+        .setup(|app| {
+            let _ = APP_HANDLE.set(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             window_minimize,
             window_maximize,
@@ -577,6 +763,7 @@ pub fn run() {
             restart_steam,
             select_directory,
             open_path,
+            open_url,
             ensure_ost_env,
             activate_injection,
             unlock_game,
@@ -589,7 +776,24 @@ pub fn run() {
             toolbox_repair_ost,
             get_toolbox_status,
             auto_switch_manifest,
-            fill_sha256
+            fill_sha256,
+            check_manifest_status,
+            download_manifests,
+            is_spacewar_installed,
+            scan_local_games,
+            check_game_dir,
+            apply_spacewar_fix,
+            apply_goldberg_fix,
+            restore_game,
+            launch_local_game,
+            search_onlinefix_patch,
+            set_onlinefix_account,
+            onlinefix_prepare,
+            read_file_raw,
+            zip_extract,
+            onlinefix_deploy,
+            get_steamless_status,
+            repair_game_steamless
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

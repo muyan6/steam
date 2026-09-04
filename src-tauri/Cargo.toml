@@ -12,7 +12,9 @@ rust-version = "1.77.2"
 
 [lib]
 name = "app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# 仅桌面端（Windows）构建：rlib 足够；cdylib/staticlib 为移动端专用，
+# 且 windows-gnu 工具链下 cdylib 导出符号超过 GNU ld ordinal 上限会导致链接失败
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
@@ -23,5 +25,9 @@ serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-http = "2"
 sha2 = "0.10"
+base64 = "0.22"
+zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots", "cookies"] }
 winreg = "0.52"
