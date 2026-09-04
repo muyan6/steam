@@ -34,16 +34,20 @@ function preloadPlugin() {
   }
 }
 
+const isTauri = !!process.env.TAURI_ENV_PLATFORM || !!process.env.TAURI_FAMILY;
+
 export default defineConfig({
   plugins: [
     vue(),
-    preloadPlugin(),
-    electron([
-      {
-        entry: 'src/main/main.ts',
-      }
-    ]),
-    renderer()
+    ...(isTauri ? [] : [
+      preloadPlugin(),
+      electron([
+        {
+          entry: 'src/main/main.ts',
+        }
+      ]),
+      renderer()
+    ])
   ],
   resolve: {
     alias: {
