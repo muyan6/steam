@@ -63,3 +63,28 @@ export const getToolboxAdminStats = async (_req: Request, res: Response): Promis
     res.status(500).json({ success: false, message: `获取工具箱统计失败: ${error.message}` });
   }
 };
+
+export const getSteamlessInfo = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const info = toolboxService.getSteamlessInfo();
+    res.json({
+      success: true,
+      data: info
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: `获取Steamless信息失败: ${error.message}` });
+  }
+};
+
+export const getOnlineModes = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const modes = toolboxService.getOnlineModesInfo();
+    res.json({
+      success: true,
+      data: modes
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: `获取联机模式失败: ${error.message}` });
+  }
+};
+

@@ -7,6 +7,7 @@ import { onlineFixService } from './services/onlineFixService';
 import { updateService } from './services/updateService';
 import { licenseClientService } from './services/licenseClientService';
 import { toolboxService } from './services/toolboxService';
+import { steamlessService } from './services/steamlessService';
 import { SteamGame } from '../types';
 
 export function registerIpcHandlers() {
@@ -129,6 +130,24 @@ export function registerIpcHandlers() {
       console.error('唤起 Steam 安装 Spacewar 失败:', e);
       return false;
     }
+  });
+
+  ipcMain.handle('onlinefix:scan-local-games', async () => {
+    const steamPath = await steamService.detectSteamPath();
+    if (!steamPath) return [];
+    return onlineFixService.scanInstalledGames(steamPath);
+  });
+
+  ipcMain.handle('onlinefix:launch-game', async (_, params) => {
+    return await onlineFixService.launchGameOnline(params);
+  });
+
+  ipcMain.handle('onlinefix:repair-steamless', async (_, { gamePath, gameName }) => {
+    return await steamlessService.repairGameWithSteamless(gamePath, gameName);
+  });
+
+  ipcMain.handle('onlinefix:steamless-status', async () => {
+    return steamlessService.getSteamlessStatus();
   });
 
   ipcMain.handle('onlinefix:apply-spacewar', async (_, { dirPath, appId }) => {

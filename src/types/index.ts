@@ -81,6 +81,42 @@ export interface SpacewarStatus {
   appId: number;
 }
 
+export type OnlineLaunchMode = 'open' | 'spacewar' | 'bat';
+
+export interface LocalInstalledGame {
+  appId: number;
+  name: string;
+  nameZh?: string;
+  installDir: string;
+  fullInstallPath: string;
+  libraryPath: string;
+  sizeOnDisk?: number;
+  executableFiles: string[];
+  primaryExe?: string;
+  hasSteamlessBackup?: boolean;
+  isRepaired?: boolean;
+}
+
+export interface SteamlessRepairResult {
+  success: boolean;
+  message: string;
+  totalFound: number;
+  repairedCount: number;
+  backupCount: number;
+  skippedCount: number;
+  details: Array<{
+    file: string;
+    status: 'unpacked' | 'already_clean' | 'error' | 'skipped';
+    message?: string;
+  }>;
+}
+
+export interface SteamlessStatusInfo {
+  available: boolean;
+  engine: string;
+  cliPath?: string;
+}
+
 export interface AppSettings {
   steamPath: string;
   manifestApi: 'opensteamtool' | 'steamrun' | 'wudrm' | 'custom';

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
-import { SteamGame, SteamEnvironmentInfo, OnlineFixStatus, SpacewarStatus, ToolboxActionResult, ToolboxStatusInfo } from './types';
+import { SteamGame, SteamEnvironmentInfo, OnlineFixStatus, SpacewarStatus, ToolboxActionResult, ToolboxStatusInfo, LocalInstalledGame, SteamlessRepairResult, SteamlessStatusInfo, OnlineLaunchMode } from './types';
 
 export const electronAPI = {
   // 应用生命周期与窗口控制
@@ -57,6 +57,17 @@ export const electronAPI = {
   checkGameDir: (dirPath: string): Promise<OnlineFixStatus> => ipcRenderer.invoke('onlinefix:check-dir', dirPath),
   checkSpacewarInstalled: (): Promise<SpacewarStatus> => ipcRenderer.invoke('onlinefix:check-spacewar'),
   installSpacewar: (): Promise<boolean> => ipcRenderer.invoke('onlinefix:install-spacewar'),
+  scanLocalGames: (): Promise<LocalInstalledGame[]> => ipcRenderer.invoke('onlinefix:scan-local-games'),
+  launchLocalGame: (params: {
+    appId: number;
+    gamePath: string;
+    primaryExe?: string;
+    mode: OnlineLaunchMode;
+    onlineAppId: number;
+  }): Promise<{ success: boolean; message: string }> => ipcRenderer.invoke('onlinefix:launch-game', params),
+  repairGameSteamless: (gamePath: string, gameName?: string): Promise<SteamlessRepairResult> =>
+    ipcRenderer.invoke('onlinefix:repair-steamless', { gamePath, gameName }),
+  getSteamlessStatus: (): Promise<SteamlessStatusInfo> => ipcRenderer.invoke('onlinefix:steamless-status'),
   applySpacewarFix: (dirPath: string, appId: number): Promise<{ success: boolean; message: string }> =>
     ipcRenderer.invoke('onlinefix:apply-spacewar', { dirPath, appId }),
   applyGoldbergFix: (dirPath: string, appId: number, playerName: string): Promise<{ success: boolean; message: string }> =>

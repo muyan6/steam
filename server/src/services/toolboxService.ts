@@ -153,6 +153,61 @@ export class ToolboxService {
       nodes: this.defaultNodes
     };
   }
+
+  /**
+   * 获取 Steamless 脱壳引擎说明与支持特征库
+   */
+  public getSteamlessInfo(): {
+    version: string;
+    engine: string;
+    description: string;
+    supportedDrm: string[];
+    unpackModes: string[];
+  } {
+    return {
+      version: '3.1.0',
+      engine: 'Steamless DRM Unpacker & SteamStub Decryptor',
+      description: '针对 SteamStub DRM 变种 (v1/v2/v3) 的自动 PE 脱壳与解密引擎，解决启动报错与闪退。',
+      supportedDrm: ['SteamStub DRM v1 (x86)', 'SteamStub DRM v2 (x86/x64)', 'SteamStub DRM v3 (.bind/x64)'],
+      unpackModes: ['CLI Direct Unpack', 'In-Memory PE Strip', 'Backup & Replace Safe Mode']
+    };
+  }
+
+  /**
+   * 获取支持的联机模式列表与说明
+   */
+  public getOnlineModesInfo(): Array<{
+    id: string;
+    name: string;
+    description: string;
+    recommended: boolean;
+    defaultAppId: number;
+  }> {
+    return [
+      {
+        id: 'open',
+        name: 'Open内核联机模式',
+        description: '推荐·使用Open内核底层拦截实现 P2P 联机',
+        recommended: true,
+        defaultAppId: 480
+      },
+      {
+        id: 'spacewar',
+        name: 'Spacewar模式',
+        description: '通过 Spacewar (AppID 480) 大厅联机',
+        recommended: false,
+        defaultAppId: 480
+      },
+      {
+        id: 'bat',
+        name: 'BAT注入模式',
+        description: '环境变量注入与批处理自启',
+        recommended: false,
+        defaultAppId: 480
+      }
+    ];
+  }
 }
 
 export const toolboxService = new ToolboxService();
+

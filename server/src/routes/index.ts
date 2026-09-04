@@ -61,7 +61,9 @@ import {
   getManifestNodes,
   getSha256PackageInfo,
   reportRepairLog,
-  getToolboxAdminStats
+  getToolboxAdminStats,
+  getSteamlessInfo,
+  getOnlineModes
 } from '../controllers/toolboxController.js';
 
 const router = Router();
@@ -115,6 +117,8 @@ router.get('/license/status/:deviceId', getDeviceLicenseStatus);
 router.get('/toolbox/nodes', getManifestNodes);
 router.get('/toolbox/sha256-data', getSha256PackageInfo);
 router.post('/toolbox/repair-log', reportRepairLog);
+router.get('/toolbox/steamless-info', getSteamlessInfo);
+router.get('/toolbox/online-modes', getOnlineModes);
 
 // ==================== 2. 管理员认证受保护 API ====================
 
