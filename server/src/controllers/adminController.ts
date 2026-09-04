@@ -73,6 +73,21 @@ export const triggerSyncAll = async (req: Request, res: Response) => {
   }
 };
 
+export const getPublicStats = (req: Request, res: Response) => {
+  try {
+    const stats = {
+      status: 'online',
+      gamesCount: gameService.getTotalGamesCount(),
+      depotKeysCount: depotService.getTotalKeysCount(),
+      tokensCount: tokenService.getTotalTokensCount(),
+      time: new Date().toISOString()
+    };
+    res.json({ success: true, data: stats });
+  } catch (e: any) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+};
+
 export const getServerStats = (req: Request, res: Response) => {
   try {
     const mem = process.memoryUsage();

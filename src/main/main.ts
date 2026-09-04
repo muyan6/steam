@@ -34,9 +34,6 @@ function createWindow() {
     autoHideMenuBar: true
   });
 
-  // 注册所有 IPC 处理函数
-  registerIpcHandlers();
-
   // 根据环境加载页面
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -50,6 +47,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // 注册所有 IPC 处理函数（仅在应用就绪时注册一次，避免多窗口重建抛出重复注册异常）
+  registerIpcHandlers();
+
   createWindow();
 
   app.on('activate', () => {

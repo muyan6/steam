@@ -90,11 +90,14 @@ export class LuaGameService {
         fs.writeFileSync(path.join(legacyDir, `${metadata.appId}.lua`), content, 'utf-8');
       } catch {}
 
+      // 同步 GreenLuma (AppList) 双轨兼容配置
+      this.syncGreenLumaAppList(steamPath);
+
       console.log(`[LuaGameService] 成功写入标准 Lua 规则: ${filePath}`);
       return {
         success: true,
         filePath,
-        message: `成功为「${metadata.name || metadata.appId}」生成 OpenSteamTool 规则！`
+        message: `成功为「${metadata.name || metadata.appId}」生成 OpenSteamTool 规则并同步 AppList！`
       };
     } catch (e: any) {
       console.error(`[LuaGameService] 写入 Lua 规则失败:`, e);
@@ -103,6 +106,60 @@ export class LuaGameService {
         filePath: '',
         message: `写入 Lua 规则失败: ${e.message}`
       };
+    }
+  }
+
+  /**
+   * 双轨兼容：自动将所有已入库应用及 DLC AppID 同步到 GreenLuma AppList 目录 (<steam>/AppList/*.txt)
+   */
+  public syncGreenLumaAppList(steamPath: string): void {
+    try {
+      const appListDir = path.join(steamPath, 'AppList');
+      if (!fs.existsSync(appListDir)) {
+        try { fs.mkdirSync(appListDir, { recursive: true }); } catch {}
+      }
+
+      // 扫描 config/lua/ 下所有 lua 规则，提取所有唯一 AppID (包含本体、Depots 与 DLCs)
+      const luaDir = path.join(steamPath, 'config', 'lua');
+      const allAppIds = new Set<number>();
+
+      if (fs.existsSync(luaDir)) {
+        const files = fs.readdirSync(luaDir).filter(f => /^\d+\.lua$/i.test(f));
+        for (const f of files) {
+          const mainAppId = parseInt(f.replace('.lua', ''), 10);
+          if (!isNaN(mainAppId)) allAppIds.add(mainAppId);
+
+          try {
+            const content = fs.readFileSync(path.join(luaDir, f), 'utf-8');
+            const matches = content.matchAll(/addappid\s*\(\s*(\d+)/gi);
+            for (const m of matches) {
+              const id = parseInt(m[1], 10);
+              if (!isNaN(id)) allAppIds.add(id);
+            }
+          } catch {}
+        }
+      }
+
+      // 清理 AppList 目录下旧的序号 txt 文件
+      if (fs.existsSync(appListDir)) {
+        const existing = fs.readdirSync(appListDir);
+        for (const file of existing) {
+          if (/^\d+\.txt$/i.test(file)) {
+            try { fs.unlinkSync(path.join(appListDir, file)); } catch {}
+          }
+        }
+
+        // 写入连续序号 0.txt, 1.txt, 2.txt ...
+        let index = 0;
+        const sortedIds = Array.from(allAppIds).sort((a, b) => a - b);
+        for (const id of sortedIds) {
+          fs.writeFileSync(path.join(appListDir, `${index}.txt`), id.toString(), 'utf-8');
+          index++;
+        }
+        console.log(`[LuaGameService] 成功同步 GreenLuma AppList: 共 ${sortedIds.length} 个 AppID 条目写入 ${appListDir}`);
+      }
+    } catch (e: any) {
+      console.warn('[LuaGameService] 同步 GreenLuma AppList 异常:', e.message);
     }
   }
 
@@ -168,9 +225,24 @@ export class LuaGameService {
     // 2. 检测 addtoken
     const hasToken = /addtoken\s*\(/i.test(content);
 
-    // 3. 统计 addappid 数量及是否含密钥
-    const addAppIdMatches = content.match(/addappid\s*\(\s*\d+\s*(?:,\s*0\s*,\s*"[^"]+")?\s*\)/gi) || [];
-    const hasDepotKeys = /addappid\s*\(\s*\d+\s*,\s*0\s*,\s*"[0-9a-fA-F]{32,}"\s*\)/i.test(content);
+    // 3. 统计 addappid 数量及是否含有效密钥 (排除全 0 占位符)
+    const allAddAppIds: Array<{ id: number; key?: string }> = [];
+    const addAppIdRegex = /addappid\s*\(\s*(\d+)(?:\s*,\s*0\s*,\s*"([^"]+)")?\s*\)/gi;
+    let match: RegExpExecArray | null;
+    while ((match = addAppIdRegex.exec(content)) !== null) {
+      allAddAppIds.push({
+        id: parseInt(match[1], 10),
+        key: match[2]
+      });
+    }
+
+    const hasDepotKeys = allAddAppIds.some(
+      (item) => item.key && item.key.length >= 32 && !/^0+$/.test(item.key)
+    );
+
+    // 计算分包与 DLC 数量
+    const depotsCount = allAddAppIds.filter((item) => item.key || (item.id !== appId && Math.abs(item.id - appId) <= 100)).length;
+    const dlcCount = Math.max(0, allAddAppIds.length - depotsCount - 1);
 
     // 4. 检查是否有 manifest 在 depotcache
     let hasManifest = false;
@@ -190,8 +262,8 @@ export class LuaGameService {
       hasToken,
       hasManifest,
       hasDepotKeys,
-      depotsCount: Math.max(0, addAppIdMatches.length - 1),
-      dlcCount: 0,
+      depotsCount: Math.max(0, depotsCount),
+      dlcCount: Math.max(0, dlcCount),
       luaPath
     };
   }
@@ -216,6 +288,9 @@ export class LuaGameService {
         } catch {}
       }
     }
+
+    // 同步 GreenLuma AppList
+    this.syncGreenLumaAppList(steamPath);
 
     return {
       success: true,
@@ -248,6 +323,9 @@ export class LuaGameService {
         }
       } catch {}
     }
+
+    // 同步 GreenLuma AppList
+    this.syncGreenLumaAppList(steamPath);
 
     return {
       success: true,

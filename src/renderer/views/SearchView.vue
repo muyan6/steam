@@ -193,6 +193,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import axios from 'axios';
 import { SteamGame } from '../../types';
+import { APP_CONFIG } from '../../config/appConfig';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -231,7 +232,7 @@ const handleImgError = async (game: SteamGame) => {
 
   // 2. 尝试向后端代理/缓存获取
   try {
-    const resp = await axios.get(`http://127.0.0.1:3000/api/games/${game.appId}/header`, { timeout: 2500 });
+    const resp = await axios.get(`${APP_CONFIG.API_BASE_URL}/api/games/${game.appId}/header`, { timeout: 2500 });
     if (resp.data && resp.data.success && resp.data.headerUrl) {
       game.headerUrl = resp.data.headerUrl;
       return;

@@ -201,16 +201,25 @@ export class GameService {
   }
 
   /**
-   * 精准映射中文关键词，避免泛滥模糊匹配
+   * 精准映射中文关键词，支持复合词与多词联想
    */
   private getExpandedKeywords(query: string): string[] {
     const q = query.trim().toLowerCase();
     const keywords = new Set<string>([q]);
 
-    // 只进行明确的词表映射，避免泛滥包含匹配
+    // 1. 精确匹配词表
     if (CHINESE_KEYWORD_MAP[q]) {
       for (const kw of CHINESE_KEYWORD_MAP[q]) {
         keywords.add(kw.toLowerCase());
+      }
+    }
+
+    // 2. 复合词与子串匹配（例如“黑神话悟空”自动命中“黑神话”与“悟空”映射词）
+    for (const [dictKey, englishList] of Object.entries(CHINESE_KEYWORD_MAP)) {
+      if (dictKey.length >= 2 && (q.includes(dictKey) || dictKey.includes(q))) {
+        for (const kw of englishList) {
+          keywords.add(kw.toLowerCase());
+        }
       }
     }
 

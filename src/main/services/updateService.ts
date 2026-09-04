@@ -71,22 +71,36 @@ export class UpdateService {
    */
   public async getDatabaseStats(): Promise<DatabaseStats> {
     try {
-      const url = `${APP_CONFIG.API_BASE_URL}/api/admin/stats`;
+      const url = `${APP_CONFIG.API_BASE_URL}/api/stats`;
       const resp = await axios.get(url, {
-        headers: { 'x-admin-key': 'steammaster_admin_8888' },
         timeout: 3000
       });
 
       if (resp.data && resp.data.success && resp.data.data) {
         return {
-          gamesCount: resp.data.data.gamesCount,
-          keysCount: resp.data.data.depotKeysCount,
+          gamesCount: resp.data.data.gamesCount || 0,
+          keysCount: resp.data.data.depotKeysCount || 0,
           lastUpdated: '已连接云端实时数据库',
           serverStatus: 'online'
         };
       }
     } catch {
-      // ignore
+      // 备用兜底尝试 admin/stats
+      try {
+        const adminUrl = `${APP_CONFIG.API_BASE_URL}/api/admin/stats`;
+        const resp = await axios.get(adminUrl, {
+          headers: { 'x-admin-key': 'steammaster_admin_8888' },
+          timeout: 2500
+        });
+        if (resp.data && resp.data.success && resp.data.data) {
+          return {
+            gamesCount: resp.data.data.gamesCount || 0,
+            keysCount: resp.data.data.depotKeysCount || 0,
+            lastUpdated: '已连接云端实时数据库',
+            serverStatus: 'online'
+          };
+        }
+      } catch {}
     }
 
     return {

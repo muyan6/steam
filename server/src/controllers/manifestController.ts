@@ -29,8 +29,8 @@ export const downloadManifestFile = async (req: Request, res: Response) => {
     const depotId = Array.isArray(req.params.depotId) ? req.params.depotId[0] : req.params.depotId;
     const manifestId = Array.isArray(req.params.manifestId) ? req.params.manifestId[0] : req.params.manifestId;
 
-    if (!depotId || !manifestId) {
-      return res.status(400).json({ success: false, message: '参数缺失' });
+    if (!depotId || !manifestId || !/^\d+$/.test(depotId) || !/^\d+$/.test(manifestId)) {
+      return res.status(400).json({ success: false, message: '参数缺失或格式非法' });
     }
 
     const filePath = manifestService.getLocalManifestFilePath(depotId, manifestId);

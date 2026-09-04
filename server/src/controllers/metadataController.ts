@@ -24,6 +24,8 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     let dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string } }> = [];
 
     // 1. 检查预设热门游戏库
+    const isValidKey = (k?: string) => Boolean(k && k.length >= 32 && !/^0+$/.test(k));
+
     const preset = await gameService.getGameByAppId(appId);
     if (preset) {
       gameName = preset.nameZh || preset.name || gameName;
@@ -32,7 +34,10 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
       if (preset.depots) {
         for (const [dId, key] of Object.entries(preset.depots)) {
-          depots.push({ depotId: dId, depotKey: key });
+          depots.push({
+            depotId: dId,
+            depotKey: isValidKey(key) ? key : undefined
+          });
         }
       }
     }
@@ -85,11 +90,20 @@ export const getGameMetadata = async (req: Request, res: Response) => {
             }
           }
 
+          let depotKey = '';
+          for (const k of ['decryption_key', 'depot_key', 'depotkey', 'key']) {
+            if ((info as any)[k] && typeof (info as any)[k] === 'string' && isValidKey((info as any)[k])) {
+              depotKey = (info as any)[k];
+              break;
+            }
+          }
+
           const existing = depots.find((d) => d.depotId === dId);
           if (existing) {
             if (manifestGid && !existing.manifestGid) existing.manifestGid = manifestGid;
+            if (depotKey && (!existing.depotKey || !isValidKey(existing.depotKey))) existing.depotKey = depotKey;
           } else {
-            depots.push({ depotId: dId, manifestGid });
+            depots.push({ depotId: dId, manifestGid, depotKey: depotKey || undefined });
           }
         }
       }
@@ -107,9 +121,9 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       dlcIds.map((d) => parseInt(d, 10)).filter((n) => !isNaN(n))
     );
 
-    // 为主分包注入密钥
+    // 为主分包注入有效密钥（绝不保留全 0 占位符）
     for (const d of depots) {
-      if (!d.depotKey && matchedKeys[d.depotId]) {
+      if ((!d.depotKey || !isValidKey(d.depotKey)) && matchedKeys[d.depotId]) {
         d.depotKey = matchedKeys[d.depotId];
       }
     }
@@ -117,7 +131,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     // 为 DLC 分包聚合密钥
     for (const dlcId of dlcIds) {
       const dlcKey = matchedKeys[dlcId] || depotService.getDepotKey(dlcId);
-      if (dlcKey) {
+      if (dlcKey && isValidKey(dlcKey)) {
         dlcDepots.push({
           dlcAppId: dlcId,
           depot: { depotId: dlcId, depotKey: dlcKey }

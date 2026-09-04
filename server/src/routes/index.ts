@@ -14,6 +14,7 @@ import {
   triggerSyncDepots,
   triggerSyncTokens,
   triggerSyncAll,
+  getPublicStats,
   getServerStats
 } from '../controllers/adminController.js';
 
@@ -23,6 +24,7 @@ const router = Router();
 
 // 健康与统计
 router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+router.get('/stats', getPublicStats);
 
 // 商业版：公告通知
 router.get('/notice/latest', getLatestNotice);

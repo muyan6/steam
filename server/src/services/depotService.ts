@@ -90,7 +90,7 @@ export class DepotService {
       // 增量合并，保留已有有效密钥
       this.depotKeysDb = { ...this.depotKeysDb, ...newKeys };
       const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json');
-      fs.writeFileSync(dbPath, JSON.stringify(this.depotKeysDb, null, 2), 'utf-8');
+      fs.writeFileSync(dbPath, JSON.stringify(this.depotKeysDb), 'utf-8');
       this.isLoaded = true;
       console.log(`[DepotService] 已成功保存 ${Object.keys(this.depotKeysDb).length} 条 DepotKey 到 ${dbPath}`);
       return true;

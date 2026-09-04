@@ -72,12 +72,17 @@ export class OnlineFixService {
       }
 
       const api64 = path.join(dirPath, 'steam_api64.dll');
+      const api32 = path.join(dirPath, 'steam_api.dll');
       const backup64 = path.join(dirPath, 'steam_api64_o.dll');
+      const backup32 = path.join(dirPath, 'steam_api_o.dll');
       const onlineFixIni = path.join(dirPath, 'OnlineFix.ini');
 
-      // 1. 如果存在原版 DLL 且未备份，先执行备份
+      // 1. 如果存在原版 DLL 且未备份，先执行备份 (同时支持 64 位与 32 位)
       if (fs.existsSync(api64) && !fs.existsSync(backup64)) {
         fs.copyFileSync(api64, backup64);
+      }
+      if (fs.existsSync(api32) && !fs.existsSync(backup32)) {
+        fs.copyFileSync(api32, backup32);
       }
 
       // 2. 写入 OnlineFix.ini 配置文件
@@ -115,11 +120,16 @@ FakeSteamId=1
       }
 
       const api64 = path.join(dirPath, 'steam_api64.dll');
+      const api32 = path.join(dirPath, 'steam_api.dll');
       const backup64 = path.join(dirPath, 'steam_api64_o.dll');
+      const backup32 = path.join(dirPath, 'steam_api_o.dll');
       const settingsDir = path.join(dirPath, 'steam_settings');
 
       if (fs.existsSync(api64) && !fs.existsSync(backup64)) {
         fs.copyFileSync(api64, backup64);
+      }
+      if (fs.existsSync(api32) && !fs.existsSync(backup32)) {
+        fs.copyFileSync(api32, backup32);
       }
 
       if (!fs.existsSync(settingsDir)) {
@@ -162,26 +172,32 @@ enable=1
       }
 
       const api64 = path.join(dirPath, 'steam_api64.dll');
+      const api32 = path.join(dirPath, 'steam_api.dll');
       const backup64 = path.join(dirPath, 'steam_api64_o.dll');
+      const backup32 = path.join(dirPath, 'steam_api_o.dll');
       const onlineFixIni = path.join(dirPath, 'OnlineFix.ini');
       const appidTxt = path.join(dirPath, 'steam_appid.txt');
       const settingsDir = path.join(dirPath, 'steam_settings');
 
-      // 还原备份的 DLL
+      // 还原备份的 DLL (64位及32位)
       if (fs.existsSync(backup64)) {
         fs.copyFileSync(backup64, api64);
-        fs.unlinkSync(backup64);
+        try { fs.unlinkSync(backup64); } catch {}
+      }
+      if (fs.existsSync(backup32)) {
+        fs.copyFileSync(backup32, api32);
+        try { fs.unlinkSync(backup32); } catch {}
       }
 
       // 清理补丁衍生配置文件
       if (fs.existsSync(onlineFixIni)) {
-        fs.unlinkSync(onlineFixIni);
+        try { fs.unlinkSync(onlineFixIni); } catch {}
       }
       if (fs.existsSync(appidTxt)) {
-        fs.unlinkSync(appidTxt);
+        try { fs.unlinkSync(appidTxt); } catch {}
       }
       if (fs.existsSync(settingsDir)) {
-        fs.rmSync(settingsDir, { recursive: true, force: true });
+        try { fs.rmSync(settingsDir, { recursive: true, force: true }); } catch {}
       }
 
       return { success: true, message: '已完全恢复游戏原版状态与 DLL 文件！' };
