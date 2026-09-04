@@ -1,0 +1,58 @@
+[
+  {
+    "id": "audit_1788495592880_ahm1f",
+    "timestamp": "2026-09-04T04:19:52.880Z",
+    "action": "VERSION_PUSH_BROADCAST",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "details": "向全量客户端广播推送版本更新: v1.0.1 【🚀 SteamMaster v1.0.1 正式发布！】",
+    "success": true
+  },
+  {
+    "id": "audit_1788495592870_cq2il",
+    "timestamp": "2026-09-04T04:19:52.870Z",
+    "action": "VERSION_PUBLISH",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "details": "发布版本 v1.0.1 【SteamMaster 体验更新 v1.0.1】 (强更: 否)",
+    "success": true
+  },
+  {
+    "id": "audit_1788495592862_vablh",
+    "timestamp": "2026-09-04T04:19:52.862Z",
+    "action": "NOTICE_TOGGLE",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "details": "公告状态切换为 【启用】: 自动化测试公告 001",
+    "success": true
+  },
+  {
+    "id": "audit_1788495592856_l3g9h",
+    "timestamp": "2026-09-04T04:19:52.856Z",
+    "action": "NOTICE_CREATE",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "details": "创建公告: 【自动化测试公告 001】 (ID: notice_1788495592854_tckh)",
+    "success": true
+  },
+  {
+    "id": "audit_1788495592795_jlpvf",
+    "timestamp": "2026-09-04T04:19:52.795Z",
+    "action": "LOGIN_SUCCESS",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "userAgent": "axios/1.20.0",
+    "details": "管理员登录成功",
+    "success": true
+  },
+  {
+    "id": "audit_1788495592786_ze038",
+    "timestamp": "2026-09-04T04:19:52.786Z",
+    "action": "LOGIN_FAILED",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "userAgent": "axios/1.20.0",
+    "details": "密码错误 (尝试次数: 1/5)",
+    "success": false
+  }
+]

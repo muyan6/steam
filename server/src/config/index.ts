@@ -44,6 +44,12 @@ export const CONFIG = {
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 1257,
   HOST: process.env.HOST || '0.0.0.0',
   ADMIN_SECRET: process.env.ADMIN_SECRET || 'steammaster_admin_8888',
+  DEFAULT_ADMIN_USER: process.env.ADMIN_USER || 'admin',
+  DEFAULT_ADMIN_PASS: process.env.ADMIN_PASS || 'admin123',
+  JWT_SECRET: process.env.JWT_SECRET || 'steammaster_jwt_secret_key_2026',
+  TOKEN_EXPIRES_SECONDS: 7 * 24 * 3600, // 7天有效
+  MAX_LOGIN_ATTEMPTS: 5,
+  LOCKOUT_TIME_MS: 15 * 60 * 1000, // 输错5次锁定15分钟
   DATA_DIR: resolveDataDir(),
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*'
 };
