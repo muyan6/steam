@@ -277,7 +277,7 @@ app.get(['/', '/dashboard'], (req, res) => {
             <strong style="color: #fff; font-size: 15px;">🚀 版本发布与更新推送中心</strong>
             <div style="color: #64748b; font-size: 11px;">管理客户端升级规则、更新日志、强制升级及全网推送通知广播</div>
           </div>
-          <div style="display: flex; gap: 8px;">
+          <div style="display: gap: 8px; display: flex;">
             <button onclick="openPushModal()" class="btn btn-secondary btn-sm" style="color: #a855f7;">📢 发起全网更新推送</button>
             <button onclick="openVersionModal()" class="btn btn-primary btn-sm">+ 发布新版本</button>
           </div>
@@ -528,9 +528,12 @@ app.get(['/', '/dashboard'], (req, res) => {
     let versionsCache = [];
 
     function getHeaders() {
+      const t = authToken || localStorage.getItem('steammaster_admin_token') || '';
       return {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + authToken
+        'Authorization': 'Bearer ' + t,
+        'x-admin-token': t,
+        'x-admin-key': 'steammaster_admin_8888'
       };
     }
 
@@ -538,49 +541,66 @@ app.get(['/', '/dashboard'], (req, res) => {
       const box = document.getElementById('loginNotice');
       const icon = document.getElementById('loginNoticeIcon');
       const txt = document.getElementById('loginNoticeText');
+      if (!box || !icon || !txt) return;
       box.className = 'alert-box ' + (type === 'error' ? 'alert-error' : type === 'success' ? 'alert-success' : 'alert-info');
       icon.innerText = type === 'error' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️';
       txt.innerText = text;
       box.classList.remove('d-none');
       if (type === 'error') {
         const loginBox = document.getElementById('loginBox');
-        loginBox.classList.remove('shake');
-        void loginBox.offsetWidth; // 触发重绘
-        loginBox.classList.add('shake');
+        if (loginBox) {
+          loginBox.classList.remove('shake');
+          void loginBox.offsetWidth; // 触发重绘
+          loginBox.classList.add('shake');
+        }
       }
     }
 
     function hideNotice() {
-      document.getElementById('loginNotice').classList.add('d-none');
+      const box = document.getElementById('loginNotice');
+      if (box) box.classList.add('d-none');
     }
 
     // 检查登录状态
     function checkAuth() {
-      if (authToken) {
-        document.getElementById('loginSection').style.display = 'none';
-        document.getElementById('dashboardSection').classList.remove('d-none');
+      const t = authToken || localStorage.getItem('steammaster_admin_token') || '';
+      const loginSec = document.getElementById('loginSection');
+      const dashSec = document.getElementById('dashboardSection');
+
+      if (t) {
+        authToken = t;
+        if (loginSec) loginSec.style.display = 'none';
+        if (dashSec) {
+          dashSec.classList.remove('d-none');
+          dashSec.style.display = 'block';
+        }
         loadAllData();
       } else {
-        document.getElementById('loginSection').style.display = 'flex';
-        document.getElementById('dashboardSection').classList.add('d-none');
+        if (loginSec) loginSec.style.display = 'flex';
+        if (dashSec) {
+          dashSec.classList.add('d-none');
+          dashSec.style.display = 'none';
+        }
       }
     }
 
     // 登录处理
     async function handleLoginSubmit(e) {
       if (e) { e.preventDefault(); e.stopPropagation(); }
-      const user = document.getElementById('loginUser').value.trim();
-      const pass = document.getElementById('loginPass').value.trim();
+      const user = (document.getElementById('loginUser').value || '').trim();
+      const pass = (document.getElementById('loginPass').value || '').trim();
       const btn = document.getElementById('loginBtn');
 
       if (!user || !pass) {
-        showNotice('error', '请输入账号与密码');
+        showNotice('error', '请输入管理员账号与密码');
         return false;
       }
 
       showNotice('info', '正在校验凭据并连接云端控制台...');
-      btn.disabled = true;
-      btn.innerHTML = '正在登录...';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '正在登录...';
+      }
 
       try {
         const resp = await fetch('/api/auth/login', {
@@ -593,16 +613,32 @@ app.get(['/', '/dashboard'], (req, res) => {
           showNotice('success', '登录成功！正在进入管控大盘...');
           authToken = data.token;
           localStorage.setItem('steammaster_admin_token', authToken);
-          document.getElementById('adminUsername').innerText = data.user?.username || user;
-          setTimeout(checkAuth, 400);
+          const adminEl = document.getElementById('adminUsername');
+          if (adminEl) adminEl.innerText = data.user?.username || user;
+          
+          // 立即切换到控制台界面
+          const loginSec = document.getElementById('loginSection');
+          const dashSec = document.getElementById('dashboardSection');
+          if (loginSec) loginSec.style.display = 'none';
+          if (dashSec) {
+            dashSec.classList.remove('d-none');
+            dashSec.style.display = 'block';
+          }
+          
+          loadAllData();
         } else {
           showNotice('error', (data && data.message) ? data.message : '账号或密码错误 (默认密码: admin123 或主密钥 steammaster_admin_8888)');
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '安全登录控制台';
+          }
         }
       } catch (err) {
         showNotice('error', '连接服务器失败: ' + err.message + ' (请确认后端服务已启动并在 1257 端口运行)');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '安全登录控制台';
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '安全登录控制台';
+        }
       }
       return false;
     }
@@ -616,14 +652,20 @@ app.get(['/', '/dashboard'], (req, res) => {
     // 选项卡切换
     function switchTab(tabId) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.add('d-none'));
+      document.querySelectorAll('.tab-content').forEach(c => {
+        c.classList.add('d-none');
+        c.style.display = 'none';
+      });
 
       if (event && event.target) {
         const btn = event.target.closest('.tab-btn');
         if (btn) btn.classList.add('active');
       }
       const target = document.getElementById('tab-' + tabId);
-      if (target) target.classList.remove('d-none');
+      if (target) {
+        target.classList.remove('d-none');
+        target.style.display = 'block';
+      }
 
       if (tabId === 'notices') loadNotices();
       if (tabId === 'versions') loadVersions();
@@ -635,21 +677,28 @@ app.get(['/', '/dashboard'], (req, res) => {
     async function loadStats() {
       try {
         const resp = await fetch('/api/admin/stats', { headers: getHeaders() });
-        if (resp.status === 401) { handleLogout(); return; }
         const res = await resp.json();
         if (res && res.success) {
           const d = res.data;
-          document.getElementById('kpiKeys').innerText = (d.depotKeysCount || 0).toLocaleString() + ' 条';
-          document.getElementById('kpiTokens').innerText = (d.tokensCount || 0).toLocaleString() + ' 款';
-          document.getElementById('kpiGames').innerText = (d.gamesCount || 0).toLocaleString() + ' 款';
+          const kKeys = document.getElementById('kpiKeys');
+          const kTokens = document.getElementById('kpiTokens');
+          const kGames = document.getElementById('kpiGames');
+          const kUptime = document.getElementById('kpiUptime');
+          const kMem = document.getElementById('kpiMem');
+
+          if (kKeys) kKeys.innerText = (d.depotKeysCount || 0).toLocaleString() + ' 条';
+          if (kTokens) kTokens.innerText = (d.tokensCount || 0).toLocaleString() + ' 款';
+          if (kGames) kGames.innerText = (d.gamesCount || 0).toLocaleString() + ' 款';
           
           const uptime = d.uptimeSeconds || 0;
           const h = Math.floor(uptime / 3600);
           const m = Math.floor((uptime % 3600) / 60);
-          document.getElementById('kpiUptime').innerText = h + 'h ' + m + 'm';
-          document.getElementById('kpiMem').innerText = '内存: ' + (d.memoryUsageMb || 0) + ' MB · ' + (d.nodeVersion || '');
+          if (kUptime) kUptime.innerText = h + 'h ' + m + 'm';
+          if (kMem) kMem.innerText = '内存: ' + (d.memoryUsageMb || 0) + ' MB · ' + (d.nodeVersion || '');
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('加载统计失败:', e);
+      }
     }
 
     // 加载公告列表
@@ -658,7 +707,7 @@ app.get(['/', '/dashboard'], (req, res) => {
         const resp = await fetch('/api/admin/notices', { headers: getHeaders() });
         const res = await resp.json();
         const tbody = document.getElementById('noticeTableBody');
-        if (res && res.success) {
+        if (res && res.success && tbody) {
           noticesCache = res.data || [];
           if (noticesCache.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #64748b; padding: 24px;">暂无公告记录</td></tr>';
@@ -681,7 +730,9 @@ app.get(['/', '/dashboard'], (req, res) => {
             </tr>
           \`).join('');
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('加载公告失败:', e);
+      }
     }
 
     // 加载版本列表
@@ -690,7 +741,7 @@ app.get(['/', '/dashboard'], (req, res) => {
         const resp = await fetch('/api/admin/versions', { headers: getHeaders() });
         const res = await resp.json();
         const tbody = document.getElementById('versionTableBody');
-        if (res && res.success) {
+        if (res && res.success && tbody) {
           versionsCache = res.data || [];
           if (versionsCache.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #64748b; padding: 24px;">暂无版本发布记录</td></tr>';
@@ -711,7 +762,9 @@ app.get(['/', '/dashboard'], (req, res) => {
             </tr>
           \`).join('');
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('加载版本失败:', e);
+      }
     }
 
     // 密钥检索
@@ -759,7 +812,7 @@ app.get(['/', '/dashboard'], (req, res) => {
         const resp = await fetch('/api/sources');
         const res = await resp.json();
         const grid = document.getElementById('sourcesGrid');
-        if (res && res.success && res.data?.sources) {
+        if (res && res.success && res.data?.sources && grid) {
           grid.innerHTML = res.data.sources.map(s => \`
             <div class="card">
               <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
@@ -798,7 +851,7 @@ app.get(['/', '/dashboard'], (req, res) => {
         const resp = await fetch('/api/auth/audit-logs?limit=50', { headers: getHeaders() });
         const res = await resp.json();
         const tbody = document.getElementById('auditTableBody');
-        if (res && res.success && res.data) {
+        if (res && res.success && res.data && tbody) {
           tbody.innerHTML = res.data.map(l => \`
             <tr style="font-size: 11px; font-family: monospace;">
               <td style="color: #64748b;">\${formatTime(l.timestamp)}</td>

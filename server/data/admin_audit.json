@@ -1,5 +1,15 @@
 [
   {
+    "id": "audit_1788496868253_zre1x",
+    "timestamp": "2026-09-04T04:41:08.253Z",
+    "action": "LOGIN_SUCCESS",
+    "operator": "admin",
+    "ip": "127.0.0.1",
+    "userAgent": "axios/1.20.0",
+    "details": "管理员登录成功",
+    "success": true
+  },
+  {
     "id": "audit_1788496397510_qghzk",
     "timestamp": "2026-09-04T04:33:17.510Z",
     "action": "LOGIN_SUCCESS",
