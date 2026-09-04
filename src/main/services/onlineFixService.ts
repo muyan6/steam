@@ -16,6 +16,7 @@ import {
 } from '../../types';
 import { steamlessService } from './steamlessService';
 import { steamService } from './steamService';
+import { getUnrarWasmBinary } from './unrarWasm';
 
 export class OnlineFixService {
   private sessionCookie: string = '';
@@ -29,13 +30,18 @@ export class OnlineFixService {
     if (this.sessionCookie) return this.sessionCookie;
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
       const tokenRes = await fetch('https://online-fix.me/engine/ajax/authtoken.php', {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Referer': 'https://online-fix.me/',
           'X-Requested-With': 'XMLHttpRequest'
-        }
+        },
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       const tokenData = await tokenRes.json();
       const tokenCookies = tokenRes.headers.getSetCookie ? tokenRes.headers.getSetCookie() : [];
@@ -65,7 +71,7 @@ export class OnlineFixService {
       this.sessionCookie = [...tokenCookies, ...loginCookies].map((c) => c.split(';')[0]).join('; ');
       return this.sessionCookie;
     } catch (e: any) {
-      console.warn('[OnlineFixService] 自动登录 online-fix.me 失败:', e.message);
+      console.warn('[OnlineFixService] 自动登录 online-fix.me 失败 (将以访客模式检索):', e.message);
       return '';
     }
   }
@@ -87,13 +93,19 @@ export class OnlineFixService {
     for (const q of queries) {
       console.log(`[OnlineFixService] 正在搜索 online-fix.me: "${q}"...`);
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+
         const searchUrl = `https://online-fix.me/index.php?do=search&subaction=search&story=${encodeURIComponent(q)}`;
         const res = await fetch(searchUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-          }
+          },
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
+
         const html = await res.text();
         if (html.includes('По вашему запросу ничего не найдено') || html.includes('ничего не найдено')) {
           continue;
@@ -129,13 +141,19 @@ export class OnlineFixService {
     const cookie = await this.ensureAuth();
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       const gameRes = await fetch(gameArticleUrl, {
         headers: {
           'Cookie': cookie,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Referer': 'https://online-fix.me/'
-        }
+        },
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
+
       const gameHtml = await gameRes.text();
 
       const hosterMatch = gameHtml.match(/href="(https:\/\/hosters\.online-fix\.me:2053\/[^"]+)"/i);
@@ -224,7 +242,7 @@ export class OnlineFixService {
     gameName?: string
   ): Promise<OnlineFixPatchResult> {
     try {
-      if (!fs.existsSync(gamePath)) {
+      if (!gamePath || !fs.existsSync(gamePath)) {
         return {
           success: false,
           message: `目标游戏目录不存在: ${gamePath}`
@@ -232,6 +250,7 @@ export class OnlineFixService {
       }
 
       // 1. 在 online-fix.me 搜索补丁
+      console.log(`[OnlineFixService] 开始检索游戏 AppID: ${appId}, 名称: ${gameName || '未知'}...`);
       const searchRes = await this.searchOnlineFixPatch(appId, gameName);
       if (!searchRes.found || !searchRes.downloadUrl || !searchRes.fileName) {
         return {
@@ -247,10 +266,10 @@ export class OnlineFixService {
       const backup32 = path.join(gamePath, 'steam_api_o.dll');
 
       if (fs.existsSync(api64) && !fs.existsSync(backup64)) {
-        fs.copyFileSync(api64, backup64);
+        try { fs.copyFileSync(api64, backup64); } catch {}
       }
       if (fs.existsSync(api32) && !fs.existsSync(backup32)) {
-        fs.copyFileSync(api32, backup32);
+        try { fs.copyFileSync(api32, backup32); } catch {}
       }
 
       // 3. 下载补丁包
@@ -261,11 +280,16 @@ export class OnlineFixService {
       const tempFilePath = path.join(tempDir, `patch_${appId}_${Date.now()}${ext}`);
 
       console.log(`[OnlineFixService] 正在从 ${searchRes.downloadUrl} 下载补丁包 (${searchRes.fileName})...`);
+      const downloadController = new AbortController();
+      const downloadTimeout = setTimeout(() => downloadController.abort(), 60000); // 60s timeout
+
       const res = await fetch(searchRes.downloadUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
+        },
+        signal: downloadController.signal
       });
+      clearTimeout(downloadTimeout);
 
       if (!res.ok) {
         return {
@@ -280,25 +304,35 @@ export class OnlineFixService {
       }
       await pipeline(Readable.fromWeb(res.body as any), fileStream);
 
-      // 4. 解压到游戏目录 (密码 online-fix.me)
-      console.log(`[OnlineFixService] 下载完成，正在解压补丁至: ${gamePath}...`);
+      const downloadedFileSize = fs.statSync(tempFilePath).size;
+      console.log(`[OnlineFixService] 下载完成 (大小: ${(downloadedFileSize / 1024 / 1024).toFixed(2)} MB)，正在解压补丁至: ${gamePath}...`);
+
       let extractedCount = 0;
 
       if (ext.toLowerCase() === '.rar' || searchRes.fileName.toLowerCase().endsWith('.rar')) {
         const fileBuffer = fs.readFileSync(tempFilePath);
+        const data = fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength);
+
+        // 使用内嵌的 unrar.wasm 二进制，确保 100% 稳定可靠
+        const wasmBinary = getUnrarWasmBinary();
         const extractor = await createExtractorFromData({
-          data: fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength),
+          wasmBinary,
+          data,
           password: 'online-fix.me'
         });
 
         const extracted = extractor.extract();
         const files = [...extracted.files];
         for (const f of files) {
-          if (f.extraction && f.fileHeader.name) {
+          if (f.fileHeader && f.fileHeader.name) {
             const destPath = path.join(gamePath, f.fileHeader.name);
-            fs.mkdirSync(path.dirname(destPath), { recursive: true });
-            fs.writeFileSync(destPath, Buffer.from(f.extraction));
-            extractedCount++;
+            if (f.extraction && f.extraction.length > 0) {
+              fs.mkdirSync(path.dirname(destPath), { recursive: true });
+              fs.writeFileSync(destPath, Buffer.from(f.extraction));
+              extractedCount++;
+            } else if (f.fileHeader.flags && f.fileHeader.flags.directory) {
+              fs.mkdirSync(destPath, { recursive: true });
+            }
           }
         }
       } else {
@@ -316,7 +350,7 @@ export class OnlineFixService {
         fileName: searchRes.fileName,
         articleUrl: searchRes.gameArticleUrl,
         downloadUrl: searchRes.downloadUrl,
-        message: `成功从 online-fix.me 下载并安装联机补丁 (${searchRes.fileName})，共部署 ${extractedCount} 个文件！`
+        message: `成功从 online-fix.me 下载并安装联机补丁 (${searchRes.fileName})，共解压部署 ${extractedCount} 个文件！`
       };
     } catch (err: any) {
       console.error('[OnlineFixService] 安装补丁失败:', err);
@@ -351,7 +385,6 @@ export class OnlineFixService {
     let mode: 'spacewar' | 'goldberg' | 'none' = 'none';
     let appId: number | undefined;
 
-    // 递归检查是否存在 OnlineFix.ini / OnlineFix64.dll
     let foundOnlineFixIni = fs.existsSync(onlineFixIni) || fs.existsSync(onlineFixDll);
     if (!foundOnlineFixIni) {
       try {
@@ -513,7 +546,6 @@ enable=1
       const appidTxt = path.join(dirPath, 'steam_appid.txt');
       const settingsDir = path.join(dirPath, 'steam_settings');
 
-      // 还原备份的 DLL (64位及32位)
       if (fs.existsSync(backup64)) {
         fs.copyFileSync(backup64, api64);
         try { fs.unlinkSync(backup64); } catch {}
@@ -523,7 +555,6 @@ enable=1
         try { fs.unlinkSync(backup32); } catch {}
       }
 
-      // 清理补丁衍生配置文件
       if (fs.existsSync(onlineFixIni)) {
         try { fs.unlinkSync(onlineFixIni); } catch {}
       }
@@ -540,7 +571,6 @@ enable=1
         try { fs.rmSync(settingsDir, { recursive: true, force: true }); } catch {}
       }
 
-      // 递归寻找并清理子目录中备份的 DLL
       const searchAndRestore = (currentDir: string, depth = 0) => {
         if (depth > 3) return;
         try {
