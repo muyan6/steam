@@ -34,7 +34,7 @@ export const reportRepairLog = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
+    const ip = req.socket.remoteAddress || '127.0.0.1';
     const record = toolboxService.recordRepairLog({
       actionType,
       success: Boolean(success),

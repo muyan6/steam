@@ -6,6 +6,7 @@ import { writeJsonAtomic } from '../utils/atomicJson.js';
 export class TokenService {
   private tokensDb: Record<string, string> = {};
   private isLoaded = false;
+  private saveBlocked = false;
 
   constructor() {
     this.loadTokensDb();
@@ -25,9 +26,10 @@ export class TokenService {
         this.isLoaded = true;
       }
     } catch (e) {
-      console.error('[TokenService] 加载 AccessToken 数据库失败:', e);
-      this.tokensDb = {};
-      this.isLoaded = true;
+      // fail-closed：损坏文件备份为 .corrupt，保留已加载数据，禁止空库覆写
+      try { const dbPath = path.join(CONFIG.DATA_DIR, 'steam_tokens.json'); if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, dbPath + '.corrupt'); } catch {}
+      this.saveBlocked = true;
+      console.error('[TokenService] AccessToken 数据库损坏！已备份到 .corrupt，写入功能已禁用，请修复文件后重启服务:', e);
     }
   }
 
@@ -40,11 +42,15 @@ export class TokenService {
   }
 
   public saveTokens(tokens: Record<string, string>): boolean {
+    if (this.saveBlocked) {
+      console.error('[TokenService] 数据文件已损坏（.corrupt），拒绝写入以保护数据。');
+      return false;
+    }
     try {
       // 合并而非整库替换：上游返回子集/截断数据时不会丢掉本地已有 token
       this.tokensDb = { ...this.tokensDb, ...tokens };
       const dbPath = path.join(CONFIG.DATA_DIR, 'steam_tokens.json');
-      writeJsonAtomic(dbPath, tokens);
+      writeJsonAtomic(dbPath, this.tokensDb);
       this.isLoaded = true;
       console.log(`[TokenService] 已成功持久化保存 ${Object.keys(tokens).length} 条 AccessToken 到 ${dbPath}`);
       return true;

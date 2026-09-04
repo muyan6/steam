@@ -100,13 +100,16 @@ export class ToolboxService {
    * 记录客户端修复诊断与执行日志
    */
   public recordRepairLog(log: Omit<ToolboxRepairLog, 'id' | 'timestamp'> & { ip?: string }): ToolboxRepairLog {
+    // 字段截断：公开接口可匿名调用，防止超大 payload 撑爆日志文件
+    const clean = (v: unknown, max: number): string | undefined =>
+      typeof v === 'string' && v.length > 0 ? v.slice(0, max) : undefined;
     const newRecord: ToolboxRepairLog = {
       id: `repair_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       actionType: log.actionType,
       success: log.success,
-      deviceId: log.deviceId,
-      ip: log.ip,
-      details: log.details,
+      deviceId: clean(log.deviceId, 128),
+      ip: clean(log.ip, 64),
+      details: clean(log.details, 500),
       timestamp: new Date().toISOString()
     };
 

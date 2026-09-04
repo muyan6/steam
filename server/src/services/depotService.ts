@@ -26,9 +26,9 @@ export class DepotService {
         this.isLoaded = true;
       }
     } catch (e) {
-      console.error('[DepotService] 加载 DepotKey 数据库失败:', e);
-      this.depotKeysDb = {};
-      this.isLoaded = true;
+      // fail-closed：损坏文件备份为 .corrupt，保留已加载数据，禁止空库覆写
+      try { const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json'); if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, dbPath + '.corrupt'); } catch {}
+      console.error('[DepotService] DepotKey 数据库损坏！已备份到 .corrupt，写入功能已禁用，请修复文件后重启服务:', e);
     }
   }
 

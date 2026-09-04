@@ -185,7 +185,6 @@ export class GameService {
           if (!this.chineseGamesCache.has(appId)) {
             // 持久缓存容量上限：公开搜索接口可被脚本灌词，防止缓存文件无限膨胀
             if (this.chineseGamesCache.size >= 500000) {
-              newResults.push(gameObj);
               continue;
             }
             this.chineseGamesCache.set(appId, gameObj);
@@ -255,7 +254,8 @@ export class GameService {
       steam_official: 'Steam官方API',
       cloud_db: '云端18万+自建库',
       steam_community: 'Steam社区搜索源',
-      hybrid: '全域智能聚合源'
+      hybrid: '全域智能聚合源',
+    local_db: '本地全量库'
     };
 
     let allMatched: SteamGame[] = [];

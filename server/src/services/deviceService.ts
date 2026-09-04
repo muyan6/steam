@@ -28,6 +28,7 @@ export interface DeviceStats {
 export class DeviceService {
   private devicesMap: Map<string, DeviceRecord> = new Map();
   private filePath: string;
+  private degraded: boolean = false;
 
   constructor() {
     this.filePath = path.join(CONFIG.DATA_DIR, 'devices.json');
@@ -49,11 +50,18 @@ export class DeviceService {
         }
       }
     } catch (e) {
-      console.error('[DeviceService] 加载设备数据失败:', e);
+      // fail-closed：损坏文件备份为 .corrupt 并拒绝写回，防止空档案覆写全量设备数据
+      try { if (fs.existsSync(this.filePath)) fs.copyFileSync(this.filePath, this.filePath + '.corrupt'); } catch {}
+      this.degraded = true;
+      console.error('[DeviceService] 设备数据文件损坏！已备份到 .corrupt，写入功能已禁用，请修复文件后重启服务:', e);
     }
   }
 
   private saveDevices(): void {
+    if (this.degraded) {
+      console.error('[DeviceService] 数据文件已损坏（.corrupt），拒绝写入以保护数据。');
+      return;
+    }
     try {
       const list = Array.from(this.devicesMap.values());
       writeJsonAtomic(this.filePath, list);

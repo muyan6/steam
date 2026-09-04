@@ -70,6 +70,7 @@ import {
   searchOnlineFix
 } from '../controllers/toolboxController.js';
 import { deviceService } from '../services/deviceService.js';
+import { licenseService } from '../services/licenseService.js';
 
 const router = Router();
 
@@ -81,7 +82,7 @@ router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().to
 // 客户端设备心跳与活跃度上报 (公开接口，限流防刷)
 const heartbeatLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 4,
+  limit: 4,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: '心跳上报过于频繁' }
@@ -114,7 +115,7 @@ router.post('/telemetry/heartbeat', heartbeatLimiter, (req: Request, res: Respon
 // 管理员登录（公开接口，限流 + 服务端 IP 锁定双重防爆破）
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: '登录尝试过于频繁，请稍后再试' }
@@ -139,7 +140,21 @@ router.get('/games/:appId/header', getGameHeaderImage);
 router.get('/games/:appId', getGameDetail);
 
 // 一站式元数据与密钥聚合查询
-router.get('/metadata/:appId', getGameMetadata);
+// 密钥类接口设备授权：仅允许持有有效授权的客户端获取 depotKey / token，
+// 防止客户端激活拦截被绕过后直接调用云端接口拿走密钥
+const requireLicensedDevice = (req: Request, res: Response, next: any) => {
+  const deviceId = String(req.query.deviceId || '');
+  if (!deviceId || deviceId.length > 128) {
+    return res.status(401).json({ success: false, message: '缺少或非法的 deviceId，请升级客户端后使用' });
+  }
+  const info = licenseService.verify(deviceId);
+  if (!info.isActivated) {
+    return res.status(403).json({ success: false, message: info.message || '当前设备未激活，无法获取密钥数据' });
+  }
+  next();
+};
+
+router.get('/metadata/:appId', requireLicensedDevice, getGameMetadata);
 
 // 公开只读统计数据 (客户端数据库统计使用，不暴露管理能力)
 router.get('/stats', (req: Request, res: Response) => {
@@ -157,12 +172,12 @@ router.get('/stats', (req: Request, res: Response) => {
 });
 
 // DepotKey 密钥查询
-router.get('/depots/:appId', getDepotsForGame);
-router.get('/depots/key/:depotId', getSingleDepotKey);
+router.get('/depots/:appId', requireLicensedDevice, getDepotsForGame);
+router.get('/depots/key/:depotId', requireLicensedDevice, getSingleDepotKey);
 
 // AccessToken 令牌查询
 router.get('/tokens/stats', getTokensStats);
-router.get('/tokens/:appId', getTokenForApp);
+router.get('/tokens/:appId', requireLicensedDevice, getTokenForApp);
 
 // Manifest 清单检索与下载
 router.get('/manifests/:appId', getManifestsForApp);
@@ -176,7 +191,7 @@ router.get('/license/status/:deviceId', getDeviceLicenseStatus);
 // 工具箱 (Toolbox) 与清单高可用节点 (公开接口)
 router.get('/toolbox/nodes', getManifestNodes);
 router.get('/toolbox/sha256-data', getSha256PackageInfo);
-router.post('/toolbox/repair-log', reportRepairLog);
+router.post('/toolbox/repair-log', heartbeatLimiter, reportRepairLog);
 router.get('/toolbox/steamless-info', getSteamlessInfo);
 router.get('/toolbox/online-modes', getOnlineModes);
 router.get('/toolbox/onlinefix-search', searchOnlineFix);

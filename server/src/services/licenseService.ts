@@ -84,6 +84,7 @@ export class LicenseService {
   private dataFilePath: string;
   private keysCache: Map<string, LicenseKey> = new Map();
   private initialized: boolean = false;
+  private degraded: boolean = false;
 
   constructor() {
     this.dataFilePath = path.join(CONFIG.DATA_DIR, 'license_keys.json');
@@ -153,12 +154,19 @@ export class LicenseService {
       }
       this.initialized = true;
     } catch (e: any) {
-      console.error('[LicenseService] 载入激活码数据失败:', e.message);
+      // fail-closed：损坏文件备份为 .corrupt 并拒绝一切写回，防止空库覆写造成卡密永久丢失
+      try { if (fs.existsSync(this.dataFilePath)) fs.copyFileSync(this.dataFilePath, this.dataFilePath + '.corrupt'); } catch {}
+      this.degraded = true;
+      console.error('[LicenseService] 激活码数据文件损坏！已备份到 .corrupt，写入功能已禁用，请修复文件后重启服务:', e.message);
       this.keysCache.clear();
     }
   }
 
   private saveKeys(): void {
+    if (this.degraded) {
+      console.error('[LicenseService] 数据文件已损坏（.corrupt），拒绝写入以保护数据。请修复后重启服务。');
+      return;
+    }
     try {
       const targetDir = path.dirname(this.dataFilePath);
       if (!fs.existsSync(targetDir)) {

@@ -28,21 +28,12 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 // 全局限流：保护公开接口不被滥用（登录与心跳另有专门限流）
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 600,
+  limit: 600,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: '请求过于频繁，请稍后再试' }
 });
 app.use('/api', globalLimiter);
-
-// 登录接口限流：配合服务端 IP 锁定进一步抬高爆破成本
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: '登录尝试过于频繁，请稍后再试' }
-});
 
 // 简易请求日志
 app.use((req, res, next) => {

@@ -153,6 +153,12 @@ export class AuthService {
     const cleanPass = (pass || '').trim();
 
     // 锁定检查必须先于凭据校验，防止爆破
+    // 清理已过期的锁定记录，防止长期运行内存缓慢增长
+    for (const [key, val] of this.loginAttempts) {
+      if (val.lockedUntil !== 0 && val.lockedUntil <= now) {
+        this.loginAttempts.delete(key);
+      }
+    }
     const attempt = this.loginAttempts.get(ip);
     if (attempt && attempt.lockedUntil > now) {
       const remainMinutes = Math.ceil((attempt.lockedUntil - now) / 60000);

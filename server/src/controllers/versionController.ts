@@ -2,10 +2,8 @@ import { Request, Response } from 'express';
 import { versionService } from '../services/versionService.js';
 import { authService } from '../services/authService.js';
 
+// 审计 IP 只取 socket 真实地址（X-Forwarded-For 可任意伪造）
 const getClientIp = (req: Request): string => {
-  const raw = req.headers['x-forwarded-for'];
-  if (Array.isArray(raw)) return raw[0];
-  if (typeof raw === 'string') return raw.split(',')[0].trim();
   return req.socket.remoteAddress || '127.0.0.1';
 };
 
