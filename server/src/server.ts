@@ -50,7 +50,7 @@ app.get(['/', '/dashboard'], (req, res) => {
     input, select, textarea { font-family: inherit; font-size: 13px; }
 
     /* 布局与组件样式 */
-    .app-header { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 30; flex-wrap: wrap; gap: 12px; }
+    .app-header { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 30; flex-wrap: wrap; gap: 12px; }
     .nav-tabs { display: flex; background: rgba(2, 6, 23, 0.7); padding: 4px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.06); gap: 4px; }
     .tab-btn { background: transparent; border: none; color: #94a3b8; padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 12px; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
     .tab-btn:hover { color: #f8fafc; background: rgba(255, 255, 255, 0.05); }
@@ -85,7 +85,7 @@ app.get(['/', '/dashboard'], (req, res) => {
     .input-ctrl { width: 100%; background: rgba(2, 6, 23, 0.6); border: 1px solid rgba(255, 255, 255, 0.15); padding: 8px 12px; border-radius: 10px; color: #fff; outline: none; transition: border-color 0.2s; }
     .input-ctrl:focus { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
 
-    /* 徽章 */
+    /* 徽章与提示条 */
     .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 700; font-family: monospace; }
     .badge-green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
     .badge-blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
@@ -93,8 +93,13 @@ app.get(['/', '/dashboard'], (req, res) => {
     .badge-rose { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
     .badge-gray { background: rgba(100, 116, 139, 0.2); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.3); }
 
+    .alert-box { padding: 10px 14px; border-radius: 10px; font-size: 12px; line-height: 1.5; margin-bottom: 14px; text-align: left; display: flex; align-items: start; gap: 8px; }
+    .alert-error { background: rgba(225, 29, 72, 0.2); border: 1px solid rgba(225, 29, 72, 0.5); color: #fda4af; }
+    .alert-success { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.5); color: #6ee7b7; }
+    .alert-info { background: rgba(56, 189, 248, 0.2); border: 1px solid rgba(56, 189, 248, 0.5); color: #7dd3fc; }
+
     /* 模态框 */
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
     .modal-box { background: #0f172a; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 20px; width: 100%; max-width: 600px; padding: 24px; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
 
     .form-group { margin-bottom: 14px; }
@@ -103,39 +108,52 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     /* 隐藏类 */
     .d-none { display: none !important; }
+
+    /* 抖动动画 */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .shake { animation: shake 0.4s ease-in-out; }
   </style>
 </head>
 <body>
 
   <!-- ==================== 1. 管理员登录界面 ==================== -->
   <div id="loginSection" class="modal-overlay" style="display: flex;">
-    <div class="modal-box" style="max-width: 400px; text-align: center;">
+    <div class="modal-box" id="loginBox" style="max-width: 420px; text-align: center;">
       <div style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, #0284c7, #10b981); margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; color: #fff;">
         ⚡
       </div>
       <h1 style="font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 4px;">SteamMaster 商业版</h1>
       <p style="font-size: 12px; color: #94a3b8; margin-bottom: 20px;">云端数据引擎与安全管控中枢</p>
 
-      <div id="loginError" class="badge-rose" style="display: none; padding: 8px 12px; border-radius: 8px; font-size: 11px; margin-bottom: 14px; text-align: left;"></div>
+      <!-- 登录状态/错误提示框 -->
+      <div id="loginNotice" class="alert-box alert-error d-none">
+        <span id="loginNoticeIcon">⚠️</span>
+        <span id="loginNoticeText">账号或密码错误</span>
+      </div>
 
-      <form id="loginForm" onsubmit="handleLoginSubmit(event)">
+      <form id="loginForm" onsubmit="handleLoginSubmit(event); return false;">
         <div class="form-group" style="text-align: left;">
           <label>管理员账号 (Username)</label>
-          <input type="text" id="loginUser" class="input-ctrl" value="admin" required placeholder="请输入管理员账号" />
+          <input type="text" id="loginUser" class="input-ctrl" value="admin" required placeholder="请输入管理员账号 (默认: admin)" autocomplete="username" />
         </div>
 
         <div class="form-group" style="text-align: left;">
           <label>管理员密码 (Password)</label>
-          <input type="password" id="loginPass" class="input-ctrl" required placeholder="请输入管理员密码 (默认: admin123)" />
+          <input type="password" id="loginPass" class="input-ctrl" required placeholder="请输入管理员密码 (默认: admin123)" autocomplete="current-password" />
         </div>
 
-        <button type="submit" id="loginBtn" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 10px; margin-top: 8px;">
+        <button type="submit" id="loginBtn" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 11px; margin-top: 8px; font-size: 14px;">
           <span>安全登录控制台</span>
         </button>
       </form>
 
-      <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 11px; color: #64748b;">
-        🔒 PBKDF2 加盐加密保护 · 默认密码: <code style="color: #38bdf8;">admin123</code>
+      <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 11px; color: #64748b; line-height: 1.6;">
+        <div>默认账号: <code style="color: #38bdf8; font-weight: bold;">admin</code> · 默认密码: <code style="color: #38bdf8; font-weight: bold;">admin123</code></div>
+        <div style="color: #475569; margin-top: 2px;">或使用超级主密钥: <code style="color: #94a3b8;">steammaster_admin_8888</code></div>
       </div>
     </div>
   </div>
@@ -290,7 +308,7 @@ app.get(['/', '/dashboard'], (req, res) => {
         <div class="card" style="margin-bottom: 16px;">
           <strong style="color: #fff; font-size: 14px; margin-bottom: 8px; display: block;">🔑 28.8万+ DepotKey 密钥与 Token 检索器</strong>
           <div style="display: flex; gap: 10px;">
-            <input type="text" id="keySearchInput" class="input-ctrl" placeholder="输入 AppID 或 DepotID (例如: 1091500 赛博朋克2077, 271590 GTA5, 1245620 艾尔登法环)" />
+            <input type="text" id="keySearchInput" class="input-ctrl" placeholder="输入 AppID 或 DepotID (例如: 1091500 赛博朋克2077, 271590 GTA5, 1245620 艾尔登法环)" onkeydown="if(event.key==='Enter') searchKey()" />
             <button onclick="searchKey()" id="btnSearchKey" class="btn btn-primary" style="white-space: nowrap;">查询</button>
           </div>
         </div>
@@ -316,7 +334,7 @@ app.get(['/', '/dashboard'], (req, res) => {
         <div class="card" style="max-width: 500px; margin-bottom: 20px;">
           <strong style="color: #fff; font-size: 14px; margin-bottom: 12px; display: block;">⚙️ 修改管理员账号与密码</strong>
           <div id="pwdMsg" style="display: none; padding: 8px 12px; border-radius: 8px; font-size: 11px; margin-bottom: 12px;"></div>
-          <form onsubmit="handleChangePassword(event)">
+          <form onsubmit="handleChangePassword(event); return false;">
             <div class="form-group">
               <label>原密码 (Current Password)</label>
               <input type="password" id="curPass" class="input-ctrl" required placeholder="请输入当前管理员密码" />
@@ -366,9 +384,9 @@ app.get(['/', '/dashboard'], (req, res) => {
     <div class="modal-box">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
         <strong id="noticeModalTitle" style="color: #fff; font-size: 14px;">发布系统公告</strong>
-        <button onclick="closeModal('noticeModal')" class="btn btn-secondary btn-sm">✕</button>
+        <button type="button" onclick="closeModal('noticeModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
-      <form onsubmit="handleNoticeSubmit(event)">
+      <form onsubmit="handleNoticeSubmit(event); return false;">
         <input type="hidden" id="noticeId" />
         <div class="form-group">
           <label>公告标题 (Title)</label>
@@ -419,9 +437,9 @@ app.get(['/', '/dashboard'], (req, res) => {
     <div class="modal-box">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
         <strong id="versionModalTitle" style="color: #fff; font-size: 14px;">发布新版本</strong>
-        <button onclick="closeModal('versionModal')" class="btn btn-secondary btn-sm">✕</button>
+        <button type="button" onclick="closeModal('versionModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
-      <form onsubmit="handleVersionSubmit(event)">
+      <form onsubmit="handleVersionSubmit(event); return false;">
         <div class="form-row">
           <div class="form-group">
             <label>版本号 (如 1.0.1)</label>
@@ -461,9 +479,9 @@ app.get(['/', '/dashboard'], (req, res) => {
     <div class="modal-box" style="max-width: 450px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
         <strong style="color: #fff; font-size: 14px;">📢 全网版本更新推送广播</strong>
-        <button onclick="closeModal('pushModal')" class="btn btn-secondary btn-sm">✕</button>
+        <button type="button" onclick="closeModal('pushModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
-      <form onsubmit="handlePushSubmit(event)">
+      <form onsubmit="handlePushSubmit(event); return false;">
         <div class="form-group">
           <label>目标推送版本</label>
           <input type="text" id="pushVersion" class="input-ctrl" required placeholder="1.0.0" />
@@ -498,7 +516,7 @@ app.get(['/', '/dashboard'], (req, res) => {
       </div>
       <div id="previewContent" style="background: rgba(2, 6, 23, 0.8); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 12px; color: #cbd5e1; font-size: 12px; white-space: pre-line; line-height: 1.6; margin-bottom: 16px;"></div>
       <div style="text-align: right;">
-        <button onclick="closeModal('previewModal')" class="btn btn-primary btn-sm">我知道了 (关闭预览)</button>
+        <button type="button" onclick="closeModal('previewModal')" class="btn btn-primary btn-sm">我知道了 (关闭预览)</button>
       </div>
     </div>
   </div>
@@ -516,6 +534,26 @@ app.get(['/', '/dashboard'], (req, res) => {
       };
     }
 
+    function showNotice(type, text) {
+      const box = document.getElementById('loginNotice');
+      const icon = document.getElementById('loginNoticeIcon');
+      const txt = document.getElementById('loginNoticeText');
+      box.className = 'alert-box ' + (type === 'error' ? 'alert-error' : type === 'success' ? 'alert-success' : 'alert-info');
+      icon.innerText = type === 'error' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️';
+      txt.innerText = text;
+      box.classList.remove('d-none');
+      if (type === 'error') {
+        const loginBox = document.getElementById('loginBox');
+        loginBox.classList.remove('shake');
+        void loginBox.offsetWidth; // 触发重绘
+        loginBox.classList.add('shake');
+      }
+    }
+
+    function hideNotice() {
+      document.getElementById('loginNotice').classList.add('d-none');
+    }
+
     // 检查登录状态
     function checkAuth() {
       if (authToken) {
@@ -530,15 +568,19 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     // 登录处理
     async function handleLoginSubmit(e) {
-      e.preventDefault();
+      if (e) { e.preventDefault(); e.stopPropagation(); }
       const user = document.getElementById('loginUser').value.trim();
-      const pass = document.getElementById('loginPass').value;
-      const errEl = document.getElementById('loginError');
+      const pass = document.getElementById('loginPass').value.trim();
       const btn = document.getElementById('loginBtn');
 
-      errEl.style.display = 'none';
+      if (!user || !pass) {
+        showNotice('error', '请输入账号与密码');
+        return false;
+      }
+
+      showNotice('info', '正在校验凭据并连接云端控制台...');
       btn.disabled = true;
-      btn.innerHTML = '正在校验...';
+      btn.innerHTML = '正在登录...';
 
       try {
         const resp = await fetch('/api/auth/login', {
@@ -548,21 +590,21 @@ app.get(['/', '/dashboard'], (req, res) => {
         });
         const data = await resp.json();
         if (data && data.success && data.token) {
+          showNotice('success', '登录成功！正在进入管控大盘...');
           authToken = data.token;
           localStorage.setItem('steammaster_admin_token', authToken);
           document.getElementById('adminUsername').innerText = data.user?.username || user;
-          checkAuth();
+          setTimeout(checkAuth, 400);
         } else {
-          errEl.innerText = data.message || '登录失败，请检查账号密码';
-          errEl.style.display = 'block';
+          showNotice('error', (data && data.message) ? data.message : '账号或密码错误 (默认密码: admin123 或主密钥 steammaster_admin_8888)');
         }
       } catch (err) {
-        errEl.innerText = '请求服务器失败: ' + err.message;
-        errEl.style.display = 'block';
+        showNotice('error', '连接服务器失败: ' + err.message + ' (请确认后端服务已启动并在 1257 端口运行)');
       } finally {
         btn.disabled = false;
         btn.innerHTML = '安全登录控制台';
       }
+      return false;
     }
 
     function handleLogout() {
@@ -576,7 +618,10 @@ app.get(['/', '/dashboard'], (req, res) => {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.add('d-none'));
 
-      event.target.classList.add('active');
+      if (event && event.target) {
+        const btn = event.target.closest('.tab-btn');
+        if (btn) btn.classList.add('active');
+      }
       const target = document.getElementById('tab-' + tabId);
       if (target) target.classList.remove('d-none');
 
@@ -770,7 +815,7 @@ app.get(['/', '/dashboard'], (req, res) => {
 
     // 改密
     async function handleChangePassword(e) {
-      e.preventDefault();
+      if (e) e.preventDefault();
       const cur = document.getElementById('curPass').value;
       const user = document.getElementById('newUsername').value.trim();
       const pass = document.getElementById('newPass').value;
@@ -846,7 +891,7 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function handleNoticeSubmit(e) {
-      e.preventDefault();
+      if (e) e.preventDefault();
       const payload = {
         title: document.getElementById('noticeTitle').value,
         type: document.getElementById('noticeType').value,
@@ -872,7 +917,7 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function handleVersionSubmit(e) {
-      e.preventDefault();
+      if (e) e.preventDefault();
       const changelog = document.getElementById('verChangelog').value.split('\n').map(s => s.trim()).filter(Boolean);
       const payload = {
         version: document.getElementById('verNumber').value.trim(),
@@ -899,7 +944,7 @@ app.get(['/', '/dashboard'], (req, res) => {
     }
 
     async function handlePushSubmit(e) {
-      e.preventDefault();
+      if (e) e.preventDefault();
       const payload = {
         version: document.getElementById('pushVersion').value,
         title: document.getElementById('pushTitle').value,
