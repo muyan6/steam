@@ -1,9 +1,9 @@
 /**
- * SteamMaster 商业版应用核心配置
+ * 春风渡 商业版应用核心配置
  */
 
 export const APP_CONFIG = {
-  APP_NAME: 'SteamMaster',
+  APP_NAME: '春风渡',
   VERSION: '1.0.0',
   
   // 云端官方服务器地址

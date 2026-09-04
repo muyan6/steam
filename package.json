@@ -49,7 +49,7 @@
   },
   "build": {
     "appId": "com.steammaster.app",
-    "productName": "SteamMaster",
+    "productName": "春风渡",
     "win": {
       "target": [
         "dir"

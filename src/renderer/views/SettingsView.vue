@@ -647,7 +647,7 @@ const loadDbStats = async () => {
     if (stats) {
       dbStats.value = stats;
       if (stats.serverStatus === 'online') {
-        emit('notify', '已成功连接 SteamMaster 商业版云端数据引擎！', 'success');
+        emit('notify', '已成功连接 春风渡 商业版云端数据引擎！', 'success');
       }
     }
   } catch {

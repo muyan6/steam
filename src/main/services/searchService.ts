@@ -44,7 +44,7 @@ export class SearchService {
           params: { term: q, l: 'schinese', cc: 'CN' },
           httpsAgent: this.httpsAgent,
           timeout: 4000,
-          headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster/1.0' }
+          headers: { 'User-Agent': 'Mozilla/5.0 ChunFengDu/1.0' }
         });
 
         if (resp.data && Array.isArray(resp.data.items) && resp.data.items.length > 0) {

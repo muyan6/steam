@@ -9,7 +9,7 @@
           </div>
           <div>
             <h2 class="font-bold text-sm text-slate-100 flex items-center gap-2">
-              <span>SteamMaster 启动引导</span>
+              <span>春风渡 启动引导</span>
               <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 font-mono border border-sky-500/20">环境准备</span>
             </h2>
             <p class="text-[11px] text-slate-400">Steam 客户端环境检测与一键注入激活</p>

@@ -22,7 +22,7 @@ export class LuaGameService {
     const gameTitle = metadata.name || `AppID ${metadata.appId}`;
 
     // 1. 注释行（包含游戏名称，方便扫描器反向解析）
-    lines.push(`-- ${gameTitle} (由 SteamMaster 管理)`);
+    lines.push(`-- ${gameTitle} (由 春风渡 管理)`);
 
     // 2. 主游戏入库
     if (metadata.appLevelKey) {
@@ -217,7 +217,7 @@ export class LuaGameService {
     const nameMatch = content.match(/^--\s*(.+?)(?:\s*\(.*?\))?\s*$/m);
     if (nameMatch && nameMatch[1]) {
       const candidate = nameMatch[1].trim();
-      if (!candidate.startsWith('由') && !candidate.includes('SteamMaster 自动生成')) {
+      if (!candidate.startsWith('由') && !candidate.includes('SteamMaster 自动生成') && !candidate.includes('春风渡 自动生成')) {
         name = candidate;
       }
     }

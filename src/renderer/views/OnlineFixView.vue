@@ -319,7 +319,7 @@ const showAdvancedPanel = ref(false);
 const targetDir = ref('');
 const selectedMode = ref<'spacewar' | 'goldberg'>('spacewar');
 const appIdInput = ref<number | ''>('');
-const playerNameInput = ref('SteamMasterPlayer');
+const playerNameInput = ref('春风渡玩家');
 const actionLoading = ref(false);
 
 const steamInfo = ref<SteamEnvironmentInfo>({

@@ -113,7 +113,7 @@ FakeSteamId=1
   /**
    * 部署 Goldberg 局域网/虚拟专网离线联机配置
    */
-  public applyGoldbergFix(dirPath: string, appId: number, playerName: string = 'SteamMasterPlayer'): { success: boolean; message: string } {
+  public applyGoldbergFix(dirPath: string, appId: number, playerName: string = '春风渡玩家'): { success: boolean; message: string } {
     try {
       if (!fs.existsSync(dirPath)) {
         return { success: false, message: '游戏目录不存在' };

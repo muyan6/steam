@@ -25,7 +25,7 @@ function createWindow() {
     minHeight: 660,
     frame: false, // 沉浸式无边框窗口
     backgroundColor: '#101726',
-    title: 'SteamMaster - 游戏一键入库与联机工具',
+    title: '春风渡 - 游戏一键入库与联机工具',
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,

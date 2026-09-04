@@ -11,7 +11,7 @@
           </div>
           <div class="min-w-0 flex-1 app-no-drag">
             <h1 class="font-bold text-sm tracking-wide text-slate-100 flex items-center gap-1.5">
-              <span class="truncate font-black">SteamMaster</span>
+              <span class="truncate font-black">春风渡</span>
               <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800/80 theme-text-accent font-mono font-bold border border-white/10">v{{ appVersion }}</span>
             </h1>
             <p class="text-[10px] text-slate-400 truncate">极速入库 · 联机生态引擎</p>
@@ -94,7 +94,7 @@
 
         <!-- 中间：拖拽区域标签 -->
         <div class="text-[11px] font-mono text-slate-400/60 hidden lg:flex items-center gap-1.5 select-none pointer-events-none">
-          <span>SteamMaster</span>
+          <span>春风渡</span>
           <span>•</span>
           <span>{{ currentTabTitle }}</span>
         </div>
@@ -333,7 +333,7 @@ const steamInfo = ref<SteamEnvironmentInfo>({
 const onStartupCompleted = async () => {
   showStartupWizard.value = false;
   await fetchSteamInfo();
-  addToast('SteamMaster 启动引导完成，已进入主界面！', 'success');
+  addToast('春风渡 启动引导完成，已进入主界面！', 'success');
 };
 
 // 窗口控制
