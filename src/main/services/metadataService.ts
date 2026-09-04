@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import https from 'https';
 import axios from 'axios';
 import { DepotInfo, GameMetadata } from '../../types';
 
@@ -20,6 +21,8 @@ export class MetadataService {
   private readonly STEAMCMD_API = 'https://api.steamcmd.net/v1/info';
   private readonly TOKEN_API = 'https://api.993499094.xyz/appaccesstokens.json';
   private readonly DEPOT_KEYS_API = 'https://api.993499094.xyz/depotkeys.json';
+
+  private readonly httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
   private readonly axiosHeaders = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -175,7 +178,8 @@ export class MetadataService {
       const resp = await axios.get(`${this.STEAM_STORE_API}`, {
         params: { appids: appId, l: 'zh-CN', cc: 'CN' },
         headers: this.axiosHeaders,
-        timeout: 8000
+        httpsAgent: this.httpsAgent,
+        timeout: 4000
       });
       if (resp.data && resp.data[appId] && resp.data[appId].success) {
         return resp.data[appId].data;
@@ -193,7 +197,8 @@ export class MetadataService {
     try {
       const resp = await axios.get(`${this.STEAMCMD_API}/${appId}`, {
         headers: this.axiosHeaders,
-        timeout: 10000
+        httpsAgent: this.httpsAgent,
+        timeout: 6000
       });
       const depotsData = resp.data?.data?.[appId]?.depots;
       if (depotsData && typeof depotsData === 'object') {
@@ -223,7 +228,8 @@ export class MetadataService {
           try {
             const resp = await axios.get(`${this.STEAMCMD_API}/${dlcId}`, {
               headers: this.axiosHeaders,
-              timeout: 8000
+              httpsAgent: this.httpsAgent,
+              timeout: 5000
             });
             const depotsData = resp.data?.data?.[dlcId]?.depots;
             if (depotsData && typeof depotsData === 'object') {
@@ -297,7 +303,11 @@ export class MetadataService {
     }
 
     try {
-      const resp = await axios.get(this.TOKEN_API, { timeout: 8000 });
+      const resp = await axios.get(this.TOKEN_API, {
+        headers: this.axiosHeaders,
+        httpsAgent: this.httpsAgent,
+        timeout: 6000
+      });
       if (resp.data && typeof resp.data === 'object') {
         const token = resp.data[appId] || '';
         if (token) {
@@ -369,7 +379,11 @@ export class MetadataService {
 
     // 3. 异步拉取 Sudama 云端最新库
     try {
-      const resp = await axios.get(this.DEPOT_KEYS_API, { timeout: 15000 });
+      const resp = await axios.get(this.DEPOT_KEYS_API, {
+        headers: this.axiosHeaders,
+        httpsAgent: this.httpsAgent,
+        timeout: 10000
+      });
       if (resp.data && typeof resp.data === 'object') {
         const clean: Record<string, string> = {};
         for (const [k, v] of Object.entries(resp.data)) {

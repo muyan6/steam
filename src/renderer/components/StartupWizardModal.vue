@@ -165,7 +165,7 @@
 
             <button
               @click="startActivation"
-              :disabled="!steamPath || checkingPath || steamBitness !== 'x64'"
+              :disabled="!steamPath || checkingPath"
               class="px-6 py-2.5 bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-2"
             >
               <span>⚡ 是，进入下一步激活</span>

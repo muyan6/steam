@@ -114,7 +114,7 @@ export class OSTService {
   }
 
   /**
-   * 确保 OpenSteamTool 运行环境完备
+   * 确保 OpenSteamTool 运行环境完备（仅在激活注入或手动修复时调用）
    */
   public async ensureOSTEnvironment(
     _manifestApi: string = 'steamrun',
@@ -124,14 +124,6 @@ export class OSTService {
     const steamPath = await steamService.detectSteamPath();
     if (!steamPath) {
       return { success: false, message: '未找到 Steam 安装路径，请先在设置中手动指定。' };
-    }
-
-    const steamBitness = await steamService.detectSteamBitness(steamPath);
-    if (steamBitness === 'x86') {
-      return {
-        success: false,
-        message: '检测到当前 Steam 为 32 位版本。OpenSteamTool 仅支持 64 位 Steam，请将 Steam 更新至最新版本！'
-      };
     }
 
     try {
@@ -228,7 +220,8 @@ export class OSTService {
   }
 
   /**
-   * 一键入库：解析完整元数据 -> 写入标准 Lua 规则 (<steam>/config/lua/<appid>.lua) -> 并发下载 Manifest
+   * 一键入库：解析完整元数据 -> 写入标准 Lua 规则 (<steam>/config/lua/<appid>.lua)
+   * 注意：入库仅写入 Lua 规则与预备目录，绝不杀掉 Steam 进程，实现秒级免重启热生效！
    */
   public async unlockGame(game: SteamGame): Promise<{
     success: boolean;
@@ -242,10 +235,11 @@ export class OSTService {
       return { success: false, message: '未找到 Steam 客户端路径' };
     }
 
-    // 1. 确保核心环境与目录就绪
-    await this.ensureOSTEnvironment();
+    // 1. 确保规则目录与分包缓存目录存在（无需重装 DLL，无需杀死 Steam 进程）
+    luaGameService.ensureLuaDir(steamPath);
+    manifestDownloadService.ensureDepotCacheDir(steamPath);
 
-    // 2. 获取包含真实 Depots、DLC Depots、Sudama 密钥和 Token 的完整元数据
+    // 2. 获取包含真实 Depots、DLC Depots、Sudama 密钥和 Token 的完整元数据（多重降级）
     const metadata = await metadataService.fetchMetadata(game.appId, game.nameZh || game.name);
 
     // 3. 严格遵循规范生成 <SteamPath>/config/lua/<appid>.lua
@@ -254,7 +248,10 @@ export class OSTService {
       return { success: false, message: saveRes.message };
     }
 
-    // 4. 自动拉取 Manifest 清单到 depotcache/
+    // 4. 统计匹配到的有效解密密钥
+    const keysCount = metadata.depots.filter(d => d.depotKey).length;
+
+    // 5. 异步/非阻塞尝试预缓存 Manifest（清单由 OpenSteamTool DLL 运行时通过云端动态下发）
     let manifestCount = 0;
     try {
       const manifestRes = await manifestDownloadService.downloadDepotManifests(
@@ -264,10 +261,9 @@ export class OSTService {
       );
       manifestCount = manifestRes.downloadedCount;
     } catch (e: any) {
-      console.warn('[OSTService] 下载分包清单异常 (DLL 运行时将自动下载):', e.message);
+      console.warn('[OSTService] 预缓存分包清单提示 (DLL 运行时将自动下载):', e.message);
     }
 
-    const keysCount = metadata.depots.filter(d => d.depotKey).length;
     const manifestMsg = manifestCount > 0
       ? `，已就绪 ${manifestCount} 个分包清单 (.manifest)`
       : ` (OpenSteamTool 动态清单就绪)`;
