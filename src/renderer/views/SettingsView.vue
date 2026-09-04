@@ -11,37 +11,80 @@
     </div>
 
     <div class="space-y-6 max-w-4xl pb-8">
-      <!-- 0. 运行环境完整度与注入健康体检面板 -->
-      <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 shadow-lg">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
-            <span>🩺 运行环境健康度体检</span>
+      <!-- 0. 运行环境完整度与注入健康体检面板 (可缩放收折交互) -->
+      <div class="bg-steam-card/90 border border-slate-700/50 rounded-xl p-5 shadow-lg transition-all duration-300">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
+              <span>🩺 运行环境健康度体检</span>
+            </h3>
             <span
               v-if="healthResult"
-              class="px-2.5 py-0.5 rounded text-[11px] font-bold"
+              class="px-2.5 py-0.5 rounded text-[11px] font-bold transition"
               :class="getOverallStatusBadgeClass(healthResult.overallStatus)"
             >
               {{ getOverallStatusText(healthResult.overallStatus) }}
             </span>
-          </h3>
-          <button
-            @click="runEnvironmentHealthCheck"
-            :disabled="checkingHealth"
-            class="px-3.5 py-1.5 bg-sky-600/30 hover:bg-sky-600/50 border border-sky-500/40 text-sky-200 text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow"
-          >
-            <span :class="{ 'animate-spin': checkingHealth }">🔄</span>
-            <span>{{ checkingHealth ? '正在体检中...' : '开始全面检测' }}</span>
+            <span v-if="abnormalItemsCount > 0 && filterMode === 'issues_only'" class="text-[11px] text-amber-400 font-medium">
+              (发现 {{ abnormalItemsCount }} 项异常待处理)
+            </span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- 手动展开/折叠全部项切换按钮 -->
+            <button
+              v-if="healthResult && !checkingHealth"
+              @click="toggleManualExpand"
+              class="px-2.5 py-1 text-slate-400 hover:text-slate-200 text-xs transition flex items-center gap-1 rounded-lg hover:bg-slate-800/60"
+            >
+              <span>{{ isExpandedView ? '收起详情 ▴' : '展开详情 ▾' }}</span>
+            </button>
+
+            <!-- 开始检测主按钮 -->
+            <button
+              @click="handleStartHealthCheck"
+              :disabled="checkingHealth"
+              class="px-3.5 py-1.5 bg-sky-600/30 hover:bg-sky-600/50 border border-sky-500/40 text-sky-200 text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow"
+            >
+              <span :class="{ 'animate-spin': checkingHealth }">🔄</span>
+              <span>{{ checkingHealth ? '正在全面体检...' : '开始全面检测' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-400 mt-2 mb-3 leading-relaxed">
+          全面检测 Steam 根路径有效性、OpenSteam 核心 Hook 模块 (DLL)、toml 注入配置文件以及运行时内存挂载状态。
+        </p>
+
+        <!-- 正常折叠时的清爽简报卡片 -->
+        <div
+          v-if="healthResult && !isExpandedView && healthResult.overallStatus === 'ready'"
+          class="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between mb-3 text-xs"
+        >
+          <div class="flex items-center gap-2 text-emerald-300">
+            <span>✅</span>
+            <span class="font-medium">各项指标检测完毕：Steam 路径、64位架构、Hook DLL、配置文件及规则引擎全部正常就绪。</span>
+          </div>
+          <button @click="toggleManualExpand" class="text-[11px] text-sky-400 hover:text-sky-300 underline font-mono shrink-0 ml-2">
+            查看详情 ({{ healthResult.items.length }}项)
           </button>
         </div>
 
-        <p class="text-xs text-slate-400 mb-4 leading-relaxed">
-          全面检测 Steam 根路径有效性、OpenSteam 核心 Hook 模块 (DLL)、toml 注入配置文件以及运行时内存挂载状态，确保一键入库 100% 成功。
-        </p>
+        <!-- 存在异常时的精简提醒条 -->
+        <div
+          v-if="healthResult && isExpandedView && filterMode === 'issues_only' && abnormalItemsCount > 0"
+          class="p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/30 flex items-center justify-between mb-3 text-xs"
+        >
+          <span class="text-amber-300 font-medium">⚠️ 以下是检测到需要处理的异常项目（已自动精简展示）：</span>
+          <button @click="filterMode = 'all'" class="text-[11px] text-sky-400 hover:text-sky-300 underline shrink-0 ml-2">
+            查看全部项目 (含正常项)
+          </button>
+        </div>
 
-        <!-- 检测结果列表 -->
-        <div v-if="healthResult" class="space-y-2.5 mb-3">
+        <!-- 展开时的检测项目列表 (全面检测中全部显示 / 检测完成如果正常自动折叠 / 不正常仅保留不正常) -->
+        <div v-if="isExpandedView && displayedItems.length > 0" class="space-y-2.5 mb-3 transition-all">
           <div
-            v-for="(item, idx) in healthResult.items"
+            v-for="(item, idx) in displayedItems"
             :key="idx"
             class="p-3.5 rounded-xl bg-slate-900/70 border flex items-start justify-between gap-3 transition"
             :class="getItemBorderClass(item.status)"
@@ -244,8 +287,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { EnvironmentDiagnosticResult } from '../../types';
+import { ref, computed, onMounted } from 'vue';
+import { EnvironmentDiagnosticResult, EnvironmentCheckItem } from '../../types';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -260,12 +303,39 @@ const refreshing = ref(false);
 const checkingHealth = ref(false);
 const healthResult = ref<EnvironmentDiagnosticResult | null>(null);
 
+// 缩放与精简展示状态控制
+const isExpandedView = ref(false);
+const filterMode = ref<'all' | 'issues_only' | 'collapsed'>('collapsed');
+
 const dbStats = ref({
   gamesCount: 0,
   keysCount: 0,
   lastUpdated: '连接中...',
   serverStatus: 'offline'
 });
+
+const abnormalItemsCount = computed(() => {
+  if (!healthResult.value) return 0;
+  return healthResult.value.items.filter((i: EnvironmentCheckItem) => i.status !== 'success').length;
+});
+
+const displayedItems = computed(() => {
+  if (!healthResult.value) return [];
+  if (filterMode.value === 'issues_only') {
+    return healthResult.value.items.filter((i: EnvironmentCheckItem) => i.status !== 'success');
+  }
+  return healthResult.value.items;
+});
+
+const toggleManualExpand = () => {
+  if (isExpandedView.value) {
+    isExpandedView.value = false;
+    filterMode.value = 'collapsed';
+  } else {
+    isExpandedView.value = true;
+    filterMode.value = 'all';
+  }
+};
 
 const getOverallStatusBadgeClass = (status: 'ready' | 'partial' | 'error') => {
   if (status === 'ready') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
@@ -297,17 +367,66 @@ const getStatusBadgeClass = (status: 'success' | 'warning' | 'error') => {
   return 'bg-rose-500/10 text-rose-300 border border-rose-500/20';
 };
 
-const runEnvironmentHealthCheck = async () => {
+/**
+ * 点击「开始全面检测」交互流程：
+ * 1. 立即展开并展示所有检测项目
+ * 2. 扫描检测完成后：若全部正常则 800ms 后自动优雅折叠；若存在异常则仅保留异常项
+ */
+const handleStartHealthCheck = async () => {
   checkingHealth.value = true;
+  isExpandedView.value = true;
+  filterMode.value = 'all';
+
   try {
+    const startTime = Date.now();
     const res = await window.electronAPI.checkEnvironmentHealth();
+    
+    // 确保平滑展示检测过渡
+    const elapsed = Date.now() - startTime;
+    if (elapsed < 500) {
+      await new Promise(r => setTimeout(r, 500 - elapsed));
+    }
+
     if (res) {
       healthResult.value = res;
+      const hasIssues = res.overallStatus !== 'ready' || res.items.some((i: EnvironmentCheckItem) => i.status !== 'success');
+
+      if (hasIssues) {
+        // 不正常：仅保留不正常的项
+        filterMode.value = 'issues_only';
+        isExpandedView.value = true;
+        emit('notify', `体检完成：检测到 ${abnormalItemsCount.value} 项待优化配置`, 'warning');
+      } else {
+        // 正常：全绿展示 800ms 后自动优雅缩回
+        await new Promise(r => setTimeout(r, 800));
+        isExpandedView.value = false;
+        filterMode.value = 'collapsed';
+        emit('notify', '体检完成：运行环境各项指标完美就绪！', 'success');
+      }
     }
   } catch (e: any) {
     emit('notify', `环境体检失败: ${e.message}`, 'error');
   } finally {
     checkingHealth.value = false;
+  }
+};
+
+const runEnvironmentHealthCheck = async (silent: boolean = false) => {
+  try {
+    const res = await window.electronAPI.checkEnvironmentHealth();
+    if (res) {
+      healthResult.value = res;
+      const hasIssues = res.overallStatus !== 'ready' || res.items.some((i: EnvironmentCheckItem) => i.status !== 'success');
+      if (hasIssues) {
+        filterMode.value = 'issues_only';
+        isExpandedView.value = true;
+      } else {
+        filterMode.value = 'collapsed';
+        isExpandedView.value = false;
+      }
+    }
+  } catch (e: any) {
+    if (!silent) emit('notify', `环境体检失败: ${e.message}`, 'error');
   }
 };
 
@@ -319,7 +438,7 @@ const handleQuickFix = async () => {
     });
     if (res.success) {
       emit('notify', res.message, 'success');
-      await runEnvironmentHealthCheck();
+      await handleStartHealthCheck();
       emit('refresh-status');
     } else {
       emit('notify', res.message, 'error');
