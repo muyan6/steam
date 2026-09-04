@@ -1,79 +1,79 @@
 <template>
   <div class="flex h-screen w-screen theme-bg-base text-slate-100 font-sans select-none overflow-hidden transition-colors duration-300">
     <!-- 左侧导航侧边栏 -->
-    <aside class="w-64 xl:w-72 bg-slate-950/40 border-r border-white/5 backdrop-blur-2xl flex flex-col justify-between shrink-0 z-20 transition-all duration-300">
+    <aside class="w-60 xl:w-64 bg-slate-950/40 border-r border-white/5 backdrop-blur-2xl flex flex-col justify-between shrink-0 z-20 transition-all duration-300">
       <div>
         <!-- 品牌 Logo & 窗口拖拽区域 -->
-        <div class="p-4 xl:p-5 flex items-center gap-3.5 border-b border-white/5 app-drag-region">
-          <div class="w-10 h-10 rounded-2xl theme-btn-primary flex items-center justify-center text-slate-950 font-black text-lg shadow-lg relative group shrink-0 app-no-drag">
+        <div class="p-4 flex items-center gap-3 border-b border-white/5 app-drag-region">
+          <div class="w-9 h-9 rounded-2xl theme-btn-primary flex items-center justify-center text-slate-950 font-black text-lg shadow-lg relative group shrink-0 app-no-drag">
             <Zap class="w-5 h-5 text-slate-950 fill-slate-950" />
             <div class="absolute inset-0 rounded-2xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </div>
           <div class="min-w-0 flex-1 app-no-drag">
             <h1 class="font-bold text-base tracking-wide text-slate-100 flex items-center gap-2">
               <span class="truncate font-black text-slate-100">春风渡</span>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800/80 theme-text-accent font-mono font-bold border border-white/10">v{{ appVersion }}</span>
+              <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800/80 theme-text-accent font-mono font-bold border border-white/10">v{{ appVersion }}</span>
             </h1>
-            <p class="text-xs text-slate-400 truncate mt-0.5">极速入库 · 联机生态引擎</p>
+            <p class="text-[11px] text-slate-400 truncate mt-0.5">极速入库 · 联机生态引擎</p>
           </div>
         </div>
 
         <!-- 导航菜单 -->
-        <nav class="p-3 xl:p-4 space-y-2 app-no-drag">
+        <nav class="p-3 space-y-1.5 app-no-drag">
           <button
             v-for="item in navItems"
             :key="item.id"
             @click="currentTab = item.id"
-            class="w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-200 text-left relative group"
+            class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 text-left relative group cursor-pointer"
             :class="currentTab === item.id 
               ? 'theme-nav-active border' 
               : 'text-slate-400 hover:text-slate-100 hover:bg-white/5 border border-transparent'"
           >
             <component 
               :is="item.iconComponent" 
-              class="w-4.5 h-4.5 transition-colors shrink-0" 
+              class="w-4 h-4 transition-colors shrink-0" 
               :class="currentTab === item.id ? 'theme-text-accent' : 'text-slate-400 group-hover:text-slate-100'"
             />
             <span class="truncate">{{ item.label }}</span>
             <span 
               v-if="currentTab === item.id" 
-              class="absolute right-3 w-2 h-2 rounded-full bg-current opacity-90 shadow-sm"
+              class="absolute right-3 w-1.5 h-1.5 rounded-full bg-current opacity-90 shadow-sm"
             ></span>
           </button>
         </nav>
       </div>
 
       <!-- 底部状态指示面板 -->
-      <div class="p-4 m-3.5 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md text-xs shadow-inner app-no-drag">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-slate-400 flex items-center gap-2 text-xs">
-            <Activity class="w-4 h-4 text-slate-400" />
+      <div class="p-3 m-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md text-xs shadow-inner app-no-drag">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-slate-400 flex items-center gap-1.5 text-xs">
+            <Activity class="w-3.5 h-3.5 text-slate-400" />
             <span>Steam 客户端:</span>
           </span>
           <div class="flex items-center gap-1.5">
             <span
               v-if="steamInfo.steamBitness && steamInfo.steamBitness !== 'unknown'"
-              class="px-2 py-0.5 rounded text-xs bg-slate-800/80 text-slate-300 font-mono font-semibold border border-white/10"
+              class="px-1.5 py-0.5 rounded text-[11px] bg-slate-800/80 text-slate-300 font-mono font-semibold border border-white/10"
             >
               {{ steamInfo.steamBitness === 'x86' ? '32位' : '64位' }}
             </span>
-            <span class="flex items-center gap-1.5 text-xs font-bold" :class="steamInfo.isRunning ? 'text-emerald-400' : 'text-slate-400'">
-              <span class="w-2.5 h-2.5 rounded-full" :class="steamInfo.isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'"></span>
+            <span class="flex items-center gap-1 text-xs font-bold" :class="steamInfo.isRunning ? 'text-emerald-400' : 'text-slate-400'">
+              <span class="w-2 h-2 rounded-full" :class="steamInfo.isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'"></span>
               {{ steamInfo.isRunning ? '运行中' : '未启动' }}
             </span>
           </div>
         </div>
 
-        <div class="flex items-center justify-between mb-3 text-xs bg-slate-950/40 px-3 py-2 rounded-xl border border-white/5">
+        <div class="flex items-center justify-between mb-2 text-xs bg-slate-950/40 px-2.5 py-1.5 rounded-xl border border-white/5">
           <span class="text-slate-400">已生效规则:</span>
           <span class="theme-text-accent font-mono font-bold">{{ steamInfo.scriptsCount }} 款应用</span>
         </div>
 
         <button
           @click="handleRestartSteam"
-          class="w-full py-2.5 bg-slate-800/80 hover:bg-slate-700/90 text-slate-200 text-xs font-semibold rounded-xl transition duration-200 border border-white/10 flex items-center justify-center gap-2 group shadow-sm active:scale-95"
+          class="w-full py-2 bg-slate-800/80 hover:bg-slate-700/90 text-slate-200 text-xs font-semibold rounded-xl transition duration-200 border border-white/10 flex items-center justify-center gap-2 group shadow-sm active:scale-95 cursor-pointer"
         >
-          <RotateCw class="w-4 h-4 text-slate-400 group-hover:theme-text-accent transition group-hover:rotate-180 duration-500" />
+          <RotateCw class="w-3.5 h-3.5 text-slate-400 group-hover:theme-text-accent transition group-hover:rotate-180 duration-500" />
           <span>重启 Steam</span>
         </button>
       </div>
@@ -82,30 +82,23 @@
     <!-- 右侧主体内容区域 (全沉浸式标题栏设计) -->
     <main class="flex-1 flex flex-col h-full overflow-hidden theme-bg-subtle relative">
       <!-- 顶部沉浸式自定义窗口栏 (兼具拖拽区与窗口控制) -->
-      <header class="h-13 border-b border-white/5 px-5 flex items-center justify-between shrink-0 bg-slate-950/20 backdrop-blur-md z-30 app-drag-region">
+      <header class="h-12 border-b border-white/5 px-4 flex items-center justify-between shrink-0 bg-slate-950/20 backdrop-blur-md z-30 app-drag-region">
         <!-- 左侧：路径与状态 -->
-        <div class="flex items-center gap-2.5 text-xs text-slate-400 min-w-0 app-no-drag">
-          <Folder class="w-4 h-4 text-slate-400 shrink-0" />
+        <div class="flex items-center gap-2 text-xs text-slate-400 min-w-0 flex-1 mr-4 app-no-drag">
+          <Folder class="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <span class="shrink-0 text-xs">Steam 根目录:</span>
-          <span class="font-mono text-slate-300 truncate max-w-sm bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 text-xs" :title="steamInfo.steamPath || '未检测到'">
+          <span class="font-mono text-slate-300 truncate max-w-xs bg-white/5 px-2 py-0.5 rounded-lg border border-white/5 text-xs" :title="steamInfo.steamPath || '未检测到'">
             {{ steamInfo.steamPath || '正在探测中...' }}
           </span>
         </div>
 
-        <!-- 中间：拖拽区域标签 -->
-        <div class="text-xs font-mono text-slate-400/70 hidden lg:flex items-center gap-2 select-none pointer-events-none">
-          <span class="font-bold">春风渡</span>
-          <span>•</span>
-          <span>{{ currentTabTitle }}</span>
-        </div>
-
         <!-- 右侧：云端引擎状态与无边框原生感窗口控制按钮 -->
-        <div class="flex items-center gap-3 shrink-0">
-          <div class="flex items-center gap-2.5 text-xs app-no-drag">
+        <div class="flex items-center gap-2.5 shrink-0">
+          <div class="flex items-center gap-2 text-xs app-no-drag">
             <!-- 授权状态指示徽章 -->
             <button
               @click="showLicenseModal = true"
-              class="flex items-center gap-1.5 px-3 py-1 rounded-full font-mono text-xs font-semibold border transition shadow-sm hover:scale-105 active:scale-95"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold border transition shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
               :class="getLicenseHeaderBadgeClass(licenseInfo)"
               :title="licenseInfo.isActivated ? (licenseInfo.isLifetime ? '永久卡会员' : `会员到期剩余 ${licenseInfo.remainingDays} 天`) : '点击输入激活码'"
             >
@@ -113,12 +106,12 @@
               <span>{{ getLicenseHeaderBadgeText(licenseInfo) }}</span>
             </button>
 
-            <span class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 text-sky-300 font-mono text-xs font-semibold border border-sky-500/20">
+            <span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-500/10 text-sky-300 font-mono text-xs font-semibold border border-sky-500/20">
               <Cloud class="w-3.5 h-3.5" />
               <span>18万+ 云端库</span>
             </span>
             <span 
-              class="flex items-center gap-1.5 px-3 py-1 rounded-full font-mono text-xs font-semibold border"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold border"
               :class="steamInfo.ostInstalled ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'"
             >
               <ShieldCheck class="w-3.5 h-3.5" />
@@ -131,24 +124,24 @@
             <button
               @click="handleWindowMinimize"
               title="最小化"
-              class="w-9 h-8 flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-white/10 rounded-lg transition"
+              class="w-8 h-7 flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-white/10 rounded-lg transition cursor-pointer"
             >
-              <Minus class="w-4 h-4" />
+              <Minus class="w-3.5 h-3.5" />
             </button>
             <button
               @click="handleWindowMaximize"
               :title="isMaximized ? '还原' : '最大化'"
-              class="w-9 h-8 flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-white/10 rounded-lg transition"
+              class="w-8 h-7 flex items-center justify-center text-slate-400 hover:text-slate-100 hover:bg-white/10 rounded-lg transition cursor-pointer"
             >
-              <Square v-if="!isMaximized" class="w-3.5 h-3.5" />
-              <Copy v-else class="w-3.5 h-3.5" />
+              <Square v-if="!isMaximized" class="w-3 h-3" />
+              <Copy v-else class="w-3 h-3" />
             </button>
             <button
               @click="handleWindowClose"
               title="关闭程序"
-              class="w-9 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-rose-600 rounded-lg transition"
+              class="w-8 h-7 flex items-center justify-center text-slate-400 hover:text-white hover:bg-rose-600 rounded-lg transition cursor-pointer"
             >
-              <X class="w-4 h-4" />
+              <X class="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -361,43 +354,45 @@ const isMaximized = ref(false);
 // -------------------------------------------------------------
 // 全局 UI 界面与字体缩放自适应系统 (UI Scale System)
 // -------------------------------------------------------------
-export type UiScaleOption = 'auto' | '100%' | '110%' | '125%' | '140%' | '150%';
+export type UiScaleOption = 'auto' | '100%' | '105%' | '110%' | '115%' | '125%';
 
 const currentUiScale = ref<UiScaleOption>((localStorage.getItem('chunfengdu_ui_scale') as UiScaleOption) || 'auto');
 const computedZoomValue = ref<number>(1.0);
 const windowResolution = ref({ width: window.innerWidth, height: window.innerHeight });
 
-const calculateDynamicZoom = (width: number, height: number): number => {
-  // 窗口自适应流式插值计算 (保证小窗口不拥挤，全屏/大屏大字大卡片清晰舒服)
-  if (width < 1050) return 1.0;
-  if (width < 1250) return 1.05;
-  if (width < 1450) return 1.12;
-  if (width < 1700) return 1.20;
-  if (width < 2100) return 1.28;
-  return 1.38; // 2K/4K 超大屏
+const calculateDynamicZoom = (width: number): number => {
+  // 窗口以 1200x800 为基准标准比例(1.0x)
+  // 当窗口全屏或高分屏时，平滑小幅度缩放，保证卡片与字体协调优美
+  if (width < 1280) return 1.0;
+  if (width < 1550) return 1.05;
+  if (width < 1850) return 1.10;
+  if (width < 2200) return 1.15;
+  return 1.25; // 2K/4K 超大屏
 };
 
 const applyUiScale = () => {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  windowResolution.value = { width, height };
+  const width = window.outerWidth || window.innerWidth;
+  const height = window.outerHeight || window.innerHeight;
+  windowResolution.value = { width: window.innerWidth, height: window.innerHeight };
 
   let zoom = 1.0;
   if (currentUiScale.value === 'auto') {
-    zoom = calculateDynamicZoom(width, height);
+    zoom = calculateDynamicZoom(width);
   } else {
     switch (currentUiScale.value) {
       case '100%': zoom = 1.0; break;
+      case '105%': zoom = 1.05; break;
       case '110%': zoom = 1.10; break;
+      case '115%': zoom = 1.15; break;
       case '125%': zoom = 1.25; break;
-      case '140%': zoom = 1.40; break;
-      case '150%': zoom = 1.50; break;
       default: zoom = 1.0; break;
     }
   }
 
   computedZoomValue.value = zoom;
-  document.documentElement.style.setProperty('--app-zoom', String(zoom));
+  if (window.electronAPI && typeof window.electronAPI.setZoomFactor === 'function') {
+    window.electronAPI.setZoomFactor(zoom);
+  }
 };
 
 const setUiScale = (scale: UiScaleOption) => {

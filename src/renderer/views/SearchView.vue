@@ -1,31 +1,31 @@
 <template>
-  <div class="h-full flex flex-col p-6 xl:p-8 overflow-hidden">
+  <div class="h-full flex flex-col p-5 xl:p-6 overflow-hidden">
     <!-- 顶部搜索栏与操作栏 -->
-    <div class="flex items-center gap-3.5 mb-5 shrink-0">
+    <div class="flex items-center gap-3 mb-4 shrink-0">
       <div class="relative flex-1">
         <input
           v-model="searchQuery"
           @input="handleSearch"
           type="text"
           placeholder="输入游戏中文名、英文名、拼音缩写或 Steam AppID (如 2358720 / wukong / 后室)..."
-          class="w-full bg-slate-900/80 border border-white/10 rounded-2xl px-5 py-3.5 pl-12 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner backdrop-blur-md"
+          class="w-full bg-slate-900/80 border border-white/10 rounded-2xl px-4 py-3 pl-11 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition shadow-inner backdrop-blur-md"
         />
-        <Search class="w-5 h-5 absolute left-4 top-3.5 text-slate-400 pointer-events-none" />
+        <Search class="w-4.5 h-4.5 absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
         <button
           v-if="searchQuery"
           @click="searchQuery = ''; handleSearch()"
-          class="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-200 p-1 rounded-full hover:bg-slate-800 transition"
+          class="absolute right-3 top-3 text-slate-400 hover:text-slate-200 p-0.5 rounded-full hover:bg-slate-800 transition cursor-pointer"
         >
-          <X class="w-4 h-4" />
+          <X class="w-3.5 h-3.5" />
         </button>
       </div>
 
       <button
         @click="refreshData"
         :disabled="loading"
-        class="px-5 py-3.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-2xl text-xs font-bold text-slate-200 transition flex items-center gap-2 shadow-sm shrink-0"
+        class="px-4 py-3 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-2xl text-xs font-bold text-slate-200 transition flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
       >
-        <RotateCw class="w-4 h-4 text-slate-300" :class="{ 'animate-spin': loading }" />
+        <RotateCw class="w-3.5 h-3.5 text-slate-300" :class="{ 'animate-spin': loading }" />
         <span>刷新</span>
       </button>
     </div>

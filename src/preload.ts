@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import { SteamGame, SteamEnvironmentInfo, OnlineFixStatus, SpacewarStatus, ToolboxActionResult, ToolboxStatusInfo } from './types';
 
 export const electronAPI = {
@@ -8,6 +8,20 @@ export const electronAPI = {
   windowMaximize: (): Promise<boolean> => ipcRenderer.invoke('window:maximize'),
   windowClose: (): Promise<void> => ipcRenderer.invoke('window:close'),
   isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
+  setZoomFactor: (factor: number): void => {
+    try {
+      webFrame.setZoomFactor(factor);
+    } catch (e) {
+      console.error('Failed to set zoom factor:', e);
+    }
+  },
+  getZoomFactor: (): number => {
+    try {
+      return webFrame.getZoomFactor();
+    } catch {
+      return 1;
+    }
+  },
 
   // Steam 环境与进程
   getSteamInfo: (): Promise<SteamEnvironmentInfo> => ipcRenderer.invoke('steam:get-info'),

@@ -598,12 +598,12 @@ const uiScaleState = inject<{
 }>('uiScaleState');
 
 const scaleOptions = [
-  { id: 'auto', label: '🌟 智能自适应', desc: '随窗口变大自动放大' },
+  { id: 'auto', label: '🌟 智能自适应', desc: '随窗口变大自动调节' },
   { id: '100%', label: '标准 100%', desc: '紧凑原生比例' },
-  { id: '110%', label: '舒适 110%', desc: '轻度放大阅读' },
-  { id: '125%', label: '大号 125%', desc: '高分屏推荐' },
-  { id: '140%', label: '超大 140%', desc: '远距离/大字模式' },
-  { id: '150%', label: '特大 150%', desc: '极致清晰大字' },
+  { id: '105%', label: '舒适 105%', desc: '轻度适中比例' },
+  { id: '110%', label: '放大 110%', desc: '大字舒适阅读' },
+  { id: '115%', label: '大号 115%', desc: '大屏推荐模式' },
+  { id: '125%', label: '超大 125%', desc: '高分屏/2K/4K' },
 ];
 
 const themeFilter = ref<'all' | 'dark' | 'light'>('all');
