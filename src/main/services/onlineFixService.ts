@@ -719,7 +719,23 @@ enable=1
               sizeOnDisk = parseInt(sizeMatch[1], 10) || 0;
             }
 
-            const fullInstallPath = path.join(libDir, 'common', installDir);
+            let fullInstallPath = path.join(libDir, 'common', installDir);
+            if (!fs.existsSync(fullInstallPath)) {
+              const commonDir = path.join(libDir, 'common');
+              if (fs.existsSync(commonDir)) {
+                try {
+                  const baseTarget = installDir.toLowerCase().replace(/[\s_-]+/g, '');
+                  const entries = fs.readdirSync(commonDir);
+                  const matched = entries.find((e) => {
+                    const clean = e.toLowerCase().replace(/[\s_-]+/g, '');
+                    return clean === baseTarget || clean.includes(baseTarget) || baseTarget.includes(clean);
+                  });
+                  if (matched) {
+                    fullInstallPath = path.join(commonDir, matched);
+                  }
+                } catch {}
+              }
+            }
 
             let executableFiles: string[] = [];
             let primaryExe: string | undefined;

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
-import { SteamGame, SteamEnvironmentInfo, OnlineFixStatus, SpacewarStatus, ToolboxActionResult, ToolboxStatusInfo, LocalInstalledGame, SteamlessRepairResult, SteamlessStatusInfo, OnlineLaunchMode } from './types';
+import { SteamGame, SteamEnvironmentInfo, OnlineFixStatus, SpacewarStatus, ToolboxActionResult, ToolboxStatusInfo, LocalInstalledGame, SteamlessRepairResult, SteamlessStatusInfo, OnlineLaunchMode, OnlineFixSearchResult, OnlineFixPatchResult } from './types';
 
 export const electronAPI = {
   // 应用生命周期与窗口控制
@@ -102,7 +102,7 @@ export const electronAPI = {
 
   // 对话框与系统操作
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-directory'),
-  openFolder: (dirPath: string): Promise<boolean> => ipcRenderer.invoke('system:open-path', dirPath)
+  openFolder: (dirPath: string): Promise<{ success: boolean; message: string }> => ipcRenderer.invoke('system:open-path', dirPath)
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

@@ -242,12 +242,47 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('system:open-path', async (_, targetPath: string) => {
     try {
-      if (!targetPath || !fs.existsSync(targetPath)) return false;
-      await shell.openPath(targetPath);
-      return true;
+      if (!targetPath) {
+        return { success: false, message: '游戏路径为空' };
+      }
+
+      let normalizedPath = path.normalize(targetPath);
+
+      if (!fs.existsSync(normalizedPath)) {
+        // 如果游戏目录不存在，尝试在父级 common 目录下模糊匹配
+        const parentDir = path.dirname(normalizedPath);
+        if (fs.existsSync(parentDir)) {
+          try {
+            const baseTarget = path.basename(normalizedPath).toLowerCase().replace(/[\s_-]+/g, '');
+            const entries = fs.readdirSync(parentDir);
+            const matched = entries.find((e) => {
+              const clean = e.toLowerCase().replace(/[\s_-]+/g, '');
+              return clean === baseTarget || clean.includes(baseTarget) || baseTarget.includes(clean);
+            });
+            if (matched) {
+              normalizedPath = path.join(parentDir, matched);
+            } else {
+              // 若依然不存在，则自动创建该游戏目录以便用户放置或查看
+              fs.mkdirSync(normalizedPath, { recursive: true });
+            }
+          } catch {
+            fs.mkdirSync(normalizedPath, { recursive: true });
+          }
+        } else {
+          return { success: false, message: `游戏根目录不存在: ${normalizedPath}` };
+        }
+      }
+
+      const openErr = await shell.openPath(normalizedPath);
+      if (openErr) {
+        const { spawn } = await import('child_process');
+        const child = spawn('explorer.exe', [normalizedPath], { detached: true, stdio: 'ignore' });
+        child.unref();
+      }
+      return { success: true, message: `已打开目录: ${normalizedPath}` };
     } catch (e: any) {
       console.error('打开系统路径失败:', e);
-      return false;
+      return { success: false, message: `打开目录失败: ${e.message}` };
     }
   });
 }

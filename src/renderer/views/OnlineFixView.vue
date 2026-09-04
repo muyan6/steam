@@ -597,7 +597,7 @@
 
                   <!-- 打开游戏目录按钮 -->
                   <button
-                    @click="handleOpenGameFolder(game.fullInstallPath)"
+                    @click="handleOpenGameFolder(game)"
                     class="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 border border-white/10 rounded-xl transition flex items-center justify-center cursor-pointer shrink-0"
                     title="打开游戏目录"
                   >
@@ -968,9 +968,21 @@ const handleRestorePatchForGame = async (game: LocalInstalledGame) => {
 };
 
 // 打开游戏目录
-const handleOpenGameFolder = async (folderPath: string) => {
+const handleOpenGameFolder = async (game: LocalInstalledGame) => {
   try {
-    await window.electronAPI.openFolder(folderPath);
+    const targetPath = game.fullInstallPath || game.installDir;
+    if (!targetPath) {
+      emit('notify', '未获取到该游戏的安装路径', 'warning');
+      return;
+    }
+    const res: any = await window.electronAPI.openFolder(targetPath);
+    if (res && res.success) {
+      emit('notify', res.message || `已打开《${game.name}》游戏目录`, 'success');
+    } else if (res && !res.success) {
+      emit('notify', res.message || '打开游戏目录失败', 'error');
+    } else {
+      emit('notify', `已打开《${game.name}》游戏目录`, 'success');
+    }
   } catch (e: any) {
     emit('notify', `打开目录失败: ${e.message}`, 'error');
   }
