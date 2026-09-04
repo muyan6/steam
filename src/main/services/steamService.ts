@@ -22,6 +22,7 @@ export function is64BitWindowsEnvironment(): boolean {
 
 export class SteamService {
   private customSteamPath: string | null = null;
+  private lastLaunchedWithOnlineFix: boolean = false;
 
   public setCustomSteamPath(customPath: string) {
     if (fs.existsSync(customPath)) {
@@ -186,6 +187,27 @@ export class SteamService {
   }
 
   /**
+   * 检查当前运行的 Steam 是否带有 -onlinefix 联机参数
+   */
+  public async isOnlineFixRunning(): Promise<boolean> {
+    const isRunning = await this.isSteamRunning();
+    if (!isRunning) {
+      this.lastLaunchedWithOnlineFix = false;
+      return false;
+    }
+
+    try {
+      const { stdout } = await execAsync('powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"Name = \'steam.exe\'\\").CommandLine"');
+      if (stdout && stdout.toLowerCase().includes('-onlinefix')) {
+        this.lastLaunchedWithOnlineFix = true;
+        return true;
+      }
+    } catch {}
+
+    return this.lastLaunchedWithOnlineFix;
+  }
+
+  /**
    * 启动 Steam 客户端 (支持附加参数如 -onlinefix)
    */
   public async launchSteam(extraArgs: string[] = []): Promise<boolean> {
@@ -194,6 +216,8 @@ export class SteamService {
 
     const steamExe = path.join(steamPath, 'steam.exe');
     if (!fs.existsSync(steamExe)) return false;
+
+    this.lastLaunchedWithOnlineFix = extraArgs.some((a) => a.toLowerCase().includes('-onlinefix'));
 
     try {
       spawn(steamExe, extraArgs, {
@@ -227,6 +251,7 @@ export class SteamService {
     const steamPath = await this.detectSteamPath();
     const isRunning = await this.isSteamRunning();
     const steamBitness = await this.detectSteamBitness(steamPath);
+    const globalOnlineFixEnabled = await this.isOnlineFixRunning();
 
     let ostInstalled = false;
     let scriptsCount = 0;
@@ -255,7 +280,7 @@ export class SteamService {
       isRunning,
       ostInstalled,
       scriptsCount,
-      globalOnlineFixEnabled: false,
+      globalOnlineFixEnabled,
       steamBitness
     };
   }
