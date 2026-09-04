@@ -4,57 +4,53 @@
 
 ---
 
-## 🚀 部署方案一：直接运行 Node.js + PM2 (最省内存，推荐)
+## ⚡ 极速全自动部署与更新 (推荐)
 
-适合内存较小（如 1核1G / 1核2G）的 Linux 或 Windows 云服务器，常驻内存仅 **~50MB**。
+项目已内置高度自动化的部署与更新脚本，自动检测并安装 Node.js 20、PM2、依赖包，并配置开机自启：
 
-### 1. 服务器环境准备
-在服务器上安装 Node.js 18+ 与 PM2：
+### 1. 首次部署 (一键全自动)
+上传项目到云服务器后，执行：
 ```bash
-# Ubuntu / Debian
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
-sudo npm install -g pm2
-
-# CentOS / RHEL
-curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-sudo yum install -y nodejs
-sudo npm install -g pm2
+# 赋予执行权限并运行
+chmod +x install.sh update.sh
+bash install.sh
 ```
+> **脚本会自动执行**：系统环境检测 -> Node.js 20 LTS 安装 -> 全局 PM2 安装 -> NPM 依赖安装 -> TypeScript 编译构建 -> PM2 后台守护启动 -> 开机自启保存 -> 端口与健康检查。
 
-### 2. 上传代码并启动
-把 `server` 文件夹上传到服务器（例如 `/opt/steammaster-server`），然后执行：
+### 2. 后续更新代码 (一键极速重载)
+下次需要更新服务器代码时，**只需一条命令**：
 ```bash
-cd /opt/steammaster-server
-
-# 1. 安装依赖并编译
-npm install
-npm run build
-
-# 2. 使用 PM2 后台守护启动
-pm2 start ecosystem.config.cjs
-
-# 3. 设置开机自启
-pm2 save
-pm2 startup
+bash update.sh
 ```
+> **更新脚本会自动执行**：Git 远程代码拉取 -> 增量 NPM 依赖更新 -> TypeScript 重新编译 -> PM2 服务无缝热重载 -> 健康检查状态回显。
 
-### 3. 查看运行状态
+---
+
+## 🛠️ 手动部署与常用运维指令
+
+如果需要手动维护：
+
 ```bash
-pm2 status                  # 查看运行状态
-pm2 logs steammaster-server # 查看实时日志
-pm2 restart steammaster-server # 重启服务
+# 查看服务状态
+pm2 status
+
+# 查看实时日志
+pm2 logs steammaster-server
+
+# 重启后端服务
+pm2 restart steammaster-server
+
+# 停止后端服务
+pm2 stop steammaster-server
 ```
 
 ---
 
-## 🐳 部署方案二：Docker 一键部署 (最简单)
+## 🐳 部署方案二：Docker 一键部署
 
 如果你的服务器已安装 Docker 与 Docker Compose：
 
 ```bash
-cd /opt/steammaster-server
-
 # 一键构建并启动
 docker compose up -d --build
 
@@ -64,7 +60,7 @@ docker compose logs -f
 
 ---
 
-## 🛠️ 管理员运营与维护接口 (Admin API)
+## 🌐 管理员运营与维护接口 (Admin API)
 
 请求管理接口时，请在 Header 中携带管理员密钥（默认密钥在 `ecosystem.config.cjs` 中配置为 `steammaster_admin_8888`）：
 
