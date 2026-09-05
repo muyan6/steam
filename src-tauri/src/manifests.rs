@@ -144,6 +144,18 @@ fn is_valid_key(key: &str) -> bool {
     key.len() >= 32 && key.chars().all(|c| c.is_ascii_hexdigit()) && !key.chars().all(|c| c == '0')
 }
 
+/// 最小 URL query 转义（deviceId 为受限字符集，简单覆盖即可）
+fn urlencoding_query(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
 #[derive(Debug, Clone)]
 pub struct DepotMeta {
     pub depot_id: String,
@@ -221,13 +233,20 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
 }
 
 fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
-    // deviceId 优先走请求头，减少经 URL query 泄露到访问日志的暴露面
-    let url = format!("{}/api/metadata/{}", SERVER_API, app_id);
+    // deviceId 同时经请求头与 query 传递：新服务端优先读头，
+    // 旧服务端（未升级）仍可从 query 兜底，保证向前兼容
+    let device_id = crate::device::get_device_id();
+    let url = format!(
+        "{}/api/metadata/{}?deviceId={}",
+        SERVER_API,
+        app_id,
+        urlencoding_query(&device_id)
+    );
     let resp = block_on(
         http_client()
             .get(&url)
             .timeout(Duration::from_secs(10))
-            .header("x-device-id", crate::device::get_device_id())
+            .header("x-device-id", device_id)
             .send(),
     )
     .map_err(|e| format!("请求元数据失败: {}", e))?;

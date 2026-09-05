@@ -93,9 +93,10 @@ fn is_valid_key(key: &str) -> bool {
     key.len() >= 32 && !key.chars().all(|c| c == '0')
 }
 
-/// 生成 Lua 入库规则（OpenSteamTool 旧版方言，与 Electron 版 buildLuaContent 逐行对齐）：
-/// addappid(id, 0, "真实密钥") / addappid(id) / addtoken(appId, "token")，
-/// 并以 DLL 已验证支持的 setManifestid 追加清单固定。
+/// 生成 Lua 入库规则（双方言兼容，最大化内嵌 DLL 版本适配面）：
+/// - 密钥同时以 `addappid(id, 1, "key")` 与 `setDepotKey(id, "key")` 双写：
+///   第二参数沿用实测可用的 1；setDepotKey 是 37a6d0e 版本验证过可解密的挂载方式
+/// - `addtoken` 提供 PICS 访问令牌，`setManifestid` 固定清单 GID
 pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
     let app_id = payload.app_id;
     let name = payload.name_zh.as_deref().unwrap_or(&payload.name);
@@ -107,9 +108,10 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
     // 1. 主游戏入库（带 appLevelKey 时以密钥形式挂载）
     match payload.app_level_key.as_deref() {
         Some(k) if is_valid_key(k.trim()) => {
-            lines.push(format!("addappid({}, 0, \"{}\")", app_id, k.trim()));
+            lines.push(format!("addappid({}, 1, \"{}\")", app_id, k.trim()));
+            lines.push(format!("setDepotKey({}, \"{}\")", app_id, k.trim()));
         }
-        _ => lines.push(format!("addappid({})", app_id)),
+        _ => lines.push(format!("addappid({}, 1)", app_id)),
     }
 
     // 2. 分包挂载与 Depot 密钥（跳过与本体重复的 depotId）
@@ -122,7 +124,8 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
             seen.push(depot.depot_id);
             match depot.depot_key.as_deref() {
                 Some(k) if is_valid_key(k.trim()) => {
-                    lines.push(format!("addappid({}, 0, \"{}\")", depot.depot_id, k.trim()));
+                    lines.push(format!("addappid({}, 1, \"{}\")", depot.depot_id, k.trim()));
+                    lines.push(format!("setDepotKey({}, \"{}\")", depot.depot_id, k.trim()));
                 }
                 _ => lines.push(format!("addappid({})", depot.depot_id)),
             }
