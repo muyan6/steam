@@ -30,11 +30,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "resources": [
-      "assets/tools/steamless/*",
-      "assets/tools/steamless/Plugins/*",
-      "../server/data/steam_all_games.json"
-    ],
+    "resources": {
+      "assets/tools/steamless/": "assets/tools/steamless/",
+      "assets/libs/WebView2Loader.dll": "WebView2Loader.dll",
+      "../server/data/steam_all_games.json": "steam_all_games.json"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
