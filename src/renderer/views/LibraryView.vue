@@ -67,9 +67,39 @@
       <div class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 mt-0.5 font-bold">
         💡
       </div>
-      <div class="leading-relaxed">
+      <div class="leading-relaxed flex-1">
         <strong class="text-sky-300 font-semibold">入库即时生效提示：</strong>
         本项目添加游戏后<strong class="text-emerald-400 font-bold">无须重启 Steam</strong>，会自动出现在库中，搜索进行下载即可。如果没有，则可能是注入环境出现问题，请在「系统与环境设置」中检测环境。
+      </div>
+      <button
+        @click="showGuide = !showGuide"
+        class="shrink-0 px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5"
+      >
+        <BookOpen class="w-3.5 h-3.5" />
+        <span>{{ showGuide ? '收起说明' : '功能说明' }}</span>
+        <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': showGuide }" />
+      </button>
+    </div>
+
+    <!-- 功能说明面板 -->
+    <div v-if="showGuide" class="mb-4 p-4 xl:p-5 rounded-2xl bg-slate-900/70 border border-white/10 text-xs shrink-0 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2.5">
+      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-0.5">顶部操作</div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">检查更新</strong><span class="text-slate-400">检查「已锁定」版本的游戏是否落后官方最新版；跟随最新的游戏会自动跳过</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">刷新列表</strong><span class="text-slate-400">重新读取规则目录，刷新卡片的密钥、清单与版本状态</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">重启 Steam</strong><span class="text-slate-400">入库即时生效一般用不着，仅在 Steam 偶发未识别规则时救急</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-rose-300 shrink-0 w-16">清空所有</strong><span class="text-slate-400">删除全部游戏的入库规则（危险操作，需确认）</span></div>
+      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mt-1.5 mb-0.5">卡片操作</div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-emerald-300 shrink-0 w-16">下载 / 运行</strong><span class="text-slate-400">在 Steam 中触发该游戏的下载安装 / 直接启动游戏</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-slate-200 shrink-0 w-16">锁定版本</strong><span class="text-slate-400">钉死当前官方最新版，联机和朋友对版本时用；此后官方更新不自动跟进</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-amber-300 shrink-0 w-16">跟随最新</strong><span class="text-slate-400">解除锁定，此后每次下载自动获取官方最新清单，无须手动更新</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-slate-200 shrink-0 w-16">预缓存</strong><span class="text-slate-400">尽力把清单文件下载到本地加速首次下载；失败不影响下载，运行时会自动拉取</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-rose-300 shrink-0 w-16">出库</strong><span class="text-slate-400">删除该游戏的规则文件，将其移出库</span></div>
+      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mt-1.5 mb-0.5">卡片徽标（状态）</div>
+      <div class="md:col-span-2 leading-relaxed text-slate-400">
+        <span class="text-emerald-400 font-semibold">密钥已注入</span>：解密密钥已写入规则（正常下载的前提）；
+        <span class="text-purple-400 font-semibold">Token</span>：已配置 PICS 访问令牌；
+        <span class="text-cyan-400 font-semibold">跟随最新</span> / <span class="text-slate-300 font-semibold">已锁定</span> / <span class="text-amber-400 font-semibold">有更新</span>：当前版本策略；
+        <span class="text-emerald-400 font-semibold">本地清单</span> / <span class="text-sky-400 font-semibold">动态清单</span>：清单是否已缓存到本地，两者都能正常下载
       </div>
     </div>
 
@@ -281,7 +311,9 @@ import {
   FolderSync,
   ArrowUpCircle,
   CloudDownload,
-  Lock
+  Lock,
+  BookOpen,
+  ChevronDown
 } from 'lucide-vue-next';
 import { AppManifestStatus, GameUpdateStatus, LuaGameInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
@@ -299,6 +331,7 @@ const checkingUpdates = ref(false);
 const updatingAppId = ref<number | null>(null);
 const repairingAppId = ref<number | null>(null);
 const filterKeyword = ref('');
+const showGuide = ref(false);
 
 const updatableCount = computed(
   () => Object.values(updateStatuses).filter((s) => s?.pinned && s.hasUpdate).length
