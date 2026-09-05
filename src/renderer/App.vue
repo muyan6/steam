@@ -355,7 +355,7 @@ import Toast, { ToastItem } from './components/Toast.vue';
 import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
 
-const appVersion = '1.0.0';
+const appVersion = '1.0.1';
 const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'about' | 'settings'>('search');
 const showStartupWizard = ref(false);
 const showLicenseModal = ref(false);
