@@ -4,7 +4,7 @@
 
 export const APP_CONFIG = {
   APP_NAME: '春风渡',
-  VERSION: '2.1.1',
+  VERSION: '2.1.2',
 
   // 云端官方服务器地址
   // 注意：修改此地址须同步更新 src-tauri/capabilities/default.json 的

@@ -1,5 +1,22 @@
 [
   {
+    "version": "2.1.2",
+    "channel": "stable",
+    "releaseDate": "2026-09-05",
+    "title": "春风渡 v2.1.2 正式发布",
+    "changelog": [
+      "🛠 修复 115%/125% 界面缩放下内容横向溢出窗口、右侧按钮与卡片被裁切的问题",
+      "📦 安装包内置 WebView2Loader.dll，修复部分环境安装后无法启动的问题"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.2/ChunFengDu_2.1.2_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-05T00:00:00.000Z",
+    "updatedAt": "2026-09-05T00:00:00.000Z"
+  },
+  {
     "version": "2.1.1",
     "channel": "stable",
     "releaseDate": "2026-09-05",
