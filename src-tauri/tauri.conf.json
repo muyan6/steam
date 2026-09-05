@@ -29,7 +29,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "resources": [
       "assets/tools/steamless/*",
       "assets/tools/steamless/Plugins/*",
