@@ -395,7 +395,10 @@ fn get_cdn_hosts() -> Vec<String> {
     FALLBACK_CDN_HOSTS.iter().map(|s| s.to_string()).collect()
 }
 
-fn download_single_manifest_with_hosts(
+/// 异步版清单下载：必须运行在 Tokio 运行时上下文内（由 precache_manifests
+/// 经 tauri::async_runtime::spawn 调度）。禁止在普通线程上手动 block_on——
+/// 该组合在 Tauri 运行时下会因反应器不可用而 panic（"there is no reactor running"）。
+async fn download_single_manifest_with_hosts(
     steam_path: &Path,
     depot_id: &str,
     manifest_gid: &str,
@@ -411,14 +414,13 @@ fn download_single_manifest_with_hosts(
     let url_tpl = |host: &str| format!("https://{}/depot/{}/manifest/{}/5/0", host, depot_id, manifest_gid);
 
     for host in hosts {
-        let resp = block_on(
-            http_client()
-                .get(url_tpl(&host))
-                .timeout(Duration::from_secs(5))
-                .header("User-Agent", "Valve/Steam HTTP Client 1.0")
-                .header("Accept", "*/*")
-                .send(),
-        );
+        let resp = http_client()
+            .get(url_tpl(&host))
+            .timeout(Duration::from_secs(5))
+            .header("User-Agent", "Valve/Steam HTTP Client 1.0")
+            .header("Accept", "*/*")
+            .send()
+            .await;
         if let Ok(resp) = resp {
             // 404 表示该清单在 Steam CDN 上已不存在，换镜像也无济于事，
             // 直接短路，避免 30 个节点 × 超时把单清单下载拖到数分钟
@@ -426,7 +428,7 @@ fn download_single_manifest_with_hosts(
                 break;
             }
             if resp.status() == 200 {
-                if let Ok(bytes) = block_on(resp.bytes()) {
+                if let Ok(bytes) = resp.bytes().await {
                     if !bytes.is_empty() {
                         let payload = extract_manifest_payload(&bytes);
                         if !payload.is_empty() {
@@ -559,38 +561,45 @@ pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResu
     let total = valid.len();
 
     let hosts = get_cdn_hosts();
-    let files: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-    let queue: std::sync::Mutex<Vec<&DepotMeta>> = std::sync::Mutex::new(valid);
 
-    std::thread::scope(|s| {
-        for _ in 0..4 {
-            s.spawn(|| loop {
-                let task = queue.lock().ok().and_then(|mut q| q.pop());
-                let Some(d) = task else { return };
-                let gid = d.manifest_gid.as_deref().unwrap();
-                let depot_id = d.depot_id.clone();
-                // catch_unwind：子线程 panic 不再沿 thread::scope 炸掉整个入库任务
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    download_single_manifest_with_hosts(steam_path, &depot_id, gid, &hosts)
-                }));
-                match result {
-                    Ok(Ok(_)) => {
-                        if let Ok(mut f) = files.lock() {
-                            f.push(format!("{}_{}.manifest", depot_id, gid));
-                        }
-                    }
-                    Ok(Err(e)) => log_diag(&format!("manifest {} 下载失败: {}", depot_id, e)),
-                    Err(panic) => {
-                        let msg = panic_message(&panic);
-                        log_diag(&format!("manifest {} 下载线程 panic: {}", depot_id, msg));
-                        println!("[Manifests] 清单 {} 预缓存线程异常: {}", depot_id, msg);
-                    }
+    // 并发下载必须全部在 Tokio 运行时内完成：此前用 thread::scope 起普通
+    // 线程再手动 block_on，会因子线程没有 Tokio 反应器而全部 panic
+    // （"there is no reactor running"，表现为清单 0 下载、入库后无法下载）。
+    // 现改为 4 个异步任务经 tauri::async_runtime::spawn 调度，各认领一段
+    // 清单串行下载；调用方（spawn_blocking 线程）一次性 block_on 等待完成
+    // ——该位置的单次 block_on 与旧版串行实现相同，已验证可用。
+    let chunk_size = (total + 3) / 4;
+    let mut handles = Vec::new();
+    for chunk in valid.chunks(chunk_size.max(1)) {
+        let steam_path = steam_path.to_path_buf();
+        let hosts = hosts.clone();
+        let tasks: Vec<(String, String)> = chunk
+            .iter()
+            .map(|d| (d.depot_id.clone(), d.manifest_gid.as_deref().unwrap().to_string()))
+            .collect();
+        handles.push(tauri::async_runtime::spawn(async move {
+            let mut files = Vec::new();
+            for (depot_id, gid) in tasks {
+                match download_single_manifest_with_hosts(&steam_path, &depot_id, &gid, &hosts).await {
+                    Ok(_) => files.push(format!("{}_{}.manifest", depot_id, gid)),
+                    Err(e) => log_diag(&format!("manifest {} 下载失败: {}", depot_id, e)),
                 }
-            });
-        }
-    });
+            }
+            files
+        }));
+    }
 
-    let files = files.into_inner().unwrap_or_default();
+    let mut files = Vec::new();
+    for h in handles {
+        match block_on(h) {
+            Ok(mut f) => files.append(&mut f),
+            Err(e) => {
+                log_diag(&format!("manifest 下载任务 join 失败: {}", e));
+                println!("[Manifests] 清单下载任务异常结束: {}", e);
+            }
+        }
+    }
+
     PrecacheResult {
         ok_count: files.len(),
         total,
