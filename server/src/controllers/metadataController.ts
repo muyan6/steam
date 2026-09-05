@@ -83,11 +83,12 @@ export const getGameMetadata = async (req: Request, res: Response) => {
 
           let manifestGid = '';
           if ((info as any).manifests && typeof (info as any).manifests === 'object') {
-            for (const branchData of Object.values((info as any).manifests) as any[]) {
-              if (branchData && branchData.gid) {
-                manifestGid = branchData.gid.toString();
-                break;
-              }
+            // SteamCMD 返回的分支顺序不固定（previous 可能排在 public 之前），
+            // 取第一个分支会拿到旧版清单，必须优先取 public 分支
+            const branchEntries = Object.entries((info as any).manifests) as Array<[string, any]>;
+            const chosen = branchEntries.find(([b, v]) => b === 'public' && v && v.gid) || branchEntries.find(([, v]) => v && v.gid);
+            if (chosen) {
+              manifestGid = chosen[1].gid.toString();
             }
           }
 

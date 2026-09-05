@@ -212,12 +212,12 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
             }
             let mut gid = None;
             if let Some(manifests) = info.get("manifests").and_then(|v| v.as_object()) {
-                for (_branch, branch_data) in manifests {
-                    if let Some(g) = branch_data.get("gid").and_then(|g| g.as_str()) {
-                        if !g.is_empty() && g != "0" {
-                            gid = Some(g.to_string());
-                            break;
-                        }
+                // SteamCMD 返回的分支顺序不固定（previous 可能排在 public 之前），
+                // 取第一个分支会拿到旧版清单，必须优先取 public 分支（与服务端一致）
+                let pick = manifests.get("public").or_else(|| manifests.values().next());
+                if let Some(g) = pick.and_then(|b| b.get("gid")).and_then(|g| g.as_str()) {
+                    if !g.is_empty() && g != "0" {
+                        gid = Some(g.to_string());
                     }
                 }
             }
