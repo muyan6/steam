@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use serde::Serialize;
 
-use crate::steam::{self, is_steam_running};
+use crate::steam;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -405,11 +405,32 @@ pub fn launch_game_online(
     online_app_id: u32,
 ) -> Result<String, String> {
     if mode == "open" {
-        if !is_steam_running() {
-            if let Some(sp) = steam::detect_steam_path() {
-                steam::restart_steam(&sp, &["-onlinefix".to_string()]);
-                std::thread::sleep(std::time::Duration::from_millis(2000));
+        // Open 内核联机模式要求 Steam 会话以 -onlinefix 参数运行（OST 内核联机拦截生效）：
+        // - 未运行：带参启动并等待就绪
+        // - 已运行但不带参（如 -silent 普通会话）：重启到联机模式
+        // - 已带参：直接唤起
+        let steam_running = steam::is_steam_running();
+        if !(steam_running && steam::is_onlinefix_running()) {
+            let Some(sp) = steam::detect_steam_path() else {
+                return Err("未找到 Steam 安装路径，无法进入 Open 内核联机模式".to_string());
+            };
+            if steam_running {
+                steam::kill_steam();
             }
+            steam::restart_steam(&sp, &["-onlinefix".to_string()]);
+            // 等待 steam.exe 真正就绪（冷启动可达 15s+），就绪后再发协议
+            let mut ready = false;
+            for _ in 0..20 {
+                if steam::is_steam_running() {
+                    ready = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+            }
+            if !ready {
+                return Err("Steam 未能以联机模式启动，请手动启动 Steam 后重试".to_string());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2000));
         }
         crate::open_url_cmd(&format!("steam://rungameid/{}", app_id))?;
         return Ok(format!("已通过 Open内核联机模式唤起游戏 (AppID: {})！", app_id));
@@ -432,7 +453,12 @@ pub fn launch_game_online(
     };
 
     if mode == "spacewar" {
-        let _ = fs::write(gp.join("steam_appid.txt"), online_app_id.to_string());
+        // 覆写 steam_appid.txt 前备份用户/游戏自带文件，便于手动恢复
+        let appid_file = gp.join("steam_appid.txt");
+        if appid_file.exists() {
+            let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
+        }
+        let _ = fs::write(&appid_file, online_app_id.to_string());
         Command::new(&target)
             .current_dir(target.parent().unwrap_or(&gp))
             .env("SteamAppId", online_app_id.to_string())
