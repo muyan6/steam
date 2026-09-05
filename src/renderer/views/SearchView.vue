@@ -109,7 +109,7 @@
     </div>
 
     <!-- 游戏卡片网格列表 -->
-    <div class="flex-1 overflow-y-auto pr-1 min-h-0">
+    <div ref="listViewportEl" class="flex-1 overflow-y-auto pr-1 min-h-0" @scroll="handleListScroll">
       <div v-if="loading && games.length === 0" class="flex flex-col items-center justify-center h-64 text-slate-400">
         <RotateCw class="w-8 h-8 animate-spin theme-text-accent mb-3" />
         <p class="text-sm">正在从 {{ currentSourceConfig.name }} 检索游戏数据...</p>
@@ -314,8 +314,11 @@
         </div>
       </div>
 
-      <!-- 2. 1:1 换源提示条与切换按钮 (深度对齐参考界面) -->
-      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-2 px-4 rounded-2xl border border-white/5 btn-soft-action">
+      <!-- 2. 1:1 换源提示条与切换按钮 (搜索后滚动到列表底部才展示，避免首页常驻) -->
+      <div
+        v-show="hasSearched && listAtBottom"
+        class="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-2 px-4 rounded-2xl border border-white/5 btn-soft-action"
+      >
         <div class="flex items-center gap-2 text-center">
           <Info class="w-4 h-4 text-sky-400 shrink-0" />
           <span>
@@ -339,7 +342,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, nextTick, onMounted } from 'vue';
 import axios from 'axios';
 import { 
   Search, 
@@ -389,7 +392,8 @@ const currentSourceConfig = computed(() => {
 
 // 分页系统
 const currentPage = ref(1);
-const pageSize = ref(48);
+// 60 可被网格每行 1~5 列全部整除，保证任何屏宽下最后一行都不留空位
+const pageSize = ref(60);
 const totalItems = ref(0);
 const totalPages = ref(1);
 const jumpPageInput = ref<number | null>(null);
@@ -405,6 +409,17 @@ const visiblePages = computed(() => {
   }
   return range;
 });
+
+// 换源提示条显隐：仅搜索后且列表滚动到底部时展示，首页不常驻
+const listViewportEl = ref<HTMLElement | null>(null);
+const hasSearched = ref(false);
+const listAtBottom = ref(false);
+
+const handleListScroll = () => {
+  const el = listViewportEl.value;
+  if (!el) return;
+  listAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 12;
+};
 
 // 图片多 CDN 智能镜像加速与容错系统
 const failedImgs = reactive(new Set<number>());
@@ -485,9 +500,16 @@ const handleSearch = async (page = 1) => {
       currentPage.value = 1;
     }
 
+    if (searchQuery.value.trim()) hasSearched.value = true;
+
     // 新结果集就绪后重置图片容错状态，避免跨搜索/跨分页无限增长
     failedImgs.clear();
     imgCdnIndices.clear();
+
+    // 回到列表顶部并重置底部检测，让换源提示条重新等用户翻到底
+    await nextTick();
+    if (listViewportEl.value) listViewportEl.value.scrollTop = 0;
+    listAtBottom.value = false;
   } catch (e: any) {
     if (requestId === searchRequestId) emit('notify', `搜索失败: ${e.message}`, 'error');
   } finally {

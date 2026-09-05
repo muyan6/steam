@@ -17,7 +17,7 @@
         <button
           @click="fetchStatus"
           :disabled="loadingStatus"
-          class="px-3 py-1.5 rounded-xl bg-slate-900/60 border border-white/10 hover:border-white/20 text-slate-300 text-xs transition flex items-center gap-1.5 shadow-sm"
+          class="px-3 py-1.5 rounded-xl btn-soft-action text-xs transition flex items-center gap-1.5 shadow-sm"
         >
           <RotateCw class="w-3.5 h-3.5 text-slate-400" :class="{ 'animate-spin': loadingStatus }" />
           <span>刷新状态</span>
@@ -27,10 +27,10 @@
 
     <!-- 4 大核心工具卡片网格 (2x2 响应式布局) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-5xl">
-      <!-- 卡片 1: 清理Steam缓存 (蓝色渐变) -->
-      <div class="rounded-3xl bg-slate-900/80 border border-white/10 overflow-hidden shadow-xl flex flex-col justify-between transition-all duration-300 hover:border-blue-500/40 hover:shadow-2xl">
+      <!-- 卡片 1: 清理Steam缓存 (主题强调色渐变) -->
+      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
-        <div class="h-28 bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 flex items-center justify-center relative overflow-hidden">
+        <div class="h-28 tool-banner-a flex items-center justify-center relative overflow-hidden">
           <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
             <Eraser class="w-8 h-8" />
           </div>
@@ -65,7 +65,7 @@
             <button
               @click="handleClearCache"
               :disabled="activeAction !== null"
-              class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
+              class="w-full py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2"
             >
               <RotateCw v-if="activeAction === 'clear_cache'" class="w-3.5 h-3.5 animate-spin" />
               <Play v-else class="w-3.5 h-3.5 fill-current" />
@@ -75,10 +75,10 @@
         </div>
       </div>
 
-      <!-- 卡片 2: 修复OpenSteamTool内核 (橙色渐变) -->
-      <div class="rounded-3xl bg-slate-900/80 border border-white/10 overflow-hidden shadow-xl flex flex-col justify-between transition-all duration-300 hover:border-amber-500/40 hover:shadow-2xl">
+      <!-- 卡片 2: 修复OpenSteamTool内核 (主题强调色渐变) -->
+      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
-        <div class="h-28 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 flex items-center justify-center relative overflow-hidden">
+        <div class="h-28 tool-banner-d flex items-center justify-center relative overflow-hidden">
           <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
             <Wrench class="w-8 h-8" />
           </div>
@@ -113,7 +113,7 @@
             <button
               @click="handleRepairKernel"
               :disabled="activeAction !== null"
-              class="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 active:scale-[0.98] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-orange-500/30"
+              class="w-full py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2"
             >
               <RotateCw v-if="activeAction === 'repair_kernel'" class="w-3.5 h-3.5 animate-spin" />
               <Play v-else class="w-3.5 h-3.5 fill-current" />
@@ -123,10 +123,10 @@
         </div>
       </div>
 
-      <!-- 卡片 3: 补齐Open内核SHA256 (天蓝色渐变) -->
-      <div class="rounded-3xl bg-slate-900/80 border border-white/10 overflow-hidden shadow-xl flex flex-col justify-between transition-all duration-300 hover:border-sky-500/40 hover:shadow-2xl">
+      <!-- 卡片 3: 补齐Open内核SHA256 (主题强调色渐变) -->
+      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
-        <div class="h-28 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600 flex items-center justify-center relative overflow-hidden">
+        <div class="h-28 tool-banner-b flex items-center justify-center relative overflow-hidden">
           <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
             <Puzzle class="w-8 h-8" />
           </div>
@@ -165,7 +165,7 @@
             <button
               @click="handleFillSha256"
               :disabled="activeAction !== null"
-              class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
+              class="w-full py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2"
             >
               <RotateCw v-if="activeAction === 'fill_sha256'" class="w-3.5 h-3.5 animate-spin" />
               <Play v-else class="w-3.5 h-3.5 fill-current" />
@@ -175,10 +175,10 @@
         </div>
       </div>
 
-      <!-- 卡片 4: Open内核清单服务器自动切换 (翡翠绿渐变) -->
-      <div class="rounded-3xl bg-slate-900/80 border border-white/10 overflow-hidden shadow-xl flex flex-col justify-between transition-all duration-300 hover:border-emerald-500/40 hover:shadow-2xl">
+      <!-- 卡片 4: Open内核清单服务器自动切换 (主题强调色渐变) -->
+      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
-        <div class="h-28 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 flex items-center justify-center relative overflow-hidden">
+        <div class="h-28 tool-banner-c flex items-center justify-center relative overflow-hidden">
           <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
             <ArrowLeftRight class="w-8 h-8" />
           </div>
@@ -213,7 +213,7 @@
             <button
               @click="handleAutoSwitchManifest"
               :disabled="activeAction !== null"
-              class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30"
+              class="w-full py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2"
             >
               <RotateCw v-if="activeAction === 'auto_switch'" class="w-3.5 h-3.5 animate-spin" />
               <Play v-else class="w-3.5 h-3.5 fill-current" />
@@ -225,7 +225,7 @@
     </div>
 
     <!-- 底部环境状态指示条 -->
-    <div class="mt-6 max-w-5xl p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex items-center justify-between flex-wrap gap-3 text-xs">
+    <div class="mt-6 max-w-5xl p-4 rounded-2xl theme-card-static flex items-center justify-between flex-wrap gap-3 text-xs">
       <div class="flex items-center gap-3">
         <span class="text-slate-400">当前环境:</span>
         <span class="font-mono text-slate-200 truncate max-w-xs">{{ statusInfo.steamPath || '未检测到Steam路径' }}</span>
@@ -246,7 +246,7 @@
 
     <!-- 执行结果日志弹窗 -->
     <div v-if="resultModal" class="fixed inset-0 z-50 bg-black/65 backdrop-blur-md flex items-center justify-center p-4">
-      <div class="rounded-3xl bg-slate-900 border border-white/10 w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div class="rounded-3xl theme-card-static w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         <div class="flex items-center gap-3.5 mb-4">
           <div
             class="w-10 h-10 rounded-2xl flex items-center justify-center text-white"
@@ -275,7 +275,7 @@
         <div class="flex items-center justify-end gap-3">
           <button
             @click="resultModal = null"
-            class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition shadow"
+            class="px-5 py-2.5 theme-btn-primary text-xs font-bold rounded-xl transition"
           >
             我知道了
           </button>

@@ -829,4 +829,46 @@
   color: #0f172a !important;
 }
 
+/* ==========================================================================
+   实用工具箱主题自适应卡片 (Toolbox Theme-adaptive Surfaces)
+   卡片与横幅全部由当前主题的强调色变量派生，6 套深浅主题自动适配
+   ========================================================================== */
+
+.tool-card {
+  background: var(--color-bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-border-subtle);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tool-card:hover {
+  border-color: var(--color-border-hover);
+  box-shadow: 0 14px 30px -8px var(--color-accent-glow);
+}
+
+[data-theme="frost"] .tool-card,
+[data-theme="dawn"] .tool-card,
+[data-theme="mint"] .tool-card {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.06) !important;
+}
+
+.tool-banner-a {
+  background: linear-gradient(135deg, var(--color-accent-primary-hover) 0%, var(--color-accent-primary) 55%, var(--color-accent-secondary) 100%);
+}
+
+.tool-banner-b {
+  background: linear-gradient(315deg, var(--color-accent-secondary) 0%, var(--color-accent-primary) 55%, var(--color-accent-primary-hover) 100%);
+}
+
+.tool-banner-c {
+  background: linear-gradient(160deg, var(--color-accent-primary) 0%, var(--color-accent-secondary) 100%);
+}
+
+.tool-banner-d {
+  background: var(--color-accent-gradient);
+}
+
 

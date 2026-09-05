@@ -241,7 +241,7 @@ export const createTauriBridge = () => {
       const q = (typeof params === 'string' ? params : params?.query || '').trim();
       const source: string = params?.source || 'steam_official';
       const page = params?.page || 1;
-      const pageSize = params?.pageSize || 48;
+      const pageSize = params?.pageSize || 60;
 
       if (source === 'local_db') {
         // 本地全量库仅含英文索引，中文查询降级云端中文检索，未命中再回退本地

@@ -224,7 +224,7 @@
             <p class="text-justify">2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。</p>
             <p class="text-justify">3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。</p>
             <p class="text-justify">4. 本工具不提供任何破解、盗版相关的技术支持或服务。</p>
-            <p class="text-justify">5. 如有权利方认为本工具涉及侵权，请联系官网邮箱进行下架处理。</p>
+            <p class="text-justify">5. 如有权利方认为本工具涉及侵权，请联系3142755779进行下架处理。</p>
           </div>
           <div v-else class="whitespace-pre-line text-justify">
             {{ popupNotice.content }}
@@ -527,12 +527,19 @@ const handleRestartSteam = async () => {
 
 const DISCLAIMER_STORAGE_KEY = 'chunfengdu_disclaimer_accepted_v1';
 
+// 服务端下发的免责声明类公告不再参与弹窗调度：
+// 免责声明由客户端在首次启动时展示一次并本地持久化"已同意"状态，每台设备只需同意一次
+const isDisclaimerNotice = (n: NoticePayload | null): boolean => {
+  if (!n) return false;
+  return n.kind === 'disclaimer' || (n.id || '').includes('disclaimer') || (n.title || '').includes('免责');
+};
+
 const openDisclaimerModal = () => {
   popupNotice.value = {
     id: 'notice_disclaimer_01',
     title: '免责声明',
     kind: 'disclaimer',
-    content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n5. 如有权利方认为本工具涉及侵权，请联系官网邮箱进行下架处理。',
+    content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n5. 如有权利方认为本工具涉及侵权，请联系3142755779进行下架处理。',
     popupOnce: false
   };
 };
@@ -578,6 +585,8 @@ const checkNoticeAndVersion = async () => {
     if (notice && notice.enabled) {
       if (notice.type === 'banner') {
         bannerNotice.value = notice;
+      } else if (isDisclaimerNotice(notice)) {
+        // 免责声明类公告跳过：已同意则永不弹出，未同意时由下方本地免责流程兜底展示
       } else {
         const isRead = notice.popupOnce && localStorage.getItem(`read_notice_${notice.id}`);
         if (!isRead) {
