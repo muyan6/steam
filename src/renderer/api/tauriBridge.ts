@@ -12,12 +12,25 @@ export const isTauriEnvironment = (): boolean => {
 const API = APP_CONFIG.API_BASE_URL;
 
 /**
- * 统一格式化后端错误：Tauri invoke reject 的是字符串而非 Error 对象，
- * 直接取 e.message 会显示 "undefined"，调用方应统一使用本函数
+ * 统一格式化后端错误：Tauri invoke 可能 reject 字符串、Error 或
+ * 结构化对象（如 onlinefix_prepare 的 OnlineFixPatchResult），
+ * 直接 String(obj) 会显示 "[object Object]"，调用方应统一使用本函数
  */
 export function formatIpcError(e: unknown): string {
   if (typeof e === 'string') return e;
   if (e instanceof Error) return e.message;
+  if (e && typeof e === 'object') {
+    const o = e as Record<string, unknown>;
+    for (const key of ['message', 'msg', 'error', 'reason', 'detail']) {
+      const v = o[key];
+      if (typeof v === 'string' && v.trim()) return v;
+    }
+    try {
+      return JSON.stringify(e);
+    } catch {
+      return '未知错误';
+    }
+  }
   return String(e ?? '未知错误');
 }
 

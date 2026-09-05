@@ -21,6 +21,16 @@ pub struct OnlineFixSearchResult {
     pub game_article_url: Option<String>,
     pub file_name: Option<String>,
     pub download_url: Option<String>,
+    /// 全部可用下载源（按优先级排序），prepare 阶段逐个尝试直至成功
+    #[serde(default)]
+    pub download_candidates: Vec<OnlineFixDownloadCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineFixDownloadCandidate {
+    pub url: String,
+    pub file_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -265,6 +275,7 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
             game_article_url: None,
             file_name: None,
             download_url: None,
+            download_candidates: Vec::new(),
         };
     };
 
@@ -284,6 +295,7 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
                 game_article_url: Some(article),
                 file_name: None,
                 download_url: None,
+            download_candidates: Vec::new(),
             };
         }
         Err(e) => {
@@ -293,6 +305,7 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
                 game_article_url: Some(article),
                 file_name: None,
                 download_url: None,
+            download_candidates: Vec::new(),
             };
         }
     };
@@ -306,6 +319,7 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
             game_article_url: Some(article),
             file_name: None,
             download_url: None,
+            download_candidates: Vec::new(),
         };
     };
 
@@ -324,6 +338,7 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
             game_article_url: Some(article),
             file_name: None,
             download_url: None,
+            download_candidates: Vec::new(),
         };
     };
 
@@ -356,7 +371,47 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
         })
         .cloned()
         .collect();
-    let target_list = if fixes.is_empty() { &candidates } else { &fixes };
+
+    // 下载源优先级：Fix_Repair 小补丁包 > 其他候选；
+    // 同优先级内 PixelDrain 排最前（速度最快，但部分地区网络不可达，
+    // 失败后由 prepare 阶段自动回退到后续源，绝不吊死在单一源上）
+    let rank = |(l, n): &(String, String)| -> (u8, u8) {
+        let is_fix = {
+            let ln = n.to_lowercase();
+            ln.contains("fix") || ln.contains("repair") || ln.contains("patch")
+        };
+        let pd = if l.contains("pixeldrain.com/u/") { 0 } else { 1 };
+        (if is_fix { 0 } else { 1 }, pd)
+    };
+
+    // 补丁包本体是几 MB 的 Fix_Repair 归档；同一文章里的 partN.rar 是整包游戏
+    // 分卷（动辄数 GB），严禁当作补丁下载。仅当文章里确实没有任何 Fix 命名
+    // 包时才回退到非分卷候选。
+    let mut target_list: Vec<(String, String)> = if !fixes.is_empty() {
+        fixes
+    } else {
+        let non_part: Vec<_> = candidates
+            .iter()
+            .filter(|(_l, n)| {
+                let ln = n.to_lowercase();
+                !(ln.contains(".part") && ln.ends_with(".rar"))
+            })
+            .cloned()
+            .collect();
+        if non_part.is_empty() {
+            // 文章里只有整包游戏分卷，没有独立补丁包——明确拒绝而不是误下游戏本体
+            return OnlineFixSearchResult {
+                found: true,
+                message: Some("该文章仅包含整包游戏分卷，未提供独立的 Fix_Repair 联机补丁包".to_string()),
+                game_article_url: Some(article),
+                file_name: None,
+                download_url: None,
+                download_candidates: Vec::new(),
+            };
+        }
+        non_part
+    };
+    target_list.sort_by_key(rank);
 
     if target_list.is_empty() {
         return OnlineFixSearchResult {
@@ -365,36 +420,35 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
             game_article_url: Some(article),
             file_name: None,
             download_url: None,
+            download_candidates: Vec::new(),
         };
     }
 
-    // 优先 PixelDrain
-    let mut chosen = target_list.iter().find(|(l, _)| l.contains("pixeldrain.com/u/"));
-    if chosen.is_none() {
-        chosen = target_list.first();
-    }
-    let Some((link, file_name)) = chosen else {
-        return OnlineFixSearchResult {
-            found: true,
-            message: Some("未找到可用下载链接".to_string()),
-            game_article_url: Some(article),
-            file_name: None,
-            download_url: None,
-        };
-    };
+    let download_candidates: Vec<OnlineFixDownloadCandidate> = target_list
+        .iter()
+        .map(|(link, file_name)| {
+            let download_url = if let Some(id) = extract_pixeldrain_id(link) {
+                format!("https://pixeldrain.com/api/file/{}", id)
+            } else {
+                link.clone()
+            };
+            OnlineFixDownloadCandidate {
+                url: download_url,
+                file_name: file_name.clone(),
+            }
+        })
+        .collect();
 
-    let download_url = if let Some(id) = extract_pixeldrain_id(link) {
-        format!("https://pixeldrain.com/api/file/{}", id)
-    } else {
-        link.clone()
-    };
+    let (_, chosen_name) = &target_list[0];
+    let chosen_download_url = download_candidates[0].url.clone();
 
     OnlineFixSearchResult {
         found: true,
         message: None,
         game_article_url: Some(article),
-        file_name: Some(file_name.clone()),
-        download_url: Some(download_url),
+        file_name: Some(chosen_name.clone()),
+        download_url: Some(chosen_download_url),
+        download_candidates,
     }
 }
 
@@ -475,6 +529,67 @@ pub struct PreparedArchive {
     pub download_url: String,
 }
 
+/// 下载单个候选源到临时目录并做归档魔数校验；失败返回原因（由调用方换下一个源）
+fn try_download_candidate(download_url: &str, app_id: u32) -> Result<PathBuf, String> {
+    let ext = Path::new(download_url)
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        // pixeldrain api 直链无扩展名，补丁包绝大多数是 RAR
+        .unwrap_or_else(|| ".rar".to_string());
+    let temp_path = temp_download_dir().join(format!("patch_{}_{}{}", app_id, chrono_millis(), ext));
+
+    // 独立下载客户端：10 分钟上限 + 15 秒连接超时（换源时快速失败）。
+    // cookie_store 必须开启：部分分流源（如 fileditch）有 Cookie 门禁，
+    // 首次 302 下发 cookie 后必须带着 cookie 重试才放行真实文件
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .connect_timeout(Duration::from_secs(15))
+        .user_agent(UA)
+        .cookie_store(true)
+        .build()
+        .map_err(|e| format!("构建下载客户端失败: {}", e))?;
+    let mut resp = crate::manifests::block_on(client.get(download_url).send())
+        .map_err(|e| format!("连接失败 {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    // 流式写入临时文件，避免 100MB+ 补丁整包驻留内存
+    let mut file = fs::File::create(&temp_path).map_err(|e| format!("创建临时文件失败: {}", e))?;
+    let mut total: u64 = 0;
+    loop {
+        match crate::manifests::block_on(resp.chunk()) {
+            Ok(Some(chunk)) => {
+                file.write_all(&chunk).map_err(|e| format!("写入临时文件失败: {}", e))?;
+                total += chunk.len() as u64;
+            }
+            Ok(None) => break,
+            Err(e) => {
+                drop(file);
+                let _ = fs::remove_file(&temp_path);
+                return Err(format!("读取补丁数据流失败: {}", e));
+            }
+        }
+    }
+    if total == 0 {
+        let _ = fs::remove_file(&temp_path);
+        return Err("下载数据为空".to_string());
+    }
+
+    // 魔数校验：下载内容必须确实是 RAR/ZIP 归档，防止风控页/错误页 HTML 被当作补丁
+    let mut magic = [0u8; 4];
+    {
+        let mut probe = fs::File::open(&temp_path).map_err(|e| format!("读取临时文件失败: {}", e))?;
+        probe.read_exact(&mut magic).map_err(|_| "下载数据过短，不是有效的补丁归档".to_string())?;
+    }
+    if !is_archive_magic(&magic) {
+        let _ = fs::remove_file(&temp_path);
+        return Err("内容不是有效的补丁归档".to_string());
+    }
+    Ok(temp_path)
+}
+
 /// 搜索并下载补丁包到临时目录，返回归档路径（由前端读取后解压，或直接 zip_extract）
 pub fn prepare_patch(
     game_path: &str,
@@ -512,60 +627,36 @@ pub fn prepare_patch(
         }
     };
 
-    let download_url = search.download_url.clone().unwrap();
-    let file_name = search.file_name.clone().unwrap();
-    let ext = Path::new(&file_name)
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy()))
-        .unwrap_or_else(|| ".rar".to_string());
+    // 逐个尝试候选下载源：单一源随时可能被墙/限流/失效
+    // （如 PixelDrain 在部分地区 TLS 直接被重置），必须自动回退到下一个
+    let candidates = if !search.download_candidates.is_empty() {
+        search.download_candidates.clone()
+    } else {
+        // 兼容：旧检索结果只有单源
+        vec![OnlineFixDownloadCandidate {
+            url: search.download_url.clone().unwrap(),
+            file_name: search.file_name.clone().unwrap(),
+        }]
+    };
+    let mut attempts: Vec<String> = Vec::new();
+    let mut downloaded: Option<(PathBuf, String, String)> = None; // (临时路径, 文件名, 下载URL)
 
-    let temp_path = temp_download_dir().join(format!("patch_{}_{}{}", app_id, chrono_millis(), ext));
-
-    // 下载（无 12 秒限制，独立客户端，10 分钟上限）
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(600))
-        .user_agent(UA)
-        .build()
-        .map_err(|e| fail(format!("构建下载客户端失败: {}", e)))?;
-    let mut resp = crate::manifests::block_on(client.get(&download_url).send())
-        .map_err(|e| fail(format!("下载补丁失败: {}", e)))?;
-
-    if !resp.status().is_success() {
-        return Err(fail(format!("从 online-fix.me 下载补丁失败，HTTP 状态码: {}", resp.status())));
-    }
-
-    // 流式写入临时文件，避免 100MB+ 补丁整包驻留内存
-    let mut file = fs::File::create(&temp_path).map_err(|e| fail(format!("创建临时文件失败: {}", e)))?;
-    let mut total: u64 = 0;
-    loop {
-        match crate::manifests::block_on(resp.chunk()) {
-            Ok(Some(chunk)) => {
-                file.write_all(&chunk).map_err(|e| fail(format!("写入临时文件失败: {}", e)))?;
-                total += chunk.len() as u64;
+    for cand in &candidates {
+        match try_download_candidate(&cand.url, app_id) {
+            Ok(temp_path) => {
+                downloaded = Some((temp_path, cand.file_name.clone(), cand.url.clone()));
+                break;
             }
-            Ok(None) => break,
-            Err(e) => {
-                drop(file);
-                let _ = fs::remove_file(&temp_path);
-                return Err(fail(format!("读取补丁数据流失败: {}", e)));
-            }
+            Err(e) => attempts.push(format!("{}: {}", cand.file_name, e)),
         }
     }
-    if total == 0 {
-        let _ = fs::remove_file(&temp_path);
-        return Err(fail("下载数据为空".to_string()));
-    }
 
-    // 魔数校验：下载内容必须确实是 RAR/ZIP 归档，防止风控页/错误页 HTML 被当作补丁
-    let mut magic = [0u8; 4];
-    {
-        let mut probe = fs::File::open(&temp_path).map_err(|e| fail(format!("读取临时文件失败: {}", e)))?;
-        probe.read_exact(&mut magic).map_err(|_| fail("下载数据过短，不是有效的补丁归档".to_string()))?;
-    }
-    if !is_archive_magic(&magic) {
-        let _ = fs::remove_file(&temp_path);
-        return Err(fail("下载的内容不是有效的补丁归档（来源可能异常），已放弃安装".to_string()));
-    }
+    let Some((temp_path, file_name, download_url)) = downloaded else {
+        return Err(fail(format!(
+            "所有下载源均失败 → {}",
+            attempts.join(" | ")
+        )));
+    };
 
     backup_dlls(&PathBuf::from(game_path));
 

@@ -599,7 +599,7 @@
                     <button
                       @click="handleInstallOnlineFixWebPatch(game)"
                       :disabled="downloadingAppId === game.appId || actionLoading"
-                      class="flex-1 py-2 px-2.5 theme-btn-primary text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                      class="flex-1 py-2 px-1.5 theme-btn-primary text-[11px] font-bold rounded-xl transition flex items-center justify-center gap-1 whitespace-nowrap shadow-sm cursor-pointer disabled:opacity-50"
                     >
                       <RotateCw v-if="downloadingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                       <Download v-else class="w-3.5 h-3.5" />
