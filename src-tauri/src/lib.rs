@@ -527,6 +527,30 @@ fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
     (auto_switch, server)
 }
 
+// 存量配置迁移：opensteamtool.toml 缺失 auto_switch 字段时补齐为默认开启
+// （多节点清单高可用为纯增益配置，历史版本生成的配置不含该字段；已含该字段则尊重现状）
+fn ensure_auto_switch_default(steam_path: &std::path::Path) {
+    let toml_path = steam_path.join("opensteamtool.toml");
+    if !toml_path.exists() {
+        return;
+    }
+    let has_field = std::fs::read_to_string(&toml_path)
+        .map(|c| c.contains("auto_switch"))
+        .unwrap_or(true);
+    if has_field {
+        return;
+    }
+    let _ = update_toml_manifest_fields(
+        steam_path,
+        &[
+            ("auto_switch", "true"),
+            ("fallback_servers", "[\"gmrc.wudrm.com\", \"manifest.steam.run\", \"opensteamtool.com\"]"),
+            ("timeout_ms", "4000"),
+            ("retry_count", "3"),
+        ],
+    );
+}
+
 // 工具箱状态（对应 Electron 版 toolboxGetStatus / ToolboxStatusInfo）
 #[tauri::command]
 fn get_toolbox_status() -> serde_json::Value {
@@ -1022,6 +1046,12 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
             let _ = APP_HANDLE.set(app.handle().clone());
+            // 启动时为存量 opensteamtool.toml 补齐默认开启的清单自动切换（后台执行，不阻塞启动）
+            std::thread::spawn(|| {
+                if let Some(p) = steam::detect_steam_path() {
+                    ensure_auto_switch_default(&p);
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

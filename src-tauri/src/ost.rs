@@ -71,7 +71,11 @@ pub fn generate_toml_config(steam_path: &Path, manifest_server: &str) -> Result<
         [inject]\n\
         enabled = true\n\n\
         [manifest]\n\
-        server = \"{}\"\n",
+        server = \"{}\"\n\
+        auto_switch = true\n\
+        fallback_servers = [\"gmrc.wudrm.com\", \"manifest.steam.run\", \"opensteamtool.com\"]\n\
+        timeout_ms = 4000\n\
+        retry_count = 3\n",
         if manifest_server.is_empty() { "steamrun" } else { manifest_server }
     );
     fs::write(toml_path, content).map_err(|e| format!("写入 opensteamtool.toml 失败: {}", e))

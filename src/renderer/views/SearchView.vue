@@ -108,8 +108,9 @@
       </div>
     </div>
 
-    <!-- 游戏卡片网格列表 -->
-    <div ref="listViewportEl" class="flex-1 overflow-y-auto pr-1 min-h-0" @scroll="handleListScroll">
+    <!-- 游戏卡片网格列表 (外层 relative 用于承载换源提示浮层) -->
+    <div class="flex-1 relative min-h-0">
+      <div ref="listViewportEl" class="h-full overflow-y-auto pr-1" @scroll="handleListScroll">
       <div v-if="loading && games.length === 0" class="flex flex-col items-center justify-center h-64 text-slate-400">
         <RotateCw class="w-8 h-8 animate-spin theme-text-accent mb-3" />
         <p class="text-sm">正在从 {{ currentSourceConfig.name }} 检索游戏数据...</p>
@@ -237,10 +238,43 @@
           </div>
         </div>
       </div>
+      </div>
+
+      <!-- 换源提示浮层：搜索后滚动到列表底部时浮现（悬浮展示不挤压列表，避免高度抖动导致闪烁） -->
+      <Transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0 translate-y-2"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div v-if="hasSearched && listAtBottom" class="absolute inset-x-0 bottom-2 z-20 flex justify-center pointer-events-none">
+          <div class="pointer-events-auto flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-2.5 px-5 rounded-2xl theme-card-static shadow-2xl max-w-[95%]">
+            <div class="flex items-center gap-2 text-center">
+              <Info class="w-4 h-4 text-sky-400 shrink-0" />
+              <span>
+                当前使用 <strong class="text-sky-400 font-bold font-mono">{{ currentSourceConfig.name }}</strong>
+                <span class="mx-1 text-slate-500">|</span>
+                对当前搜索内容满意吗，不满意点击切换下一个搜索接口
+              </span>
+            </div>
+
+            <button
+              @click="handleSwitchNextSource"
+              :disabled="loading"
+              class="px-4 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 active:bg-sky-500/35 border border-sky-500/40 text-sky-300 font-bold text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
+            >
+              <ArrowLeftRight class="w-3.5 h-3.5 text-sky-400" />
+              <span>切换下一个搜索接口</span>
+            </button>
+          </div>
+        </div>
+      </Transition>
     </div>
 
-    <!-- 底部区域：全量分页器 + 1:1 换源指引栏 -->
-    <div class="mt-3 pt-3 border-t border-white/10 shrink-0 space-y-3">
+    <!-- 底部区域：全量分页器 -->
+    <div class="mt-3 pt-3 border-t border-white/10 shrink-0">
       <!-- 1. 全量分页控制器 (支持 3000+ 页快速跳转与翻页) -->
       <div v-if="totalPages > 1" class="flex items-center justify-between gap-3 flex-wrap text-xs">
         <div class="flex items-center gap-1.5">
@@ -313,36 +347,12 @@
           </button>
         </div>
       </div>
-
-      <!-- 2. 1:1 换源提示条与切换按钮 (搜索后滚动到列表底部才展示，避免首页常驻) -->
-      <div
-        v-show="hasSearched && listAtBottom"
-        class="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-2 px-4 rounded-2xl border border-white/5 btn-soft-action"
-      >
-        <div class="flex items-center gap-2 text-center">
-          <Info class="w-4 h-4 text-sky-400 shrink-0" />
-          <span>
-            当前使用 <strong class="text-sky-400 font-bold font-mono">{{ currentSourceConfig.name }}</strong>
-            <span class="mx-1 text-slate-500">|</span>
-            对当前搜索内容满意吗，不满意点击切换下一个搜索接口
-          </span>
-        </div>
-
-        <button
-          @click="handleSwitchNextSource"
-          :disabled="loading"
-          class="px-4 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 active:bg-sky-500/35 border border-sky-500/40 text-sky-300 font-bold text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0"
-        >
-          <ArrowLeftRight class="w-3.5 h-3.5 text-sky-400" />
-          <span>切换下一个搜索接口</span>
-        </button>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, onMounted } from 'vue';
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import { 
   Search, 
@@ -410,10 +420,12 @@ const visiblePages = computed(() => {
   return range;
 });
 
-// 换源提示条显隐：仅搜索后且列表滚动到底部时展示，首页不常驻
+// 换源提示浮层显隐：仅搜索后且列表滚动到底部时展示，首页不常驻
+// 通过 ResizeObserver 兼顾窗口缩放与内容高度变化，避免放大窗口后状态失真
 const listViewportEl = ref<HTMLElement | null>(null);
 const hasSearched = ref(false);
 const listAtBottom = ref(false);
+let viewportResizeObserver: ResizeObserver | null = null;
 
 const handleListScroll = () => {
   const el = listViewportEl.value;
@@ -621,5 +633,18 @@ const removeGame = async (appId: number) => {
 
 onMounted(() => {
   refreshData();
+
+  // 视口尺寸变化（窗口缩放/缩放比例调整）时重新评估是否处于列表底部
+  if (listViewportEl.value && typeof ResizeObserver !== 'undefined') {
+    viewportResizeObserver = new ResizeObserver(handleListScroll);
+    viewportResizeObserver.observe(listViewportEl.value);
+  }
+});
+
+onUnmounted(() => {
+  if (viewportResizeObserver) {
+    viewportResizeObserver.disconnect();
+    viewportResizeObserver = null;
+  }
 });
 </script>
