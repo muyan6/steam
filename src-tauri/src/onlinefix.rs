@@ -7,7 +7,7 @@ use std::time::Duration;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-use crate::manifests::{http_client, SERVER_API};
+use crate::manifests::SERVER_API;
 
 const ONLINEFIX_HOST: &str = "https://online-fix.me";
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -145,8 +145,9 @@ fn find_article_url(app_id: u32, game_name: Option<&str>) -> Option<String> {
 
     for q in queries {
         let url = format!("{}/index.php?do=search&subaction=search&story={}", ONLINEFIX_HOST, urlencoding_escape(&q));
+        // 与文章页/分流页共用会话客户端（同 UA + cookie），降低被站点风控拦截的概率
         let Ok(html) = crate::manifests::block_on(
-            http_client()
+            session_client()
                 .get(&url)
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                 .send(),
@@ -158,20 +159,53 @@ fn find_article_url(app_id: u32, game_name: Option<&str>) -> Option<String> {
             continue;
         }
 
-        // 提取第一个 https://online-fix.me/games/xxx 链接（排除 # 与分页）
+        // 提取全部候选文章链接（排除 # 与分页）
         let marker = "https://online-fix.me/games/";
+        let mut candidates: Vec<String> = Vec::new();
         let mut rest: &str = &html;
         while let Some(pos) = rest.find(marker) {
             let start = &rest[pos + marker.len()..];
             let end = start.find('"').map(|i| &start[..i]).unwrap_or("");
             let full = format!("{}{}", marker, end);
-            if !end.is_empty() && !full.contains('#') && !full.contains("/page,") {
-                return Some(full);
+            if !end.is_empty() && !full.contains('#') && !full.contains("/page,") && !candidates.contains(&full) {
+                candidates.push(full);
             }
             rest = start;
         }
+        if candidates.is_empty() {
+            continue;
+        }
+        // 有游戏名时按名称 token 重合度挑选，避免搜索页置顶推荐导致装错补丁
+        return Some(pick_best_article(candidates, game_name));
     }
     None
+}
+
+/// 在候选文章链接中按游戏名 token 重合度评分取最优；无人得分时保持第一个
+fn pick_best_article(candidates: Vec<String>, game_name: Option<&str>) -> String {
+    let Some(name) = game_name else {
+        return candidates.into_iter().next().unwrap_or_default();
+    };
+    let tokens: Vec<String> = name
+        .to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| t.len() >= 3)
+        .map(|t| t.to_string())
+        .collect();
+    if tokens.is_empty() {
+        return candidates.into_iter().next().unwrap_or_default();
+    }
+    let mut best_idx = 0usize;
+    let mut best_score = 0usize;
+    for (i, c) in candidates.iter().enumerate() {
+        let lower = c.to_lowercase();
+        let score = tokens.iter().filter(|t| lower.contains(t.as_str())).count();
+        if score > best_score {
+            best_score = score;
+            best_idx = i;
+        }
+    }
+    candidates.into_iter().nth(best_idx).unwrap_or_default()
 }
 
 fn urlencoding_escape(s: &str) -> String {
@@ -350,6 +384,30 @@ fn temp_download_dir() -> PathBuf {
     dir
 }
 
+/// 去掉 Windows canonicalize 产生的 `\\?\` verbatim 前缀。
+/// Path::starts_with 按组件比较，Verbatim 前缀与 Disk 前缀不相等，
+/// 不归一化会导致「目标存在时所有解压条目被误判越界」。
+fn canonicalize_normalized(p: &Path) -> PathBuf {
+    match p.canonicalize() {
+        Ok(c) => {
+            let s = c.as_os_str().to_string_lossy();
+            if let Some(unc) = s.strip_prefix(r"\\?\UNC\") {
+                PathBuf::from(format!(r"\\{}", unc))
+            } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
+                PathBuf::from(stripped.to_string())
+            } else {
+                c
+            }
+        }
+        Err(_) => p.to_path_buf(),
+    }
+}
+
+/// 校验下载内容确为 RAR/ZIP 归档（防风控页/错误页 HTML 被当作补丁落盘）
+fn is_archive_magic(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"Rar!") || bytes.starts_with(b"PK\x03\x04") || bytes.starts_with(b"PK\x05\x06")
+}
+
 pub fn is_temp_archive(path: &str) -> bool {
     let p = PathBuf::from(path);
     p.starts_with(temp_download_dir())
@@ -390,15 +448,16 @@ pub fn prepare_patch(
         })));
     }
 
-    // 备份原版 DLL
-    let gp = PathBuf::from(game_path);
-    for (main, bak) in [("steam_api64.dll", "steam_api64_o.dll"), ("steam_api.dll", "steam_api_o.dll")] {
-        let src = gp.join(main);
-        let dst = gp.join(bak);
-        if src.exists() && !dst.exists() {
-            let _ = fs::copy(&src, &dst);
+    // 备份原版 DLL（延迟到下载校验成功之后：检索/下载失败时不在游戏目录留下"假备份"）
+    let backup_dlls = |gp: &Path| {
+        for (main, bak) in [("steam_api64.dll", "steam_api64_o.dll"), ("steam_api.dll", "steam_api_o.dll")] {
+            let src = gp.join(main);
+            let dst = gp.join(bak);
+            if src.exists() && !dst.exists() {
+                let _ = fs::copy(&src, &dst);
+            }
         }
-    }
+    };
 
     let download_url = search.download_url.clone().unwrap();
     let file_name = search.file_name.clone().unwrap();
@@ -444,6 +503,19 @@ pub fn prepare_patch(
         return Err(fail("下载数据为空".to_string()));
     }
 
+    // 魔数校验：下载内容必须确实是 RAR/ZIP 归档，防止风控页/错误页 HTML 被当作补丁
+    let mut magic = [0u8; 4];
+    {
+        let mut probe = fs::File::open(&temp_path).map_err(|e| fail(format!("读取临时文件失败: {}", e)))?;
+        probe.read_exact(&mut magic).map_err(|_| fail("下载数据过短，不是有效的补丁归档".to_string()))?;
+    }
+    if !is_archive_magic(&magic) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(fail("下载的内容不是有效的补丁归档（来源可能异常），已放弃安装".to_string()));
+    }
+
+    backup_dlls(&PathBuf::from(game_path));
+
     Ok(PreparedArchive {
         archive_path: temp_path.to_string_lossy().to_string(),
         file_name,
@@ -468,37 +540,20 @@ pub fn deploy_patch_entries(
     use base64::engine::general_purpose::STANDARD as B64;
 
     let gp = PathBuf::from(game_path);
-    let resolved_game = match gp.canonicalize() {
-        Ok(p) => p,
-        Err(_) => gp.clone(),
-    };
+    let resolved_game = canonicalize_normalized(&gp);
 
     let mut count = 0usize;
     for entry in entries {
+        // 先拒绝含盘符/根目录/.. 等非法组件的条目，再做路径归一化比较
+        if !Path::new(&entry.name)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir))
+        {
+            println!("[OnlineFix] 已拒绝解压越界条目: {}", entry.name);
+            continue;
+        }
         let dest = gp.join(&entry.name);
-        let dest_resolved = match dest.canonicalize() {
-            Ok(p) => p,
-            Err(_) => {
-                // 尚不存在，逐段归一化后校验
-                let mut acc = resolved_game.clone();
-                let mut ok = true;
-                for part in Path::new(&entry.name).components() {
-                    match part {
-                        std::path::Component::Normal(c) => acc.push(c),
-                        std::path::Component::CurDir => {}
-                        _ => {
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-                if !ok {
-                    println!("[OnlineFix] 已拒绝解压越界条目: {}", entry.name);
-                    continue;
-                }
-                acc
-            }
-        };
+        let dest_resolved = canonicalize_normalized(&dest);
         if dest_resolved != resolved_game && !dest_resolved.starts_with(&resolved_game) {
             println!("[OnlineFix] 已拒绝解压越界条目: {}", entry.name);
             continue;
@@ -538,7 +593,9 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("解析归档失败: {}", e))?;
 
     let dest = PathBuf::from(dest_dir);
-    let dest_resolved = dest.canonicalize().unwrap_or(dest.clone());
+    // 必须归一化 verbatim 前缀：canonicalize 返回 \\?\C:\...，与普通 C:\... 按组件
+    // 比较恒不相等，会导致目标目录存在时所有条目被误判越界（ZIP 补丁 0 解压）
+    let dest_resolved = canonicalize_normalized(&dest);
     let mut count = 0usize;
     let mut skipped = 0usize;
 

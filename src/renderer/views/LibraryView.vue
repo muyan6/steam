@@ -237,14 +237,16 @@ const loadLibrary = async () => {
     Object.keys(manifestStatuses).forEach((k) => delete manifestStatuses[Number(k)]);
     emit('refresh-status');
 
-    for (const g of unlockedGames.value) {
-      if (!g.hasManifest) {
-        window.electronAPI.checkManifestStatus(g.appId).then((status) => {
-          if (status) manifestStatuses[g.appId] = status;
-        }).catch(() => {});
-      }
-    }
-  } catch (e: any) {
+    // 一次批量调用补齐无清单游戏的明细，替代逐游戏请求（depotcache 仅扫描一次）
+    const pendingIds = unlockedGames.value.filter((g) => !g.hasManifest).map((g) => g.appId);
+    if (pendingIds.length > 0) {
+      try {
+        const statuses = await window.electronAPI.checkManifestStatusBatch(pendingIds);
+        for (const status of statuses || []) {
+          if (status && status.appId != null) manifestStatuses[status.appId] = status;
+        }
+      } catch {}
+    }  } catch (e: any) {
     emit('notify', `加载游戏库失败: ${e.message}`, 'error');
   }
 };

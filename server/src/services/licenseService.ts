@@ -192,13 +192,13 @@ export class LicenseService {
   }
 
   /**
-   * 生成单个随机卡密字符串
+   * 生成单个随机卡密字符串（每组 4 字节 = 8 hex，共 96 位熵，防公网爆破）
    */
   private generateRandomCode(type: LicenseType, customPrefix?: string): string {
     const prefix = customPrefix || TYPE_PREFIX_MAP[type] || 'CFD';
-    const randPart1 = crypto.randomBytes(2).toString('hex').toUpperCase();
-    const randPart2 = crypto.randomBytes(2).toString('hex').toUpperCase();
-    const randPart3 = crypto.randomBytes(2).toString('hex').toUpperCase();
+    const randPart1 = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const randPart2 = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const randPart3 = crypto.randomBytes(4).toString('hex').toUpperCase();
     return `${prefix}-${randPart1}-${randPart2}-${randPart3}`;
   }
 
@@ -320,6 +320,63 @@ export class LicenseService {
       success: true,
       message: `恭喜！已成功激活「${TYPE_NAMES[key.type]}」！`,
       license: clientInfo
+    };
+  }
+
+  /**
+   * 换机迁移：将卡密绑定从旧设备迁移到新设备。
+   * 安全约束：必须持有卡密且原设备码与绑定记录完全匹配才放行；
+   * 剩余有效期沿用原到期时间（迁移不重置计时）。
+   */
+  public rebind(code: string, oldDeviceId: string, newDeviceId: string): {
+    success: boolean;
+    message: string;
+    license?: ClientLicenseInfo;
+  } {
+    if (!code || !code.trim()) return { success: false, message: '请输入有效的激活码。' };
+    if (!oldDeviceId || !oldDeviceId.trim()) return { success: false, message: '请输入原设备码。' };
+    if (!newDeviceId || !newDeviceId.trim()) return { success: false, message: '未获取到本机设备码，无法迁移。' };
+
+    const cleanCode = code.trim().toUpperCase();
+    const cleanOld = oldDeviceId.trim();
+    const cleanNew = newDeviceId.trim();
+
+    if (cleanOld.toLowerCase() === cleanNew.toLowerCase()) {
+      return { success: false, message: '原设备码与本机设备码相同，无需迁移。' };
+    }
+
+    const key = this.keysCache.get(cleanCode);
+    if (!key) {
+      return { success: false, message: '激活码不存在，请核对卡密后重试。' };
+    }
+
+    this.checkAndExpireKey(key);
+
+    if (key.status === 'disabled') {
+      return { success: false, message: '该激活码已被管理员冻结或停用。' };
+    }
+    if (key.status === 'expired') {
+      return { success: false, message: '该激活码已过期失效。' };
+    }
+    if (key.status !== 'active' || !key.deviceId) {
+      return { success: false, message: '该激活码尚未绑定任何设备，请直接在本机激活。' };
+    }
+    if (key.deviceId.toLowerCase() !== cleanOld.toLowerCase()) {
+      return { success: false, message: '原设备码与卡密绑定记录不符，迁移被拒绝。' };
+    }
+
+    const previousDevice = key.deviceId;
+    key.deviceId = cleanNew;
+    key.boundAt = new Date().toISOString();
+    // 到期时间保持不变：迁移不重置/顺延会员有效期
+
+    this.saveKeys();
+    console.log(`[LicenseService] 卡密 ${cleanCode} 已从设备 [${previousDevice}] 迁移至 [${cleanNew}]`);
+
+    return {
+      success: true,
+      message: `绑定已成功迁移到本机！有效期不变${key.expiresAt ? `（至 ${key.expiresAt.slice(0, 10)}）` : ''}。`,
+      license: this.buildClientLicenseInfo(key, cleanNew)
     };
   }
 

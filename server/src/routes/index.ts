@@ -51,6 +51,7 @@ import {
 import {
   activateLicense,
   verifyLicense,
+  rebindLicense,
   getDeviceLicenseStatus,
   getLicenseListAdmin,
   getLicenseStatsAdmin,
@@ -97,6 +98,8 @@ router.post('/telemetry/heartbeat', heartbeatLimiter, (req: Request, res: Respon
   const clean = (v: unknown, max: number): string | undefined =>
     typeof v === 'string' && v.length > 0 ? v.slice(0, max) : undefined;
   const ip = req.socket.remoteAddress || '127.0.0.1';
+  // 激活状态以服务端卡密库为准，不信任客户端自报（防伪造统计）
+  const verified = licenseService.verify(deviceId);
   const record = deviceService.recordHeartbeat({
     deviceId,
     ip,
@@ -104,8 +107,8 @@ router.post('/telemetry/heartbeat', heartbeatLimiter, (req: Request, res: Respon
     // 兼容旧客户端的 os 字段
     osVersion: clean(osVersion, 64) ?? clean(os, 64),
     licenseCode: clean(licenseCode, 64),
-    licenseType: clean(licenseType, 32),
-    isActivated: typeof isActivated === 'boolean' ? isActivated : undefined,
+    licenseType: clean(licenseType, 32) ?? (verified.isActivated ? verified.type : undefined),
+    isActivated: verified.isActivated,
     unlockedCount: typeof unlockedCount === 'number' ? unlockedCount : undefined,
     steamPath: clean(steamPath, 260)
   });
@@ -143,7 +146,9 @@ router.get('/games/:appId', getGameDetail);
 // 密钥类接口设备授权：仅允许持有有效授权的客户端获取 depotKey / token，
 // 防止客户端激活拦截被绕过后直接调用云端接口拿走密钥
 const requireLicensedDevice = (req: Request, res: Response, next: any) => {
-  const deviceId = String(req.query.deviceId || '');
+  // 优先读取请求头（减少 deviceId 经 URL 泄露到访问日志），兼容旧客户端 query 传参
+  const headerId = typeof req.headers['x-device-id'] === 'string' ? req.headers['x-device-id'] : '';
+  const deviceId = String(headerId || req.query.deviceId || '').trim();
   if (!deviceId || deviceId.length > 128) {
     return res.status(401).json({ success: false, message: '缺少或非法的 deviceId，请升级客户端后使用' });
   }
@@ -179,13 +184,30 @@ router.get('/depots/key/:depotId', requireLicensedDevice, getSingleDepotKey);
 router.get('/tokens/stats', getTokensStats);
 router.get('/tokens/:appId', requireLicensedDevice, getTokenForApp);
 
-// Manifest 清单检索与下载
-router.get('/manifests/:appId', getManifestsForApp);
-router.get('/manifests/download/:depotId/:manifestId', downloadManifestFile);
+// Manifest 清单检索与下载（与密钥接口同一设备授权：绕过激活不得直接拉取清单）
+router.get('/manifests/:appId', requireLicensedDevice, getManifestsForApp);
+router.get('/manifests/download/:depotId/:manifestId', requireLicensedDevice, downloadManifestFile);
+
+// 卡密激活/验签/迁移：公开接口但限流防爆破
+const activateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '激活请求过于频繁，请稍后再试' }
+});
+const verifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '验签请求过于频繁，请稍后再试' }
+});
 
 // 客户端设备码绑定与激活码验证 (公开接口)
-router.post('/license/activate', activateLicense);
-router.post('/license/verify', verifyLicense);
+router.post('/license/activate', activateLimiter, activateLicense);
+router.post('/license/verify', verifyLimiter, verifyLicense);
+router.post('/license/rebind', activateLimiter, rebindLicense);
 router.get('/license/status/:deviceId', getDeviceLicenseStatus);
 
 // 工具箱 (Toolbox) 与清单高可用节点 (公开接口)

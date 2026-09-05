@@ -95,6 +95,51 @@ pub fn check_manifest_status(steam_path: &Path, app_id: u32, dlcs: &[u32]) -> Ap
     }
 }
 
+/// 批量清单状态：仅扫描一次 depotcache，避免逐游戏全量遍历（depotcache 可有数千文件）
+pub fn batch_manifest_status(steam_path: &Path, app_ids: &[u32]) -> BTreeMap<u32, AppManifestStatus> {
+    let mut result: BTreeMap<u32, AppManifestStatus> = app_ids
+        .iter()
+        .map(|id| {
+            (
+                *id,
+                AppManifestStatus {
+                    app_id: *id,
+                    has_manifest: false,
+                    manifest_count: 0,
+                    matched_depots: vec![],
+                    manifest_files: vec![],
+                },
+            )
+        })
+        .collect();
+
+    let depot_cache = steam_path.join("depotcache");
+    if !depot_cache.exists() {
+        return result;
+    }
+    if let Ok(files) = fs::read_dir(&depot_cache) {
+        for f in files.filter_map(|e| e.ok()) {
+            let name = f.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".manifest") {
+                continue;
+            }
+            if let Some(d_id) = name.strip_suffix(".manifest").and_then(|s| s.split('_').next()) {
+                if let Ok(id) = d_id.parse::<u32>() {
+                    if let Some(status) = result.get_mut(&id) {
+                        status.has_manifest = true;
+                        status.manifest_count += 1;
+                        if !status.matched_depots.iter().any(|x| x == d_id) {
+                            status.matched_depots.push(d_id.to_string());
+                        }
+                        status.manifest_files.push(name.clone());
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
 fn is_valid_key(key: &str) -> bool {
     key.len() >= 32 && key.chars().all(|c| c.is_ascii_hexdigit()) && !key.chars().all(|c| c == '0')
 }
@@ -134,9 +179,15 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
     let mut depots = Vec::new();
     let depot_keys = BTreeMap::new();
     let s_app_id = app_id.to_string();
+    // 与服务端 metadataController 一致：跳过 config/sharedinstall/shareddepot/redist 等非内容分包
+    const SKIP_PATTERNS: [&str; 4] = ["config", "sharedinstall", "shareddepot", "redist"];
     if let Some(depots_data) = json.pointer(&format!("/data/{}/depots", s_app_id)).and_then(|v| v.as_object()) {
         for (d_id, info) in depots_data {
             if !d_id.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            let name = info.get("name").and_then(|n| n.as_str()).unwrap_or("").to_lowercase();
+            if SKIP_PATTERNS.iter().any(|p| name.contains(p)) {
                 continue;
             }
             let mut gid = None;
@@ -170,9 +221,16 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
 }
 
 fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
-    let url = format!("{}/api/metadata/{}?deviceId={}", SERVER_API, app_id, crate::device::get_device_id());
-    let resp = block_on(http_client().get(&url).timeout(Duration::from_secs(10)).send())
-        .map_err(|e| format!("请求元数据失败: {}", e))?;
+    // deviceId 优先走请求头，减少经 URL query 泄露到访问日志的暴露面
+    let url = format!("{}/api/metadata/{}", SERVER_API, app_id);
+    let resp = block_on(
+        http_client()
+            .get(&url)
+            .timeout(Duration::from_secs(10))
+            .header("x-device-id", crate::device::get_device_id())
+            .send(),
+    )
+    .map_err(|e| format!("请求元数据失败: {}", e))?;
     let json: serde_json::Value = block_on(resp.json()).map_err(|e| format!("解析元数据失败: {}", e))?;
 
     let data = json
@@ -183,7 +241,7 @@ fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
     let mut depot_keys = BTreeMap::new();
     let mut dlc_ids: Vec<u32> = Vec::new();
 
-    let mut collect = |obj: &serde_json::Value, depots: &mut Vec<DepotMeta>, keys: &mut BTreeMap<String, String>| {
+    let collect = |obj: &serde_json::Value, depots: &mut Vec<DepotMeta>, keys: &mut BTreeMap<String, String>| {
         let id = match obj.get("depotId") {
             Some(serde_json::Value::Number(n)) => n.to_string(),
             Some(serde_json::Value::String(s)) => s.clone(),
@@ -529,14 +587,13 @@ pub fn search_local_all(
     let matched: Vec<&(u32, String)> = if q.is_empty() {
         state.games.iter().collect()
     } else {
-        let mut matched: Vec<&(u32, String)> = state
+        state
             .games
             .iter()
             .filter(|(id, name)| {
                 id.to_string().contains(&q) || name.to_lowercase().contains(&q)
             })
-            .collect();
-        matched
+            .collect()
     };
 
     // 纯数字且无命中时，合成 Steam App 条目兜底（与 Electron 版一致）

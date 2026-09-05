@@ -231,6 +231,8 @@ export const createTauriBridge = () => {
     // 清单预缓存（Rust 端经 SteamPipe CDN 下载并解压到 depotcache）
     checkManifestStatus: async (appId: number, dlcs?: number[]): Promise<any> =>
       invoke('check_manifest_status', { appId, dlcs: dlcs || [] }),
+    checkManifestStatusBatch: async (appIds: number[]): Promise<any[]> =>
+      invoke('check_manifest_status_batch', { appIds }),
     downloadManifest: async (appId: number, dlcs?: number[]): Promise<any> =>
       invoke('download_manifests', { appId, dlcs: dlcs || [] }),
 
@@ -242,6 +244,13 @@ export const createTauriBridge = () => {
       const pageSize = params?.pageSize || 48;
 
       if (source === 'local_db') {
+        // 本地全量库仅含英文索引，中文查询降级云端中文检索，未命中再回退本地
+        if (/[\u4e00-\u9fa5]/.test(q)) {
+          const cloud = await searchCloud(q, 'cloud_db', page, pageSize);
+          if (cloud && cloud.items.length > 0) {
+            return { ...cloud, source: 'local_db', sourceName: '云端中文索引' };
+          }
+        }
         return await searchLocal(q, page, pageSize);
       }
       if (source === 'steam_official' || source === 'steam_community') {
@@ -409,10 +418,17 @@ export const createTauriBridge = () => {
         } catch { return null; }
       })();
 
-      if (!forceVerify && cached && cached.deviceId === devId && cached.isActivated) {
-        if (cached.isLifetime || !cached.expiresAt || new Date(cached.expiresAt).getTime() > Date.now()) {
-          return cached;
-        }
+      // 非终身卡缺失/损坏 expiresAt 时缓存不可信，强制走服务端校验
+      const cacheUsable = (c: any): boolean => {
+        if (!c || !c.isActivated) return false;
+        if (c.isLifetime) return true;
+        if (!c.expiresAt) return false;
+        const t = new Date(c.expiresAt).getTime();
+        return !isNaN(t) && t > Date.now();
+      };
+
+      if (!forceVerify && cached && cached.deviceId === devId && cacheUsable(cached)) {
+        return cached;
       }
 
       try {
@@ -428,9 +444,18 @@ export const createTauriBridge = () => {
         }
       } catch {}
 
-      if (cached && cached.deviceId === devId) {
-        // 离线兜底也必须校验本地到期时间，过期授权不放行
-        if (cached.isActivated && !cached.isLifetime && cached.expiresAt) {
+      if (cached && cached.deviceId === devId && cached.isActivated) {
+        // 离线兜底：终身卡放行；非终身卡缺失到期时间或已到期一律不放行
+        if (!cached.isLifetime && !cached.expiresAt) {
+          return {
+            ...cached,
+            isActivated: false,
+            status: 'unverified',
+            remainingDays: 0,
+            message: '本地授权数据不完整，请联网后重新校验！'
+          };
+        }
+        if (!cached.isLifetime && cached.expiresAt) {
           const expMs = new Date(cached.expiresAt).getTime();
           if (!isNaN(expMs) && expMs < Date.now()) {
             return {
@@ -464,6 +489,25 @@ export const createTauriBridge = () => {
         return { success: false, message: `激活请求异常: ${e?.message || String(e)}` };
       }
     },
+    // 换机迁移：凭卡密 + 原设备码将绑定关系迁移到本机（服务端校验原绑定匹配后放行）
+    rebindLicense: async (code: string, oldDeviceId: string): Promise<any> => {
+      const devId = await invoke<string>('get_device_id');
+      try {
+        const resp = await httpFetch(`${API}/api/license/rebind`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, oldDeviceId, newDeviceId: devId })
+        });
+        const json = await resp.json();
+        if (json?.success) {
+          localStorage.setItem('cfd_license_cache', JSON.stringify(json.data));
+          return { success: true, message: json.message, license: json.data };
+        }
+        return { success: false, message: json?.message || '迁移失败' };
+      } catch (e: any) {
+        return { success: false, message: `迁移请求异常: ${e?.message || String(e)}` };
+      }
+    },
     unbindLicense: async (): Promise<any> => {
       localStorage.removeItem('cfd_license_cache');
       return { success: true, message: '已清除本地卡密记录' };
@@ -471,7 +515,11 @@ export const createTauriBridge = () => {
 
     // 工具箱
     toolboxClearCache: async (): Promise<ToolboxActionResult> => invoke('toolbox_clear_cache'),
-    toolboxRepairOst: async (): Promise<ToolboxActionResult> => invoke('toolbox_repair_ost'),
+    // 修复内核时带上用户在设置页选择的清单服务器，避免被硬编码重置
+    toolboxRepairOst: async (): Promise<ToolboxActionResult> => {
+      const manifestApi = localStorage.getItem('chunfengdu_manifest_api') || null;
+      return invoke('toolbox_repair_ost', { manifestApi, customApiUrl: null });
+    },
     toolboxFillSha256: async (): Promise<ToolboxActionResult> => invoke('fill_sha256'),
     toolboxAutoSwitchManifest: async (): Promise<ToolboxActionResult> => invoke('auto_switch_manifest'),
     toolboxGetStatus: async (): Promise<any> => invoke('get_toolbox_status'),

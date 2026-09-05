@@ -72,7 +72,9 @@ export class ToolboxService {
   }
 
   /**
-   * 获取 OpenSteamTool 所需的 SHA256 校验包元数据
+   * 获取 OpenSteamTool 所需的 SHA256 校验包元数据。
+   * 校验数据由客户端在本地对实际部署的 DLL 计算生成（写入 opensteamtool/sha256.json），
+   * 服务端不再下发占位哈希，避免假数据误导校验。
    */
   public getSha256PackageInfo(): {
     version: string;
@@ -81,18 +83,16 @@ export class ToolboxService {
     updatedAt: string;
     recommendedDir: string;
     hashes: Record<string, string>;
+    note: string;
   } {
     return {
-      version: '2026.09.04',
-      totalHashes: 18650,
-      fileSize: '4.8 MB',
-      updatedAt: '2026-09-04T12:00:00Z',
+      version: 'client-local',
+      totalHashes: 0,
+      fileSize: '-',
+      updatedAt: new Date().toISOString(),
       recommendedDir: 'opensteamtool',
-      hashes: {
-        'OpenSteamTool.dll': '9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b',
-        'dwmapi.dll': 'a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e',
-        'xinput1_4.dll': 'f0e1d2c3b4a5968778695a4b3c2d1e0f12345678'
-      }
+      hashes: {},
+      note: 'SHA256 校验数据由客户端本地计算（工具箱「补齐 SHA256」），服务端不提供哈希清单'
     };
   }
 

@@ -227,10 +227,25 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
             let _ = fs::remove_file(&bak_p);
         }
     }
-    for f in ["OnlineFix.ini", "OnlineFix64.dll", "OnlineFix.url", "steam_appid.txt", "Launch_Online_Fix.bat"] {
+    for f in ["OnlineFix.ini", "OnlineFix64.dll", "OnlineFix.url", "Launch_Online_Fix.bat"] {
         let _ = fs::remove_file(dir_path.join(f));
     }
-    let _ = fs::remove_dir_all(dir_path.join("steam_settings"));
+    // steam_appid.txt：仅当内容是本工具 Spacewar 模式写入的 480 时才删除，
+    // 避免误删游戏自带或用户自建的同名文件
+    let appid_file = dir_path.join("steam_appid.txt");
+    if appid_file.exists() {
+        if fs::read_to_string(&appid_file).map(|c| c.trim() == "480").unwrap_or(false) {
+            let _ = fs::remove_file(&appid_file);
+        }
+    }
+    // steam_settings：仅当包含本工具 Goldberg 修复写入的标记文件时才删除，
+    // 保留用户自建的 Goldberg 配置
+    let settings_dir = dir_path.join("steam_settings");
+    if settings_dir.exists()
+        && (settings_dir.join("force_account_name.txt").exists() || settings_dir.join("settings.ini").exists())
+    {
+        let _ = fs::remove_dir_all(&settings_dir);
+    }
 
     // 递归搜索还原（深度 3）
     fn walk_restore(dir: &Path, depth: usize) {

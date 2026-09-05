@@ -136,6 +136,33 @@
           </div>
         </div>
 
+        <!-- 3.5 换机迁移（激活码已被其他设备绑定时出现） -->
+        <div v-if="showRebind" class="space-y-2 p-3 rounded-2xl bg-sky-950/30 border border-sky-500/30">
+          <div class="font-bold text-sky-300 text-xs flex items-center gap-1.5">
+            <ArrowLeftRight class="w-3.5 h-3.5" />
+            <span>换机迁移绑定</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            该激活码已绑定其他设备。若旧设备已报废/重装系统，可填入旧设备上显示的设备码，验证匹配后将绑定迁移到本机。
+          </p>
+          <div class="flex items-center gap-2">
+            <input
+              v-model="rebindOldDeviceId"
+              type="text"
+              placeholder="旧设备码，例如 CFD-XXXX-XXXX-XXXX-XXXX"
+              class="flex-1 bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] font-mono text-slate-100 uppercase tracking-wider focus:outline-none focus:border-sky-400/80"
+            />
+            <button
+              @click="handleRebind"
+              :disabled="rebinding || !rebindOldDeviceId.trim() || !activationCodeInput.trim()"
+              class="px-4 py-2.5 rounded-xl font-bold text-[11px] bg-sky-500/15 border border-sky-500/40 text-sky-300 hover:bg-sky-500/25 transition disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+            >
+              <RotateCw v-if="rebinding" class="w-3.5 h-3.5 animate-spin" />
+              <span>{{ rebinding ? '迁移中...' : '迁移到本机' }}</span>
+            </button>
+          </div>
+        </div>
+
         <!-- 4. 卡种权益卡片网格 -->
         <div class="pt-2">
           <div class="text-[11px] font-bold text-slate-400 mb-2 flex items-center gap-1">
@@ -213,7 +240,8 @@ import {
   Key,
   RotateCw,
   Zap,
-  ShieldCheck
+  ShieldCheck,
+  ArrowLeftRight
 } from 'lucide-vue-next';
 import { ClientLicenseInfo, LicenseType } from '../../types';
 
@@ -231,6 +259,9 @@ const deviceId = ref('');
 const copiedDeviceId = ref(false);
 const activationCodeInput = ref('');
 const activating = ref(false);
+const showRebind = ref(false);
+const rebindOldDeviceId = ref('');
+const rebinding = ref(false);
 
 const getLicenseBadgeClass = (status: string, type?: LicenseType) => {
   if (status === 'active') {
@@ -301,6 +332,7 @@ const handleActivate = async () => {
   }
 
   activating.value = true;
+  showRebind.value = false;
   try {
     const res = await window.electronAPI.activateLicense(code);
     if (res.success) {
@@ -309,11 +341,41 @@ const handleActivate = async () => {
       emit('refresh');
     } else {
       emit('notify', res.message || '激活失败', 'error');
+      // 激活码已被其他设备绑定时，展开换机迁移入口
+      if ((res.message || '').includes('已被其他设备绑定')) {
+        showRebind.value = true;
+      }
     }
   } catch (e: any) {
     emit('notify', `激活失败: ${e.message}`, 'error');
   } finally {
     activating.value = false;
+  }
+};
+
+const handleRebind = async () => {
+  const code = activationCodeInput.value.trim().toUpperCase();
+  const oldDeviceId = rebindOldDeviceId.value.trim().toUpperCase();
+  if (!code || !oldDeviceId) {
+    emit('notify', '请填写激活码与旧设备码后再迁移', 'warning');
+    return;
+  }
+  rebinding.value = true;
+  try {
+    const res = await window.electronAPI.rebindLicense(code, oldDeviceId);
+    if (res.success) {
+      emit('notify', res.message || '绑定已成功迁移到本机！', 'success');
+      showRebind.value = false;
+      rebindOldDeviceId.value = '';
+      activationCodeInput.value = '';
+      emit('refresh');
+    } else {
+      emit('notify', res.message || '迁移失败', 'error');
+    }
+  } catch (e: any) {
+    emit('notify', `迁移失败: ${e.message}`, 'error');
+  } finally {
+    rebinding.value = false;
   }
 };
 
