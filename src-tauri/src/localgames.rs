@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -557,6 +558,8 @@ pub fn launch_game_online(
         Command::new("cmd.exe")
             .args(["/c", "Launch_Online_Fix.bat"])
             .current_dir(&gp)
+            // CREATE_NO_WINDOW：bat 由 start 拉起游戏 GUI，执行 cmd 本身无需窗口
+            .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| format!("执行启动脚本失败: {}", e))?;
         return Ok(format!("已生成并执行 Launch_Online_Fix.bat (AppID: {}) 成功拉起游戏！", online_app_id));
