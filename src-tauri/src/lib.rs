@@ -19,6 +19,13 @@ use crate::toolbox::ToolboxActionResult;
 
 /// 打开任意 URL（steam:// 协议等），供本地模块复用
 pub fn open_url_cmd(url: &str) -> Result<(), String> {
+    // 协议白名单：拒绝 file:// / ms-msdt: / search-ms: 等曾被滥用的
+    // handler，防止 webview 内的注入内容借此逃逸执行
+    const ALLOWED_PREFIXES: [&str; 3] = ["steam://", "http://", "https://"];
+    let lowered = url.to_ascii_lowercase();
+    if !ALLOWED_PREFIXES.iter().any(|p| lowered.starts_with(p)) {
+        return Err(format!("不支持的链接协议，仅允许 steam:// 或 http(s)://: {}", url));
+    }
     // AppHandle::current() 仅在命令/事件回调线程中可用；此处通过全局句柄兜底
     match APP_HANDLE.get() {
         Some(app) => app
@@ -76,19 +83,29 @@ fn get_device_id() -> String {
 // Steam 环境命令
 #[tauri::command]
 async fn get_steam_info(custom_path: Option<String>) -> SteamEnvironmentInfo {
-        tauri::async_runtime::spawn_blocking(move || { steam::get_steam_info(custom_path.as_deref()) })
-        .await
-        .unwrap_or_else(|_e| steam::get_steam_info(None))
+    match tauri::async_runtime::spawn_blocking(move || steam::get_steam_info(custom_path.as_deref())).await {
+        Ok(info) => info,
+        // JoinError 兜底同样不能在 async 线程上同步跑 tasklist/PowerShell，
+        // 返回默认结构即可，避免阻塞 runtime
+        Err(e) => {
+            println!("[Steam] get_steam_info 后台任务失败: {}", e);
+            SteamEnvironmentInfo::default()
+        }
     }
+}
 
 #[tauri::command]
-fn set_steam_path(path: String) -> Result<SteamEnvironmentInfo, String> {
-    let p = PathBuf::from(&path);
-    if !p.join("steam.exe").exists() {
-        return Err(format!("所选目录下未找到 steam.exe: {}", path));
-    }
-    steam::save_custom_steam_path(&path);
-    Ok(steam::get_steam_info(Some(&path)))
+async fn set_steam_path(path: String) -> Result<SteamEnvironmentInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = PathBuf::from(&path);
+        if !p.join("steam.exe").exists() {
+            return Err(format!("所选目录下未找到 steam.exe: {}", path));
+        }
+        steam::save_custom_steam_path(&path);
+        Ok(steam::get_steam_info(Some(&path)))
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -283,21 +300,25 @@ fn remove_unlocked_game(app_id: u32) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn clear_all_games() -> serde_json::Value {
-    if let Some(steam_path) = steam::detect_steam_path() {
-        match ost::clear_all_rules(&steam_path) {
-            Ok(res) => {
-                if res.failed > 0 {
-                    json!({ "success": false, "count": res.removed, "message": format!("已移除 {} 条规则，但 {} 条删除失败（可能被占用）", res.removed, res.failed) })
-                } else {
-                    json!({ "success": true, "count": res.removed, "message": format!("已清空全部 {} 个游戏的入库规则！", res.removed) })
+async fn clear_all_games() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            match ost::clear_all_rules(&steam_path) {
+                Ok(res) => {
+                    if res.failed > 0 {
+                        json!({ "success": false, "count": res.removed, "message": format!("已移除 {} 条规则，但 {} 条删除失败（可能被占用）", res.removed, res.failed) })
+                    } else {
+                        json!({ "success": true, "count": res.removed, "message": format!("已清空全部 {} 个游戏的入库规则！", res.removed) })
+                    }
                 }
+                Err(e) => json!({ "success": false, "message": e }),
             }
-            Err(e) => json!({ "success": false, "message": e }),
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 安装路径" })
         }
-    } else {
-        json!({ "success": false, "message": "未找到 Steam 安装路径" })
-    }
+    })
+    .await
+    .unwrap_or(json!({ "success": false, "message": "任务执行失败" }))
 }
 
 #[tauri::command]
@@ -553,30 +574,35 @@ fn ensure_auto_switch_default(steam_path: &std::path::Path) {
 }
 
 // 工具箱状态（对应 Electron 版 toolboxGetStatus / ToolboxStatusInfo）
+// is_steam_running 走 tasklist 子进程，必须放 spawn_blocking 防止冻结主线程
 #[tauri::command]
-fn get_toolbox_status() -> serde_json::Value {
-    let steam_path = steam::detect_steam_path();
-    match &steam_path {
-        None => json!({
-            "steamPath": null,
-            "isRunning": false,
-            "hasOpenSteamTool": false,
-            "hasSha256Cache": false,
-            "autoSwitchEnabled": false,
-            "currentManifestServer": "steamrun"
-        }),
-        Some(p) => {
-            let (auto_switch, server) = read_toml_server(p);
-            json!({
-                "steamPath": p.to_string_lossy(),
-                "isRunning": steam::is_steam_running(),
-                "hasOpenSteamTool": p.join("OpenSteamTool.dll").exists(),
-                "hasSha256Cache": p.join("opensteamtool").join("sha256.json").exists(),
-                "autoSwitchEnabled": auto_switch,
-                "currentManifestServer": server
-            })
+async fn get_toolbox_status() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        let steam_path = steam::detect_steam_path();
+        match &steam_path {
+            None => json!({
+                "steamPath": null,
+                "isRunning": false,
+                "hasOpenSteamTool": false,
+                "hasSha256Cache": false,
+                "autoSwitchEnabled": false,
+                "currentManifestServer": "steamrun"
+            }),
+            Some(p) => {
+                let (auto_switch, server) = read_toml_server(p);
+                json!({
+                    "steamPath": p.to_string_lossy(),
+                    "isRunning": steam::is_steam_running(),
+                    "hasOpenSteamTool": p.join("OpenSteamTool.dll").exists(),
+                    "hasSha256Cache": p.join("opensteamtool").join("sha256.json").exists(),
+                    "autoSwitchEnabled": auto_switch,
+                    "currentManifestServer": server
+                })
+            }
         }
-    }
+    })
+    .await
+    .unwrap_or(json!({ "success": false, "message": "任务执行失败" }))
 }
 
 /// 对 opensteamtool.toml 做 [manifest] 段内字段级更新（保留其余用户配置）
@@ -754,15 +780,17 @@ fn open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn check_manifest_status(app_id: u32, dlcs: Option<Vec<u32>>) -> serde_json::Value {
-    match steam::detect_steam_path() {
+async fn check_manifest_status(app_id: u32, dlcs: Option<Vec<u32>>) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || match steam::detect_steam_path() {
         Some(sp) => {
             let dlcs = dlcs.unwrap_or_default();
             let s = manifests::check_manifest_status(&sp, app_id, &dlcs);
             serde_json::to_value(s).unwrap_or(json!({}))
         }
         None => json!({ "appId": app_id, "hasManifest": false, "manifestCount": 0, "matchedDepots": [], "manifestFiles": [] }),
-    }
+    })
+    .await
+    .unwrap_or(json!({ "appId": app_id, "hasManifest": false, "manifestCount": 0, "matchedDepots": [], "manifestFiles": [] }))
 }
 
 #[tauri::command]

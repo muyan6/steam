@@ -77,27 +77,56 @@ pub fn set_account(username: &str, password: &str) {
 
 /// 带 cookie 存储的会话客户端（未配置账号时为访客模式）
 fn session_client() -> reqwest::Client {
-    let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(c) = guard.as_ref() {
-        return c.clone();
+    {
+        let guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(c) = guard.as_ref() {
+            return c.clone();
+        }
     }
+    // 登录是两次网络请求（最长可达 ~24s），绝不能在持锁状态下执行，
+    // 否则期间所有并发调用 session_client 的线程都会卡在锁上
     let builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(12))
         .user_agent(UA)
         .cookie_store(true);
+    let mut built = builder.build().unwrap_or_else(|_| reqwest::Client::new());
     if let Some((user, pass)) = load_account() {
         // 登录：先取 authtoken，再提交登录表单（cookie 由 client 自动管理）
-        let c = builder.build().unwrap_or_else(|_| reqwest::Client::new());
-        let _ = login(&c, &user, &pass);
-        *guard = Some(c.clone());
-        return c;
+        match login(&mut built, &user, &pass) {
+            Ok(()) => {
+                if let Ok(mut guard) = LOGIN_ERROR.lock() {
+                    *guard = None;
+                }
+            }
+            Err(e) => {
+                // 登录失败静默降级为访客会话，但记录原因供失败提示透传，
+                // 否则用户看到的下载报错与真实原因（未登录）完全对不上
+                if let Ok(mut guard) = LOGIN_ERROR.lock() {
+                    *guard = Some(e.clone());
+                }
+                println!("[OnlineFix] 账号登录失败（将降级为访客会话）: {}", e);
+            }
+        }
     }
-    builder.build().unwrap_or_else(|_| reqwest::Client::new())
+    if let Ok(mut guard) = SESSION.lock() {
+        *guard = Some(built.clone());
+    }
+    built
 }
 
 static SESSION: Mutex<Option<reqwest::Client>> = Mutex::new(None);
+/// 最近一次账号登录失败原因（None=登录成功或访客模式）
+static LOGIN_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
-fn login(client: &reqwest::Client, user: &str, pass: &str) -> Result<(), String> {
+/// 若存在未解决的登录失败，生成一段附加到错误消息上的提示
+fn login_error_hint() -> String {
+    match LOGIN_ERROR.lock().unwrap_or_else(|e| e.into_inner()).as_deref() {
+        Some(e) => format!("（注意：联机账号登录失败：{}，部分资源需登录后才能获取）", e),
+        None => String::new(),
+    }
+}
+
+fn login(client: &mut reqwest::Client, user: &str, pass: &str) -> Result<(), String> {
     let token_resp = crate::manifests::block_on(
         client
             .get(format!("{}/engine/ajax/authtoken.php", ONLINEFIX_HOST))
@@ -120,13 +149,17 @@ fn login(client: &reqwest::Client, user: &str, pass: &str) -> Result<(), String>
         form.push((field, value.to_string()));
     }
 
-    let _ = crate::manifests::block_on(
+    let resp = crate::manifests::block_on(
         client
             .post(ONLINEFIX_HOST)
             .header("Referer", format!("{}/", ONLINEFIX_HOST))
             .form(&form)
             .send(),
-    );
+    )
+    .map_err(|e| format!("登录请求发送失败: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("登录返回 HTTP {}", resp.status()));
+    }
     Ok(())
 }
 
@@ -224,7 +257,11 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
     let Some(article) = find_article_url(app_id, game_name) else {
         return OnlineFixSearchResult {
             found: false,
-            message: Some(format!("未在 online-fix.me 搜索到该游戏 (AppID: {}) 的联机补丁", app_id)),
+            message: Some(format!(
+                "未在 online-fix.me 搜索到该游戏 (AppID: {}) 的联机补丁{}",
+                app_id,
+                login_error_hint()
+            )),
             game_article_url: None,
             file_name: None,
             download_url: None,
@@ -283,7 +320,7 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
     else {
         return OnlineFixSearchResult {
             found: true,
-            message: Some("分流页面加载失败".to_string()),
+            message: Some(format!("分流页面加载失败{}", login_error_hint())),
             game_article_url: Some(article),
             file_name: None,
             download_url: None,
@@ -401,6 +438,22 @@ fn canonicalize_normalized(p: &Path) -> PathBuf {
         }
         Err(_) => p.to_path_buf(),
     }
+}
+
+/// 大小写不敏感的组件级路径前缀比较（含相等）。
+/// Path::starts_with 对大小写敏感：目标文件尚未落盘时 canonicalize 失败
+/// 回退原始路径，与归一化后的真实大小写路径比较一旦盘符/目录大小写
+/// 不一致就会全部误判越界（表现为「补丁解压成功但 0 个文件写入」）。
+fn starts_with_ci(p: &Path, base: &Path) -> bool {
+    let pc: Vec<String> = p
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect();
+    let bc: Vec<String> = base
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect();
+    pc.len() >= bc.len() && pc[..bc.len()] == bc[..]
 }
 
 /// 校验下载内容确为 RAR/ZIP 归档（防风控页/错误页 HTML 被当作补丁落盘）
@@ -554,7 +607,7 @@ pub fn deploy_patch_entries(
         }
         let dest = gp.join(&entry.name);
         let dest_resolved = canonicalize_normalized(&dest);
-        if dest_resolved != resolved_game && !dest_resolved.starts_with(&resolved_game) {
+        if !starts_with_ci(&dest_resolved, &resolved_game) {
             println!("[OnlineFix] 已拒绝解压越界条目: {}", entry.name);
             continue;
         }
@@ -614,7 +667,7 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
             continue; // 越界条目直接拒绝
         };
         let out_path = dest.join(&safe_name);
-        if !out_path.starts_with(&dest_resolved) {
+        if !starts_with_ci(&out_path, &dest_resolved) {
             continue;
         }
 

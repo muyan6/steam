@@ -5,9 +5,13 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 /// 未激活用户每日免费入库次数
 pub const FREE_DAILY_LIMIT: u32 = 2;
+
+/// 读-改-写互斥：防止并发调用同时读到相同 used 而少扣额度
+static QUOTA_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone)]
 pub struct QuotaStatus {
@@ -113,6 +117,7 @@ pub fn consume_free_quota(is_activated: bool) -> QuotaStatus {
     if is_activated {
         return build_status(true, 0, false);
     }
+    let _guard = QUOTA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = quota_file();
     let used = read_used_today(path.as_ref());
     if used >= FREE_DAILY_LIMIT {

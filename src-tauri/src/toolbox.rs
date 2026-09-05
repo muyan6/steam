@@ -31,12 +31,13 @@ pub fn clear_steam_cache(steam_path: &Path) -> ToolboxActionResult {
 
     // 步骤 2: 删除 DLL 内核文件与冲突残留
     steps.push("正在深度清理 DLL 内核文件、CEF/网页缓存及临时日志...".to_string());
+    // 注意：绝不能清理 hid.dll —— Steam 安装目录自带官方 hid.dll（手柄输入支持），
+    // 误删会破坏 Steam Input 且用户无法自行恢复
     let kernel_files = [
         "OpenSteamTool.dll",
         "dwmapi.dll",
         "xinput1_4.dll",
         "version.dll",
-        "hid.dll",
         "SmokeAPI.dll",
         "opensteamtool.toml",
     ];

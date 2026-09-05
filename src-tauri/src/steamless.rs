@@ -148,6 +148,7 @@ fn unpack_single(
         .args(["--quiet", "--keepbind"])
         .arg(exe_path)
         .current_dir(dir)
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW：GUI 发布版下避免闪现控制台黑框
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
@@ -193,6 +194,8 @@ fn unpack_single(
             let _ = fs::remove_file(&unpacked);
             return (true, format!("成功通过 Steamless CLI 解密并替换 ({})", file_label), "unpacked");
         }
+        // 替换失败时清理残留的解密输出，避免占用磁盘且干扰下次判断
+        let _ = fs::remove_file(&unpacked);
     }
 
     (
@@ -246,20 +249,17 @@ pub fn repair_game_with_resource(game_dir: &str, game_name: Option<&str>, resour
     };
 
     let mut repaired = 0;
-    let mut skipped = 0;
     let mut details = Vec::new();
     for exe in &exes {
         let name = exe.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let (ok, msg, status) = unpack_single(&cli.to_string_lossy(), exe);
+        let (ok, msg, _status) = unpack_single(&cli.to_string_lossy(), exe);
         details.push(SteamlessDetail {
             file: name,
-            status: status.to_string(),
+            status: _status.to_string(),
             message: Some(msg),
         });
         if ok {
             repaired += 1;
-        } else if status == "skipped" {
-            skipped += 1;
         }
     }
 
@@ -275,7 +275,8 @@ pub fn repair_game_with_resource(game_dir: &str, game_name: Option<&str>, resour
         total_found: exes.len(),
         repaired_count: repaired,
         backup_count: repaired,
-        skipped_count: skipped,
+        // unpack_single 只会返回 unpacked/error，skipped 分支是死代码，恒为 0
+        skipped_count: 0,
         details,
     }
 }

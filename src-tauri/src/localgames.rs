@@ -138,11 +138,16 @@ pub fn check_game_directory(dir_path: &Path) -> (bool, String, Option<u32>) {
         let mut app_id = None;
         if let Ok(content) = fs::read_to_string(dir_path.join("OnlineFix.ini")) {
             // 查找 RealAppId=数字（大小写不敏感）
+            // 用 get 切片而非索引：INI 来自外部下载文件，按字节索引
+            // 可能把多字节字符切开直接 panic，毁掉整个本地游戏扫描
             for line in content.lines() {
                 let line = line.trim();
-                if line.len() >= 10 && line[..10].eq_ignore_ascii_case("RealAppId=") {
-                    if let Ok(id) = line[10..].trim().trim_end_matches(';').parse::<u32>() {
-                        app_id = Some(id);
+                let is_prefix = line.get(..10).map(|p| p.eq_ignore_ascii_case("RealAppId=")).unwrap_or(false);
+                if is_prefix {
+                    if let Some(rest) = line.get(10..) {
+                        if let Ok(id) = rest.trim().trim_end_matches(';').parse::<u32>() {
+                            app_id = Some(id);
+                        }
                     }
                 }
             }
@@ -239,6 +244,12 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
         if fs::read_to_string(&appid_file).map(|c| c.trim() == "480").unwrap_or(false) {
             let _ = fs::remove_file(&appid_file);
         }
+    }
+    // Spacewar 启动前备份的 steam_appid.txt.cfd_bak 还原并清理，避免残留
+    let appid_bak = dir_path.join("steam_appid.txt.cfd_bak");
+    if appid_bak.exists() {
+        let _ = fs::copy(&appid_bak, &appid_file);
+        let _ = fs::remove_file(&appid_bak);
     }
     // steam_settings：仅当包含本工具 Goldberg 修复写入的标记文件时才删除，
     // 保留用户自建的 Goldberg 配置
@@ -522,9 +533,20 @@ pub fn launch_game_online(
 
     if mode == "bat" {
         let exe_name = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        // 目录名/exe 名直接拼进 bat 命令行，& | ^ < > % 等字符会被 cmd 解析
+        // 成额外命令或变量展开（文件夹名合法含这些字符），必须先清洗
+        let sanitize = |s: &str| -> String {
+            s.chars()
+                .filter(|c| !"&|^<>%\"!".contains(*c))
+                .collect::<String>()
+                .trim()
+                .to_string()
+        };
+        let bat_title = sanitize(&gp.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+        let exe_name = sanitize(&exe_name);
         let bat = format!(
             "@echo off\ntitle Online Fix Launcher - {}\ncd /d \"%~dp0\"\nset SteamAppId={}\nset SteamGameId={}\nset SteamOverlayGameId={}\nstart \"\" \"{}\" %*\nexit\n",
-            gp.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+            bat_title,
             online_app_id,
             online_app_id,
             online_app_id,

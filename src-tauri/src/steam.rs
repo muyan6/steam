@@ -5,7 +5,7 @@ use winreg::enums::*;
 use winreg::RegKey;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SteamEnvironmentInfo {
     pub is_running: bool,
@@ -107,8 +107,10 @@ pub fn detect_steam_path() -> Option<PathBuf> {
 }
 
 pub fn is_steam_running() -> bool {
+    // CREATE_NO_WINDOW：GUI 发布版（windows_subsystem）下不加会闪现控制台黑框
     let output = Command::new("tasklist")
         .args(["/FI", "IMAGENAME eq steam.exe", "/NH"])
+        .creation_flags(0x08000000)
         .output();
 
     if let Ok(out) = output {
@@ -232,7 +234,10 @@ pub fn kill_steam() -> bool {
             return true;
         }
         for proc_name in ["steam.exe", "steamwebhelper.exe", "steamservice.exe"] {
-            let _ = Command::new("taskkill").args(["/F", "/IM", proc_name]).output();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", proc_name])
+                .creation_flags(0x08000000)
+                .output();
         }
         std::thread::sleep(std::time::Duration::from_millis(600));
     }
@@ -245,6 +250,7 @@ pub fn kill_steam() -> bool {
                 "-Command",
                 "Start-Process taskkill -ArgumentList '/F /IM steam.exe','/F /IM steamwebhelper.exe' -Verb RunAs -WindowStyle Hidden",
             ])
+            .creation_flags(0x08000000)
             .output();
         std::thread::sleep(std::time::Duration::from_millis(1500));
     }

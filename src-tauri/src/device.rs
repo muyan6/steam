@@ -97,6 +97,8 @@ fn enumerate_adapters() -> Vec<(Vec<u8>, usize)> {
     let mut out = Vec::new();
     let mut size: u32 = 15 * 1024;
     let mut buffer: Vec<u8>;
+    // ERROR_BUFFER_OVERFLOW 重试加上限：API 异常时避免死循环
+    let mut retries = 0u8;
     loop {
         buffer = vec![0u8; size as usize];
         let rc = unsafe {
@@ -111,7 +113,8 @@ fn enumerate_adapters() -> Vec<(Vec<u8>, usize)> {
         if rc == NO_ERROR {
             break;
         }
-        if rc == ERROR_BUFFER_OVERFLOW {
+        if rc == ERROR_BUFFER_OVERFLOW && retries < 5 {
+            retries += 1;
             continue;
         }
         return out;
