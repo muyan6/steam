@@ -15,6 +15,19 @@ out/
 .env.local
 .env.*.local
 
+# Server runtime data (卡密/凭据/设备档案等，绝不入库)
+server/data/admin_credentials.json
+server/data/admin_credentials.json.corrupt
+server/data/admin_audit.json
+server/data/push_logs.json
+server/data/steam_tokens.json
+server/data/steam_depot_keys.json
+server/data/license_keys.json
+server/data/notices.json
+server/data/notice.json
+server/data/chinese_games_cache.json
+server/data/toolbox_logs.json
+
 # OS & Editor files
 .DS_Store
 Thumbs.db

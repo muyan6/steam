@@ -347,7 +347,8 @@ fn parse_local_db_text(text: &str) -> Vec<(u32, String)> {
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
         if let Some(arr) = json.as_array() {
             for item in arr {
-                let appid = match item.get("appid") {
+                // 数据文件字段名为驼峰 appId（兼容小写 appid）
+                let appid = match item.get("appId").or_else(|| item.get("appid")) {
                     Some(serde_json::Value::Number(n)) => n.as_u64().unwrap_or(0) as u32,
                     Some(serde_json::Value::String(s)) => s.parse::<u32>().unwrap_or(0),
                     _ => continue,
