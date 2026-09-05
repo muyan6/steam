@@ -1,5 +1,6 @@
 <template>
-  <div class="flex h-screen w-screen theme-bg-base text-slate-100 font-sans select-none overflow-hidden transition-colors duration-300">
+  <!-- h-full/w-full 而非 h-screen/w-screen：CSS zoom 缩放下 100vh/100vw 不随 zoom 变化，会导致内容横向溢出窗口 -->
+  <div class="flex h-full w-full theme-bg-base text-slate-100 font-sans select-none overflow-hidden transition-colors duration-300">
     <!-- 左侧导航侧边栏 -->
     <aside class="w-60 xl:w-64 bg-slate-950/40 border-r border-white/5 backdrop-blur-2xl flex flex-col justify-between shrink-0 z-20 transition-all duration-300">
       <div>
