@@ -4,8 +4,8 @@
       <!-- 顶部 Header -->
       <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl theme-btn-primary flex items-center justify-center text-slate-950 font-black text-lg shadow-lg">
-            <Zap class="w-5 h-5 text-slate-950 fill-slate-950" />
+          <div class="w-9 h-9 rounded-xl overflow-hidden shadow-lg bg-slate-950/40 shrink-0">
+            <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
           </div>
           <div>
             <h2 class="font-bold text-sm text-slate-100 flex items-center gap-2">
@@ -276,7 +276,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
-import { 
+import appLogo from '../assets/logo.svg';
+import {
   Zap, 
   Folder, 
   FolderOpen, 

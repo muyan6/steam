@@ -1,12 +1,14 @@
 <template>
-  <div class="flex h-screen w-screen theme-bg-base text-slate-100 font-sans select-none overflow-hidden transition-colors duration-300">
+  <div class="flex flex-col h-screen w-screen theme-bg-base text-slate-100 font-sans select-none overflow-hidden transition-colors duration-300 p-1.5">
+    <!-- 应用外壳：整窗圆角悬浮卡片，与内部模块的圆角语言统一，顶栏不再有尖锐直角 -->
+    <div class="flex flex-1 min-h-0 rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative">
     <!-- 左侧导航侧边栏 -->
     <aside class="w-60 xl:w-64 bg-slate-950/40 border-r border-white/5 backdrop-blur-2xl flex flex-col justify-between shrink-0 z-20 transition-all duration-300">
       <div>
         <!-- 品牌 Logo & 窗口拖拽区域 -->
         <div class="p-4 flex items-center gap-3 border-b border-white/5 app-drag-region">
-          <div class="w-9 h-9 rounded-2xl theme-btn-primary flex items-center justify-center text-slate-950 font-black text-lg shadow-lg relative group shrink-0 app-no-drag">
-            <Zap class="w-5 h-5 text-slate-950 fill-slate-950" />
+          <div class="w-9 h-9 rounded-2xl overflow-hidden shadow-lg relative group shrink-0 app-no-drag bg-slate-950/40">
+            <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
             <div class="absolute inset-0 rounded-2xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </div>
           <div class="min-w-0 flex-1 app-no-drag">
@@ -50,18 +52,10 @@
             <Activity class="w-3.5 h-3.5 text-slate-400" />
             <span>Steam 客户端:</span>
           </span>
-          <div class="flex items-center gap-1.5">
-            <span
-              v-if="steamInfo.steamBitness && steamInfo.steamBitness !== 'unknown'"
-              class="px-1.5 py-0.5 rounded text-[11px] bg-slate-800/80 text-slate-300 font-mono font-semibold border border-white/10"
-            >
-              {{ steamInfo.steamBitness === 'x86' ? '32位' : '64位' }}
-            </span>
-            <span class="flex items-center gap-1 text-xs font-bold" :class="steamInfo.isRunning ? 'text-emerald-400' : 'text-slate-400'">
-              <span class="w-2 h-2 rounded-full" :class="steamInfo.isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'"></span>
-              {{ steamInfo.isRunning ? '运行中' : '未启动' }}
-            </span>
-          </div>
+          <span class="flex items-center gap-1 text-xs font-bold" :class="steamInfo.isRunning ? 'text-emerald-400' : 'text-slate-400'">
+            <span class="w-2 h-2 rounded-full" :class="steamInfo.isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'"></span>
+            {{ steamInfo.isRunning ? '运行中' : '未启动' }}
+          </span>
         </div>
 
         <div class="flex items-center justify-between mb-2 text-xs bg-slate-950/40 px-2.5 py-1.5 rounded-xl border border-white/5">
@@ -196,6 +190,8 @@
         />
       </div>
     </main>
+    </div>
+    <!-- /应用外壳 -->
 
     <!-- 启动向导模态框 (首次启动强引导；设置页手动打开时可随时关闭) -->
     <StartupWizardModal
@@ -326,9 +322,8 @@ import {
   Search, 
   Library, 
   Gamepad2, 
-  Settings2, 
-  Zap, 
-  RotateCw, 
+  Settings2,
+  RotateCw,
   Folder, 
   Cloud, 
   ShieldCheck, 
@@ -356,6 +351,7 @@ import LicenseModal from './components/LicenseModal.vue';
 import Toast, { ToastItem } from './components/Toast.vue';
 import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
+import appLogo from './assets/logo.svg';
 
 const appVersion = '2.0.0';
 const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'about' | 'settings'>('search');

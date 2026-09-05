@@ -478,7 +478,7 @@ const handleImgError = async (game: SteamGame) => {
   failedImgs.add(game.appId);
 };
 
-const quickTags = ['后室', '黑神话', '艾尔登法环', '双人成行', '只狼', '博德之门', '幻兽帕鲁', '太空狼人杀'];
+const quickTags = ['后室', '艾尔登法环', '双人成行', '只狼', '博德之门', '幻兽帕鲁', '太空狼人杀'];
 
 // 搜索竞态守卫：只有最新一次请求的结果才允许落地
 let searchRequestId = 0;
