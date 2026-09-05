@@ -1,7 +1,5 @@
 <template>
-  <div class="flex flex-col h-screen w-screen theme-bg-base text-slate-100 font-sans select-none overflow-hidden transition-colors duration-300 p-1.5">
-    <!-- 应用外壳：整窗圆角悬浮卡片，与内部模块的圆角语言统一，顶栏不再有尖锐直角 -->
-    <div class="flex flex-1 min-h-0 rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative">
+  <div class="flex h-screen w-screen theme-bg-base text-slate-100 font-sans select-none overflow-hidden transition-colors duration-300">
     <!-- 左侧导航侧边栏 -->
     <aside class="w-60 xl:w-64 bg-slate-950/40 border-r border-white/5 backdrop-blur-2xl flex flex-col justify-between shrink-0 z-20 transition-all duration-300">
       <div>
@@ -190,8 +188,6 @@
         />
       </div>
     </main>
-    </div>
-    <!-- /应用外壳 -->
 
     <!-- 启动向导模态框 (首次启动强引导；设置页手动打开时可随时关闭) -->
     <StartupWizardModal
