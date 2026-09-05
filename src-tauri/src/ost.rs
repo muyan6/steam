@@ -122,12 +122,96 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
     lines.join("\n") + "\n"
 }
 
-pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<PathBuf, String> {
+pub struct SaveRuleResult {
+    pub lua_path: PathBuf,
+    pub depot_count: usize,
+    pub key_count: usize,
+    pub manifest_count: usize,
+    pub dlc_count: usize,
+    pub metadata_ok: bool,
+}
+
+fn is_valid_depot_key(key: &str) -> bool {
+    key.len() >= 32 && !key.chars().all(|c| c == '0')
+}
+
+/// 以服务端元数据为准（密钥库 + SteamCMD 清单 GID），与前端传入的 depots/dlcs 合并
+fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload, bool) {
+    let mut by_id: std::collections::BTreeMap<u32, DepotInfo> = std::collections::BTreeMap::new();
+    for d in payload.depots.iter().flatten() {
+        by_id.entry(d.depot_id).or_insert_with(|| d.clone());
+    }
+    let mut dlcs: Vec<u32> = payload.dlcs.clone().unwrap_or_default();
+    let mut metadata_ok = false;
+
+    if let Ok(meta) = crate::manifests::parse_metadata(payload.app_id) {
+        metadata_ok = true;
+        for m in &meta.depots {
+            let id: u32 = match m.depot_id.parse() {
+                Ok(v) if v > 0 => v,
+                _ => continue,
+            };
+            let entry = by_id.entry(id).or_insert_with(|| DepotInfo {
+                depot_id: id,
+                name: None,
+                depot_key: None,
+                manifest_id: None,
+            });
+            if let Some(g) = &m.manifest_gid {
+                if !g.is_empty() && g != "0" {
+                    entry.manifest_id = Some(g.clone());
+                }
+            }
+            if let Some(k) = &m.depot_key {
+                if is_valid_depot_key(k) {
+                    entry.depot_key = Some(k.clone());
+                }
+            }
+        }
+        for dlc in meta.dlc_ids {
+            if dlc != payload.app_id && !dlcs.contains(&dlc) {
+                dlcs.push(dlc);
+            }
+        }
+    }
+
+    let merged = UnlockGamePayload {
+        app_id: payload.app_id,
+        name: payload.name.clone(),
+        name_zh: payload.name_zh.clone(),
+        depots: Some(by_id.into_values().collect()),
+        dlcs: Some(dlcs),
+    };
+    (merged, metadata_ok)
+}
+
+pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<SaveRuleResult, String> {
+    let (merged, metadata_ok) = merge_with_server_metadata(payload);
+    let key_count = merged
+        .depots
+        .as_ref()
+        .map(|ds| ds.iter().filter(|d| d.depot_key.as_deref().map(is_valid_depot_key).unwrap_or(false)).count())
+        .unwrap_or(0);
+    let manifest_count = merged
+        .depots
+        .as_ref()
+        .map(|ds| ds.iter().filter(|d| d.manifest_id.as_deref().map(|m| !m.is_empty() && m != "0").unwrap_or(false)).count())
+        .unwrap_or(0);
+    let depot_count = merged.depots.as_ref().map(|d| d.len()).unwrap_or(0);
+    let dlc_count = merged.dlcs.as_ref().map(|d| d.len()).unwrap_or(0);
+
     let lua_dir = ensure_lua_dir(steam_path)?;
     let lua_file = lua_dir.join(format!("{}.lua", payload.app_id));
-    let content = generate_lua_script(payload);
+    let content = generate_lua_script(&merged);
     fs::write(&lua_file, content).map_err(|e| format!("写入 Lua 规则失败: {}", e))?;
-    Ok(lua_file)
+    Ok(SaveRuleResult {
+        lua_path: lua_file,
+        depot_count,
+        key_count,
+        manifest_count,
+        dlc_count,
+        metadata_ok,
+    })
 }
 
 pub fn get_unlocked_app_ids(steam_path: &Path) -> Vec<u32> {

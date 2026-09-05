@@ -99,13 +99,22 @@ fn is_valid_key(key: &str) -> bool {
     key.len() >= 32 && key.chars().all(|c| c.is_ascii_hexdigit()) && !key.chars().all(|c| c == '0')
 }
 
-struct DepotMeta {
-    depot_id: String,
-    manifest_gid: Option<String>,
-    depot_key: Option<String>,
+#[derive(Debug, Clone)]
+pub struct DepotMeta {
+    pub depot_id: String,
+    pub manifest_gid: Option<String>,
+    pub depot_key: Option<String>,
 }
 
-fn parse_metadata(app_id: u32) -> Result<(Vec<DepotMeta>, BTreeMap<String, String>), String> {
+/// 服务端元数据聚合结果（分包/密钥/DLC 列表）
+#[derive(Debug, Clone)]
+pub struct AppMetadata {
+    pub depots: Vec<DepotMeta>,
+    pub depot_keys: BTreeMap<String, String>,
+    pub dlc_ids: Vec<u32>,
+}
+
+pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
     let url = format!("{}/api/metadata/{}?deviceId={}", SERVER_API, app_id, crate::device::get_machine_guid());
     let resp = block_on(http_client().get(&url).timeout(Duration::from_secs(10)).send())
         .map_err(|e| format!("请求元数据失败: {}", e))?;
@@ -117,6 +126,7 @@ fn parse_metadata(app_id: u32) -> Result<(Vec<DepotMeta>, BTreeMap<String, Strin
 
     let mut depots = Vec::new();
     let mut depot_keys = BTreeMap::new();
+    let mut dlc_ids: Vec<u32> = Vec::new();
 
     let mut collect = |obj: &serde_json::Value, depots: &mut Vec<DepotMeta>, keys: &mut BTreeMap<String, String>| {
         let id = match obj.get("depotId") {
@@ -151,13 +161,41 @@ fn parse_metadata(app_id: u32) -> Result<(Vec<DepotMeta>, BTreeMap<String, Strin
     }
     if let Some(list) = data.get("dlcDepots").and_then(|v| v.as_array()) {
         for wrapper in list {
+            if let Some(dlc_app_id) = wrapper
+                .get("dlcAppId")
+                .and_then(|v| v.as_str().and_then(|s| s.parse::<u32>().ok()).or_else(|| v.as_u64().map(|n| n as u32)))
+            {
+                if dlc_app_id > 0 && !dlc_ids.contains(&dlc_app_id) {
+                    dlc_ids.push(dlc_app_id);
+                }
+            }
             if let Some(obj) = wrapper.get("depot") {
                 collect(obj, &mut depots, &mut depot_keys);
             }
         }
     }
 
-    Ok((depots, depot_keys))
+    // 兼容：data.dlcIds 直接给出 DLC 列表时一并合并
+    if let Some(list) = data.get("dlcIds").and_then(|v| v.as_array()) {
+        for v in list {
+            let id = match v {
+                serde_json::Value::Number(n) => n.as_u64().map(|x| x as u32),
+                serde_json::Value::String(s) => s.parse::<u32>().ok(),
+                _ => None,
+            };
+            if let Some(id) = id {
+                if id > 0 && id != app_id && !dlc_ids.contains(&id) {
+                    dlc_ids.push(id);
+                }
+            }
+        }
+    }
+
+    Ok(AppMetadata {
+        depots,
+        depot_keys,
+        dlc_ids,
+    })
 }
 
 const FALLBACK_CDN_HOSTS: [&str; 12] = [
@@ -271,7 +309,7 @@ pub fn download_depot_manifests(
     app_id: u32,
     _dlcs: &[u32],
 ) -> ManifestInstallResult {
-    let (depots, depot_keys) = match parse_metadata(app_id) {
+    let meta = match parse_metadata(app_id) {
         Ok(v) => v,
         Err(e) => {
             return ManifestInstallResult {
@@ -286,6 +324,8 @@ pub fn download_depot_manifests(
             };
         }
     };
+    let depots = meta.depots;
+    let depot_keys = meta.depot_keys;
 
     // 元数据已包含本体与全部 DLC depot，统一预缓存（与 Electron 版行为一致）
     let valid: Vec<&DepotMeta> = depots

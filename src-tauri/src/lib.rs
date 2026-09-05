@@ -204,22 +204,45 @@ async fn activate_injection(
     }
 
 #[tauri::command]
-fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
-    if let Some(steam_path) = steam::detect_steam_path() {
-        match ost::save_lua_rule(&steam_path, &payload) {
-            Ok(file_path) => {
-                let name = payload.name_zh.as_deref().unwrap_or(&payload.name);
-                json!({
-                    "success": true,
-                    "message": format!("成功为「{}」写入标准入库规则！已自动热生效 (无须重启 Steam，直接在库中搜索即可下载)！", name),
-                    "scriptPath": file_path.to_string_lossy()
-                })
+async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            match ost::save_lua_rule(&steam_path, &payload) {
+                Ok(res) => {
+                    let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
+                    let message = if res.metadata_ok && (res.key_count > 0 || res.manifest_count > 0) {
+                        format!(
+                            "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{} 条清单 GID，含 {} 个 DLC）！已自动热生效，直接在库中搜索即可下载！",
+                            name, res.key_count, res.manifest_count, res.dlc_count
+                        )
+                    } else if res.metadata_ok {
+                        format!(
+                            "成功为「{}」写入入库授权（服务器暂无该游戏的密钥/清单数据，共 {} 个分包）！已自动热生效，可尝试下载或稍后重试入库。",
+                            name, res.depot_count
+                        )
+                    } else {
+                        format!(
+                            "已为「{}」写入入库授权，但未能连接密钥服务器获取分包密钥与清单，下载可能为 0 字节！请检查网络后重新入库，或在库中对该游戏执行「预缓存」。",
+                            name
+                        )
+                    };
+                    json!({
+                        "success": true,
+                        "message": message,
+                        "scriptPath": res.lua_path.to_string_lossy(),
+                        "keyCount": res.key_count,
+                        "manifestCount": res.manifest_count,
+                        "metadataOk": res.metadata_ok
+                    })
+                }
+                Err(e) => json!({ "success": false, "message": e }),
             }
-            Err(e) => json!({ "success": false, "message": e }),
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 客户端路径" })
         }
-    } else {
-        json!({ "success": false, "message": "未找到 Steam 客户端路径" })
-    }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("入库任务执行失败: {}", e) }))
 }
 
 #[tauri::command]
