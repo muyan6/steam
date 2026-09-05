@@ -72,6 +72,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-http",
  "tauri-plugin-opener",
+ "windows-sys 0.59.0",
  "winreg 0.52.0",
  "zip",
 ]

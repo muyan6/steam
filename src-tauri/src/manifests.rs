@@ -112,10 +112,65 @@ pub struct AppMetadata {
     pub depots: Vec<DepotMeta>,
     pub depot_keys: BTreeMap<String, String>,
     pub dlc_ids: Vec<u32>,
+    pub app_level_key: Option<String>,
+    pub access_token: Option<String>,
 }
 
 pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
-    let url = format!("{}/api/metadata/{}?deviceId={}", SERVER_API, app_id, crate::device::get_machine_guid());
+    match parse_metadata_from_server(app_id) {
+        Ok(m) if !m.depots.is_empty() => Ok(m),
+        // 服务端不可达或无该游戏数据时，直连 SteamCMD 降级补全清单 GID（无密钥）
+        _ => parse_metadata_from_steamcmd(app_id),
+    }
+}
+
+/// 直连 SteamCMD 公共 API 获取清单 GID（降级路径，不产生 DepotKey）
+fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
+    let url = format!("https://api.steamcmd.net/v1/info/{}", app_id);
+    let resp = block_on(http_client().get(&url).timeout(Duration::from_secs(10)).send())
+        .map_err(|e| format!("SteamCMD 降级请求失败: {}", e))?;
+    let json: serde_json::Value = block_on(resp.json()).map_err(|e| format!("解析 SteamCMD 响应失败: {}", e))?;
+
+    let mut depots = Vec::new();
+    let depot_keys = BTreeMap::new();
+    let s_app_id = app_id.to_string();
+    if let Some(depots_data) = json.pointer(&format!("/data/{}/depots", s_app_id)).and_then(|v| v.as_object()) {
+        for (d_id, info) in depots_data {
+            if !d_id.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            let mut gid = None;
+            if let Some(manifests) = info.get("manifests").and_then(|v| v.as_object()) {
+                for (_branch, branch_data) in manifests {
+                    if let Some(g) = branch_data.get("gid").and_then(|g| g.as_str()) {
+                        if !g.is_empty() && g != "0" {
+                            gid = Some(g.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+            depots.push(DepotMeta {
+                depot_id: d_id.clone(),
+                manifest_gid: gid,
+                depot_key: None,
+            });
+        }
+    }
+    if depots.is_empty() {
+        return Err("SteamCMD 降级查询未返回任何分包".to_string());
+    }
+    Ok(AppMetadata {
+        depots,
+        depot_keys,
+        dlc_ids: Vec::new(),
+        app_level_key: None,
+        access_token: None,
+    })
+}
+
+fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
+    let url = format!("{}/api/metadata/{}?deviceId={}", SERVER_API, app_id, crate::device::get_device_id());
     let resp = block_on(http_client().get(&url).timeout(Duration::from_secs(10)).send())
         .map_err(|e| format!("请求元数据失败: {}", e))?;
     let json: serde_json::Value = block_on(resp.json()).map_err(|e| format!("解析元数据失败: {}", e))?;
@@ -191,10 +246,24 @@ pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
         }
     }
 
+    // appLevelKey / accessToken（addappid 密钥挂载与 addtoken 所需）
+    let app_level_key = data
+        .get("appLevelKey")
+        .and_then(|k| k.as_str())
+        .filter(|k| is_valid_key(k))
+        .map(|k| k.to_string());
+    let access_token = data
+        .get("accessToken")
+        .and_then(|t| t.as_str())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string());
+
     Ok(AppMetadata {
         depots,
         depot_keys,
         dlc_ids,
+        app_level_key,
+        access_token,
     })
 }
 
@@ -324,46 +393,50 @@ pub fn download_depot_manifests(
             };
         }
     };
-    let depots = meta.depots;
-    let depot_keys = meta.depot_keys;
+    let depot_keys = meta.depot_keys.clone();
+    let precache = precache_manifests(steam_path, &meta);
 
-    // 元数据已包含本体与全部 DLC depot，统一预缓存（与 Electron 版行为一致）
-    let valid: Vec<&DepotMeta> = depots
+    ManifestInstallResult {
+        success: precache.ok_count > 0,
+        app_id,
+        downloaded_count: precache.ok_count,
+        total_depots: precache.total,
+        depot_keys,
+        manifest_files: precache.files,
+        source: "cdn".to_string(),
+        message: format!(
+            "成功就绪 {}/{} 个分包清单到 depotcache！",
+            precache.ok_count, precache.total
+        ),
+    }
+}
+
+pub struct PrecacheResult {
+    pub ok_count: usize,
+    pub total: usize,
+    pub files: Vec<String>,
+}
+
+/// 就绪元数据中带 GID 的全部清单到 depotcache（供一键入库后的自动预缓存复用）
+pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResult {
+    let valid: Vec<&DepotMeta> = meta
+        .depots
         .iter()
         .filter(|d| d.manifest_gid.as_deref().map(|g| !g.is_empty() && g != "0").unwrap_or(false))
         .collect();
+    let total = valid.len();
 
-    if valid.is_empty() {
-        return ManifestInstallResult {
-            success: true,
-            app_id,
-            downloaded_count: 0,
-            total_depots: depots.len(),
-            depot_keys,
-            manifest_files: vec![],
-            source: "cdn".to_string(),
-            message: "无需下载清单或由 DLL 运行时动态下发".to_string(),
-        };
-    }
-
-    let mut downloaded = Vec::new();
+    let mut files = Vec::new();
     for d in &valid {
-        if let Ok(msg) = download_single_manifest(steam_path, &d.depot_id, d.manifest_gid.as_deref().unwrap()) {
-            downloaded.push(format!("{}_{}.manifest", d.depot_id, d.manifest_gid.as_deref().unwrap_or("0")));
-            let _ = msg;
+        let gid = d.manifest_gid.as_deref().unwrap();
+        if download_single_manifest(steam_path, &d.depot_id, gid).is_ok() {
+            files.push(format!("{}_{}.manifest", d.depot_id, gid));
         }
     }
-
-    let downloaded_count = downloaded.len();
-    ManifestInstallResult {
-        success: downloaded_count > 0,
-        app_id,
-        downloaded_count,
-        total_depots: valid.len(),
-        depot_keys,
-        manifest_files: downloaded,
-        source: "cdn".to_string(),
-        message: format!("成功就绪 {}/{} 个分包清单到 depotcache！", downloaded_count, valid.len()),
+    PrecacheResult {
+        ok_count: files.len(),
+        total,
+        files,
     }
 }
 

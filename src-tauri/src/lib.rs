@@ -69,7 +69,7 @@ fn app_quit(app_handle: AppHandle) {
 // 设备机器码
 #[tauri::command]
 fn get_device_id() -> String {
-    device::get_machine_guid()
+    device::get_device_id()
 }
 
 // Steam 环境命令
@@ -209,16 +209,24 @@ async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
         if let Some(steam_path) = steam::detect_steam_path() {
             match ost::save_lua_rule(&steam_path, &payload) {
                 Ok(res) => {
+                    // 与 Electron 版一致：入库成功后立即预缓存清单到 depotcache（入库即就绪）
+                    let mut precache_text = String::new();
+                    if let Some(meta) = &res.metadata {
+                        let pc = manifests::precache_manifests(&steam_path, meta);
+                        if pc.total > 0 {
+                            precache_text = format!("，清单预缓存 {}/{} 已就绪", pc.ok_count, pc.total);
+                        }
+                    }
                     let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
                     let message = if res.metadata_ok && (res.key_count > 0 || res.manifest_count > 0) {
                         format!(
-                            "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{} 条清单 GID，含 {} 个 DLC）！已自动热生效，直接在库中搜索即可下载！",
-                            name, res.key_count, res.manifest_count, res.dlc_count
+                            "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{} 条清单 GID，含 {} 个 DLC{}）！已自动热生效，直接在库中搜索即可下载！",
+                            name, res.key_count, res.manifest_count, res.dlc_count, precache_text
                         )
                     } else if res.metadata_ok {
                         format!(
-                            "成功为「{}」写入入库授权（服务器暂无该游戏的密钥/清单数据，共 {} 个分包）！已自动热生效，可尝试下载或稍后重试入库。",
-                            name, res.depot_count
+                            "成功为「{}」写入入库授权（服务器暂无该游戏的密钥/清单数据，共 {} 个分包{}）！已自动热生效，可尝试下载或稍后重试入库。",
+                            name, res.depot_count, precache_text
                         )
                     } else {
                         format!(
@@ -890,7 +898,8 @@ async fn get_unlocked_details() -> Vec<UnlockedDetail> {
                     }
                     let addappid_count = content.matches("addappid").count() as u32;
                     let has_token = content.contains("addtoken");
-                    let has_depot_keys = content.contains("setDepotKey");
+                    // 兼容新旧两种方言：addappid 带有效密钥 / setDepotKey 均判定为已注入密钥
+                    let has_depot_keys = ost::lua_has_valid_key(&content);
                     let has_manifest = manifests::check_manifest_status(&steam_path, app_id, &[]).has_manifest;
                     details.push(UnlockedDetail {
                         app_id,

@@ -226,15 +226,27 @@ pub fn kill_steam() -> bool {
     }
     std::thread::sleep(std::time::Duration::from_millis(1500));
 
-    // 2. 若仍在运行，再降级强制结束
-    if is_steam_running() {
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "steam.exe"])
-            .output();
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "steamservice.exe"])
-            .output();
+    // 2. 轮询强制结束：steam.exe / steamwebhelper.exe / steamservice.exe 全家桶
+    for _ in 0..4 {
+        if !is_steam_running() {
+            return true;
+        }
+        for proc_name in ["steam.exe", "steamwebhelper.exe", "steamservice.exe"] {
+            let _ = Command::new("taskkill").args(["/F", "/IM", proc_name]).output();
+        }
         std::thread::sleep(std::time::Duration::from_millis(600));
+    }
+
+    // 3. 兜底：Steam 以管理员身份运行时普通 taskkill 无效，触发 UAC 提权强杀
+    if is_steam_running() {
+        let _ = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Start-Process taskkill -ArgumentList '/F /IM steam.exe','/F /IM steamwebhelper.exe' -Verb RunAs -WindowStyle Hidden",
+            ])
+            .output();
+        std::thread::sleep(std::time::Duration::from_millis(1500));
     }
 
     !is_steam_running()
