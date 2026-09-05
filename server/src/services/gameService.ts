@@ -15,6 +15,14 @@ export class GameService {
   private imageCache: Map<number, string> = new Map();
   private isLoaded = false;
   private cacheFilePath: string;
+  // 全量库 appId 索引：28.8万条线性扫描是每次详情查询的热点，建 Map 后 O(1)
+  private allGamesById: Map<number, CompactGame> | null = null;
+  // Steam 官方在线搜索结果 TTL 缓存（防同一热词反复实时打 Steam API）
+  private onlineSearchCache: Map<string, { ts: number; items: SteamGame[] }> = new Map();
+  private static ONLINE_SEARCH_TTL_MS = 5 * 60 * 1000;
+  // 中文缓存防抖落盘：搜索热词命中时避免每次都在事件循环上同步全量写盘
+  private cacheDirty = false;
+  private cacheFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.cacheFilePath = path.join(CONFIG.DATA_DIR, 'chinese_games_cache.json');
@@ -46,14 +54,28 @@ export class GameService {
   }
 
   /**
-   * 将新检索到的中文游戏沉淀持久化到硬盘 JSON 文件中
+   * 将新检索到的中文游戏沉淀持久化到硬盘 JSON 文件中。
+   * 防抖 60 秒批量落盘：缓存是可重建数据，宁可丢几秒也不在
+   * 事件循环上同步写 50 万条全量 JSON 阻塞所有请求。
    */
   private saveChineseCache(): void {
+    this.cacheDirty = true;
+    if (this.cacheFlushTimer) return;
+    this.cacheFlushTimer = setTimeout(() => {
+      this.cacheFlushTimer = null;
+      this.flushChineseCache();
+    }, 60 * 1000);
+  }
+
+  private flushChineseCache(): void {
+    if (!this.cacheDirty) return;
+    this.cacheDirty = false;
     try {
       const list = Array.from(this.chineseGamesCache.values());
       writeJsonAtomic(this.cacheFilePath, list);
       console.log(`[GameService] 已将最新中文游戏沉淀入库，当前持久化总数: ${list.length} 款`);
     } catch (e) {
+      this.cacheDirty = true;
       console.error('[GameService] 保存中文游戏缓存失败:', e);
     }
   }
@@ -64,6 +86,7 @@ export class GameService {
       if (fs.existsSync(dbPath)) {
         const content = fs.readFileSync(dbPath, 'utf-8');
         this.allGames = JSON.parse(content);
+        this.allGamesById = null; // 数据变动，索引待重建
         this.isLoaded = true;
         console.log(`[GameService] 成功加载全量 Steam 数据库，共收录 ${this.allGames.length} 款游戏！`);
       } else {
@@ -114,9 +137,12 @@ export class GameService {
       return this.chineseGamesCache.get(appId)!;
     }
 
-    // 3. 在全量库查找
+    // 3. 在全量库查找（Map 索引，O(1)）
     if (!this.isLoaded) await this.loadAllGamesDatabase();
-    const compact = this.allGames.find((g) => g.appId === appId);
+    if (!this.allGamesById) {
+      this.allGamesById = new Map(this.allGames.map((g) => [g.appId, g]));
+    }
+    const compact = this.allGamesById.get(appId);
     if (compact) {
       const realHeader = await this.fetchRealSteamHeader(compact.appId);
       return {
@@ -145,9 +171,16 @@ export class GameService {
   }
 
   /**
-   * 向 Steam 官方 Store 搜索接口检索中文匹配，并将结果沉淀入库
+   * 向 Steam 官方 Store 搜索接口检索中文匹配，并将结果沉淀入库。
+   * 结果带 5 分钟 TTL 缓存：同一热词的并发/重复搜索不再实时打 Steam API，
+   * 防止被官方封 IP，也减少大词触发全量缓存落盘的频率。
    */
   private async searchSteamStoreOnlineAndPersist(query: string): Promise<SteamGame[]> {
+    const cacheKey = query.trim().toLowerCase();
+    const cached = this.onlineSearchCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < GameService.ONLINE_SEARCH_TTL_MS) {
+      return cached.items;
+    }
     try {
       const url = 'https://store.steampowered.com/api/storesearch/';
       const resp = await axios.get(url, {
@@ -196,6 +229,14 @@ export class GameService {
           this.saveChineseCache();
         }
 
+        // 空结果也缓存但用较短 TTL 占位，防止用无效词刷穿缓存上限
+        this.onlineSearchCache.set(cacheKey, { ts: Date.now(), items: newResults });
+        if (this.onlineSearchCache.size > 500) {
+          const now = Date.now();
+          for (const [k, v] of this.onlineSearchCache) {
+            if (now - v.ts > GameService.ONLINE_SEARCH_TTL_MS) this.onlineSearchCache.delete(k);
+          }
+        }
         return newResults;
       }
     } catch {

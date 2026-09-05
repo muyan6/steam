@@ -57,7 +57,23 @@ export class DeviceService {
     }
   }
 
+  // 心跳级高频写入防抖：内存态即时更新供查询，落盘合并为 10 秒批量，
+  // 设备档案为统计数据，丢失最后几秒可接受
+  private devicesDirty = false;
+  private devicesFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
   private saveDevices(): void {
+    this.devicesDirty = true;
+    if (this.devicesFlushTimer) return;
+    this.devicesFlushTimer = setTimeout(() => {
+      this.devicesFlushTimer = null;
+      this.flushDevices();
+    }, 10 * 1000);
+  }
+
+  private flushDevices(): void {
+    if (!this.devicesDirty) return;
+    this.devicesDirty = false;
     if (this.degraded) {
       console.error('[DeviceService] 数据文件已损坏（.corrupt），拒绝写入以保护数据。');
       return;
@@ -66,6 +82,7 @@ export class DeviceService {
       const list = Array.from(this.devicesMap.values());
       writeJsonAtomic(this.filePath, list);
     } catch (e) {
+      this.devicesDirty = true;
       console.error('[DeviceService] 保存设备数据失败:', e);
     }
   }

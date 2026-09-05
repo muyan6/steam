@@ -122,6 +122,24 @@ pub fn is_steam_running() -> bool {
 }
 
 pub fn is_onlinefix_running() -> bool {
+    // 结果缓存 8 秒：PowerShell CIM 冷启动 0.5~2s，而本函数被 get_steam_info
+    // 等高频路径调用，不缓存会导致明显的 UI 卡顿
+    static CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+    if let Ok(guard) = CACHE.lock() {
+        if let Some((at, val)) = *guard {
+            if at.elapsed() < std::time::Duration::from_secs(8) {
+                return val;
+            }
+        }
+    }
+    let val = is_onlinefix_running_uncached();
+    if let Ok(mut guard) = CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), val));
+    }
+    val
+}
+
+fn is_onlinefix_running_uncached() -> bool {
     // 通过 PowerShell CIM 检查 steam.exe 启动命令行是否带 -onlinefix 参数
     // （wmic 在 Windows 11 24H2 起已被移除，故使用 Get-CimInstance）
     let output = Command::new("powershell")

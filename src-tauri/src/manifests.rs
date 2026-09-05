@@ -390,11 +390,11 @@ fn get_cdn_hosts() -> Vec<String> {
     FALLBACK_CDN_HOSTS.iter().map(|s| s.to_string()).collect()
 }
 
-/// 从 CDN 下载单个 manifest（zip 容器内提取真实 payload）
-fn download_single_manifest(
+fn download_single_manifest_with_hosts(
     steam_path: &Path,
     depot_id: &str,
     manifest_gid: &str,
+    hosts: &[String],
 ) -> Result<String, String> {
     let depot_cache = steam_path.join("depotcache");
     fs::create_dir_all(&depot_cache).map_err(|e| format!("创建 depotcache 失败: {}", e))?;
@@ -405,16 +405,21 @@ fn download_single_manifest(
 
     let url_tpl = |host: &str| format!("https://{}/depot/{}/manifest/{}/5/0", host, depot_id, manifest_gid);
 
-    for host in get_cdn_hosts() {
+    for host in hosts {
         let resp = block_on(
             http_client()
                 .get(url_tpl(&host))
-                .timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(5))
                 .header("User-Agent", "Valve/Steam HTTP Client 1.0")
                 .header("Accept", "*/*")
                 .send(),
         );
         if let Ok(resp) = resp {
+            // 404 表示该清单在 Steam CDN 上已不存在，换镜像也无济于事，
+            // 直接短路，避免 30 个节点 × 超时把单清单下载拖到数分钟
+            if resp.status() == reqwest::StatusCode::NOT_FOUND {
+                break;
+            }
             if resp.status() == 200 {
                 if let Ok(bytes) = block_on(resp.bytes()) {
                     if !bytes.is_empty() {
@@ -507,7 +512,8 @@ pub struct PrecacheResult {
     pub files: Vec<String>,
 }
 
-/// 就绪元数据中带 GID 的全部清单到 depotcache（供一键入库后的自动预缓存复用）
+/// 就绪元数据中带 GID 的全部清单到 depotcache（供一键入库后的自动预缓存复用）。
+/// CDN host 列表只取一次复用；清单分 4 路并发下载，避免大型游戏串行卡数分钟。
 pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResult {
     let valid: Vec<&DepotMeta> = meta
         .depots
@@ -516,13 +522,26 @@ pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResu
         .collect();
     let total = valid.len();
 
-    let mut files = Vec::new();
-    for d in &valid {
-        let gid = d.manifest_gid.as_deref().unwrap();
-        if download_single_manifest(steam_path, &d.depot_id, gid).is_ok() {
-            files.push(format!("{}_{}.manifest", d.depot_id, gid));
+    let hosts = get_cdn_hosts();
+    let files: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let queue: std::sync::Mutex<Vec<&DepotMeta>> = std::sync::Mutex::new(valid);
+
+    std::thread::scope(|s| {
+        for _ in 0..4 {
+            s.spawn(|| loop {
+                let task = queue.lock().ok().and_then(|mut q| q.pop());
+                let Some(d) = task else { return };
+                let gid = d.manifest_gid.as_deref().unwrap();
+                if download_single_manifest_with_hosts(steam_path, &d.depot_id, gid, &hosts).is_ok() {
+                    if let Ok(mut f) = files.lock() {
+                        f.push(format!("{}_{}.manifest", d.depot_id, gid));
+                    }
+                }
+            });
         }
-    }
+    });
+
+    let files = files.into_inner().unwrap_or_default();
     PrecacheResult {
         ok_count: files.len(),
         total,

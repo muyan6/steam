@@ -157,7 +157,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     return res.json({
       success: true,
       data: {
-        appId: sAppId,
+        appId, // 统一 number 类型（其余接口均为 number，原字符串类型违反 DTO 规范）
         name: gameName || `AppID ${sAppId}`,
         depots,
         dlcIds,

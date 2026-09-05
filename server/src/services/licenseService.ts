@@ -85,6 +85,9 @@ export class LicenseService {
   private keysCache: Map<string, LicenseKey> = new Map();
   private initialized: boolean = false;
   private degraded: boolean = false;
+  // deviceId(小写) -> 卡密 code 列表 的反向索引：verify 是心跳与密钥类
+  // 请求的热点路径，避免每次全表扫描；saveKeys 时失效重建
+  private deviceIndex: Map<string, string[]> | null = null;
 
   constructor() {
     this.dataFilePath = path.join(CONFIG.DATA_DIR, 'license_keys.json');
@@ -163,6 +166,8 @@ export class LicenseService {
   }
 
   private saveKeys(): void {
+    // 任何持久化前数据都已变动，反向索引必须失效重建
+    this.deviceIndex = null;
     if (this.degraded) {
       console.error('[LicenseService] 数据文件已损坏（.corrupt），拒绝写入以保护数据。请修复后重启服务。');
       return;
@@ -380,6 +385,22 @@ export class LicenseService {
     };
   }
 
+  /** 构建/获取 deviceId -> codes 反向索引 */
+  private getDeviceIndex(): Map<string, string[]> {
+    if (this.deviceIndex) return this.deviceIndex;
+    const index = new Map<string, string[]>();
+    for (const [code, key] of this.keysCache) {
+      if (key.deviceId) {
+        const k = key.deviceId.toLowerCase();
+        const arr = index.get(k);
+        if (arr) arr.push(code);
+        else index.set(k, [code]);
+      }
+    }
+    this.deviceIndex = index;
+    return index;
+  }
+
   /**
    * 客户端验证设备绑定状态
    */
@@ -407,14 +428,15 @@ export class LicenseService {
       }
     }
 
-    // 扫描该设备码已绑定的所有有效激活码，选取最高特权或最晚到期的卡密
+    // 通过反向索引取该设备码绑定的所有激活码，选取最高特权或最晚到期的卡密
     const matchedKeys: LicenseKey[] = [];
-    for (const key of this.keysCache.values()) {
-      if (key.deviceId && key.deviceId.toLowerCase() === cleanDeviceId.toLowerCase()) {
-        this.checkAndExpireKey(key);
-        if (key.status === 'active') {
-          matchedKeys.push(key);
-        }
+    const boundCodes = this.getDeviceIndex().get(cleanDeviceId.toLowerCase()) || [];
+    for (const code of boundCodes) {
+      const key = this.keysCache.get(code);
+      if (!key) continue;
+      this.checkAndExpireKey(key);
+      if (key.status === 'active') {
+        matchedKeys.push(key);
       }
     }
 
