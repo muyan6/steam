@@ -244,6 +244,7 @@ import {
   ArrowLeftRight
 } from 'lucide-vue-next';
 import { ClientLicenseInfo, LicenseType } from '../../types';
+import { formatIpcError } from '../api/tauriBridge';
 
 const props = defineProps<{
   licenseInfo: ClientLicenseInfo;
@@ -295,7 +296,7 @@ const loadDeviceId = async () => {
     const id = await window.electronAPI.getDeviceId();
     if (id) deviceId.value = id;
   } catch (e: any) {
-    console.warn('获取设备码异常:', e.message);
+    console.warn('获取设备码异常:', formatIpcError(e));
   }
 };
 
@@ -347,7 +348,7 @@ const handleActivate = async () => {
       }
     }
   } catch (e: any) {
-    emit('notify', `激活失败: ${e.message}`, 'error');
+    emit('notify', `激活失败: ${formatIpcError(e)}`, 'error');
   } finally {
     activating.value = false;
   }
@@ -373,7 +374,7 @@ const handleRebind = async () => {
       emit('notify', res.message || '迁移失败', 'error');
     }
   } catch (e: any) {
-    emit('notify', `迁移失败: ${e.message}`, 'error');
+    emit('notify', `迁移失败: ${formatIpcError(e)}`, 'error');
   } finally {
     rebinding.value = false;
   }
@@ -388,7 +389,7 @@ const handleUnbindLocal = async () => {
       emit('refresh');
     }
   } catch (e: any) {
-    emit('notify', `操作失败: ${e.message}`, 'error');
+    emit('notify', `操作失败: ${formatIpcError(e)}`, 'error');
   }
 };
 

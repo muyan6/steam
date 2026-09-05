@@ -129,14 +129,24 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 为 DLC 分包聚合密钥
+    // 为 DLC 分包聚合密钥：DLC 的实际 DepotID 不一定等于其 AppID（常为
+    // dlcId+1 等相邻编号），沿用底层 dlcId+0..10 候选启发式，把该范围内
+    // 全部有效密钥下发，避免偏离规律的 DLC 密钥漏发
+    const claimedDepotIds = new Set(depots.map((d) => d.depotId));
     for (const dlcId of dlcIds) {
-      const dlcKey = matchedKeys[dlcId] || depotService.getDepotKey(dlcId);
-      if (dlcKey && isValidKey(dlcKey)) {
-        dlcDepots.push({
-          dlcAppId: dlcId,
-          depot: { depotId: dlcId, depotKey: dlcKey }
-        });
+      const dlcBase = parseInt(dlcId, 10);
+      if (isNaN(dlcBase)) continue;
+      for (let j = 0; j <= 10; j++) {
+        const candidateId = (dlcBase + j).toString();
+        if (claimedDepotIds.has(candidateId)) continue;
+        const k = matchedKeys[candidateId] || depotService.getDepotKey(candidateId);
+        if (k && isValidKey(k)) {
+          dlcDepots.push({
+            dlcAppId: dlcId,
+            depot: { depotId: candidateId, depotKey: k }
+          });
+          claimedDepotIds.add(candidateId);
+        }
       }
     }
 

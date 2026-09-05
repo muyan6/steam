@@ -580,6 +580,7 @@ import {
 import { EnvironmentDiagnosticResult, EnvironmentCheckItem, AppThemeId, ClientLicenseInfo } from '../../types';
 import { useTheme } from '../composables/useTheme';
 import LicenseModal from '../components/LicenseModal.vue';
+import { formatIpcError } from '../api/tauriBridge';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -629,6 +630,8 @@ const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>(
 const setManifestApi = (v: 'opensteamtool' | 'steamrun' | 'wudrm') => {
   manifestApi.value = v;
   localStorage.setItem('chunfengdu_manifest_api', v);
+  // 设置在下次「一键修复内核」/ 激活注入时才写入 opensteamtool.toml，明确告知避免误解
+  emit('notify', '清单源已保存，将在下次「一键修复内核」或激活注入时生效', 'info');
 };
 const deploying = ref(false);
 const refreshing = ref(false);
@@ -741,7 +744,7 @@ const handleStartHealthCheck = async () => {
       }
     }
   } catch (e: any) {
-    emit('notify', `环境体检失败: ${e.message}`, 'error');
+    emit('notify', `环境体检失败: ${formatIpcError(e)}`, 'error');
   } finally {
     checkingHealth.value = false;
   }
@@ -762,7 +765,7 @@ const runEnvironmentHealthCheck = async (silent: boolean = false) => {
       }
     }
   } catch (e: any) {
-    if (!silent) emit('notify', `环境体检失败: ${e.message}`, 'error');
+    if (!silent) emit('notify', `环境体检失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -780,7 +783,7 @@ const handleQuickFix = async () => {
       emit('notify', res.message, 'error');
     }
   } catch (e: any) {
-    emit('notify', `一键修复失败: ${e.message}`, 'error');
+    emit('notify', `一键修复失败: ${formatIpcError(e)}`, 'error');
   } finally {
     deploying.value = false;
   }
@@ -794,7 +797,7 @@ const handleRestartSteamQuick = async () => {
     await runEnvironmentHealthCheck();
     emit('refresh-status');
   } catch (e: any) {
-    emit('notify', `重启 Steam 失败: ${e.message}`, 'error');
+    emit('notify', `重启 Steam 失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -833,7 +836,7 @@ const handleBrowseSteamPath = async () => {
       steamPathInput.value = selected;
     }
   } catch (e: any) {
-    emit('notify', `选择失败: ${e.message}`, 'error');
+    emit('notify', `选择失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -845,7 +848,7 @@ const handleSaveSteamPath = async () => {
     await runEnvironmentHealthCheck();
     emit('refresh-status');
   } catch (e: any) {
-    emit('notify', `保存失败: ${e.message}`, 'error');
+    emit('notify', `保存失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -863,7 +866,7 @@ const handleDeployOSTEnv = async () => {
       emit('notify', res.message, 'error');
     }
   } catch (e: any) {
-    emit('notify', `配置异常: ${e.message}`, 'error');
+    emit('notify', `配置异常: ${formatIpcError(e)}`, 'error');
   } finally {
     deploying.value = false;
   }
@@ -882,7 +885,7 @@ const handleUninstallOST = async () => {
       emit('refresh-status');
     }
   } catch (e: any) {
-    emit('notify', `卸载异常: ${e.message}`, 'error');
+    emit('notify', `卸载异常: ${formatIpcError(e)}`, 'error');
   } finally {
     deploying.value = false;
   }
@@ -900,7 +903,7 @@ const loadLicenseData = async (forceVerify: boolean = false) => {
       }
     }
   } catch (e: any) {
-    console.warn('获取授权信息异常:', e.message);
+    console.warn('获取授权信息异常:', formatIpcError(e));
   }
 };
 

@@ -45,10 +45,11 @@ if [ -d ".git" ]; then
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
     echo -e "   -> 当前分支: ${CYAN}$CURRENT_BRANCH${NC}"
 
-    # 自动识别并无缝切换至 Gitee 加速源
+    # 切换 Gitee 加速源：默认关闭（仓库主远端是 GitHub，静默切换会造成困扰），
+    # 需要时以 AUTO_SWITCH_REMOTE=1 bash update.sh 显式开启
     CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
-    if [[ "$CURRENT_REMOTE" =~ "github.com" ]]; then
-        echo -e "   -> 检测到 GitHub 远端，正在自动切换为 Gitee 镜像加速源..."
+    if [[ "$CURRENT_REMOTE" =~ "github.com" && "${AUTO_SWITCH_REMOTE:-0}" = "1" ]]; then
+        echo -e "   -> 检测到 GitHub 远端，AUTO_SWITCH_REMOTE=1 已开启，正在切换为 Gitee 镜像加速源..."
         git remote set-url origin https://gitee.com/muyan6/steam.git 2>/dev/null || true
     fi
 

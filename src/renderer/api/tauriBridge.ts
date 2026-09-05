@@ -3,7 +3,6 @@ import { fetch as httpFetch } from '@tauri-apps/plugin-http';
 import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult } from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
-import { UNRAR_WASM_BASE64 } from '../utils/unrarWasm';
 import { APP_CONFIG } from '../../config/appConfig';
 
 export const isTauriEnvironment = (): boolean => {
@@ -12,9 +11,20 @@ export const isTauriEnvironment = (): boolean => {
 
 const API = APP_CONFIG.API_BASE_URL;
 
+/**
+ * 统一格式化后端错误：Tauri invoke reject 的是字符串而非 Error 对象，
+ * 直接取 e.message 会显示 "undefined"，调用方应统一使用本函数
+ */
+export function formatIpcError(e: unknown): string {
+  if (typeof e === 'string') return e;
+  if (e instanceof Error) return e.message;
+  return String(e ?? '未知错误');
+}
+
 // ==================== HTTP 与数据辅助 ====================
 
-async function getJson<T = any>(url: string, timeoutMs = 8000): Promise<T | null> {
+/** 网络请求统一走 Tauri Rust 通道（无 CORS 限制）；失败返回 null */
+export async function getJson<T = any>(url: string, timeoutMs = 8000): Promise<T | null> {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -36,40 +46,50 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-let wasmBinaryCache: Uint8Array | null = null;
-function getWasmBinary(): Uint8Array {
-  if (!wasmBinaryCache) wasmBinaryCache = base64ToBytes(UNRAR_WASM_BASE64);
-  return wasmBinaryCache;
-}
-
-interface ExtractedEntry {
+let wasmBinaryBuffer: ArrayBuffer | null = null;
+/** 运行时加载 public/unrar.wasm（已从主包剥离，消除 277KB base64 内嵌） */
+async function getWasmBinaryBuffer(): Promise<ArrayBuffer> {
+  if (wasmBinaryBuffer) return wasmBinaryBuffer;
+  const resp = await fetch('/unrar.wasm');
+  if (!resp.ok) throw new Error(`加载 unrar.wasm 失败: HTTP ${resp.status}`);
+  wasmBinaryBuffer = await resp.arrayBuffer();
+  return wasmBinaryBuffer;
+}interface ExtractedEntry {
   name: string;
   dataB64: string;
 }
 
-/** 使用内嵌 unrar.wasm 在渲染进程解压 RAR（与 Electron 版同一引擎与密码） */
-async function extractRarEntries(data: ArrayBuffer): Promise<ExtractedEntry[]> {
+/** 懒迭代解压 RAR：边解边攒批回调落盘，条目处理完即释放，
+ *  避免全量解出后一次性驻留内存（大补丁峰值可达 300MB+） */
+async function extractRarEntriesStreaming(
+  data: ArrayBuffer,
+  onBatch: (entries: ExtractedEntry[]) => Promise<void>
+): Promise<number> {
   const extractor = await createExtractorFromData({
-    wasmBinary: getWasmBinary().slice().buffer as ArrayBuffer,
+    wasmBinary: await getWasmBinaryBuffer(),
     data,
     password: 'online-fix.me'
   } as any);
-  const entries: ExtractedEntry[] = [];
-  const extracted = extractor.extract();
-  for (const f of [...extracted.files]) {
+  const FLUSH_BYTES = 4 * 1024 * 1024;
+  let batch: ExtractedEntry[] = [];
+  let batchSize = 0;
+  let count = 0;
+  for (const f of extractor.extract().files) {
     if (!f.fileHeader?.name) continue;
     if (f.extraction && f.extraction.length > 0) {
-      entries.push({ name: f.fileHeader.name, dataB64: bytesToBase64(f.extraction) });
+      const dataB64 = bytesToBase64(f.extraction);
+      batch.push({ name: f.fileHeader.name, dataB64 });
+      batchSize += dataB64.length;
+      count++;
+      if (batchSize >= FLUSH_BYTES) {
+        await onBatch(batch);
+        batch = [];
+        batchSize = 0;
+      }
     }
   }
-  return entries;
+  if (batch.length > 0) await onBatch(batch);
+  return count;
 }
 
 // ==================== 多源搜索 ====================
@@ -171,8 +191,17 @@ export const createTauriBridge = () => {
     windowMaximize: async (): Promise<boolean> => invoke('window_maximize'),
     windowClose: async (): Promise<void> => invoke('window_close'),
     isWindowMaximized: async (): Promise<boolean> => invoke('is_window_maximized'),
-    setZoomFactor: (_factor: number): void => {},
-    getZoomFactor: (): number => 1,
+    // UI 缩放：WebView2 支持 CSS zoom，直接作用于根元素并持久化，
+    // 替代 Electron 版遗留的空实现（此前缩放设置完全无效）
+    setZoomFactor: (factor: number): void => {
+      const zoom = Math.min(1.5, Math.max(0.8, factor));
+      document.documentElement.style.zoom = String(zoom);
+      localStorage.setItem('cfd_ui_zoom', String(zoom));
+    },
+    getZoomFactor: (): number => {
+      const v = parseFloat(localStorage.getItem('cfd_ui_zoom') || '1');
+      return Number.isFinite(v) ? v : 1;
+    },
 
     // Steam 环境与进程
     getSteamInfo: async (): Promise<SteamEnvironmentInfo> => invoke('get_steam_info', { customPath: null }),
@@ -335,29 +364,21 @@ export const createTauriBridge = () => {
 
       let extractedCount = 0;
       if (isRar) {
-        // 2a. RAR：读取原始字节 → 渲染进程 unrar.wasm 解压 → 分批回传由 Rust 部署
-        //     （分批控制单次 IPC 载荷约 4MB，避免 100MB+ 补丁的内存峰值）
+        // 2a. RAR：读取原始字节 → 渲染进程 unrar.wasm 懒解压 → 攒批回传由 Rust 部署
+        //     （单批 IPC 载荷约 4MB；条目边解边释放，不整包驻留内存）
         const bytes = (await invoke('read_file_raw', { path: archivePath })) as ArrayBuffer;
-        const entries = await extractRarEntries(bytes);
-        let batch: ExtractedEntry[] = [];
-        let batchSize = 0;
-        const flush = async (isLast: boolean) => {
-          if (batch.length === 0) return;
+        let deployed = 0;
+        await extractRarEntriesStreaming(bytes, async (batch) => {
           const res = await invoke<any>('onlinefix_deploy', {
             gamePath,
             entries: batch.map((e) => ({ name: e.name, dataB64: e.dataB64 })),
-            archivePath: isLast ? archivePath : null
+            archivePath: null
           });
-          extractedCount += res.extractedCount ?? 0;
-          batch = [];
-          batchSize = 0;
-        };
-        for (const e of entries) {
-          batch.push(e);
-          batchSize += e.dataB64.length;
-          if (batchSize >= 4 * 1024 * 1024) await flush(false);
-        }
-        await flush(true);
+          deployed += res.extractedCount ?? 0;
+        });
+        // 传空批次触发 Rust 侧清理临时归档（deploy 末尾按 archivePath 删除）
+        await invoke('onlinefix_deploy', { gamePath, entries: [], archivePath });
+        extractedCount = deployed;
       } else {
         // 2b. ZIP：Rust 端直接解压（含密码支持与越界防护）
         const res = await invoke<any>('zip_extract', { archivePath, destDir: gamePath });

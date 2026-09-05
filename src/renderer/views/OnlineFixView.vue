@@ -819,6 +819,8 @@ import {
   OnlineLaunchMode,
   SpacewarStatus
 } from '../../types';
+import { formatIpcError } from '../api/tauriBridge';
+import { steamCardImageFallback } from '../utils/imageFallback';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -966,7 +968,7 @@ const handleInstallOnlineFixWebPatch = async (game: LocalInstalledGame) => {
       emit('notify', res.message || '未在 online-fix.me 搜索到该游戏的联机补丁', 'warning');
     }
   } catch (e: any) {
-    emit('notify', `下载安装补丁失败: ${e.message}`, 'error');
+    emit('notify', `下载安装补丁失败: ${formatIpcError(e)}`, 'error');
   } finally {
     downloadingAppId.value = null;
   }
@@ -987,7 +989,7 @@ const handleRestorePatchForGame = async (game: LocalInstalledGame) => {
       emit('notify', res.message, 'error');
     }
   } catch (e: any) {
-    emit('notify', `还原失败: ${e.message}`, 'error');
+    emit('notify', `还原失败: ${formatIpcError(e)}`, 'error');
   } finally {
     actionLoading.value = false;
   }
@@ -1010,7 +1012,7 @@ const handleOpenGameFolder = async (game: LocalInstalledGame) => {
       emit('notify', `已打开《${game.name}》游戏目录`, 'success');
     }
   } catch (e: any) {
-    emit('notify', `打开目录失败: ${e.message}`, 'error');
+    emit('notify', `打开目录失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -1022,7 +1024,7 @@ const handleSelectFolder = async () => {
       targetDir.value = selected;
     }
   } catch (e: any) {
-    emit('notify', `选择目录失败: ${e.message}`, 'error');
+    emit('notify', `选择目录失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -1043,7 +1045,7 @@ const handleApplyCustomPatch = async () => {
       emit('notify', res.message || '未在 online-fix.me 搜索到该游戏的联机补丁', 'warning');
     }
   } catch (e: any) {
-    emit('notify', `注入失败: ${e.message}`, 'error');
+    emit('notify', `注入失败: ${formatIpcError(e)}`, 'error');
   } finally {
     actionLoading.value = false;
   }
@@ -1061,7 +1063,7 @@ const handleRestoreOriginalPatch = async () => {
       emit('notify', res.message, 'error');
     }
   } catch (e: any) {
-    emit('notify', `还原失败: ${e.message}`, 'error');
+    emit('notify', `还原失败: ${formatIpcError(e)}`, 'error');
   } finally {
     actionLoading.value = false;
   }
@@ -1090,17 +1092,13 @@ const handleTriggerSpacewarInstall = async () => {
     await window.electronAPI.installSpacewar();
     emit('notify', '已打开 Steam 安装界面，请在 Steam 中点击安装。', 'success');
   } catch (e: any) {
-    emit('notify', `唤起 Steam 安装失败: ${e.message}`, 'error');
+    emit('notify', `唤起 Steam 安装失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
 const handleCardImgError = (e: Event, appId: number) => {
-  const target = e.target as HTMLImageElement;
-  if (!target.src.includes('header.jpg')) {
-    target.src = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appId}/header.jpg`;
-  } else {
-    target.src = 'https://store.cloudflare.steamstatic.com/public/shared/images/header/globalheader_logo.png';
-  }
+  // 统一两步兜底并封顶，避免 logo 也 404 时重新设回 header.jpg 无限循环
+  steamCardImageFallback(e, appId);
 };
 
 onMounted(async () => {

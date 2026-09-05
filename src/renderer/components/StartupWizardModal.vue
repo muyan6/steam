@@ -278,14 +278,15 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import appLogo from '../assets/logo.svg';
 import {
-  Zap, 
-  Folder, 
-  FolderOpen, 
-  RotateCw, 
-  CheckCircle2, 
-  AlertTriangle, 
-  X 
+  Zap,
+  Folder,
+  FolderOpen,
+  RotateCw,
+  CheckCircle2,
+  AlertTriangle,
+  X
 } from 'lucide-vue-next';
+import { formatIpcError } from '../api/tauriBridge';
 
 const props = defineProps<{
   // 手动从设置页打开时为 true：允许关闭引导而不退出程序；首次启动为 false 保持原有强引导流程
@@ -348,7 +349,7 @@ const browseSteamPath = async () => {
       step.value = 2;
     }
   } catch (e: any) {
-    emit('notify', `选择目录失败: ${e.message}`, 'error');
+    emit('notify', `选择目录失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -396,7 +397,8 @@ const startActivation = async () => {
     activationPhase.value = 2;
     progressPercent.value = 60;
     const activateRes = await window.electronAPI.activateInjection({
-      manifestApi: 'steamrun',
+      // 尊重用户在设置页保存的清单源选择，不强制回退到 steamrun
+      manifestApi: localStorage.getItem('chunfengdu_manifest_api') || 'steamrun',
       restartSteam: true
     });
 
@@ -420,7 +422,7 @@ const startActivation = async () => {
     step.value = 4;
     startCountdown();
   } catch (e: any) {
-    emit('notify', `激活注入失败: ${e.message}`, 'error');
+    emit('notify', `激活注入失败: ${formatIpcError(e)}`, 'error');
     step.value = 2;
   }
 };

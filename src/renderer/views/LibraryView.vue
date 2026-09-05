@@ -210,6 +210,8 @@ import {
   FolderSync 
 } from 'lucide-vue-next';
 import { AppManifestStatus, LuaGameInfo } from '../../types';
+import { formatIpcError } from '../api/tauriBridge';
+import { applyImageFallback } from '../utils/imageFallback';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -247,7 +249,7 @@ const loadLibrary = async () => {
         }
       } catch {}
     }  } catch (e: any) {
-    emit('notify', `加载游戏库失败: ${e.message}`, 'error');
+    emit('notify', `加载游戏库失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -267,7 +269,7 @@ const handleRepairManifest = async (appId: number) => {
       emit('notify', res?.message || '清单获取完成，DLL 运行时将自动调度。', 'info');
     }
   } catch (e: any) {
-    emit('notify', `下载清单失败: ${e.message}`, 'error');
+    emit('notify', `下载清单失败: ${formatIpcError(e)}`, 'error');
   } finally {
     repairingAppId.value = null;
   }
@@ -283,7 +285,7 @@ const removeGame = async (appId: number, name: string) => {
       emit('notify', res.message, 'error');
     }
   } catch (e: any) {
-    emit('notify', `出库失败: ${e.message}`, 'error');
+    emit('notify', `出库失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -298,7 +300,7 @@ const handleClearAll = async () => {
       await loadLibrary();
     }
   } catch (e: any) {
-    emit('notify', `清空失败: ${e.message}`, 'error');
+    emit('notify', `清空失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -308,16 +310,12 @@ const handleRestartSteam = async () => {
     await window.electronAPI.restartSteam();
     emit('notify', 'Steam 已重新启动！', 'success');
   } catch (e: any) {
-    emit('notify', `重启 Steam 异常: ${e.message}`, 'error');
+    emit('notify', `重启 Steam 异常: ${formatIpcError(e)}`, 'error');
   }
 };
 
 const handleImgError = (e: Event) => {
-  const target = e.target as HTMLImageElement;
-  const fallback = 'https://store.cloudflare.steamstatic.com/public/shared/images/header/globalheader_logo.png';
-  if (target.src === fallback || target.dataset.fallbackTried === '1') return;
-  target.dataset.fallbackTried = '1';
-  target.src = fallback;
+  applyImageFallback(e);
 };
 
 onMounted(() => {

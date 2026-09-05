@@ -351,17 +351,16 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue';
-import axios from 'axios';
-import { 
-  Search, 
-  X, 
-  RotateCw, 
-  Sparkles, 
-  Gamepad2, 
-  Check, 
-  PlusCircle, 
-  Download, 
-  Trash2, 
+import {
+  Search,
+  X,
+  RotateCw,
+  Sparkles,
+  Gamepad2,
+  Check,
+  PlusCircle,
+  Download,
+  Trash2,
   ExternalLink,
   ChevronDown,
   ChevronLeft,
@@ -371,6 +370,7 @@ import {
   ArrowLeftRight
 } from 'lucide-vue-next';
 import { SteamGame, SearchSourceId, SearchSourceConfig } from '../../types';
+import { formatIpcError, getJson } from '../api/tauriBridge';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -465,8 +465,10 @@ const handleImgError = async (game: SteamGame) => {
   imgCdnIndices.set(game.appId, CDN_TEMPLATES.length + 1);
   try {
     const url = `https://store.steampowered.com/api/appdetails?appids=${game.appId}&l=schinese`;
-    const resp = await axios.get(url, { timeout: 3500 });
-    const data = resp.data?.[game.appId.toString()];
+    // 走 Tauri Rust 通道（无 CORS）；浏览器 axios 请求该接口会被 CORS 拦截，
+    // 兜底从未真正生效过
+    const json = await getJson<any>(url, 3500);
+    const data = json?.[game.appId.toString()];
     if (data && data.data && data.data.header_image) {
       // 先更新 URL 再保持"未失败"状态，让模板渲染新封面
       game.headerUrl = data.data.header_image;
@@ -521,7 +523,7 @@ const handleSearch = async (page = 1) => {
     if (listViewportEl.value) listViewportEl.value.scrollTop = 0;
     listAtBottom.value = false;
   } catch (e: any) {
-    if (requestId === searchRequestId) emit('notify', `搜索失败: ${e.message}`, 'error');
+    if (requestId === searchRequestId) emit('notify', `搜索失败: ${formatIpcError(e)}`, 'error');
   } finally {
     if (requestId === searchRequestId) loading.value = false;
   }
@@ -586,7 +588,7 @@ const unlockGame = async (game: SteamGame) => {
       }
     }
   } catch (e: any) {
-    emit('notify', `授权检测异常: ${e.message}`, 'error');
+    emit('notify', `授权检测异常: ${formatIpcError(e)}`, 'error');
     return;
   }
 
@@ -631,7 +633,7 @@ const unlockGame = async (game: SteamGame) => {
       }
     }
   } catch (e: any) {
-    emit('notify', `入库异常: ${e.message}`, 'error');
+    emit('notify', `入库异常: ${formatIpcError(e)}`, 'error');
   } finally {
     unlockingId.value = null;
   }
@@ -644,9 +646,11 @@ const removeGame = async (appId: number) => {
       emit('notify', res.message, 'info');
       await loadUnlockedList();
       emit('refresh-status');
+    } else {
+      emit('notify', res.message || '移除失败', 'error');
     }
   } catch (e: any) {
-    emit('notify', `移除失败: ${e.message}`, 'error');
+    emit('notify', `移除失败: ${formatIpcError(e)}`, 'error');
   }
 };
 

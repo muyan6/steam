@@ -348,8 +348,10 @@ import Toast, { ToastItem } from './components/Toast.vue';
 import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
 import appLogo from './assets/logo.svg';
+import { formatIpcError } from './api/tauriBridge';
+import { APP_CONFIG } from '../config/appConfig';
 
-const appVersion = '2.0.0';
+const appVersion = APP_CONFIG.VERSION;
 const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'about' | 'settings'>('search');
 const showStartupWizard = ref(false);
 // 启动引导打开来源：首次启动(环境未就绪)为强引导不可关闭；设置页手动打开可随时关闭
@@ -523,7 +525,7 @@ const handleRestartSteam = async () => {
     addToast('Steam 重启指令已发送！', 'success');
     await fetchSteamInfo();
   } catch (e: any) {
-    addToast(`重启失败: ${e.message}`, 'error');
+    addToast(`重启失败: ${formatIpcError(e)}`, 'error');
   }
 };
 
@@ -625,7 +627,7 @@ const loadLicenseInfo = async (forceVerify: boolean = false) => {
       licenseInfo.value = info;
     }
   } catch (e: any) {
-    console.warn('获取授权状态失败:', e.message);
+    console.warn('获取授权状态失败:', formatIpcError(e));
   }
 };
 

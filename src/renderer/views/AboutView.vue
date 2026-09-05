@@ -198,7 +198,8 @@
 </template>
 
 <script setup lang="ts">
-import { isTauriEnvironment } from '../api/tauriBridge';
+import { isTauriEnvironment, formatIpcError } from '../api/tauriBridge';
+import { APP_CONFIG } from '../../config/appConfig';
 import { ref, onMounted } from 'vue';
 import { 
   Zap, 
@@ -219,7 +220,7 @@ const emit = defineEmits<{
   (e: 'open-disclaimer'): void;
 }>();
 
-const appVersion = '2.0.0';
+const appVersion = APP_CONFIG.VERSION;
 const isCheckingUpdate = ref(false);
 const deviceId = ref('');
 const ostInstalled = ref(false);
@@ -264,7 +265,7 @@ const checkUpdates = async () => {
       emit('notify', '当前已是最新版本 (v' + appVersion + ')！', 'success');
     }
   } catch (e: any) {
-    emit('notify', '检查更新失败: ' + e.message, 'warning');
+    emit('notify', '检查更新失败: ' + formatIpcError(e), 'warning');
   } finally {
     isCheckingUpdate.value = false;
   }

@@ -8,7 +8,12 @@
     "opener:default",
     {
       "identifier": "http:allow-fetch",
-      "allow": [{ "url": "http://*:*" }, { "url": "https://*:*" }]
+      "allow": [
+        { "url": "http://150.158.129.222:1257" },
+        { "url": "http://150.158.129.222:1257/*" },
+        { "url": "https://store.steampowered.com" },
+        { "url": "https://store.steampowered.com/*" }
+      ]
     },
     "http:allow-fetch-cancel",
     "http:allow-fetch-read-body",
