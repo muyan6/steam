@@ -278,15 +278,40 @@
           <span>当前版本已停止支持，必须更新至最新版本方可继续使用。</span>
         </div>
 
+        <!-- 应用内下载进度条 -->
+        <div v-if="updateState === 'downloading'" class="mb-4">
+          <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1.5">
+            <span class="flex items-center gap-1.5"><Download class="w-3.5 h-3.5 animate-pulse" /> 正在下载更新包…</span>
+            <span class="font-mono">{{ updatePercent !== null ? updatePercent + '%' : (updateProgress.downloaded / 1048576).toFixed(1) + ' MB' }}</span>
+          </div>
+          <div class="h-2 rounded-full bg-slate-800 overflow-hidden border border-white/5">
+            <div
+              class="h-full theme-btn-primary transition-all duration-300"
+              :style="{ width: (updatePercent !== null ? updatePercent : 8) + '%' }"
+            ></div>
+          </div>
+        </div>
+
         <div class="flex items-center justify-end gap-3">
           <button
-            v-if="!versionModal.forceUpdate"
+            v-if="!versionModal.forceUpdate && updateState === 'idle'"
             @click="versionModal = null"
             class="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-300 text-xs rounded-xl transition"
           >
             稍后更新
           </button>
+          <!-- 后台配置了 .exe 直链时提供应用内一键下载安装，无需跳转浏览器 -->
+          <button
+            v-if="canInlineUpdate"
+            @click="installUpdateInPlace"
+            :disabled="updateState === 'downloading'"
+            class="theme-btn-primary px-5 py-2 text-xs font-bold rounded-xl transition shadow flex items-center gap-1.5 disabled:opacity-60"
+          >
+            <Download class="w-4 h-4" :class="{ 'animate-bounce': updateState === 'downloading' }" />
+            <span>{{ updateState === 'downloading' ? '下载中…' : '一键下载并安装' }}</span>
+          </button>
           <a
+            v-else
             :href="versionModal.latest.downloadUrl"
             target="_blank"
             class="theme-btn-primary px-5 py-2 text-xs font-bold rounded-xl transition shadow flex items-center gap-1.5"
@@ -313,7 +338,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, provide } from 'vue';
+import { ref, computed, onMounted, onUnmounted, provide } from 'vue';
 import { 
   Search, 
   Library, 
@@ -325,8 +350,8 @@ import {
   ShieldCheck, 
   Bell, 
   X, 
-  Sparkles, 
-  Activity, 
+  Sparkles,
+  Activity,
   AlertTriangle,
   Minus,
   Square,
@@ -334,7 +359,8 @@ import {
   Crown,
   Wrench,
   Check,
-  Info
+  Info,
+  Download
 } from 'lucide-vue-next';
 import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
@@ -495,6 +521,42 @@ interface NoticePayload {
 const popupNotice = ref<NoticePayload | null>(null);
 const bannerNotice = ref<NoticePayload | null>(null);
 const versionModal = ref<any>(null);
+
+// ---------------- 应用内一键更新 ----------------
+const updateState = ref<'idle' | 'downloading'>('idle');
+const updateProgress = ref({ downloaded: 0, total: 0 });
+// 仅当后台配置的是 http(s) 的 .exe 直链时才提供应用内一键安装，
+// 否则退回浏览器下载
+const canInlineUpdate = computed(() => {
+  const u: string = versionModal.value?.latest?.downloadUrl || '';
+  return /^https?:\/\//i.test(u) && /\.exe(\?|#|$)/i.test(u.trim());
+});
+const updatePercent = computed(() => {
+  const { downloaded, total } = updateProgress.value;
+  if (!total) return null;
+  return Math.min(100, Math.round((downloaded / total) * 100));
+});
+
+const installUpdateInPlace = async () => {
+  if (!versionModal.value || updateState.value !== 'idle') return;
+  updateState.value = 'downloading';
+  updateProgress.value = { downloaded: 0, total: 0 };
+  let unlisten: (() => void) | null = null;
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    unlisten = await listen<{ downloaded: number; total?: number | null }>('update-download-progress', (e) => {
+      updateProgress.value = { downloaded: e.payload.downloaded, total: e.payload.total ?? 0 };
+    });
+    const installerPath = await window.electronAPI.downloadUpdate(versionModal.value.latest.downloadUrl);
+    // 拉起安装器后 Rust 端会自动退出应用，无需再提示
+    await window.electronAPI.launchInstaller(installerPath);
+  } catch (e) {
+    addToast(`应用内更新失败: ${formatIpcError(e)}`, 'error');
+    updateState.value = 'idle';
+  } finally {
+    unlisten?.();
+  }
+};
 
 const toasts = ref<ToastItem[]>([]);
 let toastId = 0;

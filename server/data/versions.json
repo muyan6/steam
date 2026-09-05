@@ -12,7 +12,7 @@
       "⚡ 清单预缓存并发化提速，大数据库检索与落盘性能优化",
       "📦 新增便携版与单文件版发布形态"
     ],
-    "downloadUrl": "https://github.com/muyan6/steam/releases/tag/v2.1.0",
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.0/ChunFengDu_2.1.0_x64-setup.exe",
     "forceUpdate": false,
     "minSupportedVersion": "1.0.0",
     "enabled": true,

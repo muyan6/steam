@@ -408,6 +408,10 @@ export const createTauriBridge = () => {
       const json = await getJson(`${API}/api/version/check?version=${ver || '1.0.0'}`, 3000);
       return json?.data || { hasUpdate: false };
     },
+    // 应用内更新：下载进度经 update-download-progress 事件上报（Rust 端流式下载），
+    // 完成返回安装包临时路径；拉起安装器后应用自动退出
+    downloadUpdate: async (url: string): Promise<string> => invoke('download_update', { url }),
+    launchInstaller: async (path: string): Promise<void> => invoke('launch_installer', { path }),
     // 应用内跳转链接 (教程/FAQ) —— 由服务端配置，未配置为空串时前端按钮置灰
     getAppLinks: async (): Promise<{ tutorialUrl: string; faqUrl: string }> => {
       const json = await getJson(`${API}/api/links`, 3000);

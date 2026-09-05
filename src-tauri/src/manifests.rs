@@ -26,6 +26,11 @@ pub fn http_client() -> &'static reqwest::Client {
     })
 }
 
+/// 复用统一 UA 的默认配置，供需要自定义超时（如大文件下载）的调用方再加工
+pub fn http_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder().user_agent("ChunFengDu-Client")
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppManifestStatus {

@@ -1085,6 +1085,93 @@ async fn check_manifest_status_batch(app_ids: Vec<u32>) -> serde_json::Value {
     .unwrap_or_else(|_e| json!([]))
 }
 
+// ==================== 应用内更新 ====================
+
+/// 应用内下载更新安装包：流式写盘并通过 update-download-progress 事件上报进度，
+/// 完成后返回安装包临时路径，由前端调用 launch_installer 拉起安装程序。
+#[tauri::command]
+async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, String> {
+    use tauri::Emitter;
+    let clean_url = url.trim().to_string();
+    if clean_url.is_empty() || clean_url.len() > 1024 || !(clean_url.starts_with("http://") || clean_url.starts_with("https://")) {
+        return Err("无效的下载地址".to_string());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        // 独立 client：不设总超时（安装包可能较大、网速较慢），仅限制连接超时
+        let client = manifests::http_client_builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| format!("初始化下载器失败: {}", e))?;
+        let resp = manifests::block_on(client.get(&clean_url).send())
+            .map_err(|e| format!("连接更新服务器失败: {}", e))?;
+        if !resp.status().is_success() {
+            return Err(format!("下载更新失败: HTTP {}", resp.status().as_u16()));
+        }
+
+        // 安装包文件名取自 URL 末段，仅保留安全字符；非 exe 一律按非法直链拒绝
+        let raw_name = clean_url.split(['/', '?']).rev().find(|s| !s.is_empty()).unwrap_or("");
+        let safe_name: String = raw_name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '_' || *c == '-').collect();
+        if !safe_name.to_ascii_lowercase().ends_with(".exe") {
+            return Err("下载地址必须是安装包 (.exe) 直链，请在后台「版本与推送」中配置安装版直链".to_string());
+        }
+        let target = std::env::temp_dir().join(&safe_name);
+
+        let total = resp.content_length();
+        let mut file = std::fs::File::create(&target).map_err(|e| format!("创建临时文件失败: {}", e))?;
+        use std::io::Write;
+        let mut resp = resp;
+        let mut downloaded: u64 = 0;
+        let mut last_emitted: u64 = 0;
+        loop {
+            let chunk = manifests::block_on(resp.chunk()).map_err(|e| format!("下载中断: {}", e))?;
+            let Some(bytes) = chunk else { break };
+            file.write_all(&bytes).map_err(|e| format!("写入临时文件失败: {}", e))?;
+            downloaded += bytes.len() as u64;
+            // 每累计 512KB 上报一次进度，避免事件刷屏
+            if downloaded - last_emitted >= 512 * 1024 {
+                last_emitted = downloaded;
+                let _ = app.emit(
+                    "update-download-progress",
+                    serde_json::json!({ "downloaded": downloaded, "total": total }),
+                );
+            }
+        }
+        file.flush().ok();
+        let _ = app.emit(
+            "update-download-progress",
+            serde_json::json!({ "downloaded": downloaded, "total": total }),
+        );
+        Ok(target.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("下载任务失败: {}", e))?
+}
+
+/// 拉起下载好的安装程序并退出本应用（交出 exe 文件锁供安装器替换）
+#[tauri::command]
+fn launch_installer(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    // 安全校验：只允许执行位于系统临时目录、刚由 download_update 下载的 exe
+    let is_temp_exe = p.extension().map(|e| e == "exe").unwrap_or(false)
+        && p.parent().map(|dir| dir == std::env::temp_dir()).unwrap_or(false);
+    if !is_temp_exe {
+        return Err("非法的安装包路径".to_string());
+    }
+    if !p.exists() {
+        return Err("安装包不存在，请重新下载".to_string());
+    }
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+    Command::new(&p)
+        .creation_flags(0x00000008) // DETACHED_PROCESS：父进程退出后安装器继续运行
+        .spawn()
+        .map_err(|e| format!("启动安装程序失败: {}", e))?;
+    // 退出应用，让安装器可以替换程序文件
+    app.exit(0);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1114,6 +1201,8 @@ pub fn run() {
             select_directory,
             open_path,
             open_url,
+            download_update,
+            launch_installer,
             ensure_ost_env,
             activate_injection,
             unlock_game,
