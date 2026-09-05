@@ -135,7 +135,7 @@
         </p>
       </div>
 
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pb-4">
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pb-28">
         <div
           v-for="game in games"
           :key="game.appId"
@@ -240,17 +240,18 @@
       </div>
       </div>
 
-      <!-- 换源提示浮层：搜索后滚动到列表底部时浮现（悬浮展示不挤压列表，避免高度抖动导致闪烁） -->
-      <Transition
-        enter-active-class="transition duration-200 ease-out"
-        enter-from-class="opacity-0 translate-y-2"
-        enter-to-class="opacity-100 translate-y-0"
-        leave-active-class="transition duration-150 ease-in"
-        leave-from-class="opacity-100"
-        leave-to-class="opacity-0"
-      >
-        <div v-if="hasSearched && listAtBottom" class="absolute inset-x-0 bottom-2 z-20 flex justify-center pointer-events-none">
-          <div class="pointer-events-auto flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-2.5 px-5 rounded-2xl theme-card-static shadow-2xl max-w-[95%]">
+      <!-- 底部浮动控制区：分页器常驻 + 换源提示按需浮现，同层堆叠互不遮挡 -->
+      <div class="absolute inset-x-0 bottom-3 z-20 flex flex-col items-center gap-2 pointer-events-none px-4">
+        <!-- 换源提示浮层：搜索后滚动到列表底部时浮现（悬浮展示不挤压列表，避免高度抖动导致闪烁） -->
+        <Transition
+          enter-active-class="transition duration-200 ease-out"
+          enter-from-class="opacity-0 translate-y-2"
+          enter-to-class="opacity-100 translate-y-0"
+          leave-active-class="transition duration-150 ease-in"
+          leave-from-class="opacity-100"
+          leave-to-class="opacity-0"
+        >
+          <div v-if="hasSearched && listAtBottom" class="pointer-events-auto flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-400 py-2.5 px-5 rounded-2xl theme-card-static shadow-2xl max-w-full">
             <div class="flex items-center gap-2 text-center">
               <Info class="w-4 h-4 text-sky-400 shrink-0" />
               <span>
@@ -269,15 +270,10 @@
               <span>切换下一个搜索接口</span>
             </button>
           </div>
-        </div>
-      </Transition>
-    </div>
+        </Transition>
 
-    <!-- 底部区域：全量分页器 -->
-    <div class="mt-3 pt-3 border-t border-white/10 shrink-0">
-      <!-- 1. 全量分页控制器 (支持 3000+ 页快速跳转与翻页) -->
-      <div v-if="totalPages > 1" class="flex items-center justify-between gap-3 flex-wrap text-xs">
-        <div class="flex items-center gap-1.5">
+        <!-- 分页器浮层 -->
+        <div v-if="totalPages > 1" class="pointer-events-auto flex items-center justify-center gap-1.5 flex-wrap theme-card-static shadow-2xl rounded-2xl px-3 py-2 text-xs max-w-full">
           <button
             @click="goToPage(1)"
             :disabled="currentPage === 1 || loading"
@@ -324,27 +320,29 @@
           >
             末页 ({{ totalPages.toLocaleString() }})
           </button>
-        </div>
 
-        <!-- 页面直达跳转 -->
-        <div class="flex items-center gap-2">
-          <span class="text-slate-400">跳至</span>
-          <input
-            v-model.number="jumpPageInput"
-            @keydown.enter="handleJumpPage"
-            type="number"
-            :min="1"
-            :max="totalPages"
-            placeholder="页码"
-            class="w-16 theme-card-static rounded-xl px-2 py-1 text-center text-xs font-mono focus:outline-none focus:border-sky-400"
-          />
-          <span class="text-slate-400">页</span>
-          <button
-            @click="handleJumpPage"
-            class="px-3 py-1 rounded-xl btn-soft-action text-xs font-bold hover:theme-text-accent cursor-pointer"
-          >
-            跳转
-          </button>
+          <span class="h-4 w-px bg-slate-500/25 mx-1"></span>
+
+          <!-- 页面直达跳转 -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-slate-400">跳至</span>
+            <input
+              v-model.number="jumpPageInput"
+              @keydown.enter="handleJumpPage"
+              type="number"
+              :min="1"
+              :max="totalPages"
+              placeholder="页码"
+              class="w-16 theme-card-static rounded-xl px-2 py-1 text-center text-xs font-mono focus:outline-none focus:border-sky-400"
+            />
+            <span class="text-slate-400">页</span>
+            <button
+              @click="handleJumpPage"
+              class="px-3 py-1.5 rounded-xl btn-soft-action text-xs font-bold hover:theme-text-accent cursor-pointer"
+            >
+              跳转
+            </button>
+          </div>
         </div>
       </div>
     </div>
