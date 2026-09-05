@@ -518,3 +518,100 @@ pub fn uninstall_injection_files(steam_path: &Path) -> Result<Vec<String>, Strin
         Err(failed.join("; "))
     }
 }
+
+// ==================== 游戏版本更新检测 ====================
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DepotGidChange {
+    pub depot_id: u32,
+    pub old_gid: Option<String>,
+    pub new_gid: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameUpdateStatus {
+    pub app_id: u32,
+    /// 是否成功取到云端实时元数据；false 时 hasUpdate 无意义，message 给出原因
+    pub checked: bool,
+    pub has_update: bool,
+    pub changed_depots: Vec<DepotGidChange>,
+    pub message: Option<String>,
+}
+
+/// 从 Lua 规则文本中提取 `setManifestid(depot, "gid", 0)` 固定的清单 GID
+pub fn extract_manifest_gids(lua_content: &str) -> Vec<(u32, String)> {
+    let mut out = Vec::new();
+    for line in lua_content.lines() {
+        let t = line.trim();
+        if !(t.starts_with("setManifestid(") || t.starts_with("setManifestId(")) {
+            continue;
+        }
+        let inner = match (t.find('('), t.rfind(')')) {
+            (Some(a), Some(b)) if b > a => &t[a + 1..b],
+            _ => continue,
+        };
+        let parts: Vec<&str> = inner.split(',').collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let depot: u32 = match parts[0].trim().parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let gid = parts[1].trim().trim_matches('"').trim();
+        if !gid.is_empty() && gid != "0" && gid.chars().all(|c| c.is_ascii_digit()) {
+            out.push((depot, gid.to_string()));
+        }
+    }
+    out
+}
+
+/// 对比单个游戏 Lua 规则中钉死的 GID 与云端实时元数据。
+/// 必须在 spawn_blocking 线程调用（parse_metadata 内部有阻塞 IO）。
+pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateStatus {
+    let lua_path = steam_path.join("config").join("lua").join(format!("{}.lua", app_id));
+    let old_map: std::collections::BTreeMap<u32, String> = std::fs::read_to_string(&lua_path)
+        .map(|c| extract_manifest_gids(&c).into_iter().collect())
+        .unwrap_or_default();
+
+    match crate::manifests::parse_metadata(app_id) {
+        Ok(meta) => {
+            let mut changed = Vec::new();
+            for d in &meta.depots {
+                let Some(g) = d.manifest_gid.as_deref().map(str::trim) else { continue };
+                if g.is_empty() || g == "0" || !g.chars().all(|c| c.is_ascii_digit()) {
+                    continue;
+                }
+                let Ok(id) = d.depot_id.parse::<u32>() else { continue };
+                if id == 0 {
+                    continue;
+                }
+                match old_map.get(&id) {
+                    Some(old) if old == g => {}
+                    // 旧规则缺失该 depot 的 GID（如入库时服务端无数据）也视为可更新补全
+                    old => changed.push(DepotGidChange {
+                        depot_id: id,
+                        old_gid: old.cloned(),
+                        new_gid: g.to_string(),
+                    }),
+                }
+            }
+            GameUpdateStatus {
+                app_id,
+                checked: true,
+                has_update: !changed.is_empty(),
+                changed_depots: changed,
+                message: None,
+            }
+        }
+        Err(e) => GameUpdateStatus {
+            app_id,
+            checked: false,
+            has_update: false,
+            changed_depots: Vec::new(),
+            message: Some(e),
+        },
+    }
+}

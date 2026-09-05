@@ -221,11 +221,11 @@ async fn activate_injection(
         .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
     }
 
-#[tauri::command]
-async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Some(steam_path) = steam::detect_steam_path() {
-            match ost::save_lua_rule(&steam_path, &payload) {
+/// 入库执行体：写入 Lua 规则并尽力预缓存清单。
+/// 供「一键入库」(unlock_game) 与「更新到最新版」(update_game_rules) 两条命令复用。
+/// 必须在 spawn_blocking 线程调用（save_lua_rule / precache 内部有阻塞 IO）。
+fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -> serde_json::Value {
+    match ost::save_lua_rule(steam_path, &payload) {
                 Ok(res) => {
                     // 与 Electron 版一致：入库成功后立即预缓存清单到 depotcache（入库即就绪）。
                     // 预缓存是尽力而为的附加步骤：此时 Lua 规则已写入，无论这里发生什么
@@ -233,7 +233,7 @@ async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
                     let mut precache_text = String::new();
                     if let Some(meta) = &res.metadata {
                         let pc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            manifests::precache_manifests(&steam_path, meta)
+                            manifests::precache_manifests(steam_path, meta)
                         }));
                         match pc {
                             Ok(pc) => {
@@ -287,13 +287,84 @@ async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
                     })
                 }
                 Err(e) => json!({ "success": false, "message": e }),
-            }
+    }
+}
+
+#[tauri::command]
+async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            execute_unlock(&steam_path, payload)
         } else {
             json!({ "success": false, "message": "未找到 Steam 客户端路径" })
         }
     })
     .await
     .unwrap_or_else(|e| json!({ "success": false, "message": format!("入库任务执行失败: {}", e) }))
+}
+
+/// 把已入库游戏更新到最新版本：重新拉取云端实时元数据（服务端每次实时查 SteamCMD）
+/// 重写 Lua 规则并预缓存新清单。元数据不可达时拒绝执行，绝不把老规则降级成空规则。
+#[tauri::command]
+async fn update_game_rules(app_id: u32, name: String, name_zh: Option<String>) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(steam_path) = steam::detect_steam_path() else {
+            return json!({ "success": false, "message": "未找到 Steam 客户端路径" });
+        };
+        if let Err(e) = manifests::parse_metadata(app_id) {
+            return json!({
+                "success": false,
+                "message": format!("获取最新版本信息失败，已保留原规则未做任何改动。原因：{}", e)
+            });
+        }
+        let name_display = name_zh.clone().unwrap_or_else(|| format!("App {}", app_id));
+        let payload = UnlockGamePayload {
+            app_id,
+            name,
+            name_zh,
+            depots: None,
+            dlcs: None,
+            app_level_key: None,
+            access_token: None,
+        };
+        let mut res = execute_unlock(&steam_path, payload);
+        if res.get("success").and_then(|v| v.as_bool()) == Some(true) {
+            let manifest_count = res.get("manifestCount").and_then(|v| v.as_i64()).unwrap_or(0);
+            res["message"] = json!(format!(
+                "已将「{}」的入库规则更新到最新版本（{} 条清单 GID）！Steam 库中将自动检测并下载更新内容；若未自动开始，请重启 Steam 后在库中点击该游戏的「更新」。",
+                name_display, manifest_count
+            ));
+        }
+        res
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("更新任务执行失败: {}", e) }))
+}
+
+/// 批量检查已入库游戏的版本更新：对比 Lua 规则中钉死的 GID 与云端实时元数据
+#[tauri::command]
+async fn check_game_updates(app_ids: Vec<u32>) -> serde_json::Value {
+    let Some(steam_path) = steam::detect_steam_path() else {
+        return json!([]);
+    };
+    // 每个游戏一次云端实时查询，逐个派发到阻塞线程池并发执行（与入库流程同款阻塞模式）
+    let mut handles = Vec::new();
+    for id in app_ids {
+        let sp = steam_path.clone();
+        handles.push((id, tauri::async_runtime::spawn_blocking(move || ost::check_game_update_status(&sp, id))));
+    }
+    let mut out = Vec::with_capacity(handles.len());
+    for (id, h) in handles {
+        let status = h.await.unwrap_or_else(|e| ost::GameUpdateStatus {
+            app_id: id,
+            checked: false,
+            has_update: false,
+            changed_depots: Vec::new(),
+            message: Some(format!("任务执行失败: {}", e)),
+        });
+        out.push(status);
+    }
+    json!(out)
 }
 
 #[tauri::command]
@@ -1283,7 +1354,9 @@ pub fn run() {
             get_steamless_status,
             repair_game_steamless,
             search_local_games,
-            get_unlocked_details
+            get_unlocked_details,
+            check_game_updates,
+            update_game_rules
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

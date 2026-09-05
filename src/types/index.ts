@@ -207,6 +207,22 @@ export interface ManifestInstallResult {
   message: string;
 }
 
+export interface DepotGidChange {
+  depotId: number;
+  oldGid: string | null;
+  newGid: string;
+}
+
+/** 单个已入库游戏的版本更新检测结果 */
+export interface GameUpdateStatus {
+  appId: number;
+  /** 是否成功取到云端实时元数据；false 时 hasUpdate 无意义 */
+  checked: boolean;
+  hasUpdate: boolean;
+  changedDepots: DepotGidChange[];
+  message?: string | null;
+}
+
 export interface DataSourceInfo {
   id: string;
   name: string;

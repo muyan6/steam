@@ -18,6 +18,24 @@
       <div class="flex items-center gap-2.5">
         <button
           v-if="unlockedGames.length > 0"
+          @click="handleCheckUpdates(false)"
+          :disabled="checkingUpdates"
+          class="px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-sm disabled:opacity-60"
+          title="逐个对比已入库规则的清单版本与云端最新版本（实时查询，游戏越多耗时越长）"
+        >
+          <ArrowUpCircle v-if="checkingUpdates" class="w-4 h-4 animate-pulse" />
+          <CloudDownload v-else class="w-4 h-4" />
+          <span>{{ checkingUpdates ? '检查中...' : '检查更新' }}</span>
+          <span
+            v-if="updatableCount > 0"
+            class="px-1.5 py-0.5 rounded-full bg-amber-500/30 text-amber-200 font-mono font-bold text-[10px]"
+          >
+            {{ updatableCount }}
+          </span>
+        </button>
+
+        <button
+          v-if="unlockedGames.length > 0"
           @click="handleClearAll"
           class="px-4 py-2.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-semibold transition flex items-center gap-2"
         >
@@ -125,6 +143,16 @@
                   <span>Token</span>
                 </span>
 
+                <!-- 版本更新状态 -->
+                <span
+                  v-if="updateStatuses[game.appId]?.hasUpdate"
+                  class="text-[11px] px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 font-mono flex items-center gap-1 border border-amber-500/30 font-semibold"
+                  title="云端已有更新的清单版本，点击下方「更新」按钮同步"
+                >
+                  <ArrowUpCircle class="w-3 h-3" />
+                  <span>有更新</span>
+                </span>
+
                 <!-- 清单状态 -->
                 <span
                   v-if="manifestStatuses[game.appId]?.hasManifest || game.hasManifest"
@@ -168,6 +196,18 @@
               </a>
 
               <button
+                v-if="updateStatuses[game.appId]?.hasUpdate"
+                @click="handleUpdateGame(game.appId, game.name)"
+                :disabled="updatingAppId === game.appId"
+                title="重新拉取最新版本规则与清单，Steam 库中将自动检测并下载更新内容"
+                class="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 disabled:opacity-60"
+              >
+                <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
+                <ArrowUpCircle v-else class="w-3.5 h-3.5" />
+                <span>{{ updatingAppId === game.appId ? '更新中...' : '更新' }}</span>
+              </button>
+
+              <button
                 v-if="!manifestStatuses[game.appId]?.hasManifest && !game.hasManifest"
                 @click="handleRepairManifest(game.appId)"
                 :disabled="repairingAppId === game.appId"
@@ -197,19 +237,21 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue';
-import { 
-  Library, 
-  Trash2, 
-  RotateCw, 
-  Search, 
-  Key, 
-  Zap, 
-  Box, 
-  Download, 
-  Play, 
-  FolderSync 
+import {
+  Library,
+  Trash2,
+  RotateCw,
+  Search,
+  Key,
+  Zap,
+  Box,
+  Download,
+  Play,
+  FolderSync,
+  ArrowUpCircle,
+  CloudDownload
 } from 'lucide-vue-next';
-import { AppManifestStatus, LuaGameInfo } from '../../types';
+import { AppManifestStatus, GameUpdateStatus, LuaGameInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
 import { applyImageFallback } from '../utils/imageFallback';
 
@@ -220,8 +262,15 @@ const emit = defineEmits<{
 
 const unlockedGames = ref<LuaGameInfo[]>([]);
 const manifestStatuses = reactive<Record<number, AppManifestStatus>>({});
+const updateStatuses = reactive<Record<number, GameUpdateStatus>>({});
+const checkingUpdates = ref(false);
+const updatingAppId = ref<number | null>(null);
 const repairingAppId = ref<number | null>(null);
 const filterKeyword = ref('');
+
+const updatableCount = computed(
+  () => Object.values(updateStatuses).filter((s) => s?.hasUpdate).length
+);
 
 const filteredGames = computed(() => {
   const kw = filterKeyword.value.trim().toLowerCase();
@@ -237,6 +286,10 @@ const loadLibrary = async () => {
     unlockedGames.value = details || [];
     // 重建清单状态表，清掉已出库游戏的残留条目
     Object.keys(manifestStatuses).forEach((k) => delete manifestStatuses[Number(k)]);
+    Object.keys(updateStatuses).forEach((k) => {
+      const id = Number(k);
+      if (!unlockedGames.value.some((g) => g.appId === id)) delete updateStatuses[id];
+    });
     emit('refresh-status');
 
     // 一次批量调用补齐无清单游戏的明细，替代逐游戏请求（depotcache 仅扫描一次）
@@ -272,6 +325,56 @@ const handleRepairManifest = async (appId: number) => {
     emit('notify', `下载清单失败: ${formatIpcError(e)}`, 'error');
   } finally {
     repairingAppId.value = null;
+  }
+};
+
+const handleCheckUpdates = async (silent: boolean) => {
+  if (unlockedGames.value.length === 0 || checkingUpdates.value) return;
+  checkingUpdates.value = true;
+  try {
+    const ids = unlockedGames.value.map((g) => g.appId);
+    const list = await window.electronAPI.checkGameUpdates(ids);
+    Object.keys(updateStatuses).forEach((k) => delete updateStatuses[Number(k)]);
+    let failed = 0;
+    for (const s of list || []) {
+      if (!s || s.appId == null) continue;
+      updateStatuses[s.appId] = s;
+      if (!s.checked) failed++;
+    }
+    const n = updatableCount.value;
+    if (!silent || n > 0) {
+      if (failed > 0) {
+        emit('notify', `版本检查完成：${n} 款有更新，${failed} 款检查失败（云端元数据不可达）`, n > 0 ? 'warning' : 'info');
+      } else if (n > 0) {
+        emit('notify', `检查完成：${n} 款游戏有新版本，点击卡片上的「更新」按钮即可同步！`, 'warning');
+      } else {
+        emit('notify', '检查完成：所有已入库游戏均为最新版本。', 'success');
+      }
+    }
+  } catch (e: any) {
+    if (!silent) emit('notify', `检查更新失败: ${formatIpcError(e)}`, 'error');
+  } finally {
+    checkingUpdates.value = false;
+  }
+};
+
+const handleUpdateGame = async (appId: number, name: string) => {
+  if (updatingAppId.value) return;
+  updatingAppId.value = appId;
+  try {
+    emit('notify', `正在将「${name}」更新到最新版本...`, 'info');
+    const res = await window.electronAPI.updateGame(appId, name);
+    if (res && res.success) {
+      emit('notify', res.message || '已更新到最新版本！', 'success');
+      delete updateStatuses[appId];
+      await loadLibrary();
+    } else {
+      emit('notify', res?.message || '更新失败', 'error');
+    }
+  } catch (e: any) {
+    emit('notify', `更新失败: ${formatIpcError(e)}`, 'error');
+  } finally {
+    updatingAppId.value = null;
   }
 };
 
@@ -318,7 +421,11 @@ const handleImgError = (e: Event) => {
   applyImageFallback(e);
 };
 
-onMounted(() => {
-  loadLibrary();
+onMounted(async () => {
+  await loadLibrary();
+  // 静默预检版本更新：仅在确有更新时提示，不打扰日常使用
+  if (unlockedGames.value.length > 0) {
+    handleCheckUpdates(true);
+  }
 });
 </script>

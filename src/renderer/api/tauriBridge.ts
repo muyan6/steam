@@ -265,6 +265,13 @@ export const createTauriBridge = () => {
     downloadManifest: async (appId: number, dlcs?: number[]): Promise<any> =>
       invoke('download_manifests', { appId, dlcs: dlcs || [] }),
 
+    // 版本更新检测：对比已入库规则中钉死的清单 GID 与云端实时元数据（服务端每次实时查 SteamCMD）
+    checkGameUpdates: async (appIds: number[]): Promise<any[]> =>
+      invoke<any[]>('check_game_updates', { appIds }),
+    // 一键更新：重新拉取最新元数据重写 Lua 规则并预缓存新清单（复用入库执行体）
+    updateGame: async (appId: number, name: string, nameZh?: string): Promise<{ success: boolean; message: string; manifestCount?: number }> =>
+      invoke('update_game_rules', { appId, name, nameZh: nameZh || name }),
+
     // 搜索服务：多数据源（云端/官方/聚合/本地）
     searchGames: async (params: any): Promise<any> => {
       const q = (typeof params === 'string' ? params : params?.query || '').trim();
