@@ -8,6 +8,88 @@ import { tokenService } from '../services/tokenService.js';
 // 安全策略：不再关闭上游 HTTPS 证书校验（原 rejectUnauthorized:false 存在 MITM 注入密钥风险）
 const httpsAgent = new https.Agent();
 
+// ==================== ManifestHub3 兜底源 ====================
+// steamtools-games/ManifestHub3：每 AppID 一个 Git 分支，内含 {AppID}.lua + key.vdf，
+// 社区维护、活跃更新（约 6.2 万 AppID）。当本地密钥库没有某游戏的数据时，
+// 拉取其分支 Lua 解析出 depotKey / manifestGid / accessToken 兜底补全。
+// 铁律：只补缺，绝不覆盖已有有效数据——其 GID 可能与 SteamCMD public 分支不一致，
+// SteamCMD 实时数据始终优先。
+
+interface ManifestHub3Data {
+  depotKeys: Map<string, string>;
+  manifestGids: Map<string, string>;
+  accessToken?: string;
+}
+
+const manifestHub3Cache = new Map<number, { data: ManifestHub3Data | null; fetchedAt: number }>();
+const MANIFEST_HUB3_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时内存缓存，避免逐请求拉取
+
+function parseManifestHub3Lua(lua: string): ManifestHub3Data {
+  const depotKeys = new Map<string, string>();
+  const manifestGids = new Map<string, string>();
+  let accessToken: string | undefined;
+
+  for (const rawLine of lua.split('\n')) {
+    const line = rawLine.trim();
+
+    // addappid(<depot>, 0|1, "<key>") / setDepotKey(<depot>, "<key>")
+    const addMatch = line.match(/^addappid\((\d+)\s*,\s*\d+\s*,\s*"([0-9a-fA-F]{32,})"\s*\)/);
+    const setKeyMatch = line.match(/^setDepotKey\((\d+)\s*,\s*"([0-9a-fA-F]{32,})"\s*\)/);
+    const keyMatch = addMatch || setKeyMatch;
+    if (keyMatch) {
+      const depotId = keyMatch[1];
+      const key = keyMatch[2];
+      // 绝不接受全 0 占位符
+      if (!/^0+$/.test(key)) depotKeys.set(depotId, key);
+      continue;
+    }
+
+    // setManifestid(<depot>, "<gid>"[, 0])
+    const gidMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d{5,})"/);
+    if (gidMatch && gidMatch[2] !== '0') {
+      manifestGids.set(gidMatch[1], gidMatch[2]);
+      continue;
+    }
+
+    // addtoken(<appid>, "<hex>")
+    const tokenMatch = line.match(/^addtoken\((\d+)\s*,\s*"([0-9a-fA-F]+)"\s*\)/);
+    if (tokenMatch) {
+      accessToken = tokenMatch[2];
+    }
+  }
+
+  return { depotKeys, manifestGids, accessToken };
+}
+
+async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null> {
+  const cached = manifestHub3Cache.get(appId);
+  if (cached && Date.now() - cached.fetchedAt < MANIFEST_HUB3_TTL_MS) {
+    return cached.data;
+  }
+
+  const urls = [
+    // 直连 GitHub raw（海外服务器可达）
+    `https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
+    // ghfast.top 加速代理（中国大陆服务器直连 raw 往往超时）
+    `https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`
+  ];
+
+  let data: ManifestHub3Data | null = null;
+  for (const u of urls) {
+    try {
+      const resp = await axios.get(u, { httpsAgent, timeout: 6000 });
+      const lua = typeof resp.data === 'string' ? resp.data : '';
+      if (lua.includes('addappid') || lua.includes('setManifestid')) {
+        data = parseManifestHub3Lua(lua);
+        break;
+      }
+    } catch {}
+  }
+
+  manifestHub3Cache.set(appId, { data, fetchedAt: Date.now() });
+  return data;
+}
+
 export const getGameMetadata = async (req: Request, res: Response) => {
   try {
     const rawAppId = Array.isArray(req.params.appId) ? req.params.appId[0] : req.params.appId;
@@ -151,9 +233,35 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
+    // 4.5 ManifestHub3 社区清单库兜底（steamtools-games/ManifestHub3，约 6.2 万 AppID）：
+    // 本地密钥库/GID 缺失时拉取该 AppID 分支的 Lua 解析补全。
+    // 铁律：只补缺，绝不覆盖已有有效数据——其 GID 可能与 SteamCMD public 不一致
+    let hub3Data: ManifestHub3Data | null = null;
+    if (depots.some((d) => !isValidKey(d.depotKey) || !d.manifestGid)) {
+      hub3Data = await fetchManifestHub3(appId);
+      if (hub3Data) {
+        const knownDepots = new Set(depots.map((d) => d.depotId));
+        for (const d of depots) {
+          if (!isValidKey(d.depotKey) && hub3Data.depotKeys.has(d.depotId)) {
+            d.depotKey = hub3Data.depotKeys.get(d.depotId);
+          }
+          if (!d.manifestGid && hub3Data.manifestGids.has(d.depotId)) {
+            d.manifestGid = hub3Data.manifestGids.get(d.depotId);
+          }
+        }
+        // 本地数据完全没有的分包（新 DLC / 新增 depot）一并补入
+        for (const [dId, key] of hub3Data.depotKeys) {
+          if (knownDepots.has(dId)) continue;
+          depots.push({ depotId: dId, depotKey: key, manifestGid: hub3Data.manifestGids.get(dId) });
+          knownDepots.add(dId);
+        }
+      }
+    }
+
     // 5. 获取 PICS Access Token
-    const appLevelKey = matchedKeys[sAppId] || depotService.getDepotKey(sAppId) || undefined;
-    const accessToken = tokenService.getTokenByAppId(sAppId) || undefined;
+    const appLevelKey =
+      matchedKeys[sAppId] || depotService.getDepotKey(sAppId) || hub3Data?.depotKeys.get(sAppId) || undefined;
+    const accessToken = tokenService.getTokenByAppId(sAppId) || hub3Data?.accessToken || undefined;
 
     return res.json({
       success: true,
