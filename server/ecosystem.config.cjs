@@ -9,13 +9,12 @@ module.exports = {
       max_memory_restart: '300M',
       env: {
         NODE_ENV: 'production',
-        PORT: 1257
-      },
-      // 安全策略：密钥不再写入配置文件，pm2 启动前必须先在环境中设置：
-      //   export ADMIN_SECRET=<随机强密钥>
-      //   export JWT_SECRET=<随机强密钥>
-      // 生成方式：node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-      // 缺少任一环境变量时服务端会拒绝启动（防止使用弱默认值）
+        PORT: 1257,
+        // 密钥从环境注入；服务端启动时 dotenv 也会自动读取 server/.env。
+        // 生成方式见 update.sh 第 3 步提示（一次性写入 server/.env 即可，无需手动 export）
+        ADMIN_SECRET: process.env.ADMIN_SECRET,
+        JWT_SECRET: process.env.JWT_SECRET
+      }
     }
   ]
 };
