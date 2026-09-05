@@ -16,6 +16,12 @@ import { LANDING_HTML } from './static/landingPage.js';
 
 const app = express();
 
+// 反向代理支持：TRUST_PROXY 未配置时不信任任何代理头（直连部署）；
+// 配置后 express-rate-limit 与审计日志才能拿到真实客户端 IP
+if (CONFIG.TRUST_PROXY !== false) {
+  app.set('trust proxy', CONFIG.TRUST_PROXY as any);
+}
+
 // 基础中间件
 app.disable('x-powered-by');
 const corsOrigin = CONFIG.CORS_ORIGIN === '' ? false : CONFIG.CORS_ORIGIN;
@@ -1037,12 +1043,15 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ success: false, message: '服务器内部错误' });
 });
 
-// 进程级异常保护：避免未捕获异常静默带崩整个服务
+// 进程级异常保护：异常后进程状态不可信（大量同步写 JSON 可能已半途而废），
+// 记录后立即退出交由 PM2 重启，避免以脏内存状态覆盖磁盘数据文件
 process.on('uncaughtException', (err) => {
-  console.error('[UncaughtException]', err);
+  console.error('[UncaughtException] 进程即将退出:', err);
+  process.exit(1);
 });
 process.on('unhandledRejection', (reason) => {
-  console.error('[UnhandledRejection]', reason);
+  console.error('[UnhandledRejection] 进程即将退出:', reason);
+  process.exit(1);
 });
 
 const server = app.listen(CONFIG.PORT, CONFIG.HOST, () => {

@@ -97,11 +97,11 @@ if [ -f "$SERVER_DIR/.env" ]; then
     echo -e "   -> 已从 server/.env 加载密钥配置 ${GREEN}✓${NC}"
 fi
 
-if [ -z "$ADMIN_SECRET" ] || [ -z "$JWT_SECRET" ]; then
-    echo -e "${RED}   -> 缺少 ADMIN_SECRET / JWT_SECRET！${NC}"
+if [ -z "$JWT_SECRET" ]; then
+    echo -e "${RED}   -> 缺少 JWT_SECRET！${NC}"
     echo -e "${YELLOW}   -> 一次性执行以下命令生成 server/.env（生成后永久生效，无需 export）：${NC}"
     echo -e "      cd $SERVER_DIR"
-    echo -e "      node -e \"const c=require('crypto');require('fs').writeFileSync('.env','ADMIN_SECRET='+c.randomBytes(48).toString('hex')+'\\nJWT_SECRET='+c.randomBytes(48).toString('hex')+'\\n')\""
+    echo -e "      node -e \"const c=require('crypto');require('fs').writeFileSync('.env','JWT_SECRET='+c.randomBytes(48).toString('hex')+'\\n')\""
     echo -e "      chmod 600 .env && cd .."
     echo -e "${RED}   -> 跳过服务重启，避免启动失败。生成后重新运行本脚本。${NC}"
     exit 1

@@ -52,11 +52,24 @@ function requireSecret(name: string): string {
   return value.trim();
 }
 
+/**
+ * 解析 TRUST_PROXY 环境变量，供 app.set('trust proxy', ...) 使用。
+ * 未配置时为 false（直连部署，按 socket 地址取 IP）；
+ * 反向代理部署必须配置，否则限流按反代 IP 计数（全站共享额度）且审计 IP 失真。
+ * 支持值：true / 1（信任一级）、纯数字（信任 N 级）、loopback 或具体 IP/CIDR。
+ */
+function resolveTrustProxy(): boolean | number | string {
+  const raw = process.env.TRUST_PROXY;
+  if (!raw || !raw.trim()) return false;
+  const v = raw.trim();
+  if (v === 'true' || v === '1') return true;
+  if (/^\d+$/.test(v)) return parseInt(v, 10);
+  return v;
+}
+
 export const CONFIG = {
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 1257,
   HOST: process.env.HOST || '0.0.0.0',
-  // 安全策略：管理密钥/JWT 密钥必须显式配置，无任何代码内默认值
-  ADMIN_SECRET: requireSecret('ADMIN_SECRET'),
   DEFAULT_ADMIN_USER: process.env.ADMIN_USER || 'admin',
   // 仅用于首次初始化凭据文件；登录校验只走 PBKDF2 哈希，不存在密码回退
   DEFAULT_ADMIN_PASS: process.env.ADMIN_PASS || 'admin123',
@@ -65,5 +78,6 @@ export const CONFIG = {
   MAX_LOGIN_ATTEMPTS: 5,
   LOCKOUT_TIME_MS: 15 * 60 * 1000, // 输错5次锁定15分钟
   DATA_DIR: resolveDataDir(),
-  CORS_ORIGIN: process.env.CORS_ORIGIN || ''
+  CORS_ORIGIN: process.env.CORS_ORIGIN || '',
+  TRUST_PROXY: resolveTrustProxy()
 };

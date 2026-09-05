@@ -8,7 +8,8 @@ import { writeJsonAtomic, readJsonOrThrow } from '../utils/atomicJson.js';
 export class AuthService {
   private credFilePath: string;
   private auditFilePath: string;
-  private loginAttempts: Map<string, { count: number; lockedUntil: number }> = new Map();
+  // 失败计数带时间窗：窗口外未锁定的记录自动清理，避免任意时间跨度内累计触发锁定
+  private loginAttempts: Map<string, { count: number; lockedUntil: number; lastAttemptAt: number }> = new Map();
 
   constructor() {
     this.credFilePath = path.join(CONFIG.DATA_DIR, 'admin_credentials.json');
@@ -125,8 +126,9 @@ export class AuthService {
 
       const payload: AuthTokenPayload = JSON.parse(Buffer.from(body, 'base64url').toString('utf-8'));
       const now = Math.floor(Date.now() / 1000);
-      if (payload.exp && payload.exp < now) {
-        return null; // 过期
+      // 强制要求 exp：缺少过期时间的 token 一律拒绝，避免历史 token 永久有效
+      if (!payload.exp || payload.exp < now) {
+        return null; // 过期或非法
       }
 
       // tokenVersion 吊销：修改密码后旧 token 一律失效
@@ -153,9 +155,12 @@ export class AuthService {
     const cleanPass = (pass || '').trim();
 
     // 锁定检查必须先于凭据校验，防止爆破
-    // 清理已过期的锁定记录，防止长期运行内存缓慢增长
+    // 清理过期记录：已解除锁定、或超出失败计数窗口（15 分钟）的记录一律移除
     for (const [key, val] of this.loginAttempts) {
+      const windowExpired = now - val.lastAttemptAt > CONFIG.LOCKOUT_TIME_MS;
       if (val.lockedUntil !== 0 && val.lockedUntil <= now) {
+        this.loginAttempts.delete(key);
+      } else if (val.lockedUntil === 0 && windowExpired) {
         this.loginAttempts.delete(key);
       }
     }
@@ -223,7 +228,7 @@ export class AuthService {
       lockMsg = ' (连续错误已达上限，IP 将被锁定 15 分钟)';
     }
 
-    this.loginAttempts.set(ip, { count: currentCount, lockedUntil });
+    this.loginAttempts.set(ip, { count: currentCount, lockedUntil, lastAttemptAt: now });
     this.recordAuditLog({
       action: 'LOGIN_FAILED',
       operator: cleanUser,

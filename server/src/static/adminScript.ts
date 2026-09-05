@@ -221,15 +221,15 @@ async function loadLicensesData(page) {
           }
 
           var actionBtns = [
-            '<button onclick="copyLicenseCode(\\'' + item.code + '\\')" class="btn btn-secondary btn-sm" title="复制卡密">复制</button>'
+            '<button onclick="copyLicenseCode(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" title="复制卡密">复制</button>'
           ];
 
           if (item.deviceId) {
-            actionBtns.push('<button onclick="handleUnbindLicense(\\'' + item.code + '\\')" class="btn btn-secondary btn-sm" style="color:#fbbf24;" title="解绑设备">解绑</button>');
+            actionBtns.push('<button onclick="handleUnbindLicense(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:#fbbf24;" title="解绑设备">解绑</button>');
           }
 
           if (item.type !== 'lifetime') {
-            actionBtns.push('<button onclick="openExtendLicenseModal(\\'' + item.code + '\\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;" title="延长有效期">延期</button>');
+            actionBtns.push('<button onclick="openExtendLicenseModal(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;" title="延长有效期">延期</button>');
           }
 
           if (item.status === 'disabled') {
@@ -238,7 +238,7 @@ async function loadLicensesData(page) {
             actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',true)" class="btn btn-secondary btn-sm" style="color:#fb7185;">冻结</button>');
           }
 
-          actionBtns.push('<button onclick="handleDeleteLicense(\\'' + item.code + '\\')" class="btn btn-danger btn-sm">删除</button>');
+          actionBtns.push('<button onclick="handleDeleteLicense(\\'' + safeId(item.code) + '\\')" class="btn btn-danger btn-sm">删除</button>');
 
           return '<tr>' +
             '<td><strong style="color:#fff;font-family:monospace;font-size:12px;">' + escapeHtml(item.code) + '</strong></td>' +
@@ -542,14 +542,14 @@ async function loadNotices() {
           '<td><span class="badge ' + (n.enabled ? 'badge-green' : 'badge-gray') + '">' + (n.enabled ? '启用中' : '已停用') + '</span></td>' +
           '<td><strong>' + escapeHtml(n.title) + '</strong></td>' +
           '<td>' + (n.type === 'popup' ? '弹窗' : '横幅') + '</td>' +
-          '<td>' + (n.level || 'info') + '</td>' +
-          '<td>' + (n.priority || 0) + '</td>' +
-          '<td>' + (n.targetVersion || '*') + '</td>' +
+          '<td>' + escapeHtml(n.level || 'info') + '</td>' +
+          '<td>' + escapeHtml(String(n.priority || 0)) + '</td>' +
+          '<td>' + escapeHtml(n.targetVersion || '*') + '</td>' +
           '<td>' + formatTime(n.updatedAt) + '</td>' +
           '<td style="text-align:right;">' +
-            '<button onclick="previewNotice(\\'' + n.id + '\\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;">预览</button> ' +
-            '<button onclick="toggleNotice(\\'' + n.id + '\\',' + (!n.enabled) + ')" class="btn btn-secondary btn-sm">' + (n.enabled ? '停用' : '启用') + '</button> ' +
-            '<button onclick="deleteNotice(\\'' + n.id + '\\')" class="btn btn-danger btn-sm">删除</button>' +
+            '<button onclick="previewNotice(\\'' + safeId(n.id) + '\\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;">预览</button> ' +
+            '<button onclick="toggleNotice(\\'' + safeId(n.id) + '\\',' + (!n.enabled) + ')" class="btn btn-secondary btn-sm">' + (n.enabled ? '停用' : '启用') + '</button> ' +
+            '<button onclick="deleteNotice(\\'' + safeId(n.id) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -574,8 +574,8 @@ async function loadVersions() {
           '<td>' + (v.forceUpdate ? '<span class="badge badge-rose">强制全量</span>' : '<span class="badge badge-blue">推荐更新</span>') + '</td>' +
           '<td><span class="badge ' + (v.enabled ? 'badge-green' : 'badge-gray') + '">' + (v.enabled ? '活跃上线' : '已归档') + '</span></td>' +
           '<td style="text-align:right;">' +
-            '<button onclick="openPushModal(\\'' + v.version + '\\')" class="btn btn-secondary btn-sm" style="color:#fbbf24;">全网广播</button> ' +
-            '<button onclick="deleteVersion(\\'' + v.version + '\\')" class="btn btn-danger btn-sm">删除</button>' +
+            '<button onclick="openPushModal(\\'' + safeId(v.version) + '\\')" class="btn btn-secondary btn-sm" style="color:#fbbf24;">全网广播</button> ' +
+            '<button onclick="deleteVersion(\\'' + safeId(v.version) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -684,27 +684,36 @@ async function searchKey() {
   var container = document.getElementById('keySearchResult');
   if (container) { container.style.display = 'block'; container.innerHTML = '<div style="color:#64748b;">正在检索云端 28.8万条密钥库...</div>'; }
   try {
-    var resp = await fetch('/api/metadata/' + encodeURIComponent(val) + '?name=' + encodeURIComponent(val), { headers: getHeaders() });
+    // 走管理员专用检索接口（requireAdmin 保护）。/api/metadata/:appId 要求
+    // 客户端设备授权头，控制台请求永远不带 x-device-id，必然 401
+    var resp = await fetch('/api/admin/search/debug?q=' + encodeURIComponent(val), { headers: getHeaders() });
     var res = await resp.json();
     if (res && res.success && res.data) {
       var d = res.data;
-      var depotsHtml = (d.depots || []).map(function(dp) {
-        return '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;align-items:center;font-size:11px;">' +
-          '<span>DepotID: <strong style="color:#38bdf8;">' + dp.depotId + '</strong></span>' +
-          '<code style="color:' + (dp.depotKey ? '#34d399' : '#64748b') + ';font-size:11px;">' + (dp.depotKey || '未匹配到 AES 密钥') + '</code>' +
+      var game = d.game || {};
+      var rows = '';
+      if (d.depotKey) {
+        rows += '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;align-items:center;font-size:11px;">' +
+          '<span>DepotKey (' + escapeHtml(d.numericId || val) + ')</span>' +
+          '<code style="color:#34d399;font-size:11px;">' + escapeHtml(d.depotKey) + '</code>' +
         '</div>';
-      }).join('');
-
+      }
+      if (d.token) {
+        rows += '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;align-items:center;font-size:11px;">' +
+          '<span>AccessToken</span>' +
+          '<code style="color:#38bdf8;font-size:11px;">' + escapeHtml(d.token) + '</code>' +
+        '</div>';
+      }
       container.innerHTML = '<div style="margin-bottom:12px;">' +
-        '<strong style="color:#fff;font-size:15px;">' + escapeHtml(d.name || d.appId) + '</strong> ' +
-        '<span class="badge badge-blue">AppID: ' + d.appId + '</span> ' +
-        (d.accessToken ? '<span class="badge badge-green">Token: ' + d.accessToken + '</span>' : '') +
+        '<strong style="color:#fff;font-size:15px;">' + escapeHtml(game.name || d.query) + '</strong> ' +
+        '<span class="badge badge-blue">AppID: ' + escapeHtml(d.numericId || d.query) + '</span> ' +
+        (d.token ? '<span class="badge badge-green">Token 已收录</span>' : '<span class="badge badge-gray">Token 未收录</span>') +
       '</div>' +
-      '<div>' + (depotsHtml || '<div style="color:#64748b;">无分包数据</div>') + '</div>';
+      '<div>' + (rows || '<div style="color:#64748b;">未匹配到该 AppID 的密钥 / Token 记录</div>') + '</div>';
     } else {
-      if (container) container.innerHTML = '<div style="color:#fb7185;">未检索到 AppID ' + val + ' 的元数据记录</div>';
+      if (container) container.innerHTML = '<div style="color:#fb7185;">未检索到 ' + escapeHtml(val) + ' 的密钥记录</div>';
     }
-  } catch(e) { if (container) container.innerHTML = '<div style="color:#fb7185;">检索异常: ' + e.message + '</div>'; }
+  } catch(e) { if (container) container.innerHTML = '<div style="color:#fb7185;">检索异常: ' + escapeHtml(e && e.message ? e.message : String(e)) + '</div>'; }
 }
 
 function openNoticeModal() { document.getElementById('noticeModal').style.display = 'flex'; }
@@ -789,7 +798,15 @@ function formatTime(iso) {
 }
 
 function escapeHtml(str) {
-  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // 含引号转义：本页大量拼接进 HTML 属性上下文（title/value/onclick 参数），
+  // 不转义引号时上游数据（如第三方源返回的 key 名）可注入属性形成 XSS
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// 用于拼进 onclick="fn(\'...\')" 的 ID：只允许安全字符，杜绝属性逃逸
+function safeId(id) {
+  return String(id || '').replace(/[^a-zA-Z0-9_:-]/g, '');
 }
 
 function loadAllData() {

@@ -281,7 +281,7 @@ export class LicenseService {
     // 若已经激活
     if (key.status === 'active') {
       if (key.deviceId && key.deviceId.toLowerCase() === cleanDeviceId.toLowerCase()) {
-        const info = this.buildClientLicenseInfo(key, cleanDeviceId);
+        const info = this.buildClientLicenseInfo(key, cleanDeviceId, true);
         return {
           success: true,
           message: `设备已成功恢复「${TYPE_NAMES[key.type]}」激活状态！`,
@@ -315,7 +315,7 @@ export class LicenseService {
     this.saveKeys();
     console.log(`[LicenseService] 成功为设备 [${cleanDeviceId}] 绑定激活码: ${cleanCode} (${key.type})`);
 
-    const clientInfo = this.buildClientLicenseInfo(key, cleanDeviceId);
+    const clientInfo = this.buildClientLicenseInfo(key, cleanDeviceId, true);
     return {
       success: true,
       message: `恭喜！已成功激活「${TYPE_NAMES[key.type]}」！`,
@@ -376,7 +376,7 @@ export class LicenseService {
     return {
       success: true,
       message: `绑定已成功迁移到本机！有效期不变${key.expiresAt ? `（至 ${key.expiresAt.slice(0, 10)}）` : ''}。`,
-      license: this.buildClientLicenseInfo(key, cleanNew)
+      license: this.buildClientLicenseInfo(key, cleanNew, true)
     };
   }
 
@@ -402,7 +402,7 @@ export class LicenseService {
       if (key && key.deviceId && key.deviceId.toLowerCase() === cleanDeviceId.toLowerCase()) {
         this.checkAndExpireKey(key);
         if (key.status === 'active') {
-          return this.buildClientLicenseInfo(key, cleanDeviceId);
+          return this.buildClientLicenseInfo(key, cleanDeviceId, true);
         }
       }
     }
@@ -437,13 +437,26 @@ export class LicenseService {
     });
 
     const primaryKey = matchedKeys[0];
-    return this.buildClientLicenseInfo(primaryKey, cleanDeviceId);
+    // 仅凭 deviceId 匹配（未提供卡密证明）：返回掩码卡密，防探测抢绑
+    return this.buildClientLicenseInfo(primaryKey, cleanDeviceId, false);
+  }
+
+  /**
+   * 卡密掩码：客户端 DTO 只返回部分明文，防止仅凭 deviceId 即可
+   * 通过 /license/status、/license/verify 探测到完整卡密后抢绑。
+   * 请求方已证明持有完整卡密（激活/重绑/按卡密验签）时才返回明文。
+   */
+  private maskCode(code: string): string {
+    const c = (code || '').toUpperCase();
+    if (c.length <= 12) return c.slice(0, 4) + '-****';
+    return `${c.slice(0, 8)}****${c.slice(-4)}`;
   }
 
   /**
    * 构建客户端授权 DTO
+   * @param revealCode 仅在请求方能证明持有完整卡密时为 true
    */
-  private buildClientLicenseInfo(key: LicenseKey, deviceId: string): ClientLicenseInfo {
+  private buildClientLicenseInfo(key: LicenseKey, deviceId: string, revealCode: boolean = false): ClientLicenseInfo {
     const isLifetime = key.type === 'lifetime' || key.durationDays === -1;
     let remainingDays = -1;
 
@@ -458,7 +471,7 @@ export class LicenseService {
       status: key.status as any,
       type: key.type,
       typeName: TYPE_NAMES[key.type] || key.type,
-      code: key.code,
+      code: revealCode ? key.code : this.maskCode(key.code),
       deviceId,
       boundAt: key.boundAt,
       expiresAt: key.expiresAt,

@@ -207,12 +207,20 @@ const verifyLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: '验签请求过于频繁，请稍后再试' }
 });
+// 设备授权状态查询：仅凭 deviceId 即可调用，必须重限流防探测枚举
+const statusLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '状态查询过于频繁，请稍后再试' }
+});
 
 // 客户端设备码绑定与激活码验证 (公开接口)
 router.post('/license/activate', activateLimiter, activateLicense);
 router.post('/license/verify', verifyLimiter, verifyLicense);
 router.post('/license/rebind', activateLimiter, rebindLicense);
-router.get('/license/status/:deviceId', getDeviceLicenseStatus);
+router.get('/license/status/:deviceId', statusLimiter, getDeviceLicenseStatus);
 
 // 工具箱 (Toolbox) 与清单高可用节点 (公开接口)
 router.get('/toolbox/nodes', getManifestNodes);
