@@ -7,6 +7,7 @@ import { getDepotsForGame, getSingleDepotKey } from '../controllers/depotControl
 import { getGameMetadata } from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
 import { getManifestsForApp, downloadManifestFile } from '../controllers/manifestController.js';
+import { getLatestOstRelease, downloadOstAsset } from '../controllers/ostController.js';
 import {
   getLatestNotice,
   getActiveNoticesList,
@@ -211,6 +212,10 @@ router.get('/tokens/:appId', requireKeyAccess, getTokenForApp);
 // Manifest 清单检索与下载（与密钥接口同一设备授权：绕过激活不得直接拉取清单）
 router.get('/manifests/:appId', requireKeyAccess, getManifestsForApp);
 router.get('/manifests/download/:depotId/:manifestId', requireKeyAccess, downloadManifestFile);
+
+// OST 内核中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）
+router.get('/ost/latest', requireKeyAccess, getLatestOstRelease);
+router.get('/ost/download/:tag/:asset', requireKeyAccess, downloadOstAsset);
 
 // 卡密激活/验签/迁移：公开接口但限流防爆破
 const activateLimiter = rateLimit({

@@ -760,6 +760,23 @@ onMounted(() => {
   window.addEventListener('resize', syncMaximizedState);
   steamInfoTimer = setInterval(fetchSteamInfo, 5000);
   licenseTimer = setInterval(() => loadLicenseInfo(false), 30000);
+  // 每日一次的 OST 内核更新静默检测：有新版才轻提示，检测失败不打扰
+  const OST_CHECK_KEY = 'ost_last_sync_check';
+  const lastCheck = Number(localStorage.getItem(OST_CHECK_KEY) || 0);
+  if (Date.now() - lastCheck > 24 * 60 * 60 * 1000) {
+    localStorage.setItem(OST_CHECK_KEY, String(Date.now()));
+    window.electronAPI
+      .checkOstSync()
+      .then((res) => {
+        if (res?.updateAvailable && res.latestTag) {
+          addToast(
+            `OpenSteamTool 内核有新版 ${res.latestTag}（当前 ${res.currentTag}），可在「实用工具箱」一键同步`,
+            'info'
+          );
+        }
+      })
+      .catch(() => {});
+  }
 });
 
 onUnmounted(() => {

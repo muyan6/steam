@@ -748,6 +748,34 @@ fn fetch_latest_ost_release() -> Result<(String, Option<String>, String), String
         }
     }
 
+    // 最终回退：经春风渡服务器中转查询（服务器可达 GitHub，任何客户端网络环境可用）
+    let relay_url = format!("{}/api/ost/latest", crate::manifests::SERVER_API);
+    if let Ok(resp) = crate::manifests::block_on(
+        crate::manifests::http_client()
+            .get(&relay_url)
+            .timeout(std::time::Duration::from_secs(12))
+            .header("User-Agent", "chunfengdu")
+            .header("x-device-id", crate::device::get_device_id())
+            .send(),
+    ) {
+        if let Ok(json) = crate::manifests::block_on(resp.json::<serde_json::Value>()) {
+            if json.get("success").and_then(|v| v.as_bool()) == Some(true) {
+                if let (Some(tag), Some(asset)) = (
+                    json.get("tag").and_then(|t| t.as_str()),
+                    json.get("asset").and_then(|a| a.as_str()),
+                ) {
+                    if !tag.is_empty() && !asset.is_empty() {
+                        let published = json
+                            .get("publishedAt")
+                            .and_then(|p| p.as_str())
+                            .map(|s| s.to_string());
+                        return Ok((tag.to_string(), published, asset.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
     Err("无法连接 GitHub 查询最新版本（可检查网络或稍后再试）".to_string())
 }
 
@@ -797,6 +825,11 @@ fn download_ost_release_zip(tag: &str, asset: &str) -> Result<Vec<u8>, String> {
         target.clone(),
         format!("https://ghfast.top/{}", target),
         format!("https://gh-proxy.com/{}", target),
+        // 最终兜底：经春风渡服务器中转下载（客户端 GitHub 完全不可达时仍可同步）
+        format!(
+            "{}/api/ost/download/{}/{}",
+            crate::manifests::SERVER_API, tag, asset
+        ),
     ];
     let mut last_err = String::from("未尝试任何镜像");
     for url in &mirrors {
