@@ -123,6 +123,68 @@
         </div>
       </div>
 
+      <!-- 卡片 2.5: 同步最新内核 (GitHub release 在线同步) -->
+      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
+        <div class="h-28 tool-banner-e flex items-center justify-center relative overflow-hidden">
+          <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
+            <CloudDownload class="w-8 h-8" />
+          </div>
+          <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
+        </div>
+
+        <div class="p-5 flex-1 flex flex-col justify-between">
+          <div>
+            <h3 class="text-base font-bold text-slate-100">同步最新内核</h3>
+            <p class="text-xs text-slate-400 mt-1">从 GitHub 官方 release 在线拉取最新 OpenSteamTool 内核并部署，无需等待春风渡发版</p>
+
+            <div class="mt-4 space-y-2 text-xs">
+              <div class="flex items-center gap-2 text-emerald-400 font-medium">
+                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <span class="text-slate-200">需先退出 Steam（内核 DLL 被锁定时无法替换）</span>
+              </div>
+              <div class="flex items-center gap-2 text-emerald-400 font-medium">
+                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <span class="text-slate-200">官方直链 ➔ 加速镜像 多级下载并校验核心三件套</span>
+              </div>
+              <div class="flex items-center gap-2 text-emerald-400 font-medium">
+                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <span class="text-slate-200">覆盖部署并记录版本，重启 Steam 生效</span>
+              </div>
+              <div v-if="ostSyncInfo" class="pt-1.5 font-mono text-[11px] text-slate-400">
+                当前内核：{{ ostSyncInfo.currentTag }}
+                <template v-if="ostSyncInfo.latestTag">
+                  ｜官方最新：{{ ostSyncInfo.latestTag }}
+                  <span v-if="ostSyncInfo.updateAvailable" class="text-amber-400 font-bold">（可更新）</span>
+                  <span v-else class="text-emerald-400 font-bold">（已是最新）</span>
+                </template>
+              </div>
+              <div v-else-if="ostCheckFailed" class="pt-1.5 text-[11px] text-slate-500">未能获取官方最新版本信息（网络受限时可稍后重试）</div>
+            </div>
+          </div>
+
+          <div class="mt-6 flex items-center gap-2">
+            <button
+              @click="handleCheckOstSync"
+              :disabled="activeAction !== null"
+              class="flex-1 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-bold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <RotateCw v-if="activeAction === 'ost_check'" class="w-3.5 h-3.5 animate-spin" />
+              <Search v-else class="w-3.5 h-3.5" />
+              <span>{{ activeAction === 'ost_check' ? '检测中...' : '检测版本' }}</span>
+            </button>
+            <button
+              @click="handleSyncOst"
+              :disabled="activeAction !== null"
+              class="flex-1 py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2"
+            >
+              <RotateCw v-if="activeAction === 'ost_sync'" class="w-3.5 h-3.5 animate-spin" />
+              <CloudDownload v-else class="w-3.5 h-3.5" />
+              <span>{{ activeAction === 'ost_sync' ? '正在同步内核中...' : '▶ 同步' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 卡片 3: 补齐Open内核SHA256 (主题强调色渐变) -->
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
@@ -296,7 +358,9 @@ import {
   Play,
   RotateCw,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  CloudDownload,
+  Search
 } from 'lucide-vue-next';
 import { ToolboxStatusInfo } from '../../types';
 
@@ -394,6 +458,62 @@ const handleRepairKernel = async () => {
   }
 };
 
+// 2.5 OST 内核在线同步
+const ostSyncInfo = ref<any>(null);
+const ostCheckFailed = ref(false);
+
+const handleCheckOstSync = async () => {
+  activeAction.value = 'ost_check';
+  try {
+    const res = await window.electronAPI.checkOstSync();
+    if (res && res.latestTag) {
+      ostSyncInfo.value = res;
+      ostCheckFailed.value = false;
+      if (res.updateAvailable) {
+        emit('notify', `官方最新内核为 ${res.latestTag}，当前为 ${res.currentTag}，可执行同步`, 'info');
+      } else {
+        emit('notify', `内核已是最新版本（${res.currentTag}）`, 'success');
+      }
+    } else {
+      ostCheckFailed.value = true;
+      emit('notify', res?.message || '未能获取官方最新版本信息', 'error');
+    }
+  } catch (err: any) {
+    ostCheckFailed.value = true;
+    emit('notify', `检测异常: ${err.message}`, 'error');
+  } finally {
+    activeAction.value = null;
+  }
+};
+
+const handleSyncOst = async () => {
+  activeAction.value = 'ost_sync';
+  emit('notify', '正在从 GitHub 拉取最新 OpenSteamTool 内核（官方直链 ➔ 加速镜像）...', 'info');
+  try {
+    const res = await window.electronAPI.syncOstLatest();
+    resultModal.value = {
+      title: '同步最新内核结果',
+      success: res.success,
+      message: res.message,
+      steps: res.success
+        ? ['查询 GitHub 最新 release 版本', '经镜像链下载 Release 压缩包', '校验核心三件套完整性（PE 头 + 体积）', '覆盖部署到 Steam 目录并记录版本号']
+        : []
+    };
+    if (res.success) {
+      emit('notify', res.message, 'success');
+      await handleCheckOstSync();
+    } else {
+      emit('notify', `同步失败: ${res.message}`, 'error');
+    }
+  } catch (err: any) {
+    emit('notify', `同步异常: ${err.message}`, 'error');
+  } finally {
+    activeAction.value = null;
+    await fetchStatus();
+    emit('refresh-status');
+  }
+};
+
 // 3. 补齐 Open 内核 SHA256
 const handleFillSha256 = async () => {
   activeAction.value = 'fill_sha256';
@@ -452,5 +572,7 @@ const handleAutoSwitchManifest = async () => {
 
 onMounted(() => {
   fetchStatus();
+  // 静默预检内核版本：仅更新卡片上的版本状态，不打扰用户
+  handleCheckOstSync();
 });
 </script>

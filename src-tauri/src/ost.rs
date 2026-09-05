@@ -642,3 +642,233 @@ pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateSta
         },
     }
 }
+
+// ==================== OST 内核在线同步 ====================
+// OpenSteamTool 内核在 GitHub 发布（OpenSteam001/OpenSteamTool），
+// 内嵌 DLL 只是首次安装种子；本模块在运行时从官方 release 拉取最新版
+// 覆盖部署到 Steam 目录（与 deploy_core_binaries 同一套写入目标），
+// 使用户不必等春风渡发版就能用上内核修复与新特性。
+
+pub const OST_REPO: &str = "OpenSteam001/OpenSteamTool";
+const OST_META_FILE: &str = "opensteamtool_meta.json";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OstSyncInfo {
+    /// 已部署版本：meta 文件记录的 tag；从未在线同步过则为 "内置版本"
+    pub current_tag: String,
+    pub latest_tag: Option<String>,
+    pub published_at: Option<String>,
+    pub update_available: bool,
+    pub steam_running: bool,
+    pub message: Option<String>,
+}
+
+fn read_deployed_ost_tag(steam_path: &Path) -> String {
+    std::fs::read_to_string(steam_path.join(OST_META_FILE))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("tag").and_then(|t| t.as_str()).map(|s| s.to_string()))
+        .unwrap_or_else(|| "内置版本".to_string())
+}
+
+fn write_deployed_ost_tag(steam_path: &Path, tag: &str) {
+    let meta = serde_json::json!({
+        "tag": tag,
+        "syncedAt": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    });
+    let _ = std::fs::write(steam_path.join(OST_META_FILE), meta.to_string());
+}
+
+/// 查询 OST 最新 release（tag + Release.zip 资产名）。
+/// api.github.com 直连失败时回退解析 github.com releases/latest 的重定向地址
+fn fetch_latest_ost_release() -> Result<(String, Option<String>, String), String> {
+    let api_url = format!("https://api.github.com/repos/{}/releases/latest", OST_REPO);
+    if let Ok(resp) = crate::manifests::block_on(
+        crate::manifests::http_client()
+            .get(&api_url)
+            .timeout(std::time::Duration::from_secs(10))
+            .header("User-Agent", "chunfengdu")
+            .header("Accept", "application/vnd.github+json")
+            .send(),
+    ) {
+        if let Ok(json) = crate::manifests::block_on(resp.json::<serde_json::Value>()) {
+            if let Some(tag) = json.get("tag_name").and_then(|t| t.as_str()) {
+                let published = json
+                    .get("published_at")
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string());
+                // 优先取体积小的 Release 包（Debug 包 28MB 且非分发用途）
+                let asset = json
+                    .get("assets")
+                    .and_then(|a| a.as_array())
+                    .and_then(|list| {
+                        list.iter()
+                            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+                            .find(|n| n.contains("Release.zip") && !n.contains("Debug"))
+                            .or_else(|| list.iter().filter_map(|a| a.get("name").and_then(|n| n.as_str())).find(|n| n.ends_with(".zip")))
+                    })
+                    .map(|s| s.to_string());
+                if let Some(asset) = asset {
+                    return Ok((tag.to_string(), published, asset));
+                }
+            }
+        }
+    }
+
+    // 回退：releases/latest 302 重定向的 Location 末段即 tag
+    let redirect_url = format!("https://github.com/{}/releases/latest", OST_REPO);
+    let no_redirect = crate::manifests::http_client_builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("初始化 HTTP 客户端失败: {}", e))?;
+    if let Ok(resp) = crate::manifests::block_on(
+        no_redirect
+            .get(&redirect_url)
+            .timeout(std::time::Duration::from_secs(10))
+            .header("User-Agent", "chunfengdu")
+            .send(),
+    ) {
+        if let Some(loc) = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|l| l.to_str().ok())
+        {
+            let tag = loc.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+            if !tag.is_empty() && tag != "latest" {
+                return Ok((
+                    tag.to_string(),
+                    None,
+                    format!("OpenSteamTool-{}-Release.zip", tag),
+                ));
+            }
+        }
+    }
+
+    Err("无法连接 GitHub 查询最新版本（可检查网络或稍后再试）".to_string())
+}
+
+fn ost_release_zip_url(tag: &str, asset: &str) -> String {
+    format!("https://github.com/{}/releases/download/{}/{}", OST_REPO, tag, asset)
+}
+
+/// 从 release zip 中提取核心三件套（OpenSteamTool.dll / dwmapi.dll / xinput1_4.dll），
+/// 校验非空且为合法 PE（MZ 头），其余 .lib/.exp 编译附属物一律忽略
+fn extract_ost_core_from_zip(zip_bytes: &[u8]) -> Result<Vec<(&'static str, Vec<u8>)>, String> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes))
+        .map_err(|e| format!("release 压缩包解析失败: {}", e))?;
+    let wanted = ["OpenSteamTool.dll", "dwmapi.dll", "xinput1_4.dll"];
+    let mut out: Vec<(&'static str, Vec<u8>)> = Vec::new();
+    for name in wanted {
+        let mut found: Option<Vec<u8>> = None;
+        for i in 0..archive.len() {
+            let mut entry = archive
+                .by_index(i)
+                .map_err(|e| format!("读取压缩包条目失败: {}", e))?;
+            if entry.is_dir() {
+                continue;
+            }
+            let fname = entry.name().rsplit('/').next().unwrap_or("");
+            if fname.eq_ignore_ascii_case(name) {
+                let mut buf = Vec::with_capacity(entry.size() as usize);
+                std::io::Read::read_to_end(&mut entry, &mut buf)
+                    .map_err(|e| format!("读取 {} 失败: {}", name, e))?;
+                if buf.len() > 1024 && buf.starts_with(b"MZ") {
+                    found = Some(buf);
+                }
+                break;
+            }
+        }
+        out.push((
+            name,
+            found.ok_or_else(|| format!("release 包中未找到有效的 {}", name))?,
+        ));
+    }
+    Ok(out)
+}
+
+/// 从多个镜像链下载 release zip（官方直链 ➔ ghfast.top ➔ gh-proxy.com）
+fn download_ost_release_zip(tag: &str, asset: &str) -> Result<Vec<u8>, String> {
+    let target = ost_release_zip_url(tag, asset);
+    let mirrors = [
+        target.clone(),
+        format!("https://ghfast.top/{}", target),
+        format!("https://gh-proxy.com/{}", target),
+    ];
+    let mut last_err = String::from("未尝试任何镜像");
+    for url in &mirrors {
+        match crate::manifests::block_on(
+            crate::manifests::http_client()
+                .get(url)
+                .timeout(std::time::Duration::from_secs(120))
+                .header("User-Agent", "chunfengdu")
+                .send(),
+        ) {
+            Ok(resp) if resp.status().is_success() => {
+                match crate::manifests::block_on(resp.bytes()) {
+                    Ok(bytes) if bytes.len() > 100 * 1024 => return Ok(bytes.to_vec()),
+                    Ok(_) => last_err = format!("{} 返回内容异常", url),
+                    Err(e) => last_err = format!("{} 下载中断: {}", url, e),
+                }
+            }
+            Ok(resp) => last_err = format!("{} 返回 HTTP {}", url, resp.status()),
+            Err(e) => last_err = format!("{} 连接失败: {}", url, e),
+        }
+    }
+    Err(format!("所有镜像均下载失败，最后错误：{}", last_err))
+}
+
+/// 检查内核同步状态（当前部署 tag vs GitHub 最新 tag）。须在 spawn_blocking 调用
+pub fn check_ost_sync_status(steam_path: &Path) -> OstSyncInfo {
+    let current_tag = read_deployed_ost_tag(steam_path);
+    let steam_running = is_steam_running();
+    match fetch_latest_ost_release() {
+        Ok((latest_tag, published_at, _asset)) => OstSyncInfo {
+            update_available: latest_tag != current_tag,
+            current_tag,
+            latest_tag: Some(latest_tag),
+            published_at,
+            steam_running,
+            message: None,
+        },
+        Err(e) => OstSyncInfo {
+            current_tag,
+            latest_tag: None,
+            published_at: None,
+            update_available: false,
+            steam_running,
+            message: Some(e),
+        },
+    }
+}
+
+/// 在线同步最新内核：下载 release zip、校验三件套、覆盖部署到 Steam 目录并记录版本。
+/// 须在 spawn_blocking 调用；Steam 运行中时 DLL 被锁定，必须先退出
+pub fn sync_ost_latest(steam_path: &Path) -> Result<String, String> {
+    if is_steam_running() {
+        return Err("Steam 客户端正在运行，核心 DLL 被锁定无法替换。请先退出 Steam（可在工具箱一键结束进程）后重试。".to_string());
+    }
+
+    let (tag, _published, asset) = fetch_latest_ost_release()?;
+    let current_tag = read_deployed_ost_tag(steam_path);
+    if tag == current_tag {
+        return Ok(format!("内核已是最新版本（{}），无需同步。", tag));
+    }
+
+    let zip_bytes = download_ost_release_zip(&tag, &asset)?;
+    let core = extract_ost_core_from_zip(&zip_bytes)?;
+
+    for (name, bytes) in &core {
+        std::fs::write(steam_path.join(name), bytes)
+            .map_err(|e| format!("写入 {} 失败: {}（权限不足时请以管理员身份运行本程序）", name, e))?;
+    }
+    write_deployed_ost_tag(steam_path, &tag);
+
+    Ok(format!(
+        "已同步 OpenSteamTool 内核 {} → {}（{} 个核心组件已部署）！重新启动 Steam 后生效。",
+        current_tag, tag, core.len()
+    ))
+}

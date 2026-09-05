@@ -570,6 +570,10 @@ export const createTauriBridge = () => {
     toolboxFillSha256: async (): Promise<ToolboxActionResult> => invoke('fill_sha256'),
     toolboxAutoSwitchManifest: async (): Promise<ToolboxActionResult> => invoke('auto_switch_manifest'),
     toolboxGetStatus: async (): Promise<any> => invoke('get_toolbox_status'),
+    // OST 内核在线同步：检测 GitHub 最新 release 并镜像下载部署（内嵌 DLL 仅为首次种子）
+    checkOstSync: async (): Promise<any> => invoke('check_ost_sync'),
+    syncOstLatest: async (): Promise<{ success: boolean; message: string }> =>
+      invoke('sync_ost_latest'),
     toolboxGetManifestInfo: async (): Promise<any> => {
       try {
         const status = await invoke<any>('get_toolbox_status');

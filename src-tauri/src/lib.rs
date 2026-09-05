@@ -1197,6 +1197,35 @@ async fn check_manifest_status_batch(app_ids: Vec<u32>) -> serde_json::Value {
 
 // ==================== 应用内更新 ====================
 
+/// 检查 OST 内核同步状态：当前部署版本 vs GitHub 最新 release
+#[tauri::command]
+async fn check_ost_sync() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || match steam::detect_steam_path() {
+        Some(sp) => {
+            let info = ost::check_ost_sync_status(&sp);
+            serde_json::to_value(info).unwrap_or(json!({}))
+        }
+        None => json!({ "message": "未找到 Steam 安装路径" }),
+    })
+    .await
+    .unwrap_or(json!({ "message": "任务执行失败" }))
+}
+
+/// 在线同步最新 OST 内核：镜像下载官方 release 并覆盖部署到 Steam 目录
+#[tauri::command]
+async fn sync_ost_latest() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || match steam::detect_steam_path() {
+        Some(sp) => match ost::sync_ost_latest(&sp) {
+            Ok(msg) => json!({ "success": true, "message": msg }),
+            Err(e) => json!({ "success": false, "message": e }),
+        },
+        None => json!({ "success": false, "message": "未找到 Steam 安装路径" }),
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
+}
+
+
 /// 应用内下载更新安装包：流式写盘并通过 update-download-progress 事件上报进度，
 /// 完成后返回安装包临时路径，由前端调用 launch_installer 拉起安装程序。
 #[tauri::command]
@@ -1382,7 +1411,9 @@ pub fn run() {
             search_local_games,
             get_unlocked_details,
             check_game_updates,
-            update_game_rules
+            update_game_rules,
+            check_ost_sync,
+            sync_ost_latest
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
