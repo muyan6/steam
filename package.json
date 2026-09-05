@@ -1,6 +1,6 @@
 {
   "name": "steammaster",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "private": true,
   "description": "Steam 一键入库与多模式联机管理工具 (Tauri 2.0 客户端 + Node.js 服务端)",

@@ -1,5 +1,26 @@
 [
   {
+    "version": "2.1.0",
+    "channel": "stable",
+    "releaseDate": "2026-09-05",
+    "title": "春风渡 v2.1.0 正式发布",
+    "changelog": [
+      "🔒 授权与数据安全全面加固，修复多处安全缺陷",
+      "🎁 未激活设备每日免费入库额度改为云端权威计数，真正可用",
+      "🖥️ 彻底修复发布版反复弹命令行黑框问题",
+      "🔍 修复界面缩放无效、错误提示 undefined、封面加载失败等多项体验问题",
+      "⚡ 清单预缓存并发化提速，大数据库检索与落盘性能优化",
+      "📦 新增便携版与单文件版发布形态"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/tag/v2.1.0",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-05T00:00:00.000Z",
+    "updatedAt": "2026-09-05T00:00:00.000Z"
+  },
+  {
     "version": "1.0.0",
     "channel": "stable",
     "releaseDate": "2026-09-01",
