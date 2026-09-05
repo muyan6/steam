@@ -1,5 +1,22 @@
 [
   {
+    "version": "2.1.1",
+    "channel": "stable",
+    "releaseDate": "2026-09-05",
+    "title": "春风渡 v2.1.1 正式发布",
+    "changelog": [
+      "🔄 新增应用内一键下载安装更新，无需跳转浏览器，后台配置 .exe 直链即可生效",
+      "🚀 后台「官方下载地址」填安装包直链后，旧版本客户端可直接在软件内完成升级"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.1/ChunFengDu_2.1.1_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-05T00:00:00.000Z",
+    "updatedAt": "2026-09-05T00:00:00.000Z"
+  },
+  {
     "version": "2.1.0",
     "channel": "stable",
     "releaseDate": "2026-09-05",

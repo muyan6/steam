@@ -1,6 +1,6 @@
 {
   "name": "steammaster-server",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "SteamMaster 商业化高性能云端后端服务",
   "main": "dist/server.js",
   "type": "module",
