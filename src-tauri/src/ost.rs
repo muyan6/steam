@@ -651,9 +651,10 @@ pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateSta
 
 pub const OST_REPO: &str = "OpenSteam001/OpenSteamTool";
 const OST_META_FILE: &str = "opensteamtool_meta.json";
-// 打包时内嵌的内核种子：经字节级比对确认与官方 1.4.8 Debug 构建完全一致。
-// Debug 构建无版本资源信息且体积大（12MB vs Release 1.4MB），同步会升级为 Release
-const EMBEDDED_OST_TAG: &str = "1.4.8 (Debug 构建)";
+// 打包时内嵌的内核种子：取自官方 1.4.8 Release 构建分发包（与 Release.zip 内
+// 三件套字节级一致）。Release 构建体积小、经优化，是官方推荐分发版本；
+// 后续新版本经 sync_ost_latest 在线同步覆盖部署
+const EMBEDDED_OST_TAG: &str = "1.4.8";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
