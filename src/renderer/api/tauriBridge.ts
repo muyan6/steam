@@ -461,7 +461,7 @@ export const createTauriBridge = () => {
         }
         return { success: false, message: json?.message || '激活失败' };
       } catch (e: any) {
-        return { success: false, message: `激活请求异常: ${e.message}` };
+        return { success: false, message: `激活请求异常: ${e?.message || String(e)}` };
       }
     },
     unbindLicense: async (): Promise<any> => {

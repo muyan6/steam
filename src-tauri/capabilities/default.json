@@ -7,8 +7,11 @@
     "core:default",
     "opener:default",
     {
-      "identifier": "http:default",
+      "identifier": "http:allow-fetch",
       "allow": [{ "url": "http://**" }, { "url": "https://**" }]
-    }
+    },
+    "http:allow-fetch-cancel",
+    "http:allow-fetch-read-body",
+    "http:allow-fetch-send"
   ]
 }
