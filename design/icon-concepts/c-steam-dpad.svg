@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0B1220"/>
+  <!-- 蒸汽/风涡：缺口圆环加一缕外卷的汽 -->
+  <path d="M256 116 A148 148 0 1 0 384 192 a46 46 0 0 0 -34 -76" fill="none" stroke="#22d3ee" stroke-width="30" stroke-linecap="round"/>
+  <!-- 方向十字：游戏内核 -->
+  <g stroke="#E2E8F0" stroke-width="34" stroke-linecap="round">
+    <path d="M256 200 V328"/>
+    <path d="M192 264 H320"/>
+  </g>
+</svg>

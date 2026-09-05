@@ -192,15 +192,17 @@
           v-else-if="currentTab === 'settings'"
           @notify="addToast"
           @refresh-status="fetchSteamInfo"
-          @relaunch-wizard="showStartupWizard = true"
+          @relaunch-wizard="openStartupWizard"
         />
       </div>
     </main>
 
-    <!-- 启动向导模态框 -->
+    <!-- 启动向导模态框 (首次启动强引导；设置页手动打开时可随时关闭) -->
     <StartupWizardModal
       v-if="showStartupWizard"
+      :closable="wizardClosable"
       @completed="onStartupCompleted"
+      @close="showStartupWizard = false"
       @notify="addToast"
     />
 
@@ -358,6 +360,8 @@ import { useTheme } from './composables/useTheme';
 const appVersion = '1.0.1';
 const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'about' | 'settings'>('search');
 const showStartupWizard = ref(false);
+// 启动引导打开来源：首次启动(环境未就绪)为强引导不可关闭；设置页手动打开可随时关闭
+const wizardClosable = ref(false);
 const showLicenseModal = ref(false);
 const isMaximized = ref(false);
 
@@ -449,6 +453,12 @@ const onStartupCompleted = async () => {
   showStartupWizard.value = false;
   await fetchSteamInfo();
   addToast('春风渡 启动引导完成，已进入主界面！', 'success');
+};
+
+// 设置页手动重新打开启动引导：允许随时关闭
+const openStartupWizard = () => {
+  wizardClosable.value = true;
+  showStartupWizard.value = true;
 };
 
 // 窗口控制
@@ -660,10 +670,13 @@ const initApp = async () => {
     const info = await fetchSteamInfo();
     if (info && info.steamPath && info.ostInstalled && info.steamBitness === 'x64') {
       showStartupWizard.value = false;
+      wizardClosable.value = false;
     } else {
+      wizardClosable.value = false;
       showStartupWizard.value = true;
     }
   } catch {
+    wizardClosable.value = false;
     showStartupWizard.value = true;
   }
 

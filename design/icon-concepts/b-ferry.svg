@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0B1220"/>
+  <!-- 春风：上方一道带卷的风 -->
+  <path d="M160 236 H312 a36 36 0 1 0 -13 -66" fill="none" stroke="#22d3ee" stroke-width="28" stroke-linecap="round"/>
+  <!-- 渡舟 -->
+  <path d="M96 296 H416 L366 402 Q256 430 146 402 Z" fill="none" stroke="#E2E8F0" stroke-width="30" stroke-linejoin="round"/>
+  <!-- 手柄按键化作舷窗 -->
+  <circle cx="220" cy="350" r="18" fill="#22d3ee"/>
+  <circle cx="292" cy="350" r="18" fill="#22d3ee"/>
+</svg>

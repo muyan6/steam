@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0B1220"/>
+  <!-- 春风：从手柄后方吹出的风线 -->
+  <g stroke="#22d3ee" stroke-width="28" stroke-linecap="round" fill="none">
+    <path d="M64 196 H140 a28 28 0 1 0 -10 -52"/>
+    <path d="M44 256 H128"/>
+    <path d="M64 316 H112"/>
+  </g>
+  <!-- 手柄主体 -->
+  <rect x="156" y="152" width="284" height="208" rx="96" fill="none" stroke="#E2E8F0" stroke-width="30"/>
+  <!-- 方向键 -->
+  <g stroke="#E2E8F0" stroke-width="26" stroke-linecap="round">
+    <path d="M240 222 V290"/>
+    <path d="M206 256 H274"/>
+  </g>
+  <!-- 按键 -->
+  <circle cx="352" cy="230" r="17" fill="#22d3ee"/>
+  <circle cx="390" cy="278" r="17" fill="#22d3ee"/>
+</svg>

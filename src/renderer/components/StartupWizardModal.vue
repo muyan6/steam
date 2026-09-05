@@ -17,15 +17,27 @@
         </div>
 
         <!-- 步骤指示器 -->
-        <div class="flex items-center gap-1.5 text-[11px] font-mono">
-          <span
-            v-for="s in 4"
-            :key="s"
-            class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all"
-            :class="step >= s ? 'theme-btn-primary font-bold shadow' : 'bg-slate-500/20 text-slate-400'"
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 text-[11px] font-mono">
+            <span
+              v-for="s in 4"
+              :key="s"
+              class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all"
+              :class="step >= s ? 'theme-btn-primary font-bold shadow' : 'bg-slate-500/20 text-slate-400'"
+            >
+              {{ s }}
+            </span>
+          </div>
+
+          <!-- 手动打开时提供关闭入口（首次启动不可关闭；激活进行中不允许中断） -->
+          <button
+            v-if="closable && step !== 3"
+            @click="requestClose"
+            title="关闭引导"
+            class="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 transition flex items-center justify-center ml-1 cursor-pointer"
           >
-            {{ s }}
-          </span>
+            <X class="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -130,11 +142,11 @@
             </button>
 
             <button
-              @click="handleExitApp"
+              @click="closable ? requestClose() : handleExitApp()"
               class="px-6 py-2.5 bg-gradient-to-r from-rose-700 to-rose-600 hover:from-rose-600 hover:to-rose-500 text-white text-xs font-bold rounded-xl shadow-lg transition flex items-center gap-1.5"
             >
               <X class="w-3.5 h-3.5" />
-              <span>退出程序</span>
+              <span>{{ closable ? '关闭引导' : '退出程序' }}</span>
             </button>
           </div>
         </div>
@@ -155,18 +167,19 @@
               </li>
               <li>自动部署并配置 <code class="theme-text-accent font-mono">config/lua/</code> 自动化解锁规则引擎</li>
               <li>配置公共清单端点与分包解密</li>
-              <li>若选择 <strong>“否”</strong>，程序将直接退出关闭</li>
+              <li v-if="closable">可随时点击右上角 <strong>×</strong> 关闭引导，稍后再配置</li>
+              <li v-else>若选择 <strong>“否”</strong>，程序将直接退出关闭</li>
             </ul>
           </div>
 
           <!-- 64 位操作按钮 -->
           <div class="flex items-center justify-between pt-2 border-t border-white/10">
             <button
-              @click="handleExitApp"
+              @click="closable ? requestClose() : handleExitApp()"
               class="px-5 py-2.5 bg-slate-800/80 hover:bg-rose-900/60 border border-white/10 hover:border-rose-500/40 text-slate-300 hover:text-rose-200 text-xs font-medium rounded-xl transition flex items-center gap-1.5"
             >
               <X class="w-3.5 h-3.5" />
-              <span>否，退出程序</span>
+              <span>{{ closable ? '关闭引导' : '否，退出程序' }}</span>
             </button>
 
             <button
@@ -273,10 +286,21 @@ import {
   X 
 } from 'lucide-vue-next';
 
+const props = defineProps<{
+  // 手动从设置页打开时为 true：允许关闭引导而不退出程序；首次启动为 false 保持原有强引导流程
+  closable?: boolean;
+}>();
+
 const emit = defineEmits<{
   (e: 'completed'): void;
+  (e: 'close'): void;
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
 }>();
+
+const requestClose = () => {
+  if (!props.closable || step.value === 3) return; // 激活进行中不允许中断
+  emit('close');
+};
 
 const step = ref<1 | 2 | 3 | 4>(1);
 const steamPath = ref<string>('');
