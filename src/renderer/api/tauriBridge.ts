@@ -412,6 +412,8 @@ export const createTauriBridge = () => {
     // 完成返回安装包临时路径；拉起安装器后应用自动退出
     downloadUpdate: async (url: string): Promise<string> => invoke('download_update', { url }),
     launchInstaller: async (path: string): Promise<void> => invoke('launch_installer', { path }),
+    // 原生窗口背景色 (#rrggbb)：主题切换时同步，覆盖 WebView 边缘原生缝隙的默认白底
+    setWindowBackground: async (hex: string): Promise<void> => invoke('set_window_background', { hex }),
     // 应用内跳转链接 (教程/FAQ) —— 由服务端配置，未配置为空串时前端按钮置灰
     getAppLinks: async (): Promise<{ tutorialUrl: string; faqUrl: string }> => {
       const json = await getJson(`${API}/api/links`, 3000);

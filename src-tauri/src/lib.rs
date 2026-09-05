@@ -1185,6 +1185,36 @@ fn launch_installer(app: tauri::AppHandle, path: String) -> Result<(), String> {
     Ok(())
 }
 
+// ==================== 原生窗口背景 ====================
+
+/// 解析 "#rrggbb" 为 tauri Color（RGBA 不透明）
+fn parse_color_hex(hex: &str) -> Option<tauri::utils::config::Color> {
+    let h = hex.trim().trim_start_matches('#');
+    if h.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&h[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&h[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&h[4..6], 16).ok()?;
+    Some(tauri::utils::config::Color(r, g, b, 255))
+}
+
+/// 设置窗口与 WebView 的原生背景色：修复 DPI 缩放下 WebView2 控件边界
+/// 与窗口边缘之间的原生缝隙露出默认白底（CSS 无法覆盖的区域）
+fn apply_native_background(app: &AppHandle, hex: &str) {
+    if let Some(color) = parse_color_hex(hex) {
+        if let Some(ww) = app.get_webview_window("main") {
+            let _ = ww.set_background_color(Some(color));
+        }
+    }
+}
+
+/// 前端切换主题时同步原生背景色（参数为当前主题的底色 #rrggbb）
+#[tauri::command]
+fn set_window_background(app: AppHandle, hex: String) {
+    apply_native_background(&app, &hex);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1193,6 +1223,8 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
             let _ = APP_HANDLE.set(app.handle().clone());
+            // 默认深色底：覆盖启动瞬间与 DPI 取整缝隙；前端切换主题后会同步更新
+            apply_native_background(app.handle(), "#0f1624");
             // 启动时为存量 opensteamtool.toml 补齐默认开启的清单自动切换（后台执行，不阻塞启动）
             std::thread::spawn(|| {
                 if let Some(p) = steam::detect_steam_path() {
@@ -1216,6 +1248,7 @@ pub fn run() {
             open_url,
             download_update,
             launch_installer,
+            set_window_background,
             ensure_ost_env,
             activate_injection,
             unlock_game,

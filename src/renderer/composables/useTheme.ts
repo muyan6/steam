@@ -103,6 +103,13 @@ export function useTheme() {
     currentTheme.value = themeId;
     localStorage.setItem('app_theme', themeId);
     document.documentElement.setAttribute('data-theme', themeId);
+    // 同步原生窗口背景色：覆盖 DPI 缩放下 WebView 与窗口边缘原生缝隙的默认白底
+    const theme = THEME_LIST.find((t) => t.id === themeId);
+    if (theme?.bgHex) {
+      try {
+        window.electronAPI?.setWindowBackground?.(theme.bgHex);
+      } catch {}
+    }
   };
 
   const setTheme = (themeId: AppThemeId) => {
