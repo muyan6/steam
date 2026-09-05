@@ -517,8 +517,39 @@ pub struct PrecacheResult {
     pub files: Vec<String>,
 }
 
+/// 将 panic 详情追加到临时目录日志，GUI 版没有控制台可看，
+/// 线上排障只能靠这里（附时间戳，按大小轮转防止无限增长）
+pub fn log_diag(line: &str) {
+    use std::io::Write;
+    let path = std::env::temp_dir().join("chunfengdu_diag.log");
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "[{}] {}", ts, line);
+        // 超过 512KB 时截断重开，防止无限增长
+        if let Ok(meta) = std::fs::metadata(&path) {
+            if meta.len() > 512 * 1024 {
+                let _ = std::fs::write(&path, b"");
+            }
+        }
+    }
+}
+
+/// 把 panic 载荷转成可读消息
+pub fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
+    panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_else(|| "unknown panic".to_string())
+}
+
 /// 就绪元数据中带 GID 的全部清单到 depotcache（供一键入库后的自动预缓存复用）。
 /// CDN host 列表只取一次复用；清单分 4 路并发下载，避免大型游戏串行卡数分钟。
+/// 单个清单下载的任何失败/panic 只损失该清单，绝不向调用方传播——
+/// 入库主流程（Lua 规则写入）在此步之前就已完成。
 pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResult {
     let valid: Vec<&DepotMeta> = meta
         .depots
@@ -537,9 +568,22 @@ pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResu
                 let task = queue.lock().ok().and_then(|mut q| q.pop());
                 let Some(d) = task else { return };
                 let gid = d.manifest_gid.as_deref().unwrap();
-                if download_single_manifest_with_hosts(steam_path, &d.depot_id, gid, &hosts).is_ok() {
-                    if let Ok(mut f) = files.lock() {
-                        f.push(format!("{}_{}.manifest", d.depot_id, gid));
+                let depot_id = d.depot_id.clone();
+                // catch_unwind：子线程 panic 不再沿 thread::scope 炸掉整个入库任务
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    download_single_manifest_with_hosts(steam_path, &depot_id, gid, &hosts)
+                }));
+                match result {
+                    Ok(Ok(_)) => {
+                        if let Ok(mut f) = files.lock() {
+                            f.push(format!("{}_{}.manifest", depot_id, gid));
+                        }
+                    }
+                    Ok(Err(e)) => log_diag(&format!("manifest {} 下载失败: {}", depot_id, e)),
+                    Err(panic) => {
+                        let msg = panic_message(&panic);
+                        log_diag(&format!("manifest {} 下载线程 panic: {}", depot_id, msg));
+                        println!("[Manifests] 清单 {} 预缓存线程异常: {}", depot_id, msg);
                     }
                 }
             });

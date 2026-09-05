@@ -227,12 +227,25 @@ async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
         if let Some(steam_path) = steam::detect_steam_path() {
             match ost::save_lua_rule(&steam_path, &payload) {
                 Ok(res) => {
-                    // 与 Electron 版一致：入库成功后立即预缓存清单到 depotcache（入库即就绪）
+                    // 与 Electron 版一致：入库成功后立即预缓存清单到 depotcache（入库即就绪）。
+                    // 预缓存是尽力而为的附加步骤：此时 Lua 规则已写入，无论这里发生什么
+                    // （包括 panic）都不能把入库结果翻转为失败
                     let mut precache_text = String::new();
                     if let Some(meta) = &res.metadata {
-                        let pc = manifests::precache_manifests(&steam_path, meta);
-                        if pc.total > 0 {
-                            precache_text = format!("，清单预缓存 {}/{} 已就绪", pc.ok_count, pc.total);
+                        let pc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            manifests::precache_manifests(&steam_path, meta)
+                        }));
+                        match pc {
+                            Ok(pc) => {
+                                if pc.total > 0 {
+                                    precache_text = format!("，清单预缓存 {}/{} 已就绪", pc.ok_count, pc.total);
+                                }
+                            }
+                            Err(panic) => {
+                                let msg = manifests::panic_message(&panic);
+                                manifests::log_diag(&format!("precache 整体 panic: {}", msg));
+                                precache_text = "，清单预缓存异常（可在库中重试预缓存）".to_string();
+                            }
                         }
                     }
                     let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
@@ -1242,3 +1255,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
