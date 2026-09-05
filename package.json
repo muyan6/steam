@@ -2,16 +2,14 @@
   "name": "steammaster",
   "version": "1.0.0",
   "type": "module",
-  "description": "Steam 一键入库与多模式联机管理工具",
-  "main": "dist-electron/main.js",
+  "private": true,
+  "description": "Steam 一键入库与多模式联机管理工具 (Tauri 2.0 客户端 + Node.js 服务端)",
   "scripts": {
     "dev": "vite",
     "build:web": "vite build",
     "typecheck": "vue-tsc --noEmit",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "build": "vite build && electron-builder",
-    "pack:win": "vite build && electron-builder --win",
     "preview": "vite preview",
     "server:dev": "npm --prefix server run dev",
     "server:build": "npm --prefix server run build",
@@ -34,77 +32,20 @@
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-http": "^2.6.0",
-    "adm-zip": "^0.6.0",
     "axios": "^1.7.9",
     "lucide-vue-next": "^0.475.0",
     "node-unrar-js": "^2.0.2",
-    "pinyin-pro": "^3.27.0",
     "vue": "^3.5.13"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
-    "@types/adm-zip": "^0.5.8",
     "@vitejs/plugin-vue": "^5.2.1",
     "autoprefixer": "^10.4.20",
-    "electron": "^34.2.0",
-    "electron-builder": "^25.1.8",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.7.3",
     "vite": "^6.1.0",
-    "vite-plugin-electron": "^0.29.0",
-    "vite-plugin-electron-renderer": "^0.14.6",
     "vue-tsc": "^2.2.0"
-  },
-  "build": {
-    "appId": "com.chunfengdu.app",
-    "productName": "春风渡",
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "春风渡"
-    },
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "src/main/assets/opensteam",
-        "to": "assets/opensteam"
-      },
-      {
-        "from": "src/main/assets/tools/steamless",
-        "to": "tools/steamless"
-      }
-    ],
-    "directories": {
-      "output": "release"
-    }
   }
 }

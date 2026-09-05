@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
 import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult } from '../../types';
-import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../../main/database/gamesData';
+import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
-import { UNRAR_WASM_BASE64 } from '../../main/services/unrarWasm';
+import { UNRAR_WASM_BASE64 } from '../utils/unrarWasm';
 import { APP_CONFIG } from '../../config/appConfig';
 
 export const isTauriEnvironment = (): boolean => {

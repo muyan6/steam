@@ -1,10 +1,11 @@
 import { createApp } from 'vue';
 import './style.css';
 import App from './App.vue';
-import { createTauriBridge, isTauriEnvironment, startTauriHeartbeat } from './api/tauriBridge';
+import { createTauriBridge, startTauriHeartbeat } from './api/tauriBridge';
 import { initThemeEarly } from './composables/useTheme';
 
-if (typeof window !== 'undefined' && (!window.electronAPI || isTauriEnvironment())) {
+// 注入客户端桥接（Tauri invoke 通道）
+if (typeof window !== 'undefined') {
   (window as any).electronAPI = createTauriBridge();
 }
 
@@ -13,5 +14,5 @@ initThemeEarly();
 
 createApp(App).mount('#app');
 
-// Tauri 版设备心跳
+// 设备心跳（启动一次 + 每 30 分钟）
 startTauriHeartbeat();

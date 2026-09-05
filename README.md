@@ -30,11 +30,11 @@
 
 ## 🛠️ 技术栈
 
-* **桌面容器**：`Electron 34`
+* **桌面容器**：`Tauri 2.0` + `WebView2`（轻量级，安装包约 8MB）
 * **构建工具**：`Vite 6` + `TypeScript`
 * **前端框架**：`Vue 3` (Composition API)
 * **样式库**：`Tailwind CSS` + 磨砂毛玻璃（Glassmorphism）设计
-* **辅助库**：`axios`、`pinyin-pro`、`lucide-vue-next`
+* **辅助库**：`axios`、`lucide-vue-next`、`node-unrar-js`（内嵌 WASM RAR 解压）
 
 ---
 

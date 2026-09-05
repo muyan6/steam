@@ -1,61 +1,24 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import electron from 'vite-plugin-electron'
-import renderer from 'vite-plugin-electron-renderer'
 import path from 'path'
-import { build as esbuildBuild } from 'esbuild'
-
-function preloadPlugin() {
-  const buildPreload = async () => {
-    await esbuildBuild({
-      entryPoints: ['src/preload.ts'],
-      outfile: 'dist-electron/preload.cjs',
-      bundle: true,
-      platform: 'node',
-      format: 'cjs',
-      external: ['electron']
-    })
-  }
-
-  return {
-    name: 'custom-preload-builder',
-    async buildStart() {
-      await buildPreload()
-    },
-    async configureServer(server: any) {
-      await buildPreload()
-      server.watcher.add(path.resolve(__dirname, 'src/preload.ts'))
-      server.watcher.on('change', async (file: string) => {
-        if (file.includes('preload.ts')) {
-          await buildPreload()
-        }
-      })
-    }
-  }
-}
-
-const isTauri = !!process.env.TAURI_ENV_PLATFORM || !!process.env.TAURI_FAMILY;
 
 export default defineConfig({
-  plugins: [
-    vue(),
-    ...(isTauri ? [] : [
-      preloadPlugin(),
-      electron([
-        {
-          entry: 'src/main/main.ts',
-        }
-      ]),
-      renderer()
-    ])
-  ],
+  plugins: [vue()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src/renderer'),
-      '@main': path.resolve(__dirname, 'src/main')
+      '@': path.resolve(__dirname, 'src/renderer')
     }
   },
+  // Tauri 环境变量注入点：tauri dev/build 时由 Tauri CLI 设置
+  clearScreen: false,
+  envPrefix: ['VITE_', 'TAURI_ENV_'],
   server: {
-    port: 5173
+    port: 5173,
+    strictPort: true
+  },
+  build: {
+    target: 'chrome105',
+    minify: 'esbuild',
+    sourcemap: false
   }
 })

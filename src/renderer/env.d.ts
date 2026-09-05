@@ -1,9 +1,12 @@
 /// <reference types="vite/client" />
 
-import { ElectronAPI } from '../preload';
+import type { createTauriBridge } from './api/tauriBridge';
+
+type TauriBridge = ReturnType<typeof createTauriBridge>;
 
 declare global {
   interface Window {
-    electronAPI: ElectronAPI;
+    /** 客户端桥接：由 renderer/main.ts 注入（Tauri invoke 通道） */
+    electronAPI: TauriBridge;
   }
 }

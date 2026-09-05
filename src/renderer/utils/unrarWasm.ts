@@ -7,9 +7,11 @@ let cachedBuffer: ArrayBuffer | null = null;
 
 export function getUnrarWasmBinary(): ArrayBuffer {
   if (!cachedBuffer) {
-    const nodeBuf = Buffer.from(UNRAR_WASM_BASE64, 'base64');
-    // 复制出独立的 ArrayBuffer，满足 node-unrar-js 的 wasmBinary: ArrayBuffer 契约
-    cachedBuffer = nodeBuf.buffer.slice(nodeBuf.byteOffset, nodeBuf.byteOffset + nodeBuf.byteLength) as ArrayBuffer;
+    // 浏览器环境解码 base64（无 Node Buffer）
+    const bin = atob(UNRAR_WASM_BASE64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    cachedBuffer = bytes.buffer;
   }
   return cachedBuffer;
 }
