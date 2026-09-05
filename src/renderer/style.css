@@ -184,6 +184,15 @@
     overflow: hidden;
   }
 
+  /* html 必须自带主题底色：UI 缩放(CSS zoom)作用于 html 后，仅 body 的
+     背景传播绘制无法保证铺满整个 WebView 画布，窗口四周会露出 WebView2
+     默认白底（表现为深色主题下一圈白边）。html 拥有背景后自身绘制范围
+     随 zoom 放大(>=视口)完整覆盖，且 data-theme 在 html 上可随主题切换 */
+  html {
+    background-color: var(--color-bg-base);
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
   body {
     background-color: var(--color-bg-base);
     color: #f8fafc;
