@@ -608,7 +608,7 @@ const unlockGame = async (game: SteamGame) => {
     if (res.success) {
       let message = res.message;
       if (!activated) {
-        // 入库成功后扣减今日免费额度并提示剩余次数
+        // 本地额度仅作展示参考，权威计数在服务端（按 AppID 每日去重）
         try {
           const q = await window.electronAPI.consumeFreeUnlockQuota(false);
           if (q && typeof q.remaining === 'number') {
@@ -618,7 +618,10 @@ const unlockGame = async (game: SteamGame) => {
           }
         } catch {}
       }
-      emit('notify', message, 'success');
+      // 未获取到任何密钥（如免费额度耗尽被云端拒绝）时按警告而非成功提示，
+      // 服务端原因已在 res.message / metadataMessage 中透传
+      const blocked = !res.keyCount && res.metadataMessage;
+      emit('notify', message, blocked ? 'warning' : 'success');
       await loadUnlockedList();
       emit('refresh-status');
     } else {

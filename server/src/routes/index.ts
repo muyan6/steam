@@ -73,6 +73,7 @@ import {
 } from '../controllers/toolboxController.js';
 import { deviceService } from '../services/deviceService.js';
 import { licenseService } from '../services/licenseService.js';
+import { freeQuotaService } from '../services/freeQuotaService.js';
 
 const router = Router();
 
@@ -147,9 +148,10 @@ router.get('/games/:appId/header', getGameHeaderImage);
 router.get('/games/:appId', getGameDetail);
 
 // 一站式元数据与密钥聚合查询
-// 密钥类接口设备授权：仅允许持有有效授权的客户端获取 depotKey / token，
-// 防止客户端激活拦截被绕过后直接调用云端接口拿走密钥
-const requireLicensedDevice = (req: Request, res: Response, next: any) => {
+// 密钥类接口设备授权：激活设备直通；未激活设备按「每日免费入库配额」放行
+// （按 AppID 维度计数，同一 AppID 当天重复请求不重复扣），额度耗尽返回 403。
+// 防止客户端激活拦截被绕过后无限制直接调用云端接口拿走密钥
+const requireKeyAccess = (req: Request, res: Response, next: any) => {
   // 优先读取请求头（减少 deviceId 经 URL 泄露到访问日志），兼容旧客户端 query 传参
   const headerId = typeof req.headers['x-device-id'] === 'string' ? req.headers['x-device-id'] : '';
   const deviceId = String(headerId || req.query.deviceId || '').trim();
@@ -157,13 +159,31 @@ const requireLicensedDevice = (req: Request, res: Response, next: any) => {
     return res.status(401).json({ success: false, message: '缺少或非法的 deviceId，请升级客户端后使用' });
   }
   const info = licenseService.verify(deviceId);
-  if (!info.isActivated) {
-    return res.status(403).json({ success: false, message: info.message || '当前设备未激活，无法获取密钥数据' });
+  if (info.isActivated) {
+    return next();
   }
-  next();
+  // 未激活：免费配额检查。带 :appId 参数的路由按 AppID 计数；
+  // 其余密钥类路由（如 manifest 文件下载、单 depotKey）仅要求仍有剩余额度
+  const quotaExhausted = { success: false, message: '', data: { quotaExhausted: true, remaining: 0 } };
+  const appIdRaw = req.params && req.params.appId ? String(req.params.appId) : '';
+  const appId = parseInt(appIdRaw, 10);
+  if (!isNaN(appId) && appId > 0) {
+    const r = freeQuotaService.checkAndConsume(deviceId, appId);
+    if (!r.allowed) {
+      quotaExhausted.message = r.message || '今日免费入库额度已用完，请激活后使用';
+      return res.status(403).json(quotaExhausted);
+    }
+    res.setHeader('X-Free-Quota-Remaining', String(r.remaining));
+    return next();
+  }
+  if (freeQuotaService.hasRemaining(deviceId)) {
+    return next();
+  }
+  quotaExhausted.message = '今日免费入库额度已用完，请激活后使用';
+  return res.status(403).json(quotaExhausted);
 };
 
-router.get('/metadata/:appId', requireLicensedDevice, getGameMetadata);
+router.get('/metadata/:appId', requireKeyAccess, getGameMetadata);
 
 // 公开只读统计数据 (客户端数据库统计使用，不暴露管理能力)
 router.get('/stats', (req: Request, res: Response) => {
@@ -181,16 +201,16 @@ router.get('/stats', (req: Request, res: Response) => {
 });
 
 // DepotKey 密钥查询
-router.get('/depots/:appId', requireLicensedDevice, getDepotsForGame);
-router.get('/depots/key/:depotId', requireLicensedDevice, getSingleDepotKey);
+router.get('/depots/:appId', requireKeyAccess, getDepotsForGame);
+router.get('/depots/key/:depotId', requireKeyAccess, getSingleDepotKey);
 
 // AccessToken 令牌查询
 router.get('/tokens/stats', getTokensStats);
-router.get('/tokens/:appId', requireLicensedDevice, getTokenForApp);
+router.get('/tokens/:appId', requireKeyAccess, getTokenForApp);
 
 // Manifest 清单检索与下载（与密钥接口同一设备授权：绕过激活不得直接拉取清单）
-router.get('/manifests/:appId', requireLicensedDevice, getManifestsForApp);
-router.get('/manifests/download/:depotId/:manifestId', requireLicensedDevice, downloadManifestFile);
+router.get('/manifests/:appId', requireKeyAccess, getManifestsForApp);
+router.get('/manifests/download/:depotId/:manifestId', requireKeyAccess, downloadManifestFile);
 
 // 卡密激活/验签/迁移：公开接口但限流防爆破
 const activateLimiter = rateLimit({

@@ -176,6 +176,9 @@ pub struct AppMetadata {
 pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
     match parse_metadata_from_server(app_id) {
         Ok(m) if !m.depots.is_empty() => Ok(m),
+        // 授权被拒（未激活/免费额度耗尽）属于权限问题而非数据问题：
+        // 直接透传服务端原因并终止，不再 SteamCMD 降级（降级也拿不到密钥）
+        Err(e) if e.contains("云端密钥服务拒绝") => Err(e),
         // 服务端不可达或无该游戏数据时，直连 SteamCMD 降级补全清单 GID（无密钥）
         _ => parse_metadata_from_steamcmd(app_id),
     }
@@ -250,7 +253,17 @@ fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
             .send(),
     )
     .map_err(|e| format!("请求元数据失败: {}", e))?;
-    let json: serde_json::Value = block_on(resp.json()).map_err(|e| format!("解析元数据失败: {}", e))?;
+    // 显式检查状态码：403（未激活/免费额度耗尽）时把服务端原因透传出去，
+    // 否则会被吞成"缺少 data 字段"，用户无法看到真实失败原因
+    let status = resp.status();
+    let json: serde_json::Value = block_on(resp.json()).unwrap_or(serde_json::Value::Null);
+    if !status.is_success() {
+        let server_msg = json
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("当前设备未激活或免费额度已用完");
+        return Err(format!("云端密钥服务拒绝 (HTTP {}): {}", status.as_u16(), server_msg));
+    }
 
     let data = json
         .get("data")

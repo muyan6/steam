@@ -255,8 +255,12 @@ async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
                         )
                     } else {
                         format!(
-                            "已为「{}」写入入库授权，但未能连接密钥服务器获取分包密钥与清单，下载可能为 0 字节！请检查网络后重新入库，或在库中对该游戏执行「预缓存」。",
-                            name
+                            "已为「{}」写入入库授权，但未能获取分包密钥与清单，下载可能为 0 字节！{}请检查网络后重新入库，或在库中对该游戏执行「预缓存」。",
+                            name,
+                            res.metadata_message
+                                .as_deref()
+                                .map(|m| format!("原因：{}。", m))
+                                .unwrap_or_default()
                         )
                     };
                     json!({
@@ -265,7 +269,8 @@ async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
                         "scriptPath": res.lua_path.to_string_lossy(),
                         "keyCount": res.key_count,
                         "manifestCount": res.manifest_count,
-                        "metadataOk": res.metadata_ok
+                        "metadataOk": res.metadata_ok,
+                        "metadataMessage": res.metadata_message
                     })
                 }
                 Err(e) => json!({ "success": false, "message": e }),

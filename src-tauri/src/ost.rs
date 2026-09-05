@@ -186,10 +186,12 @@ pub struct SaveRuleResult {
     pub dlc_count: usize,
     pub metadata_ok: bool,
     pub metadata: Option<crate::manifests::AppMetadata>,
+    /// 云端元数据获取失败/被拒原因（如未激活、免费额度耗尽）
+    pub metadata_message: Option<String>,
 }
 
 /// 以服务端元数据为准（密钥库 + SteamCMD 清单 GID + accessToken），与前端传入数据合并
-fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload, bool, Option<crate::manifests::AppMetadata>) {
+fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload, bool, Option<crate::manifests::AppMetadata>, Option<String>) {
     let mut by_id: std::collections::BTreeMap<u32, DepotInfo> = std::collections::BTreeMap::new();
     for d in payload.depots.iter().flatten() {
         by_id.entry(d.depot_id).or_insert_with(|| d.clone());
@@ -199,6 +201,7 @@ fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload
     let mut access_token = payload.access_token.clone();
     let mut metadata_ok = false;
     let mut metadata = None;
+    let mut metadata_message: Option<String> = None;
 
     match crate::manifests::parse_metadata(payload.app_id) {
         Ok(meta) => {
@@ -243,7 +246,10 @@ fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload
             }
             metadata = Some(meta);
         }
-        Err(_) => {}
+        Err(e) => {
+            // 记录云端拒绝/失败原因（如免费额度耗尽），随结果透传给前端提示
+            metadata_message = Some(e);
+        }
     }
 
     let merged = UnlockGamePayload {
@@ -255,11 +261,11 @@ fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload
         app_level_key,
         access_token,
     };
-    (merged, metadata_ok, metadata)
+    (merged, metadata_ok, metadata, metadata_message)
 }
 
 pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<SaveRuleResult, String> {
-    let (merged, metadata_ok, metadata) = merge_with_server_metadata(payload);
+    let (merged, metadata_ok, metadata, metadata_message) = merge_with_server_metadata(payload);
     let key_count = merged
         .depots
         .iter()
@@ -308,6 +314,7 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
         dlc_count,
         metadata_ok,
         metadata,
+        metadata_message,
     })
 }
 

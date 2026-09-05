@@ -79,5 +79,7 @@ export const CONFIG = {
   LOCKOUT_TIME_MS: 15 * 60 * 1000, // 输错5次锁定15分钟
   DATA_DIR: resolveDataDir(),
   CORS_ORIGIN: process.env.CORS_ORIGIN || '',
-  TRUST_PROXY: resolveTrustProxy()
+  TRUST_PROXY: resolveTrustProxy(),
+  // 未激活设备每日免费入库次数（可按游戏重复获取同一 AppID，不重复计数）
+  FREE_DAILY_LIMIT: process.env.FREE_DAILY_LIMIT ? parseInt(process.env.FREE_DAILY_LIMIT, 10) || 2 : 2
 };
