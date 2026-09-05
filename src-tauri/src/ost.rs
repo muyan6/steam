@@ -30,6 +30,10 @@ pub struct UnlockGamePayload {
     pub app_level_key: Option<String>,
     #[serde(default)]
     pub access_token: Option<String>,
+    /// 版本锁定开关：true 时写入 setManifestid 钉死当前官方最新 GID（联机对版本用）；
+    /// false/缺省不钉，OST 内核每次下载时向官方拉取当时最新清单，永远自动最新版
+    #[serde(default)]
+    pub lock_version: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,13 +167,18 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
         lines.push(format!("addappid({})", dlc_id));
     }
 
-    // 5. 清单 GID 固定（内嵌 DLL 支持 setManifestid，防止 CDN 端清单漂移）
-    if let Some(depots) = &payload.depots {
-        for depot in depots {
-            if let Some(man) = depot.manifest_id.as_deref() {
-                let man = man.trim();
-                if !man.is_empty() && man != "0" && man.chars().all(|c| c.is_ascii_digit()) {
-                    lines.push(format!("setManifestid({}, \"{}\", 0)", depot.depot_id, man));
+    // 5. 清单 GID 固定（仅版本锁定模式写入）：不钉 GID 时 OST 内核在每次下载时
+    // 以注入授权向官方拉取当时最新清单，密钥按 depot 固定跨版本有效，
+    // 游戏更新后无须任何手动操作；旧 GID 会被 Valve 从 CDN 回收导致 404，
+    // 因此默认不再钉死版本。需要联机对版本时由用户显式开启锁定
+    if payload.lock_version == Some(true) {
+        if let Some(depots) = &payload.depots {
+            for depot in depots {
+                if let Some(man) = depot.manifest_id.as_deref() {
+                    let man = man.trim();
+                    if !man.is_empty() && man != "0" && man.chars().all(|c| c.is_ascii_digit()) {
+                        lines.push(format!("setManifestid({}, \"{}\", 0)", depot.depot_id, man));
+                    }
                 }
             }
         }
@@ -260,6 +269,7 @@ fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload
         dlcs: Some(dlcs),
         app_level_key,
         access_token,
+        lock_version: payload.lock_version,
     };
     (merged, metadata_ok, metadata, metadata_message)
 }
@@ -535,6 +545,9 @@ pub struct GameUpdateStatus {
     pub app_id: u32,
     /// 是否成功取到云端实时元数据；false 时 hasUpdate 无意义，message 给出原因
     pub checked: bool,
+    /// Lua 规则是否钉死了清单版本（setManifestid）。false = 跟随官方最新版，
+    /// 每次下载自动拉取当时最新清单，不存在"落后"一说
+    pub pinned: bool,
     pub has_update: bool,
     pub changed_depots: Vec<DepotGidChange>,
     pub message: Option<String>,
@@ -576,6 +589,18 @@ pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateSta
         .map(|c| extract_manifest_gids(&c).into_iter().collect())
         .unwrap_or_default();
 
+    // 未钉版本的规则 = 跟随官方最新版，无须查询云端即可下结论
+    if old_map.is_empty() {
+        return GameUpdateStatus {
+            app_id,
+            checked: true,
+            pinned: false,
+            has_update: false,
+            changed_depots: Vec::new(),
+            message: None,
+        };
+    }
+
     match crate::manifests::parse_metadata(app_id) {
         Ok(meta) => {
             let mut changed = Vec::new();
@@ -601,6 +626,7 @@ pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateSta
             GameUpdateStatus {
                 app_id,
                 checked: true,
+                pinned: true,
                 has_update: !changed.is_empty(),
                 changed_depots: changed,
                 message: None,
@@ -609,6 +635,7 @@ pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateSta
         Err(e) => GameUpdateStatus {
             app_id,
             checked: false,
+            pinned: true,
             has_update: false,
             changed_depots: Vec::new(),
             message: Some(e),

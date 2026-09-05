@@ -268,9 +268,10 @@ export const createTauriBridge = () => {
     // 版本更新检测：对比已入库规则中钉死的清单 GID 与云端实时元数据（服务端每次实时查 SteamCMD）
     checkGameUpdates: async (appIds: number[]): Promise<any[]> =>
       invoke<any[]>('check_game_updates', { appIds }),
-    // 一键更新：重新拉取最新元数据重写 Lua 规则并预缓存新清单（复用入库执行体）
-    updateGame: async (appId: number, name: string, nameZh?: string): Promise<{ success: boolean; message: string; manifestCount?: number }> =>
-      invoke('update_game_rules', { appId, name, nameZh: nameZh || name }),
+    // 版本策略切换：lockVersion=true 锁定到当前官方最新 GID（联机对版本）；
+    // false 重写为"跟随官方最新版"规则（不写 setManifestid），此后自动跟进官方更新
+    updateGame: async (appId: number, name: string, nameZh?: string, lockVersion?: boolean): Promise<{ success: boolean; message: string; keyCount?: number }> =>
+      invoke('update_game_rules', { appId, name, nameZh: nameZh || name, lockVersion: lockVersion ?? false }),
 
     // 搜索服务：多数据源（云端/官方/聚合/本地）
     searchGames: async (params: any): Promise<any> => {

@@ -79,6 +79,8 @@ export interface LuaGameInfo {
   hasToken: boolean;
   hasManifest: boolean;
   hasDepotKeys: boolean;
+  /** Lua 规则是否钉死了清单版本；false = 跟随官方最新版 */
+  pinned?: boolean;
   depotsCount: number;
   dlcCount: number;
   luaPath: string;
@@ -218,6 +220,8 @@ export interface GameUpdateStatus {
   appId: number;
   /** 是否成功取到云端实时元数据；false 时 hasUpdate 无意义 */
   checked: boolean;
+  /** Lua 规则是否钉死了清单版本；false = 跟随官方最新版 */
+  pinned: boolean;
   hasUpdate: boolean;
   changedDepots: DepotGidChange[];
   message?: string | null;

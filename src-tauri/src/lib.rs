@@ -252,9 +252,14 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                     // 只有真正注入了分包密钥才提示"可直接下载"；
                     // 仅有清单 GID（如 SteamCMD 降级数据）时如实警告下载可能 0 字节
                     let message = if res.metadata_ok && res.key_count > 0 {
+                        let version_text = if res.manifest_count > 0 {
+                            format!("已锁定 {} 条清单 GID", res.manifest_count)
+                        } else {
+                            "版本跟随官方最新".to_string()
+                        };
                         format!(
-                            "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{} 条清单 GID，含 {} 个 DLC{}）！已自动热生效，直接在库中搜索即可下载！",
-                            name, res.key_count, res.manifest_count, res.dlc_count, precache_text
+                            "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！已自动热生效，直接在库中搜索即可下载！",
+                            name, res.key_count, version_text, res.dlc_count, precache_text
                         )
                     } else if res.metadata_ok && res.manifest_count > 0 {
                         format!(
@@ -303,10 +308,19 @@ async fn unlock_game(payload: UnlockGamePayload) -> serde_json::Value {
     .unwrap_or_else(|e| json!({ "success": false, "message": format!("入库任务执行失败: {}", e) }))
 }
 
-/// 把已入库游戏更新到最新版本：重新拉取云端实时元数据（服务端每次实时查 SteamCMD）
-/// 重写 Lua 规则并预缓存新清单。元数据不可达时拒绝执行，绝不把老规则降级成空规则。
+/// 更新已入库游戏的版本策略：
+/// lock_version=true → 重新拉取最新元数据并钉死当前 GID（联机对版本用）；
+/// lock_version=false/缺省 → 重写为"跟随官方最新版"规则（不写 setManifestid），
+/// 之后每次下载 OST 内核自动向官方拉取当时最新清单，无须再手动更新。
+/// 元数据不可达时拒绝执行，绝不把老规则降级成空规则。
 #[tauri::command]
-async fn update_game_rules(app_id: u32, name: String, name_zh: Option<String>) -> serde_json::Value {
+async fn update_game_rules(
+    app_id: u32,
+    name: String,
+    name_zh: Option<String>,
+    lock_version: Option<bool>,
+) -> serde_json::Value {
+    let lock = lock_version.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
         let Some(steam_path) = steam::detect_steam_path() else {
             return json!({ "success": false, "message": "未找到 Steam 客户端路径" });
@@ -326,14 +340,22 @@ async fn update_game_rules(app_id: u32, name: String, name_zh: Option<String>) -
             dlcs: None,
             app_level_key: None,
             access_token: None,
+            lock_version: Some(lock),
         };
         let mut res = execute_unlock(&steam_path, payload);
         if res.get("success").and_then(|v| v.as_bool()) == Some(true) {
-            let manifest_count = res.get("manifestCount").and_then(|v| v.as_i64()).unwrap_or(0);
-            res["message"] = json!(format!(
-                "已将「{}」的入库规则更新到最新版本（{} 条清单 GID）！Steam 库中将自动检测并下载更新内容；若未自动开始，请重启 Steam 后在库中点击该游戏的「更新」。",
-                name_display, manifest_count
-            ));
+            let key_count = res.get("keyCount").and_then(|v| v.as_i64()).unwrap_or(0);
+            res["message"] = json!(if lock {
+                format!(
+                    "已将「{}」锁定到当前官方最新版本（{} 个分包密钥）！官方出新版本后不会自动跟进，需再次执行更新；联机对完版本后建议切回「跟随最新」。",
+                    name_display, key_count
+                )
+            } else {
+                format!(
+                    "「{}」已切换为跟随官方最新版（{} 个分包密钥）！以后每次下载都会自动获取官方最新清单，无须任何手动更新。",
+                    name_display, key_count
+                )
+            });
         }
         res
     })
@@ -358,6 +380,7 @@ async fn check_game_updates(app_ids: Vec<u32>) -> serde_json::Value {
         let status = h.await.unwrap_or_else(|e| ost::GameUpdateStatus {
             app_id: id,
             checked: false,
+            pinned: false,
             has_update: false,
             changed_depots: Vec::new(),
             message: Some(format!("任务执行失败: {}", e)),
@@ -1085,6 +1108,8 @@ pub struct UnlockedDetail {
     pub has_token: bool,
     pub has_manifest: bool,
     pub has_depot_keys: bool,
+    /// Lua 规则是否钉死了清单版本（setManifestid）；false = 跟随官方最新版
+    pub pinned: bool,
     pub depots_count: u32,
     pub dlc_count: u32,
     pub lua_path: String,
@@ -1141,6 +1166,7 @@ async fn get_unlocked_details() -> Vec<UnlockedDetail> {
                         has_token,
                         has_manifest,
                         has_depot_keys,
+                        pinned: content.contains("setManifestid"),
                         depots_count: addappid_count.max(1),
                         dlc_count: addappid_count.saturating_sub(1),
                         lua_path: format!("config/lua/{}.lua", app_id),

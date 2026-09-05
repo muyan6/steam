@@ -143,14 +143,30 @@
                   <span>Token</span>
                 </span>
 
-                <!-- 版本更新状态 -->
+                <!-- 版本策略状态 -->
                 <span
-                  v-if="updateStatuses[game.appId]?.hasUpdate"
+                  v-if="!isPinned(game)"
+                  class="text-[11px] px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-400 font-mono flex items-center gap-1 border border-cyan-500/30 font-semibold"
+                  title="未锁定版本：每次下载自动获取官方最新清单，永远自动保持最新版"
+                >
+                  <Zap class="w-3 h-3" />
+                  <span>跟随最新</span>
+                </span>
+                <span
+                  v-else-if="updateStatuses[game.appId]?.hasUpdate"
                   class="text-[11px] px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 font-mono flex items-center gap-1 border border-amber-500/30 font-semibold"
-                  title="云端已有更新的清单版本，点击下方「更新」按钮同步"
+                  title="锁定的版本已落后官方最新版，点击下方「跟随最新」解除锁定"
                 >
                   <ArrowUpCircle class="w-3 h-3" />
                   <span>有更新</span>
+                </span>
+                <span
+                  v-else
+                  class="text-[11px] px-2 py-0.5 rounded-lg bg-slate-500/20 text-slate-400 font-mono flex items-center gap-1 border border-slate-500/30 font-semibold"
+                  title="已锁定清单版本，官方出新版后不会自动跟进（联机对版本用）"
+                >
+                  <Lock class="w-3 h-3" />
+                  <span>已锁定</span>
                 </span>
 
                 <!-- 清单状态 -->
@@ -196,15 +212,30 @@
               </a>
 
               <button
-                v-if="updateStatuses[game.appId]?.hasUpdate"
-                @click="handleUpdateGame(game.appId, game.name)"
+                v-if="!isPinned(game)"
+                @click="handleSetVersionStrategy(game.appId, game.name, true)"
                 :disabled="updatingAppId === game.appId"
-                title="重新拉取最新版本规则与清单，Steam 库中将自动检测并下载更新内容"
-                class="px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 disabled:opacity-60"
+                title="钉死当前官方最新版本（联机对版本用）；官方出新版后不会自动跟进"
+                class="px-2.5 py-1.5 btn-soft-action text-xs font-semibold rounded-xl flex items-center gap-1.5"
+              >
+                <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
+                <Lock v-else class="w-3.5 h-3.5" />
+                <span>{{ updatingAppId === game.appId ? '处理中...' : '锁定版本' }}</span>
+              </button>
+
+              <button
+                v-else
+                @click="handleSetVersionStrategy(game.appId, game.name, false)"
+                :disabled="updatingAppId === game.appId"
+                title="解除锁定，此后每次下载自动获取官方最新清单，无须再手动更新"
+                :class="updateStatuses[game.appId]?.hasUpdate
+                  ? 'px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300'
+                  : 'px-2.5 py-1.5 btn-soft-action'"
+                class="text-xs font-semibold rounded-xl transition flex items-center gap-1.5 disabled:opacity-60"
               >
                 <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <ArrowUpCircle v-else class="w-3.5 h-3.5" />
-                <span>{{ updatingAppId === game.appId ? '更新中...' : '更新' }}</span>
+                <span>{{ updatingAppId === game.appId ? '处理中...' : '跟随最新' }}</span>
               </button>
 
               <button
@@ -249,7 +280,8 @@ import {
   Play,
   FolderSync,
   ArrowUpCircle,
-  CloudDownload
+  CloudDownload,
+  Lock
 } from 'lucide-vue-next';
 import { AppManifestStatus, GameUpdateStatus, LuaGameInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
@@ -269,8 +301,11 @@ const repairingAppId = ref<number | null>(null);
 const filterKeyword = ref('');
 
 const updatableCount = computed(
-  () => Object.values(updateStatuses).filter((s) => s?.hasUpdate).length
+  () => Object.values(updateStatuses).filter((s) => s?.pinned && s.hasUpdate).length
 );
+
+/** 优先以最新入库详情为准（检测结果是检查时的快照） */
+const isPinned = (game: LuaGameInfo) => game.pinned ?? updateStatuses[game.appId]?.pinned ?? false;
 
 const filteredGames = computed(() => {
   const kw = filterKeyword.value.trim().toLowerCase();
@@ -346,9 +381,9 @@ const handleCheckUpdates = async (silent: boolean) => {
       if (failed > 0) {
         emit('notify', `版本检查完成：${n} 款有更新，${failed} 款检查失败（云端元数据不可达）`, n > 0 ? 'warning' : 'info');
       } else if (n > 0) {
-        emit('notify', `检查完成：${n} 款游戏有新版本，点击卡片上的「更新」按钮即可同步！`, 'warning');
+        emit('notify', `检查完成：${n} 款锁定版本的游戏有新版本，点击卡片上的「跟随最新」即可解除锁定自动跟进！`, 'warning');
       } else {
-        emit('notify', '检查完成：所有已入库游戏均为最新版本。', 'success');
+        emit('notify', '检查完成：所有游戏均为最新版本或已跟随官方最新。', 'success');
       }
     }
   } catch (e: any) {
@@ -358,21 +393,21 @@ const handleCheckUpdates = async (silent: boolean) => {
   }
 };
 
-const handleUpdateGame = async (appId: number, name: string) => {
+const handleSetVersionStrategy = async (appId: number, name: string, lock: boolean) => {
   if (updatingAppId.value) return;
   updatingAppId.value = appId;
   try {
-    emit('notify', `正在将「${name}」更新到最新版本...`, 'info');
-    const res = await window.electronAPI.updateGame(appId, name);
+    emit('notify', lock ? `正在将「${name}」锁定到当前官方最新版本...` : `正在将「${name}」切换为跟随官方最新版...`, 'info');
+    const res = await window.electronAPI.updateGame(appId, name, undefined, lock);
     if (res && res.success) {
-      emit('notify', res.message || '已更新到最新版本！', 'success');
+      emit('notify', res.message || '操作成功！', 'success');
       delete updateStatuses[appId];
       await loadLibrary();
     } else {
-      emit('notify', res?.message || '更新失败', 'error');
+      emit('notify', res?.message || '操作失败', 'error');
     }
   } catch (e: any) {
-    emit('notify', `更新失败: ${formatIpcError(e)}`, 'error');
+    emit('notify', `操作失败: ${formatIpcError(e)}`, 'error');
   } finally {
     updatingAppId.value = null;
   }
