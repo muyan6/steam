@@ -158,6 +158,9 @@
                   <span v-else class="text-emerald-400 font-bold">（已是最新）</span>
                 </template>
               </div>
+              <div v-if="ostSyncInfo?.currentTag?.includes('Debug')" class="text-[11px] text-amber-300/90">
+                当前为同版本 Debug 构建，建议同步为官方 Release 构建（体积更小、性能更优）
+              </div>
               <div v-else-if="ostCheckFailed" class="pt-1.5 text-[11px] text-slate-500">未能获取官方最新版本信息（网络受限时可稍后重试）</div>
             </div>
           </div>

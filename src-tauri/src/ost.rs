@@ -651,6 +651,9 @@ pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateSta
 
 pub const OST_REPO: &str = "OpenSteam001/OpenSteamTool";
 const OST_META_FILE: &str = "opensteamtool_meta.json";
+// 打包时内嵌的内核种子：经字节级比对确认与官方 1.4.8 Debug 构建完全一致。
+// Debug 构建无版本资源信息且体积大（12MB vs Release 1.4MB），同步会升级为 Release
+const EMBEDDED_OST_TAG: &str = "1.4.8 (Debug 构建)";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -669,7 +672,7 @@ fn read_deployed_ost_tag(steam_path: &Path) -> String {
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| v.get("tag").and_then(|t| t.as_str()).map(|s| s.to_string()))
-        .unwrap_or_else(|| "内置版本".to_string())
+        .unwrap_or_else(|| EMBEDDED_OST_TAG.to_string())
 }
 
 fn write_deployed_ost_tag(steam_path: &Path, tag: &str) {
