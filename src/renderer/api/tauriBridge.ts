@@ -386,6 +386,11 @@ export const createTauriBridge = () => {
       const json = await getJson(`${API}/api/version/check?version=${ver || '1.0.0'}`, 3000);
       return json?.data || { hasUpdate: false };
     },
+    // 应用内跳转链接 (教程/FAQ) —— 由服务端配置，未配置为空串时前端按钮置灰
+    getAppLinks: async (): Promise<{ tutorialUrl: string; faqUrl: string }> => {
+      const json = await getJson(`${API}/api/links`, 3000);
+      return json?.data || { tutorialUrl: '', faqUrl: '' };
+    },
     getDatabaseStats: async (): Promise<any> => {
       const json = await getJson(`${API}/api/stats`, 3000);
       if (json?.success && json?.data) {

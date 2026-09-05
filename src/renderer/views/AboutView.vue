@@ -97,7 +97,8 @@
         </div>
 
         <a
-          href="https://doc.guyunsq.com/1.html"
+          v-if="appLinks.tutorialUrl"
+          :href="appLinks.tutorialUrl"
           target="_blank"
           class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 hover:border-sky-500/40 hover:bg-sky-500/5 transition flex items-center justify-between text-xs text-slate-200 group cursor-pointer"
         >
@@ -107,6 +108,17 @@
           </div>
           <ExternalLink class="w-4 h-4 text-slate-400 group-hover:theme-text-accent transition" />
         </a>
+        <div
+          v-else
+          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 transition flex items-center justify-between text-xs text-slate-500 select-none"
+          title="链接暂未配置，敬请期待"
+        >
+          <div class="flex items-center gap-2.5">
+            <FileText class="w-4 h-4 text-slate-500" />
+            <span>查看完整图文使用教程（暂未开放）</span>
+          </div>
+          <ExternalLink class="w-4 h-4 text-slate-600" />
+        </div>
       </div>
 
       <!-- 问题大全与排错中心 -->
@@ -123,7 +135,8 @@
         </div>
 
         <a
-          href="https://doc.guyunsq.com/"
+          v-if="appLinks.faqUrl"
+          :href="appLinks.faqUrl"
           target="_blank"
           class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 hover:border-sky-500/40 hover:bg-sky-500/5 transition flex items-center justify-between text-xs text-slate-200 group cursor-pointer"
         >
@@ -133,6 +146,17 @@
           </div>
           <ExternalLink class="w-4 h-4 text-slate-400 group-hover:theme-text-accent transition" />
         </a>
+        <div
+          v-else
+          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 transition flex items-center justify-between text-xs text-slate-500 select-none"
+          title="链接暂未配置，敬请期待"
+        >
+          <div class="flex items-center gap-2.5">
+            <HelpCircle class="w-4 h-4 text-slate-500" />
+            <span>查看常见问题大全与自愈中心（暂未开放）</span>
+          </div>
+          <ExternalLink class="w-4 h-4 text-slate-600" />
+        </div>
       </div>
     </div>
 
@@ -200,6 +224,22 @@ const isCheckingUpdate = ref(false);
 const deviceId = ref('');
 const ostInstalled = ref(false);
 const isActivated = ref(false);
+// 教程/FAQ 跳转链接由服务端配置 (GET /api/links)，未配置时按钮置灰
+const appLinks = ref<{ tutorialUrl: string; faqUrl: string }>({ tutorialUrl: '', faqUrl: '' });
+
+const loadAppLinks = async () => {
+  try {
+    const links = await window.electronAPI.getAppLinks();
+    if (links) {
+      appLinks.value = {
+        tutorialUrl: links.tutorialUrl || '',
+        faqUrl: links.faqUrl || ''
+      };
+    }
+  } catch {
+    // 服务端不可用时保持置灰，不阻塞页面
+  }
+};
 
 const featuresList = [
   { title: '创意工坊支持', desc: '一键订阅与模组自动同步下载' },
@@ -248,5 +288,6 @@ const loadEnvInfo = async () => {
 
 onMounted(() => {
   loadEnvInfo();
+  loadAppLinks();
 });
 </script>

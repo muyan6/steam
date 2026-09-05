@@ -30,6 +30,7 @@ import {
   getPushLogsAdmin
 } from '../controllers/versionController.js';
 import { getSourcesList, triggerSyncFromSources } from '../controllers/sourceController.js';
+import { getAppLinks, updateAppLinks } from '../controllers/linksController.js';
 import {
   login,
   getProfile,
@@ -136,6 +137,9 @@ router.get('/notice/list', getActiveNoticesList);
 router.get('/version/check', checkVersion);
 router.get('/version/latest', getLatestVersionInfo);
 
+// 应用内跳转链接 (教程/FAQ，由服务端数据文件配置，未配置为空串)
+router.get('/links', getAppLinks);
+
 // 游戏库检索与详情
 router.get('/games/popular', getPopularGames);
 router.get('/games/search', searchGames);
@@ -237,9 +241,11 @@ router.get('/admin/stats', getServerStats);
 router.get('/admin/search/debug', searchDebugKeys);
 router.get('/admin/toolbox/stats', getToolboxAdminStats);
 
+// 应用内跳转链接配置 (管理端)
+router.post('/admin/links', updateAppLinks);
+
 // 客户端设备管理与活跃度监控
-router.get('/admin/devices/list', (req, res) => {
-  const page = parseInt(req.query.page as string, 10) || 1;
+router.get('/admin/devices/list', (req, res) => {  const page = parseInt(req.query.page as string, 10) || 1;
   const limit = parseInt(req.query.limit as string, 10) || 20;
   const search = (req.query.search as string) || '';
   const status = (req.query.status as string) || 'all';
