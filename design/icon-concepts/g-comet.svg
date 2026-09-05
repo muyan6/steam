@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101418"/>
+  <!-- 圆收笔化风而去：一个完整的圆，笔势从顶端流出 -->
+  <path d="M353 189 A138 138 0 1 1 287 138 C 336 110 392 116 434 80" fill="none" stroke="#F5F7FA" stroke-width="30" stroke-linecap="round"/>
+  <circle cx="240" cy="288" r="26" fill="#F5F7FA"/>
+</svg>

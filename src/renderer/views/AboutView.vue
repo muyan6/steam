@@ -219,7 +219,7 @@ const emit = defineEmits<{
   (e: 'open-disclaimer'): void;
 }>();
 
-const appVersion = '1.0.1';
+const appVersion = '2.0.0';
 const isCheckingUpdate = ref(false);
 const deviceId = ref('');
 const ostInstalled = ref(false);

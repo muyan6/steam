@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101418"/>
+  <!-- 一阵风把卡带吹入库 -->
+  <g transform="rotate(-14 320 240)">
+    <rect x="242" y="118" width="176" height="236" rx="42" fill="none" stroke="#F5F7FA" stroke-width="30"/>
+    <path d="M284 180 H376" stroke="#F5F7FA" stroke-width="26" stroke-linecap="round"/>
+    <circle cx="330" cy="272" r="22" fill="#F5F7FA"/>
+  </g>
+  <g stroke="#F5F7FA" stroke-width="28" stroke-linecap="round" fill="none">
+    <path d="M56 330 H158 a26 26 0 1 0 -10 -48"/>
+    <path d="M72 402 H142"/>
+  </g>
+</svg>

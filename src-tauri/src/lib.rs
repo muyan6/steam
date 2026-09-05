@@ -6,6 +6,7 @@ pub mod localgames;
 pub mod manifests;
 pub mod onlinefix;
 pub mod steamless;
+pub mod quota;
 
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -795,14 +796,27 @@ async fn is_spacewar_installed() -> serde_json::Value {
     }
 
 #[tauri::command]
-async fn scan_local_games() -> Vec<localgames::LocalInstalledGame> {
-        tauri::async_runtime::spawn_blocking(move || { match steam::detect_steam_path() {
-        Some(sp) => localgames::scan_installed_games(&sp),
+async fn scan_local_games(force: Option<bool>) -> Vec<localgames::LocalInstalledGame> {
+    let force = force.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || { match steam::detect_steam_path() {
+        Some(sp) => localgames::scan_installed_games_cached(&sp, force),
         None => vec![],
     } })
         .await
         .unwrap_or_else(|_e| Vec::new())
     }
+
+/// 查询未激活设备的今日免费入库额度（不扣减）
+#[tauri::command]
+fn get_free_unlock_quota(is_activated: Option<bool>) -> serde_json::Value {
+    quota::get_free_quota(is_activated.unwrap_or(false)).to_json()
+}
+
+/// 扣减一次未激活设备的今日免费入库额度（额度耗尽返回 allowed=false）
+#[tauri::command]
+fn consume_free_unlock_quota(is_activated: Option<bool>) -> serde_json::Value {
+    quota::consume_free_quota(is_activated.unwrap_or(false)).to_json()
+}
 
 #[tauri::command]
 fn check_game_dir(dir_path: String) -> serde_json::Value {
@@ -1085,6 +1099,8 @@ pub fn run() {
             download_manifests,
             is_spacewar_installed,
             scan_local_games,
+            get_free_unlock_quota,
+            consume_free_unlock_quota,
             check_game_dir,
             apply_spacewar_fix,
             apply_goldberg_fix,

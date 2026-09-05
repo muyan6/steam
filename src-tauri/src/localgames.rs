@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use crate::steam;
@@ -296,12 +298,110 @@ pub fn is_spacewar_installed(steam_path: &Path) -> (bool, Option<String>) {
 
 const SKIP_APP_IDS: [u32; 5] = [228980, 1070560, 1391110, 1628350, 223750];
 
-pub fn scan_installed_games(steam_path: &Path) -> Vec<LocalInstalledGame> {
-    let mut games: Vec<LocalInstalledGame> = Vec::new();
-    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+/// 扫描结果缓存：TTL 内重复请求（切换页面/再次进入联机修复中心）直接复用，
+/// 避免每次点击都全量重扫所有游戏目录
+struct ScanCacheEntry {
+    games: Vec<LocalInstalledGame>,
+    at: Instant,
+}
 
-    for lib in get_steam_library_paths(steam_path) {
-        let Ok(files) = fs::read_dir(&lib) else { continue };
+static SCAN_CACHE: Mutex<Option<ScanCacheEntry>> = Mutex::new(None);
+const SCAN_CACHE_TTL: Duration = Duration::from_secs(60);
+
+pub fn scan_installed_games_cached(steam_path: &Path, force: bool) -> Vec<LocalInstalledGame> {
+    if !force {
+        if let Ok(guard) = SCAN_CACHE.lock() {
+            if let Some(entry) = guard.as_ref() {
+                if entry.at.elapsed() < SCAN_CACHE_TTL {
+                    return entry.games.clone();
+                }
+            }
+        }
+    }
+    let games = scan_installed_games(steam_path);
+    if let Ok(mut guard) = SCAN_CACHE.lock() {
+        *guard = Some(ScanCacheEntry { games: games.clone(), at: Instant::now() });
+    }
+    games
+}
+
+/// 单个 appmanifest 的解析与游戏目录探测（在并行扫描线程中执行）
+fn scan_single_manifest(lib: &Path, acf_path: &Path, app_id: u32) -> Option<LocalInstalledGame> {
+    let content = fs::read_to_string(acf_path).ok()?;
+    let game_name = acf_get(&content, "name").unwrap_or_else(|| format!("AppID {}", app_id));
+    let install_dir = acf_get(&content, "installdir").unwrap_or_else(|| game_name.clone());
+    let size_on_disk = acf_get(&content, "SizeOnDisk").and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+
+    let mut full_path = lib.join("common").join(&install_dir);
+    if !full_path.exists() {
+        let common_dir = lib.join("common");
+        if common_dir.exists() {
+            let base_target = clean_name(&install_dir);
+            if base_target.len() >= 3 {
+                if let Ok(entries) = fs::read_dir(&common_dir) {
+                    for e in entries.filter_map(|e| e.ok()) {
+                        let clean = clean_name(&e.file_name().to_string_lossy());
+                        if clean == base_target || (clean.len() >= 3 && (clean.contains(&base_target) || base_target.contains(&clean))) {
+                            full_path = e.path();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut executables: Vec<String> = Vec::new();
+    let mut primary_exe = None;
+    let mut has_steamless_backup = false;
+    if full_path.exists() {
+        executables = find_executable_files(&full_path, 2);
+        if !executables.is_empty() {
+            let lower_install = install_dir.replace(' ', "").to_lowercase();
+            primary_exe = executables
+                .iter()
+                .find(|p| {
+                    let stem = Path::new(p)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().replace(' ', "").to_lowercase())
+                        .unwrap_or_default();
+                    stem == lower_install || lower_install.contains(&stem) || stem.contains(&lower_install)
+                })
+                .cloned()
+                .or_else(|| executables.first().cloned());
+        }
+        if let Ok(entries) = fs::read_dir(&full_path) {
+            has_steamless_backup = entries.filter_map(|e| e.ok()).any(|e| {
+                e.file_name().to_string_lossy().to_lowercase().ends_with(".bak")
+            });
+        }
+    }
+
+    let (is_patched, patch_mode, _) = check_game_directory(&full_path);
+    Some(LocalInstalledGame {
+        app_id,
+        name: game_name,
+        install_dir,
+        full_install_path: full_path.to_string_lossy().to_string(),
+        library_path: lib.to_string_lossy().to_string(),
+        size_on_disk,
+        executable_files: executables,
+        primary_exe,
+        has_steamless_backup,
+        is_patched,
+        patch_mode,
+        has_backup: full_path.join("steam_api64_o.dll").exists() || full_path.join("steam_api_o.dll").exists() || has_steamless_backup,
+    })
+}
+
+pub fn scan_installed_games(steam_path: &Path) -> Vec<LocalInstalledGame> {
+    let libs = get_steam_library_paths(steam_path);
+
+    // 先按库顺序收集待扫描清单（去重与跳过逻辑与原实现一致），再并行处理
+    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut tasks: Vec<(usize, PathBuf, u32)> = Vec::new();
+    for (lib_idx, lib) in libs.iter().enumerate() {
+        let Ok(files) = fs::read_dir(lib) else { continue };
         for entry in files.filter_map(|e| e.ok()) {
             let name = entry.file_name().to_string_lossy().to_string();
             if !name.starts_with("appmanifest_") || !name.ends_with(".acf") {
@@ -318,80 +418,31 @@ pub fn scan_installed_games(steam_path: &Path) -> Vec<LocalInstalledGame> {
             if seen.contains(&app_id) || SKIP_APP_IDS.contains(&app_id) {
                 continue;
             }
-
-            let Ok(content) = fs::read_to_string(entry.path()) else { continue };
-            let game_name = acf_get(&content, "name").unwrap_or_else(|| format!("AppID {}", app_id));
-            let install_dir = acf_get(&content, "installdir").unwrap_or_else(|| game_name.clone());
-            let size_on_disk = acf_get(&content, "SizeOnDisk").and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-
-            let mut full_path = lib.join("common").join(&install_dir);
-            if !full_path.exists() {
-                let common_dir = lib.join("common");
-                if common_dir.exists() {
-                    let base_target = clean_name(&install_dir);
-                    if base_target.len() >= 3 {
-                        if let Ok(entries) = fs::read_dir(&common_dir) {
-                            for e in entries.filter_map(|e| e.ok()) {
-                                let clean = clean_name(&e.file_name().to_string_lossy());
-                                if clean == base_target || (clean.len() >= 3 && (clean.contains(&base_target) || base_target.contains(&clean))) {
-                                    full_path = e.path();
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            let mut executables: Vec<String> = Vec::new();
-            let mut primary_exe = None;
-            let mut has_steamless_backup = false;
-            if full_path.exists() {
-                executables = find_executable_files(&full_path, 2);
-                if !executables.is_empty() {
-                    let lower_install = install_dir.replace(' ', "").to_lowercase();
-                    primary_exe = executables
-                        .iter()
-                        .find(|p| {
-                            let stem = Path::new(p)
-                                .file_stem()
-                                .map(|s| s.to_string_lossy().replace(' ', "").to_lowercase())
-                                .unwrap_or_default();
-                            stem == lower_install || lower_install.contains(&stem) || stem.contains(&lower_install)
-                        })
-                        .cloned()
-                        .or_else(|| executables.first().cloned());
-                }
-                if let Ok(entries) = fs::read_dir(&full_path) {
-                    has_steamless_backup = entries.filter_map(|e| e.ok()).any(|e| {
-                        e.file_name().to_string_lossy().to_lowercase().ends_with(".bak")
-                    });
-                }
-            }
-
-            let (is_patched, patch_mode, _) = check_game_directory(&full_path);
-            let _ = 0; // has_backup 在下方按文件存在性计算
             seen.insert(app_id);
-            games.push(LocalInstalledGame {
-                app_id,
-                name: game_name,
-                install_dir,
-                full_install_path: full_path.to_string_lossy().to_string(),
-                library_path: lib.to_string_lossy().to_string(),
-                size_on_disk,
-                executable_files: executables,
-                primary_exe,
-                has_steamless_backup,
-                is_patched,
-                patch_mode,
-                has_backup: {
-                    let _ = &full_path;
-                    full_path.join("steam_api64_o.dll").exists() || full_path.join("steam_api_o.dll").exists() || has_steamless_backup
-                },
-            });
+            tasks.push((lib_idx, entry.path(), app_id));
         }
     }
+    drop(seen);
 
+    let mut results: Vec<Option<LocalInstalledGame>> = vec![None; tasks.len()];
+    // 每个游戏的目录递归探测（exe/补丁状态）互不依赖，按 CPU 核数分块并行执行
+    let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1);
+    let chunk_size = tasks.len().div_ceil(workers).max(1);
+    std::thread::scope(|scope| {
+        let mut rest: &mut [Option<LocalInstalledGame>] = &mut results;
+        for chunk in tasks.chunks(chunk_size) {
+            let (head, tail) = rest.split_at_mut(chunk.len());
+            rest = tail;
+            let libs_ref = &libs;
+            scope.spawn(move || {
+                for (i, (lib_idx, acf_path, app_id)) in chunk.iter().enumerate() {
+                    head[i] = scan_single_manifest(&libs_ref[*lib_idx], acf_path, *app_id);
+                }
+            });
+        }
+    });
+
+    let mut games: Vec<LocalInstalledGame> = results.into_iter().flatten().collect();
     games.sort_by(|a, b| b.full_install_path.cmp(&a.full_install_path).then(a.name.cmp(&b.name)));
     games
 }

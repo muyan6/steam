@@ -71,7 +71,7 @@
       <div class="flex items-center justify-between gap-3.5 flex-wrap shrink-0">
         <div class="flex items-center gap-3 flex-wrap">
           <button
-            @click="handleRefreshLocalGames"
+            @click="handleRefreshLocalGames(true)"
             :disabled="isScanning"
             class="px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800 border border-white/10 rounded-xl text-xs font-bold text-slate-200 transition flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
           >
@@ -381,7 +381,7 @@
       <div class="flex items-center justify-between gap-3.5 flex-wrap shrink-0">
         <div class="flex items-center gap-3 flex-wrap">
           <button
-            @click="handleRefreshLocalGames"
+            @click="handleRefreshLocalGames(true)"
             :disabled="isScanning"
             class="px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800 border border-white/10 rounded-xl text-xs font-bold text-slate-200 transition flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
           >
@@ -874,13 +874,16 @@ const filteredGames = computed(() => {
   );
 });
 
-// 扫描加载本地 Steam 游戏
-const handleRefreshLocalGames = async () => {
+// 扫描加载本地 Steam 游戏：force=true 强制重扫；silent=true 不弹成功提示
+// （默认走后端 60s 结果缓存，避免每次进入页面/点击都全量重扫一遍）
+const handleRefreshLocalGames = async (force: boolean = false, silent: boolean = false) => {
   isScanning.value = true;
   try {
-    const list = await window.electronAPI.scanLocalGames();
+    const list = await window.electronAPI.scanLocalGames(force);
     localGames.value = list || [];
-    emit('notify', `成功扫描到 ${localGames.value.length} 款本地已安装 Steam 游戏！`, 'success');
+    if (!silent) {
+      emit('notify', `成功扫描到 ${localGames.value.length} 款本地已安装 Steam 游戏！`, 'success');
+    }
   } catch (err: any) {
     emit('notify', `扫描本地游戏失败: ${err.message}`, 'error');
   } finally {
@@ -932,7 +935,7 @@ const confirmExecuteRepair = async () => {
     if (res.success) {
       emit('notify', res.message, 'success');
       showRepairModal.value = false;
-      await handleRefreshLocalGames();
+      await handleRefreshLocalGames(true);
     } else {
       emit('notify', res.message, 'error');
     }
@@ -1035,7 +1038,7 @@ const handleApplyCustomPatch = async () => {
     const res = await window.electronAPI.installOnlineFixFromWeb(targetDir.value, appId);
     if (res.success) {
       emit('notify', res.message, 'success');
-      await handleRefreshLocalGames();
+      await handleRefreshLocalGames(true);
     } else {
       emit('notify', res.message || '未在 online-fix.me 搜索到该游戏的联机补丁', 'warning');
     }
@@ -1053,7 +1056,7 @@ const handleRestoreOriginalPatch = async () => {
     const res = await window.electronAPI.restoreGame(targetDir.value);
     if (res.success) {
       emit('notify', res.message, 'success');
-      await handleRefreshLocalGames();
+      await handleRefreshLocalGames(true);
     } else {
       emit('notify', res.message, 'error');
     }
@@ -1102,6 +1105,7 @@ const handleCardImgError = (e: Event, appId: number) => {
 
 onMounted(async () => {
   await fetchSpacewarStatus(false);
-  await handleRefreshLocalGames();
+  // 进入页面默认走后端缓存静默加载（60s 内复用上次结果），点「刷新列表」才会强制重扫
+  await handleRefreshLocalGames(false, true);
 });
 </script>

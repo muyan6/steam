@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101418"/>
+  <!-- 面性版：实心圆被一道风切开 -->
+  <circle cx="256" cy="256" r="150" fill="#F5F7FA"/>
+  <path d="M40 306 C 170 362 216 224 306 250 C 372 268 408 262 472 234" fill="none" stroke="#101418" stroke-width="36" stroke-linecap="round"/>
+</svg>

@@ -300,7 +300,8 @@ export const createTauriBridge = () => {
       await invoke('open_url', { url: 'steam://install/480' });
       return true;
     },
-    scanLocalGames: async (): Promise<any[]> => invoke('scan_local_games'),
+    // force=true 强制重扫本地库；默认走 Rust 端 60s 缓存，避免每次进入页面/点击都全量重扫
+    scanLocalGames: async (force: boolean = false): Promise<any[]> => invoke('scan_local_games', { force }),
     launchLocalGame: async (params: {
       appId: number;
       gamePath: string;
@@ -517,6 +518,12 @@ export const createTauriBridge = () => {
       localStorage.removeItem('cfd_license_cache');
       return { success: true, message: '已清除本地卡密记录' };
     },
+
+    // 未激活设备每日免费入库额度（默认 2 次/天，按本地日期刷新）
+    getFreeUnlockQuota: async (isActivated: boolean): Promise<any> =>
+      invoke('get_free_unlock_quota', { isActivated }),
+    consumeFreeUnlockQuota: async (isActivated: boolean): Promise<any> =>
+      invoke('consume_free_unlock_quota', { isActivated }),
 
     // 工具箱
     toolboxClearCache: async (): Promise<ToolboxActionResult> => invoke('toolbox_clear_cache'),

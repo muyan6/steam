@@ -357,7 +357,7 @@ import Toast, { ToastItem } from './components/Toast.vue';
 import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
 
-const appVersion = '1.0.1';
+const appVersion = '2.0.0';
 const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'about' | 'settings'>('search');
 const showStartupWizard = ref(false);
 // 启动引导打开来源：首次启动(环境未就绪)为强引导不可关闭；设置页手动打开可随时关闭

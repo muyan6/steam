@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101418"/>
+  <!-- 渡口之门：一道风穿门而过 -->
+  <circle cx="256" cy="256" r="120" fill="none" stroke="#F5F7FA" stroke-width="29"/>
+  <path d="M56 302 C 168 354 214 230 302 252 C 366 268 404 262 456 236" fill="none" stroke="#F5F7FA" stroke-width="29" stroke-linecap="round"/>
+</svg>

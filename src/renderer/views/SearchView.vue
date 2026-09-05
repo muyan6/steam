@@ -574,12 +574,18 @@ const loadUnlockedList = async () => {
 };
 
 const unlockGame = async (game: SteamGame) => {
+  let activated = false;
   try {
     const lic = await window.electronAPI.getLicenseInfo();
-    if (!lic || !lic.isActivated) {
-      emit('notify', '当前设备尚未激活软件授权！无法使用一键入库与密钥调度，请先激活后使用。', 'warning');
-      emit('open-license-modal');
-      return;
+    activated = !!(lic && lic.isActivated);
+    if (!activated) {
+      // 未激活设备：每日 2 次免费入库额度（按天刷新），用完需激活
+      const quota = await window.electronAPI.getFreeUnlockQuota(false);
+      if (!quota || !quota.allowed) {
+        emit('notify', '今日免费入库次数已用完，请激活使用！激活后入库不限次数。', 'warning');
+        emit('open-license-modal');
+        return;
+      }
     }
   } catch (e: any) {
     emit('notify', `授权检测异常: ${e.message}`, 'error');
@@ -602,7 +608,19 @@ const unlockGame = async (game: SteamGame) => {
     };
     const res = await window.electronAPI.unlockGame(plainGame);
     if (res.success) {
-      emit('notify', res.message, 'success');
+      let message = res.message;
+      if (!activated) {
+        // 入库成功后扣减今日免费额度并提示剩余次数
+        try {
+          const q = await window.electronAPI.consumeFreeUnlockQuota(false);
+          if (q && typeof q.remaining === 'number') {
+            message += q.remaining > 0
+              ? `（今日剩余免费入库 ${q.remaining} 次）`
+              : '（今日免费次数已用完，再次入库请激活使用）';
+          }
+        } catch {}
+      }
+      emit('notify', message, 'success');
       await loadUnlockedList();
       emit('refresh-status');
     } else {

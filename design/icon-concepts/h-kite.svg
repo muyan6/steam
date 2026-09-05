@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101418"/>
+  <!-- 风筝：风 + 玩 + 手里的一根线 -->
+  <path d="M280 84 L388 192 L256 300 L148 192 Z" fill="none" stroke="#F5F7FA" stroke-width="30" stroke-linejoin="round"/>
+  <path d="M280 84 L256 300" stroke="#F5F7FA" stroke-width="26" stroke-linecap="round"/>
+  <path d="M256 300 C 240 348 276 366 260 410" fill="none" stroke="#F5F7FA" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="258" cy="440" r="16" fill="#F5F7FA"/>
+</svg>

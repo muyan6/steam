@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101418"/>
+  <!-- 几何化的「风」：左撇 + 横折钩 -->
+  <g stroke="#F5F7FA" stroke-width="34" stroke-linecap="round" fill="none">
+    <path d="M158 122 C 112 180 96 290 122 384"/>
+    <path d="M172 114 H330 Q368 114 368 154 V308 Q368 398 272 406 Q 198 408 168 380"/>
+  </g>
+  <!-- 风中的一粒：游戏点 -->
+  <circle cx="252" cy="256" r="34" fill="#F5F7FA"/>
+</svg>

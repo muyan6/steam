@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101418"/>
+  <text x="256" y="270" font-family="Microsoft YaHei" font-weight="900" font-size="330" fill="#F5F7FA" text-anchor="middle" dominant-baseline="central">风</text>
+  <circle cx="256" cy="270" r="0" fill="#F5F7FA"/>
+</svg>
