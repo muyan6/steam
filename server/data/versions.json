@@ -1,98 +1,118 @@
 [
- {
-  "version": "2.2.0",
-  "channel": "stable",
-  "releaseDate": "2026-09-05",
-  "title": "春风渡 v2.2.0 正式发布",
-  "changelog": [
-   "🔄 版本策略重构：入库默认跟随官方最新版，游戏更新自动跟进，彻底告别卡旧版",
-   "🔒 新增版本锁定开关：联机对版本时可钉死指定版本，对完一键切回跟随最新",
-   "🧩 新增 OST 内核在线同步：GitHub 镜像链自动下载部署最新内核，无须等客户端发版",
-   "📡 启动时每日静默检测内核新版本，GitHub 完全不可达时经云端服务器中转兜底",
-   "🗄️ 云端接入 ManifestHub3 社区清单库，新游戏/冷门游戏密钥自动兜底补全",
-   "🛠 修复清单 GID 误取 previous 旧分支导致入库即旧版的根因问题",
-   "📖 已入库规则管理页新增可折叠功能说明面板"
-  ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.2.0/ChunFengDu_2.2.0_x64-setup.exe",
-  "forceUpdate": false,
-  "minSupportedVersion": "1.0.0",
-  "enabled": true,
-  "downloadCount": 0,
-  "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T00:00:00.000Z"
- },
- {
-  "version": "2.1.2",
-  "channel": "stable",
-  "releaseDate": "2026-09-05",
-  "title": "春风渡 v2.1.2 正式发布",
-  "changelog": [
-   "🛠 修复 115%/125% 界面缩放下内容横向溢出窗口、右侧按钮与卡片被裁切的问题",
-   "📦 安装包内置 WebView2Loader.dll，修复部分环境安装后无法启动的问题"
-  ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.2/ChunFengDu_2.1.2_x64-setup.exe",
-  "forceUpdate": false,
-  "minSupportedVersion": "1.0.0",
-  "enabled": true,
-  "downloadCount": 0,
-  "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T00:00:00.000Z"
- },
- {
-  "version": "2.1.1",
-  "channel": "stable",
-  "releaseDate": "2026-09-05",
-  "title": "春风渡 v2.1.1 正式发布",
-  "changelog": [
-   "🔄 新增应用内一键下载安装更新，无需跳转浏览器，后台配置 .exe 直链即可生效",
-   "🚀 后台「官方下载地址」填安装包直链后，旧版本客户端可直接在软件内完成升级"
-  ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.1/ChunFengDu_2.1.1_x64-setup.exe",
-  "forceUpdate": false,
-  "minSupportedVersion": "1.0.0",
-  "enabled": true,
-  "downloadCount": 0,
-  "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T00:00:00.000Z"
- },
- {
-  "version": "2.1.0",
-  "channel": "stable",
-  "releaseDate": "2026-09-05",
-  "title": "春风渡 v2.1.0 正式发布",
-  "changelog": [
-   "🔒 授权与数据安全全面加固，修复多处安全缺陷",
-   "🎁 未激活设备每日免费入库额度改为云端权威计数，真正可用",
-   "🖥️ 彻底修复发布版反复弹命令行黑框问题",
-   "🔍 修复界面缩放无效、错误提示 undefined、封面加载失败等多项体验问题",
-   "⚡ 清单预缓存并发化提速，大数据库检索与落盘性能优化",
-   "📦 新增便携版与单文件版发布形态"
-  ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.0/ChunFengDu_2.1.0_x64-setup.exe",
-  "forceUpdate": false,
-  "minSupportedVersion": "1.0.0",
-  "enabled": true,
-  "downloadCount": 0,
-  "createdAt": "2026-09-05T00:00:00.000Z",
-  "updatedAt": "2026-09-05T00:00:00.000Z"
- },
- {
-  "version": "1.0.0",
-  "channel": "stable",
-  "releaseDate": "2026-09-01",
-  "title": "春风渡 商业版 v1.0.0 正式发布",
-  "changelog": [
-   "🚀 首次发布 Steam 一键入库与多模式联机管理工具",
-   "☁️ 全面接入云端数据库，支持 18 万+ 游戏秒搜与 28 万+ DepotKey 匹配",
-   "💉 支持 Spacewar 官方大厅联机与 Goldberg 局域网/虚拟专网模式",
-   "✨ 现代化 Fluent 深色磨砂玻璃界面与极速体验"
-  ],
-  "downloadUrl": "https://gitee.com/muyan6/steam",
-  "forceUpdate": false,
-  "minSupportedVersion": "1.0.0",
-  "enabled": true,
-  "downloadCount": 0,
-  "createdAt": "2026-09-01T00:00:00.000Z",
-  "updatedAt": "2026-09-01T00:00:00.000Z"
- }
+  {
+    "version": "2.2.1",
+    "channel": "stable",
+    "releaseDate": "2026-09-05",
+    "title": "春风渡 v2.2.1 正式发布",
+    "changelog": [
+      "🛠 修复联机补丁下载失效：多下载源自动回退，单一源被墙/限流不再导致整体失败",
+      "🚀 下载客户端支持分流源 Cookie 门禁并加快换源速度（15 秒快速失败）",
+      "🛡 严禁误下载整包游戏分卷（partN.rar），仅安装几 MB 的 Fix_Repair 补丁包",
+      "💬 修复补丁下载报错显示为 [object Object] 的问题，现在如实展示失败原因",
+      "🎨 联机修复中心「安装联机补丁」按钮与「还原原版」按钮等高对齐"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.2.1/ChunFengDu_2.2.1_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-05T00:00:00.000Z",
+    "updatedAt": "2026-09-05T00:00:00.000Z"
+  },
+  {
+    "version": "2.2.0",
+    "channel": "stable",
+    "releaseDate": "2026-09-05",
+    "title": "春风渡 v2.2.0 正式发布",
+    "changelog": [
+      "🔄 版本策略重构：入库默认跟随官方最新版，游戏更新自动跟进，彻底告别卡旧版",
+      "🔒 新增版本锁定开关：联机对版本时可钉死指定版本，对完一键切回跟随最新",
+      "🧩 新增 OST 内核在线同步：GitHub 镜像链自动下载部署最新内核，无须等客户端发版",
+      "📡 启动时每日静默检测内核新版本，GitHub 完全不可达时经云端服务器中转兜底",
+      "🗄️ 云端接入 ManifestHub3 社区清单库，新游戏/冷门游戏密钥自动兜底补全",
+      "🛠 修复清单 GID 误取 previous 旧分支导致入库即旧版的根因问题",
+      "📖 已入库规则管理页新增可折叠功能说明面板"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.2.0/ChunFengDu_2.2.0_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-05T00:00:00.000Z",
+    "updatedAt": "2026-09-05T00:00:00.000Z"
+  },
+  {
+    "version": "2.1.2",
+    "channel": "stable",
+    "releaseDate": "2026-09-05",
+    "title": "春风渡 v2.1.2 正式发布",
+    "changelog": [
+      "🛠 修复 115%/125% 界面缩放下内容横向溢出窗口、右侧按钮与卡片被裁切的问题",
+      "📦 安装包内置 WebView2Loader.dll，修复部分环境安装后无法启动的问题"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.2/ChunFengDu_2.1.2_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-05T00:00:00.000Z",
+    "updatedAt": "2026-09-05T00:00:00.000Z"
+  },
+  {
+    "version": "2.1.1",
+    "channel": "stable",
+    "releaseDate": "2026-09-05",
+    "title": "春风渡 v2.1.1 正式发布",
+    "changelog": [
+      "🔄 新增应用内一键下载安装更新，无需跳转浏览器，后台配置 .exe 直链即可生效",
+      "🚀 后台「官方下载地址」填安装包直链后，旧版本客户端可直接在软件内完成升级"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.1/ChunFengDu_2.1.1_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-05T00:00:00.000Z",
+    "updatedAt": "2026-09-05T00:00:00.000Z"
+  },
+  {
+    "version": "2.1.0",
+    "channel": "stable",
+    "releaseDate": "2026-09-05",
+    "title": "春风渡 v2.1.0 正式发布",
+    "changelog": [
+      "🔒 授权与数据安全全面加固，修复多处安全缺陷",
+      "🎁 未激活设备每日免费入库额度改为云端权威计数，真正可用",
+      "🖥️ 彻底修复发布版反复弹命令行黑框问题",
+      "🔍 修复界面缩放无效、错误提示 undefined、封面加载失败等多项体验问题",
+      "⚡ 清单预缓存并发化提速，大数据库检索与落盘性能优化",
+      "📦 新增便携版与单文件版发布形态"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.1.0/ChunFengDu_2.1.0_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-05T00:00:00.000Z",
+    "updatedAt": "2026-09-05T00:00:00.000Z"
+  },
+  {
+    "version": "1.0.0",
+    "channel": "stable",
+    "releaseDate": "2026-09-01",
+    "title": "春风渡 商业版 v1.0.0 正式发布",
+    "changelog": [
+      "🚀 首次发布 Steam 一键入库与多模式联机管理工具",
+      "☁️ 全面接入云端数据库，支持 18 万+ 游戏秒搜与 28 万+ DepotKey 匹配",
+      "💉 支持 Spacewar 官方大厅联机与 Goldberg 局域网/虚拟专网模式",
+      "✨ 现代化 Fluent 深色磨砂玻璃界面与极速体验"
+    ],
+    "downloadUrl": "https://gitee.com/muyan6/steam",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-01T00:00:00.000Z",
+    "updatedAt": "2026-09-01T00:00:00.000Z"
+  }
 ]
