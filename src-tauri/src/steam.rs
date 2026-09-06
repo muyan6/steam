@@ -175,10 +175,16 @@ pub fn count_unlocked_scripts(steam_path: &Path) -> usize {
         entries
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.path()
+                // 与游戏库(get_unlocked_details)同口径：仅统计以 AppID 数字命名的规则，
+                // 排除 manifest.lua 等内核自带脚本被误计成「款应用」
+                let path = e.path();
+                let stem = path.file_stem().and_then(|s| s.to_str());
+                let is_numeric = stem.map(|s| s.parse::<u32>().is_ok()).unwrap_or(false);
+                let is_lua = path
                     .extension()
                     .map(|ext| ext == "lua")
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                is_numeric && is_lua
             })
             .count()
     } else {
