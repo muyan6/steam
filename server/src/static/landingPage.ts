@@ -1,3 +1,5 @@
+import { CFD_LOGO_DATA_URI } from './logoAsset.js';
+
 export const LANDING_HTML = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -71,16 +73,21 @@ export const LANDING_HTML = `<!DOCTYPE html>
         .logo-icon {
             width: 44px;
             height: 44px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            background: #0c0f14;
+            border: 1px solid rgba(255,255,255,0.14);
             border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 900;
-            font-size: 20px;
-            color: #0c0f14;
             flex-shrink: 0;
+            overflow: hidden;
             box-shadow: 0 4px 16px rgba(0,212,245,0.3);
+        }
+
+        .logo-icon img {
+            width: 72%;
+            height: 72%;
+            object-fit: contain;
         }
 
         .logo-text {
@@ -506,7 +513,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
         <!-- Header -->
         <div class="header-bar">
             <div class="logo-group">
-                <div class="logo-icon">CFD</div>
+                <div class="logo-icon"><img src="${CFD_LOGO_DATA_URI}" alt="春风渡" draggable="false" /></div>
                 <div class="logo-text"><span>春风渡</span> Tools</div>
             </div>
             <div class="header-actions">

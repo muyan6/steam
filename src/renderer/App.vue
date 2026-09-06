@@ -391,7 +391,8 @@ const isMaximized = ref(false);
 // -------------------------------------------------------------
 export type UiScaleOption = 'auto' | '100%' | '105%' | '110%' | '115%' | '125%';
 
-const currentUiScale = ref<UiScaleOption>((localStorage.getItem('chunfengdu_ui_scale') as UiScaleOption) || 'auto');
+// 默认「适中 105%」固定比例启动；仅当用户在设置里显式选择智能自适应时才跟随窗口调节
+const currentUiScale = ref<UiScaleOption>((localStorage.getItem('chunfengdu_ui_scale') as UiScaleOption) || '105%');
 const computedZoomValue = ref<number>(1.0);
 const windowResolution = ref({ width: window.innerWidth, height: window.innerHeight });
 

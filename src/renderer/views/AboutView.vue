@@ -3,8 +3,8 @@
     <!-- 顶部品牌 Header -->
     <div class="flex items-center justify-between gap-4 pb-5 border-b border-white/10 flex-wrap shrink-0">
       <div class="flex items-center gap-4">
-        <div class="w-14 h-14 rounded-2xl theme-btn-primary flex items-center justify-center text-slate-950 font-black text-2xl shadow-lg relative shrink-0">
-          <Zap class="w-8 h-8 text-slate-950 fill-slate-950" />
+        <div class="w-14 h-14 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-lg shrink-0">
+          <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
         </div>
         <div>
           <div class="flex items-center gap-2.5">
@@ -201,8 +201,8 @@
 import { isTauriEnvironment, formatIpcError } from '../api/tauriBridge';
 import { APP_CONFIG } from '../../config/appConfig';
 import { ref, onMounted } from 'vue';
-import { 
-  Zap, 
+import appLogo from '../assets/logo.svg';
+import {
   RotateCw, 
   ShieldAlert, 
   Check, 

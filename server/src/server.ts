@@ -13,6 +13,7 @@ import { versionService } from './services/versionService.js';
 import { authService } from './services/authService.js';
 import { ADMIN_JS } from './static/adminScript.js';
 import { LANDING_HTML } from './static/landingPage.js';
+import { CFD_LOGO_DATA_URI } from './static/logoAsset.js';
 
 const app = express();
 
@@ -374,8 +375,8 @@ app.get(['/admin', '/dashboard'], (req, res) => {
   <!-- ==================== 1. 管理员登录界面 ==================== -->
   <div id="loginSection" class="modal-overlay" style="display: flex;">
     <div class="modal-box" id="loginBox" style="max-width: 440px; text-align: center; padding: 36px 32px;">
-      <div style="width: 62px; height: 62px; border-radius: 18px; background: linear-gradient(135deg, #0284c7, #10b981); margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; font-size: 28px; color: #fff; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.35);">
-        ⚡
+      <div style="width: 62px; height: 62px; border-radius: 18px; background: #0b1220; border: 1px solid rgba(255,255,255,0.12); margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.35);">
+        <img src="${CFD_LOGO_DATA_URI}" alt="春风渡" draggable="false" style="width: 72%; height: 72%; object-fit: contain;" />
       </div>
       <h1 style="font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 6px;">春风渡</h1>
       <p style="font-size: 13.5px; color: #94a3b8; margin-bottom: 24px;">云端数据调度引擎 · 激活码与设备安全管控中枢</p>
@@ -412,8 +413,8 @@ app.get(['/admin', '/dashboard'], (req, res) => {
   <div id="dashboardSection" class="d-none" style="display: none;">
     <header class="app-header">
       <div style="display: flex; align-items: center; gap: 14px;">
-        <div style="width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, #0284c7, #10b981); display: flex; align-items: center; justify-content: center; font-size: 20px; color: #fff; box-shadow: 0 4px 14px rgba(2,132,199,0.35);">
-          ⚡
+        <div style="width: 42px; height: 42px; border-radius: 12px; background: #0b1220; border: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 4px 14px rgba(2,132,199,0.35);">
+          <img src="${CFD_LOGO_DATA_URI}" alt="春风渡" draggable="false" style="width: 72%; height: 72%; object-fit: contain;" />
         </div>
         <div>
           <div style="display: flex; align-items: center; gap: 10px;">
