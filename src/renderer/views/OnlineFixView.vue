@@ -137,7 +137,7 @@
           </div>
           <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
             <div class="font-bold text-purple-400 flex items-center gap-1.5"><Rocket class="w-3.5 h-3.5" /><span>Spacewar 伪装直启</span></div>
-            <p class="text-slate-400 leading-relaxed">写入 <code>steam_appid.txt=480</code> 直接拉起 exe，好友看到你玩的是 <strong class="text-slate-300">Spacewar</strong>；适合 Steam 未带参运行时救急</p>
+            <p class="text-slate-400 leading-relaxed">注入 <code>SteamAppId=480</code> 环境变量直接拉起 exe，好友看到你玩的是 <strong class="text-slate-300">Spacewar</strong>；纯入库游戏联机推荐用此方式</p>
           </div>
           <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
             <div class="font-bold text-emerald-400 flex items-center gap-1.5"><Terminal class="w-3.5 h-3.5" /><span>BAT 脚本注入</span></div>

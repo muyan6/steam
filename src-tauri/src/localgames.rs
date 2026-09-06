@@ -685,12 +685,15 @@ pub fn launch_game_online(
     };
 
     if mode == "spacewar" {
-        // 覆写 steam_appid.txt 前备份用户/游戏自带文件，便于手动恢复
+        // 仅注入 SteamAppId 环境变量、严禁写 steam_appid.txt（实测 OST 内核检测到
+        // 该文件会把 480 会话改写回真实 AppID，导致 presence 以无许可身份广播、
+        // 好友完全看不到 —— 即"假启动"）；环境变量方式广播保持 480，好友可见可加入。
+        // 游戏自带的 steam_appid.txt 需备份移除，避免覆盖环境变量语义。
         let appid_file = gp.join("steam_appid.txt");
         if appid_file.exists() {
             let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
+            let _ = fs::remove_file(&appid_file);
         }
-        let _ = fs::write(&appid_file, online_app_id.to_string());
         Command::new(&target)
             .current_dir(target.parent().unwrap_or(&gp))
             .env("SteamAppId", online_app_id.to_string())
@@ -702,6 +705,13 @@ pub fn launch_game_online(
     }
 
     if mode == "bat" {
+        // 与 Spacewar 模式同理：已有 steam_appid.txt（旧版残留/补丁模式遗留）会让
+        // OST 内核把 480 会话改写回真实 AppID，启动前备份移除，仅靠环境变量伪装
+        let appid_file = gp.join("steam_appid.txt");
+        if appid_file.exists() {
+            let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
+            let _ = fs::remove_file(&appid_file);
+        }
         let dir_name = gp.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let exe_name_orig = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         // 目录名/exe 名直接拼进 bat 命令行，& | ^ < > % 等字符会被 cmd 解析
