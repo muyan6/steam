@@ -950,7 +950,7 @@ async fn fill_sha256() -> ToolboxActionResult {
         .unwrap_or_else(|e| toolbox::ToolboxActionResult { success: false, message: format!("任务执行失败: {}", e), steps: Some(Vec::new()), cleaned_files_count: None, restarted_steam: None })
     }
 
-// ==================== 联机修复中心 / 清单预缓存 / Steamless ====================
+// ==================== 联机中心 / 清单预缓存 / Steamless ====================
 
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {

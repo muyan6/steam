@@ -351,7 +351,7 @@ export const createTauriBridge = () => {
       return await searchLocal(q, page, pageSize);
     },
 
-    // 联机修复中心（Rust 端完整实现）
+    // 联机中心（Rust 端完整实现）
     checkGameDir: async (dirPath: string): Promise<any> => invoke('check_game_dir', { dirPath }),
     checkSpacewarInstalled: async (): Promise<any> => invoke('is_spacewar_installed'),
     installSpacewar: async (): Promise<boolean> => {

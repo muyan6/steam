@@ -414,7 +414,7 @@ pub fn is_spacewar_installed(steam_path: &Path) -> (bool, Option<String>) {
 
 const SKIP_APP_IDS: [u32; 5] = [228980, 1070560, 1391110, 1628350, 223750];
 
-/// 扫描结果缓存：内存 TTL 内重复请求（切换页面/再次进入联机修复中心）直接复用；
+/// 扫描结果缓存：内存 TTL 内重复请求（切换页面/再次进入联机中心）直接复用；
 /// 磁盘缓存让应用重启后无需重扫即可秒开列表，超过 24h 由前端判定为陈旧并后台静默重扫
 struct ScanCacheEntry {
     games: std::sync::Arc<Vec<LocalInstalledGame>>,

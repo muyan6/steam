@@ -466,7 +466,7 @@ const { initTheme } = useTheme();
 const navItems = [
   { id: 'search' as const, label: '游戏检索与入库', iconComponent: Search },
   { id: 'library' as const, label: '已入库规则管理', iconComponent: Library },
-  { id: 'onlinefix' as const, label: '联机修复中心', iconComponent: Gamepad2 },
+  { id: 'onlinefix' as const, label: '联机中心', iconComponent: Gamepad2 },
   { id: 'toolbox' as const, label: '实用工具箱', iconComponent: Wrench },
   { id: 'about' as const, label: '功能详解与关于', iconComponent: Info },
   { id: 'settings' as const, label: '系统与环境设置', iconComponent: Settings2 },
