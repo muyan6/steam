@@ -133,7 +133,7 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
           <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
             <div class="font-bold text-sky-400 flex items-center gap-1.5"><ArrowLeftRight class="w-3.5 h-3.5" /><span>Open 内核直启</span></div>
-            <p class="text-slate-400 leading-relaxed">自动让 Steam 以 <code>-onlinefix</code> 参数运行（内核联机拦截生效），再以 Spacewar (480) 会话拉起游戏，内核把好友看到的名称映射为真实游戏名——纯入库游戏联机的推荐方式</p>
+            <p class="text-slate-400 leading-relaxed">自动让 Steam 以 <code>-onlinefix</code> 参数运行（内核联机拦截生效），并通过 <code>steam -applaunch</code> 以 Steam 原生会话拉起游戏；内核把会话伪装为 Spacewar (480) 通道并映射真实游戏名，同时弹出 Steam 原生邀请对话框——纯入库游戏联机的推荐方式</p>
           </div>
           <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
             <div class="font-bold text-purple-400 flex items-center gap-1.5"><Rocket class="w-3.5 h-3.5" /><span>Spacewar 伪装直启</span></div>
@@ -201,7 +201,8 @@
         </div>
         <p class="text-[11px] leading-relaxed text-amber-300/90 bg-amber-500/5 border border-amber-500/15 rounded-xl px-3 py-2 mb-4">
           <strong>注意：</strong>以下三种方式<strong>本质都是把联机伪装进 Steam 官方 Spacewar (480) 通道</strong>，联机效果完全相同。
-          若 Open 内核联不上某游戏，切换 Spacewar / BAT <strong>同样联不上</strong>——此时请改用「方案二 · 联机补丁注入」，而不是在这三种里反复尝试。
+          若 Open 内核联不上某游戏，可切换 Spacewar / BAT 重试（三者同为 480 通道但启动路径不同）；
+          仍无效再改用「方案二 · 联机补丁注入」。
         </p>
 
         <!-- 3 个启动方式选项卡片 -->
@@ -291,7 +292,7 @@
             />
           </div>
           <span class="text-xs text-slate-400 font-mono">
-            联机会话所用AppID，三模式通用；默认480(Spacewar)，可改为游戏实际AppID
+            仅 Spacewar / BAT 模式使用（Open 模式自动使用游戏真实AppID）；默认480(Spacewar)
           </span>
         </div>
       </div>

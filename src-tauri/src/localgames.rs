@@ -705,13 +705,11 @@ pub fn launch_game_online(
         return Ok("未在游戏目录找到 exe，已回退至 Steam 协议启动。".to_string());
     };
 
-    if mode == "spacewar" || mode == "open" {
+    if mode == "spacewar" {
         // 仅注入 SteamAppId 环境变量、严禁写 steam_appid.txt（实测 OST 内核检测到
         // 该文件会把 480 会话改写回真实 AppID，导致 presence 以无许可身份广播、
         // 好友完全看不到 —— 即"假启动"）；环境变量方式广播保持 480，好友可见可加入。
         // 游戏自带的 steam_appid.txt 需备份移除，避免覆盖环境变量语义。
-        // Open 模式与 Spacewar 模式在此汇合：前者额外保证 Steam 带 -onlinefix 运行，
-        // 内核会把好友列表里的 480 显示名映射成真实游戏名。
         let appid_file = gp.join("steam_appid.txt");
         if appid_file.exists() {
             let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
