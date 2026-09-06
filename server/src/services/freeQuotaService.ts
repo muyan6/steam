@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
+import { appSettingsService } from './appSettingsService.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 /**
@@ -91,13 +92,18 @@ class FreeQuotaService {
     return q;
   }
 
+  // 额度上限走运行时设置（后台可改，立即生效）；app_settings.json 未配置时回落 env/默认值
+  private get limit(): number {
+    return appSettingsService.getFreeDailyLimit() ?? CONFIG.FREE_DAILY_LIMIT;
+  }
+
   /**
    * 查询剩余额度（不扣减）
    */
   public status(deviceId: string): { used: number; limit: number; remaining: number } {
     const q = this.getRecord(deviceId);
     const used = q ? q.used : 0;
-    return { used, limit: CONFIG.FREE_DAILY_LIMIT, remaining: Math.max(0, CONFIG.FREE_DAILY_LIMIT - used) };
+    return { used, limit: this.limit, remaining: Math.max(0, this.limit - used) };
   }
 
   /**
@@ -125,21 +131,21 @@ class FreeQuotaService {
       this.cache.set(deviceId, q);
     }
     if (q.appIds.includes(appId)) {
-      return { allowed: true, consumed: false, remaining: Math.max(0, CONFIG.FREE_DAILY_LIMIT - q.used) };
+      return { allowed: true, consumed: false, remaining: Math.max(0, this.limit - q.used) };
     }
-    if (q.used >= CONFIG.FREE_DAILY_LIMIT) {
+    if (q.used >= this.limit) {
       return {
         allowed: false,
         consumed: false,
         remaining: 0,
-        message: `今日免费入库额度已用完（每日 ${CONFIG.FREE_DAILY_LIMIT} 次），请激活后不限次使用`
+        message: `今日免费入库额度已用完（每日 ${this.limit} 次），请激活后不限次使用`
       };
     }
     q.used += 1;
     q.appIds.push(appId);
     this.dirty = true;
     this.scheduleFlush();
-    return { allowed: true, consumed: true, remaining: Math.max(0, CONFIG.FREE_DAILY_LIMIT - q.used) };
+    return { allowed: true, consumed: true, remaining: Math.max(0, this.limit - q.used) };
   }
 }
 

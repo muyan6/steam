@@ -121,6 +121,38 @@ export class DeviceService {
     return record;
   }
 
+  /**
+   * 删除单条设备档案（仅移除监控记录，不影响卡密库中的授权绑定；
+   * 设备再次上线心跳会自动重建档案）。
+   */
+  public deleteDevice(deviceId: string): boolean {
+    if (!this.devicesMap.has(deviceId)) return false;
+    this.devicesMap.delete(deviceId);
+    // 立即落盘，避免 10 秒防抖窗口内进程退出导致"删了又回来"
+    this.devicesDirty = true;
+    this.flushDevices();
+    return true;
+  }
+
+  /**
+   * 批量清理超过 inactiveDays 天未活跃的设备档案，返回清理数量。
+   */
+  public deleteInactiveDevices(inactiveDays: number): number {
+    const cutoff = Date.now() - Math.max(1, inactiveDays) * 24 * 3600 * 1000;
+    let removed = 0;
+    for (const [id, d] of this.devicesMap) {
+      if (new Date(d.lastSeenAt).getTime() < cutoff) {
+        this.devicesMap.delete(id);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      this.devicesDirty = true;
+      this.flushDevices();
+    }
+    return removed;
+  }
+
   public getDeviceStats(): DeviceStats {
     const now = Date.now();
     const oneDayMs = 24 * 3600 * 1000;

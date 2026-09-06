@@ -612,13 +612,12 @@ const openDisclaimerModal = () => {
   };
 };
 
-// 免责声明展示完毕后待展示的公告队列
-let queuedNotice: NoticePayload | null = null;
+// 免责声明展示完毕后待展示的公告队列（按服务端优先级降序依次弹出）
+let noticeQueue: NoticePayload[] = [];
 
 const showQueuedNoticeIfAny = () => {
-  if (!popupNotice.value && queuedNotice) {
-    popupNotice.value = queuedNotice;
-    queuedNotice = null;
+  if (!popupNotice.value && noticeQueue.length > 0) {
+    popupNotice.value = noticeQueue.shift()!;
   }
 };
 
@@ -648,27 +647,31 @@ const checkNoticeAndVersion = async () => {
   try {
     const hasAcceptedDisclaimer = localStorage.getItem(DISCLAIMER_STORAGE_KEY) === 'true';
 
-    const notice = await window.electronAPI.checkNotice();
-    let activeNotice: NoticePayload | null = null;
-    if (notice && notice.enabled) {
-      if (notice.type === 'banner') {
-        bannerNotice.value = notice;
-      } else if (isDisclaimerNotice(notice)) {
-        // 免责声明类公告跳过：已同意则永不弹出，未同意时由下方本地免责流程兜底展示
-      } else {
-        const isRead = notice.popupOnce && localStorage.getItem(`read_notice_${notice.id}`);
-        if (!isRead) {
-          activeNotice = notice;
-        }
+    // 拉取全部生效公告（服务端已按优先级降序），逐条独立处理：
+    // - 横幅取优先级最高的一条；弹窗类公告按优先级依次排队弹出
+    // - popupOnce 公告每台客户端只弹一次（本地已读标记），其余每次启动都弹
+    const list = await window.electronAPI.checkNoticeList();
+    const popups: NoticePayload[] = [];
+    let topBanner: NoticePayload | null = null;
+    for (const item of list || []) {
+      if (!item || !item.enabled) continue;
+      if (isDisclaimerNotice(item)) continue; // 免责声明类公告由本地流程托管
+      if (item.type === 'banner') {
+        if (!topBanner) topBanner = item;
+        continue;
       }
+      const isRead = item.popupOnce && localStorage.getItem(`read_notice_${item.id}`);
+      if (!isRead) popups.push(item);
     }
+    bannerNotice.value = topBanner;
 
     // 免责声明独立于公告判断：从未同意过免责声明时必须展示（公告排队在其后）
     if (!hasAcceptedDisclaimer) {
-      queuedNotice = activeNotice;
+      noticeQueue = popups;
       openDisclaimerModal();
-    } else if (activeNotice) {
-      popupNotice.value = activeNotice;
+    } else if (popups.length > 0) {
+      noticeQueue = popups.slice(1);
+      popupNotice.value = popups[0];
     }
 
     const versionRes = await window.electronAPI.checkVersion(appVersion);

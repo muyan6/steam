@@ -425,6 +425,17 @@ export const createTauriBridge = () => {
       const json = await getJson(`${API}/api/notice/latest`, 3000);
       return json?.data || null;
     },
+    // 拉取全部生效公告（按优先级降序）：客户端据 priority 依次弹出，popupOnce 逐条独立判断
+    checkNoticeList: async (): Promise<any[]> => {
+      try {
+        const json = await getJson(`${API}/api/notice/list`, 3000);
+        return Array.isArray(json?.data) ? json.data : [];
+      } catch {
+        // 旧版服务端无 /notice/list 时退回单条接口，保持向后兼容
+        const single = await window.electronAPI.checkNotice();
+        return single ? [single] : [];
+      }
+    },
     checkVersion: async (ver?: string): Promise<any> => {
       const json = await getJson(`${API}/api/version/check?version=${ver || '1.0.0'}`, 3000);
       return json?.data || { hasUpdate: false };

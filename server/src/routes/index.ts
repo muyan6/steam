@@ -75,6 +75,9 @@ import {
 import { deviceService } from '../services/deviceService.js';
 import { licenseService } from '../services/licenseService.js';
 import { freeQuotaService } from '../services/freeQuotaService.js';
+import { appLinksService } from '../services/appLinksService.js';
+import { authService } from '../services/authService.js';
+import { getSettingsAdmin, updateFreeQuotaLimitAdmin } from '../controllers/settingsController.js';
 
 const router = Router();
 
@@ -288,6 +291,49 @@ router.get('/admin/devices/list', (req, res) => {  const page = parseInt(req.que
 router.get('/admin/devices/stats', (req, res) => {
   const stats = deviceService.getDeviceStats();
   res.json({ success: true, data: stats });
+});
+// 删除单条设备档案：仅清理监控记录，不影响卡密库授权绑定（设备上线自动重建）
+router.delete('/admin/devices/:deviceId', (req, res) => {
+  const deviceId = String(req.params.deviceId || '').trim();
+  if (!deviceId || deviceId.length > 128) {
+    return res.status(400).json({ success: false, message: '缺少或非法的 deviceId' });
+  }
+  const operator = (req as any).adminUser?.username || 'admin';
+  const removed = deviceService.deleteDevice(deviceId);
+  if (!removed) {
+    return res.status(404).json({ success: false, message: '设备档案不存在或已被删除' });
+  }
+  authService.recordAuditLog({
+    action: 'DEVICE_DELETE',
+    operator,
+    ip: req.socket.remoteAddress || '127.0.0.1',
+    details: `删除设备档案: ${deviceId}（不影响其授权绑定）`,
+    success: true
+  });
+  res.json({ success: true, message: '设备档案已删除（授权绑定不受影响）' });
+});
+// 批量清理 N 天以上未活跃的设备档案
+router.post('/admin/devices/cleanup', (req, res) => {
+  const days = parseInt(req.body?.days, 10);
+  const inactiveDays = isNaN(days) ? 30 : Math.min(365, Math.max(1, days));
+  const operator = (req as any).adminUser?.username || 'admin';
+  const removed = deviceService.deleteInactiveDevices(inactiveDays);
+  authService.recordAuditLog({
+    action: 'DEVICE_CLEANUP',
+    operator,
+    ip: req.socket.remoteAddress || '127.0.0.1',
+    details: `批量清理 ${inactiveDays} 天未活跃设备档案: ${removed} 台`,
+    success: true
+  });
+  res.json({ success: true, message: `已清理 ${inactiveDays} 天以上未活跃设备 ${removed} 台`, data: { removed } });
+});
+
+// 全局运行时设置（未激活每日免费额度）与应用内跳转链接
+router.get('/admin/settings', getSettingsAdmin);
+router.post('/admin/settings/free-quota', updateFreeQuotaLimitAdmin);
+// 管理端读取链接配置（更新复用下方 POST /admin/links）
+router.get('/admin/links', (req, res) => {
+  res.json({ success: true, data: appLinksService.getLinks() });
 });
 
 // 卡密管理 CRUD 与批量生成

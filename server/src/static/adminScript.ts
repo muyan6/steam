@@ -106,6 +106,26 @@ function handleLogout() {
   checkAuth();
 }
 
+// ==================== 白天 / 黑夜模式切换 ====================
+
+function applyTheme(theme) {
+  var btn = document.getElementById('themeToggleBtn');
+  if (theme === 'light') {
+    document.documentElement.classList.add('light');
+  } else {
+    document.documentElement.classList.remove('light');
+  }
+  if (btn) btn.innerText = theme === 'light' ? '🌙 黑夜模式' : '☀️ 白天模式';
+}
+
+function toggleTheme() {
+  var next = document.documentElement.classList.contains('light') ? 'dark' : 'light';
+  localStorage.setItem('steammaster_admin_theme', next);
+  applyTheme(next);
+}
+
+applyTheme(localStorage.getItem('steammaster_admin_theme') === 'light' ? 'light' : 'dark');
+
 function switchTab(tabId, el) {
   document.querySelectorAll('.tab-btn').forEach(function(btn) { btn.classList.remove('active'); });
   document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.add('d-none'); c.style.cssText = 'display: none !important;'; });
@@ -117,7 +137,7 @@ function switchTab(tabId, el) {
   if (tabId === 'notices') loadNotices();
   if (tabId === 'versions') loadVersions();
   if (tabId === 'sources') loadSources();
-  if (tabId === 'security') loadAuditLogs();
+  if (tabId === 'security') { loadAuditLogs(); loadAdminSettings(); }
 }
 
 async function loadStats() {
@@ -173,7 +193,7 @@ async function loadLicensesData(page) {
   var s = statusFilter ? statusFilter.value : 'all';
 
   var tbody = document.getElementById('licenseTableBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">正在载入激活码列表...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:24px;">正在载入激活码列表...</td></tr>';
 
   try {
     var url = '/api/admin/license/list?page=' + currentLicPage + '&limit=20&search=' + q + '&type=' + t + '&status=' + s;
@@ -200,13 +220,13 @@ async function loadLicensesData(page) {
 
       // 渲染表格
       if (!currentLicList.length) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">暂无匹配的激活码记录</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:24px;">暂无匹配的激活码记录</td></tr>';
       } else {
         tbody.innerHTML = currentLicList.map(function(item) {
           var tInfo = TYPE_MAP[item.type] || { label: item.type, badge: 'badge-blue' };
           var sInfo = STATUS_MAP[item.status] || { label: item.status, badge: 'badge-gray' };
-          var deviceStr = item.deviceId ? '<code style="color:#38bdf8;font-size:11px;word-break:break-all;">' + escapeHtml(item.deviceId) + '</code>' : '<span style="color:#64748b;">-</span>';
-          var boundStr = item.boundAt ? formatTime(item.boundAt) : '<span style="color:#64748b;">-</span>';
+          var deviceStr = item.deviceId ? '<code style="color:var(--c-blue);font-size:11px;word-break:break-all;">' + escapeHtml(item.deviceId) + '</code>' : '<span style="color:var(--text-dim);">-</span>';
+          var boundStr = item.boundAt ? formatTime(item.boundAt) : '<span style="color:var(--text-dim);">-</span>';
           var expStr = '-';
           if (item.type === 'lifetime') {
             expStr = '<span class="badge badge-rose">永久有效</span>';
@@ -225,29 +245,29 @@ async function loadLicensesData(page) {
           ];
 
           if (item.deviceId) {
-            actionBtns.push('<button onclick="handleUnbindLicense(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:#fbbf24;" title="解绑设备">解绑</button>');
+            actionBtns.push('<button onclick="handleUnbindLicense(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-amber);" title="解绑设备">解绑</button>');
           }
 
           if (item.type !== 'lifetime') {
-            actionBtns.push('<button onclick="openExtendLicenseModal(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;" title="延长有效期">延期</button>');
+            actionBtns.push('<button onclick="openExtendLicenseModal(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-blue);" title="延长有效期">延期</button>');
           }
 
           if (item.status === 'disabled') {
-            actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',false)" class="btn btn-secondary btn-sm" style="color:#34d399;">启用</button>');
+            actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',false)" class="btn btn-secondary btn-sm" style="color:var(--c-green);">启用</button>');
           } else {
-            actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',true)" class="btn btn-secondary btn-sm" style="color:#fb7185;">冻结</button>');
+            actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',true)" class="btn btn-secondary btn-sm" style="color:var(--c-rose);">冻结</button>');
           }
 
           actionBtns.push('<button onclick="handleDeleteLicense(\\'' + safeId(item.code) + '\\')" class="btn btn-danger btn-sm">删除</button>');
 
           return '<tr>' +
-            '<td><strong style="color:#fff;font-family:monospace;font-size:12px;">' + escapeHtml(item.code) + '</strong></td>' +
+            '<td><strong style="color:var(--text-strong);font-family:monospace;font-size:12px;">' + escapeHtml(item.code) + '</strong></td>' +
             '<td><span class="badge ' + tInfo.badge + '">' + tInfo.label + '</span></td>' +
             '<td><span class="badge ' + sInfo.badge + '">' + sInfo.label + '</span></td>' +
             '<td>' + deviceStr + '</td>' +
             '<td>' + boundStr + '</td>' +
             '<td>' + expStr + '</td>' +
-            '<td style="color:#94a3b8;font-size:11px;">' + escapeHtml(item.remark || '-') + '</td>' +
+            '<td style="color:var(--text-mid);font-size:11px;">' + escapeHtml(item.remark || '-') + '</td>' +
             '<td style="text-align:right;white-space:nowrap;">' + actionBtns.join(' ') + '</td>' +
           '</tr>';
         }).join('');
@@ -263,7 +283,7 @@ async function loadLicensesData(page) {
     }
   } catch(e) {
     console.error('loadLicensesData error:', e);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#fb7185;padding:24px;">载入异常: ' + e.message + '</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--c-rose);padding:24px;">载入异常: ' + e.message + '</td></tr>';
   }
 }
 
@@ -458,7 +478,7 @@ async function loadDevicesData(page) {
   var s = statusFilter ? statusFilter.value : 'all';
 
   var tbody = document.getElementById('deviceTableBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:24px;">正在载入客户端设备档案...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:24px;">正在载入客户端设备档案...</td></tr>';
 
   try {
     var url = '/api/admin/devices/list?page=' + currentDevPage + '&limit=20&search=' + q + '&status=' + s;
@@ -481,14 +501,14 @@ async function loadDevicesData(page) {
 
       // 渲染表格
       if (!currentDevList.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:24px;">暂无匹配的客户端设备记录</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:24px;">暂无匹配的客户端设备记录</td></tr>';
       } else {
         tbody.innerHTML = currentDevList.map(function(item) {
-          var licBadge = item.isActivated 
-            ? '<span class="badge badge-green">👑 已激活会员</span>' 
+          var licBadge = item.isActivated
+            ? '<span class="badge badge-green">👑 已激活会员</span>'
             : '<span class="badge badge-gray">未激活 (基础版)</span>';
-          var devStr = '<strong style="color:#fff;font-family:monospace;font-size:12px;">' + escapeHtml(item.deviceId) + '</strong>';
-          var ipStr = '<code style="color:#94a3b8;font-size:11px;">' + escapeHtml(item.ip || '-') + '</code>';
+          var devStr = '<strong style="color:var(--text-strong);font-family:monospace;font-size:12px;">' + escapeHtml(item.deviceId) + '</strong>';
+          var ipStr = '<code style="color:var(--text-mid);font-size:11px;">' + escapeHtml(item.ip || '-') + '</code>';
           var verStr = '<span class="badge badge-blue">v' + escapeHtml(item.clientVersion || '1.0.0') + '</span>';
           var firstStr = formatTime(item.firstSeenAt);
           var lastStr = formatTime(item.lastSeenAt);
@@ -500,7 +520,10 @@ async function loadDevicesData(page) {
             '<td>' + ipStr + '</td>' +
             '<td>' + escapeHtml(item.osVersion || 'Windows') + '</td>' +
             '<td>' + firstStr + '</td>' +
-            '<td><strong style="color:#34d399;">' + lastStr + '</strong></td>' +
+            '<td><strong style="color:var(--c-green);">' + lastStr + '</strong></td>' +
+            '<td style="text-align:right;white-space:nowrap;">' +
+              '<button onclick="deleteDevice(\\'' + safeId(item.deviceId) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
+            '</td>' +
           '</tr>';
         }).join('');
       }
@@ -515,8 +538,41 @@ async function loadDevicesData(page) {
     }
   } catch(e) {
     console.error('loadDevicesData error:', e);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#fb7185;padding:24px;">载入异常: ' + e.message + '</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--c-rose);padding:24px;">载入异常: ' + e.message + '</td></tr>';
   }
+}
+
+async function deleteDevice(deviceId) {
+  if (!confirm('确定删除设备 ' + deviceId + ' 的监控档案吗？\\n\\n· 仅删除该设备的活跃度监控记录，不影响其激活码授权绑定\\n· 若该设备再次上线，档案会自动重建')) return;
+  try {
+    var resp = await fetch('/api/admin/devices/' + encodeURIComponent(deviceId), { method: 'DELETE', headers: getHeaders() });
+    var res = await resp.json();
+    if (res && res.success) {
+      loadDevicesData(currentDevPage);
+      loadStats();
+    } else {
+      alert('删除失败: ' + (res.message || '未知错误'));
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
+}
+
+async function cleanupDevices() {
+  var input = prompt('清理多少天以上未活跃的设备档案？', '30');
+  if (input === null) return;
+  var days = parseInt(input, 10);
+  if (isNaN(days) || days < 1 || days > 365) { alert('请输入 1 ~ 365 之间的天数'); return; }
+  if (!confirm('确定清理 ' + days + ' 天以上未活跃的设备档案吗？\\n（仅删除监控记录，不影响授权绑定；在线设备会自动重建档案）')) return;
+  try {
+    var resp = await fetch('/api/admin/devices/cleanup', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ days: days })
+    });
+    var res = await resp.json();
+    alert(res.message || '清理完成');
+    loadDevicesData(1);
+    loadStats();
+  } catch(e) { alert('请求异常: ' + e.message); }
 }
 
 function changeDevicePage(delta) {
@@ -536,7 +592,7 @@ async function loadNotices() {
     var tbody = document.getElementById('noticeTableBody');
     if (res && res.success && tbody) {
       noticesCache = res.data || [];
-      if (!noticesCache.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">暂无公告记录</td></tr>'; return; }
+      if (!noticesCache.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-dim);padding:24px;">暂无公告记录</td></tr>'; return; }
       tbody.innerHTML = noticesCache.map(function(n) {
         return '<tr>' +
           '<td><span class="badge ' + (n.enabled ? 'badge-green' : 'badge-gray') + '">' + (n.enabled ? '启用中' : '已停用') + '</span></td>' +
@@ -544,10 +600,12 @@ async function loadNotices() {
           '<td>' + (n.type === 'popup' ? '弹窗' : '横幅') + '</td>' +
           '<td>' + escapeHtml(n.level || 'info') + '</td>' +
           '<td>' + escapeHtml(String(n.priority || 0)) + '</td>' +
+          '<td>' + (n.popupOnce ? '<span class="badge badge-amber">仅弹一次</span>' : '<span class="badge badge-blue">每次启动</span>') + '</td>' +
           '<td>' + escapeHtml(n.targetVersion || '*') + '</td>' +
           '<td>' + formatTime(n.updatedAt) + '</td>' +
-          '<td style="text-align:right;">' +
-            '<button onclick="previewNotice(\\'' + safeId(n.id) + '\\')" class="btn btn-secondary btn-sm" style="color:#38bdf8;">预览</button> ' +
+          '<td style="text-align:right;white-space:nowrap;">' +
+            '<button onclick="previewNotice(\\'' + safeId(n.id) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-blue);">预览</button> ' +
+            '<button onclick="editNotice(\\'' + safeId(n.id) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-green);">编辑</button> ' +
             '<button onclick="toggleNotice(\\'' + safeId(n.id) + '\\',' + (!n.enabled) + ')" class="btn btn-secondary btn-sm">' + (n.enabled ? '停用' : '启用') + '</button> ' +
             '<button onclick="deleteNotice(\\'' + safeId(n.id) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
           '</td>' +
@@ -565,16 +623,16 @@ async function loadVersions() {
     var tbody = document.getElementById('versionTableBody');
     if (res && res.success && tbody) {
       versionsCache = res.data || [];
-      if (!versionsCache.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:24px;">暂无版本记录</td></tr>'; return; }
+      if (!versionsCache.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:24px;">暂无版本记录</td></tr>'; return; }
       tbody.innerHTML = versionsCache.map(function(v) {
         return '<tr>' +
-          '<td><strong style="color:#38bdf8;font-family:monospace;">v' + escapeHtml(v.version) + '</strong></td>' +
+          '<td><strong style="color:var(--c-blue);font-family:monospace;">v' + escapeHtml(v.version) + '</strong></td>' +
           '<td>' + escapeHtml(v.releaseDate || '-') + '</td>' +
           '<td>' + escapeHtml(v.title || '-') + '</td>' +
           '<td>' + (v.forceUpdate ? '<span class="badge badge-rose">强制全量</span>' : '<span class="badge badge-blue">推荐更新</span>') + '</td>' +
           '<td><span class="badge ' + (v.enabled ? 'badge-green' : 'badge-gray') + '">' + (v.enabled ? '活跃上线' : '已归档') + '</span></td>' +
           '<td style="text-align:right;">' +
-            '<button onclick="openPushModal(\\'' + safeId(v.version) + '\\')" class="btn btn-secondary btn-sm" style="color:#fbbf24;">全网广播</button> ' +
+            '<button onclick="openPushModal(\\'' + safeId(v.version) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-amber);">全网广播</button> ' +
             '<button onclick="deleteVersion(\\'' + safeId(v.version) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
           '</td>' +
         '</tr>';
@@ -594,16 +652,16 @@ async function loadSources() {
         return '<div class="card" style="display:flex;flex-direction:column;justify-content:space-between;">' +
           '<div>' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-              '<strong style="color:#fff;font-size:13px;">' + escapeHtml(s.name) + '</strong>' +
+              '<strong style="color:var(--text-strong);font-size:13px;">' + escapeHtml(s.name) + '</strong>' +
               '<span class="badge badge-green">● 正常</span>' +
             '</div>' +
-            '<p style="color:#94a3b8;font-size:11px;margin-bottom:12px;line-height:1.5;">' + escapeHtml(s.description) + '</p>' +
-            '<div style="font-size:11px;color:#64748b;font-family:monospace;margin-bottom:6px;">收录总量: <strong style="color:#38bdf8;">' + (s.totalRecordsCount || 0).toLocaleString() + ' 条</strong></div>' +
-            '<div style="font-size:11px;color:#64748b;">同步频率: ' + escapeHtml(s.syncFrequency || '24h') + '</div>' +
+            '<p style="color:var(--text-mid);font-size:11px;margin-bottom:12px;line-height:1.5;">' + escapeHtml(s.description) + '</p>' +
+            '<div style="font-size:11px;color:var(--text-dim);font-family:monospace;margin-bottom:6px;">收录总量: <strong style="color:var(--c-blue);">' + (s.totalRecordsCount || 0).toLocaleString() + ' 条</strong></div>' +
+            '<div style="font-size:11px;color:var(--text-dim);">同步频率: ' + escapeHtml(s.syncFrequency || '24h') + '</div>' +
           '</div>' +
           '<div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">' +
-            '<span style="font-size:10px;color:#64748b;">维护: ' + escapeHtml(s.author || '社区') + '</span>' +
-            '<a href="' + escapeHtml(s.sourceUrl || '#') + '" target="_blank" style="font-size:11px;color:#38bdf8;">上游主页 ➔</a>' +
+            '<span style="font-size:10px;color:var(--text-dim);">维护: ' + escapeHtml(s.author || '社区') + '</span>' +
+            '<a href="' + escapeHtml(s.sourceUrl || '#') + '" target="_blank" style="font-size:11px;color:var(--c-blue);">上游主页 ➔</a>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -619,22 +677,84 @@ async function loadAuditLogs() {
     if (res && res.success && tbody) {
       var logs = res.data || [];
       if (!logs.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:24px;">暂无审计日志</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px;">暂无审计日志</td></tr>';
         return;
       }
       tbody.innerHTML = logs.map(function(l) {
         var statusBadge = l.success ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-rose">失败</span>';
         return '<tr>' +
-          '<td style="color:#64748b;font-family:monospace;white-space:nowrap;">' + formatTime(l.timestamp || l.time) + '</td>' +
+          '<td style="color:var(--text-dim);font-family:monospace;white-space:nowrap;">' + formatTime(l.timestamp || l.time) + '</td>' +
           '<td><strong>' + escapeHtml(l.action) + '</strong></td>' +
           '<td><span class="badge badge-blue">' + escapeHtml(l.operator || 'admin') + '</span></td>' +
-          '<td style="color:#94a3b8;font-family:monospace;">' + escapeHtml(l.ip || '-') + '</td>' +
-          '<td style="color:#cbd5e1;">' + escapeHtml(l.details || l.detail || '-') + '</td>' +
+          '<td style="color:var(--text-mid);font-family:monospace;">' + escapeHtml(l.ip || '-') + '</td>' +
+          '<td style="color:var(--text);">' + escapeHtml(l.details || l.detail || '-') + '</td>' +
           '<td>' + statusBadge + '</td>' +
         '</tr>';
       }).join('');
     }
   } catch(e) { console.warn('loadAuditLogs error:', e); }
+}
+
+// ==================== 应用设置：跳转链接 / 未激活免费额度 ====================
+
+async function loadAdminSettings() {
+  try {
+    var resp = await fetch('/api/admin/settings', { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
+    var res = await resp.json();
+    if (res && res.success && res.data) {
+      var links = res.data.links || {};
+      var tut = document.getElementById('cfgTutorialUrl'); if (tut) tut.value = links.tutorialUrl || '';
+      var faq = document.getElementById('cfgFaqUrl'); if (faq) faq.value = links.faqUrl || '';
+      var quota = document.getElementById('cfgFreeDailyLimit');
+      if (quota && document.activeElement !== quota) quota.value = String(res.data.freeDailyLimit != null ? res.data.freeDailyLimit : 2);
+    }
+  } catch(e) { console.warn('loadAdminSettings error:', e); }
+}
+
+async function handleLinksSubmit() {
+  var tutorialUrl = (document.getElementById('cfgTutorialUrl').value || '').trim();
+  var faqUrl = (document.getElementById('cfgFaqUrl').value || '').trim();
+  var btn = document.getElementById('btnSaveLinks');
+  if (btn) { btn.disabled = true; btn.innerText = '正在保存...'; }
+  try {
+    var resp = await fetch('/api/admin/links', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ tutorialUrl: tutorialUrl, faqUrl: faqUrl })
+    });
+    var res = await resp.json();
+    if (res && res.success) {
+      alert('跳转链接已保存！客户端「功能详解与关于」页即时生效（空 = 按钮置灰显示暂未开放）');
+    } else {
+      alert('保存失败: ' + (res.message || '未知错误'));
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.innerText = '保存跳转链接'; } }
+}
+
+async function handleFreeQuotaSubmit() {
+  var limit = parseInt(document.getElementById('cfgFreeDailyLimit').value, 10);
+  if (isNaN(limit) || limit < 0 || limit > 999) { alert('每日免费次数需在 0 ~ 999 之间'); return; }
+  var btn = document.getElementById('btnSaveQuota');
+  if (btn) { btn.disabled = true; btn.innerText = '正在保存...'; }
+  try {
+    var resp = await fetch('/api/admin/settings/free-quota', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ limit: limit })
+    });
+    var res = await resp.json();
+    var msg = document.getElementById('quotaMsg');
+    var msgText = document.getElementById('quotaMsgText');
+    if (res && res.success) {
+      if (msg && msgText) { msg.className = 'alert-box alert-success'; msgText.innerText = res.message || '已保存'; msg.classList.remove('d-none'); }
+    } else {
+      if (msg && msgText) { msg.className = 'alert-box alert-error'; msgText.innerText = res.message || '保存失败'; msg.classList.remove('d-none'); }
+      else { alert('保存失败: ' + (res.message || '未知错误')); }
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.innerText = '保存并立即生效'; } }
 }
 
 async function handleChangePassword() {
@@ -682,7 +802,7 @@ async function searchKey() {
   var val = (input ? input.value : '').trim();
   if (!val) return;
   var container = document.getElementById('keySearchResult');
-  if (container) { container.style.display = 'block'; container.innerHTML = '<div style="color:#64748b;">正在检索云端 28.8万条密钥库...</div>'; }
+  if (container) { container.style.display = 'block'; container.innerHTML = '<div style="color:var(--text-dim);">正在检索云端 28.8万条密钥库...</div>'; }
   try {
     // 走管理员专用检索接口（requireAdmin 保护）。/api/metadata/:appId 要求
     // 客户端设备授权头，控制台请求永远不带 x-device-id，必然 401
@@ -695,28 +815,59 @@ async function searchKey() {
       if (d.depotKey) {
         rows += '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;align-items:center;font-size:11px;">' +
           '<span>DepotKey (' + escapeHtml(d.numericId || val) + ')</span>' +
-          '<code style="color:#34d399;font-size:11px;">' + escapeHtml(d.depotKey) + '</code>' +
+          '<code style="color:var(--c-green);font-size:11px;">' + escapeHtml(d.depotKey) + '</code>' +
         '</div>';
       }
       if (d.token) {
         rows += '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;align-items:center;font-size:11px;">' +
           '<span>AccessToken</span>' +
-          '<code style="color:#38bdf8;font-size:11px;">' + escapeHtml(d.token) + '</code>' +
+          '<code style="color:var(--c-blue);font-size:11px;">' + escapeHtml(d.token) + '</code>' +
         '</div>';
       }
       container.innerHTML = '<div style="margin-bottom:12px;">' +
-        '<strong style="color:#fff;font-size:15px;">' + escapeHtml(game.name || d.query) + '</strong> ' +
+        '<strong style="color:var(--text-strong);font-size:15px;">' + escapeHtml(game.name || d.query) + '</strong> ' +
         '<span class="badge badge-blue">AppID: ' + escapeHtml(d.numericId || d.query) + '</span> ' +
         (d.token ? '<span class="badge badge-green">Token 已收录</span>' : '<span class="badge badge-gray">Token 未收录</span>') +
       '</div>' +
-      '<div>' + (rows || '<div style="color:#64748b;">未匹配到该 AppID 的密钥 / Token 记录</div>') + '</div>';
+      '<div>' + (rows || '<div style="color:var(--text-dim);">未匹配到该 AppID 的密钥 / Token 记录</div>') + '</div>';
     } else {
-      if (container) container.innerHTML = '<div style="color:#fb7185;">未检索到 ' + escapeHtml(val) + ' 的密钥记录</div>';
+      if (container) container.innerHTML = '<div style="color:var(--c-rose);">未检索到 ' + escapeHtml(val) + ' 的密钥记录</div>';
     }
-  } catch(e) { if (container) container.innerHTML = '<div style="color:#fb7185;">检索异常: ' + escapeHtml(e && e.message ? e.message : String(e)) + '</div>'; }
+  } catch(e) { if (container) container.innerHTML = '<div style="color:var(--c-rose);">检索异常: ' + escapeHtml(e && e.message ? e.message : String(e)) + '</div>'; }
 }
 
-function openNoticeModal() { document.getElementById('noticeModal').style.display = 'flex'; }
+function openNoticeModal() {
+  // 新建模式：清空表单
+  var idEl = document.getElementById('noticeId');
+  if (idEl) idEl.value = '';
+  var titleEl = document.getElementById('noticeModalTitle');
+  if (titleEl) titleEl.innerText = '📢 发布系统公告';
+  ['noticeTitle', 'noticeContent'].forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
+  var prio = document.getElementById('noticePriority'); if (prio) prio.value = '50';
+  var ver = document.getElementById('noticeVersion'); if (ver) ver.value = '*';
+  var type = document.getElementById('noticeType'); if (type) type.value = 'popup';
+  var level = document.getElementById('noticeLevel'); if (level) level.value = 'info';
+  var once = document.getElementById('noticePopupOnce'); if (once) once.value = 'false';
+  document.getElementById('noticeModal').style.display = 'flex';
+}
+
+function editNotice(id) {
+  var n = noticesCache.find(function(x) { return String(x.id) === String(id); });
+  if (!n) { alert('公告数据未加载，请刷新页面后重试'); return; }
+  var idEl = document.getElementById('noticeId');
+  if (idEl) idEl.value = n.id;
+  var titleEl = document.getElementById('noticeModalTitle');
+  if (titleEl) titleEl.innerText = '✏️ 编辑公告';
+  var t = document.getElementById('noticeTitle'); if (t) t.value = n.title || '';
+  var c = document.getElementById('noticeContent'); if (c) c.value = n.content || '';
+  var prio = document.getElementById('noticePriority'); if (prio) prio.value = String(n.priority != null ? n.priority : 10);
+  var ver = document.getElementById('noticeVersion'); if (ver) ver.value = n.targetVersion || '*';
+  var type = document.getElementById('noticeType'); if (type) type.value = n.type || 'popup';
+  var level = document.getElementById('noticeLevel'); if (level) level.value = n.level || 'info';
+  var once = document.getElementById('noticePopupOnce'); if (once) once.value = n.popupOnce ? 'true' : 'false';
+  var m = document.getElementById('noticeModal');
+  if (m) m.style.display = 'flex';
+}
 function openVersionModal() { document.getElementById('versionModal').style.display = 'flex'; }
 function openPushModal(ver) { document.getElementById('pushVersion').value = ver || ''; document.getElementById('pushModal').style.display = 'flex'; }
 function previewNotice(id) {
@@ -737,11 +888,14 @@ async function handleNoticeSubmit() {
   var title = (document.getElementById('noticeTitle').value || '').trim();
   var content = (document.getElementById('noticeContent').value || '').trim();
   if (!title || !content) { alert('请填写公告标题与内容'); return; }
-  var payload = { title: title, type: document.getElementById('noticeType').value, level: document.getElementById('noticeLevel').value, priority: parseInt(document.getElementById('noticePriority').value, 10) || 10, targetVersion: document.getElementById('noticeVersion').value || '*', content: content, enabled: true };
+  var payload = { title: title, type: document.getElementById('noticeType').value, level: document.getElementById('noticeLevel').value, priority: parseInt(document.getElementById('noticePriority').value, 10) || 10, popupOnce: document.getElementById('noticePopupOnce').value === 'true', targetVersion: document.getElementById('noticeVersion').value || '*', content: content, enabled: true };
+  var editId = (document.getElementById('noticeId').value || '').trim();
   try {
-    var resp = await fetch('/api/admin/notices', { method: 'POST', headers: getHeaders(), body: JSON.stringify(payload) });
+    var resp = editId
+      ? await fetch('/api/admin/notices/' + encodeURIComponent(editId), { method: 'PUT', headers: getHeaders(), body: JSON.stringify(payload) })
+      : await fetch('/api/admin/notices', { method: 'POST', headers: getHeaders(), body: JSON.stringify(payload) });
     var res = await resp.json();
-    if (res && res.success) { closeModal('noticeModal'); loadNotices(); alert('公告已发布！'); }
+    if (res && res.success) { closeModal('noticeModal'); loadNotices(); alert(editId ? '公告已更新并即时生效！' : '公告已发布！'); }
     else { alert('失败: ' + (res.message || '未知错误')); }
   } catch(err) { alert('失败: ' + err.message); }
 }

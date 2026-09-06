@@ -87,7 +87,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
         radial-gradient(at 90% 80%, rgba(16, 185, 129, 0.10) 0px, transparent 50%),
         radial-gradient(at 50% 40%, rgba(99, 102, 241, 0.07) 0px, transparent 60%);
       background-attachment: fixed;
-      color: #e2e8f0;
+      color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
       font-size: 14.5px;
       line-height: 1.6;
@@ -95,7 +95,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
-    a { color: #38bdf8; text-decoration: none; transition: color 0.15s; }
+    a { color: var(--c-blue); text-decoration: none; transition: color 0.15s; }
     a:hover { color: #7dd3fc; text-decoration: underline; }
     button { cursor: pointer; font-family: inherit; }
     input, select, textarea { font-family: inherit; font-size: 14px; }
@@ -133,7 +133,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
     .tab-btn {
       background: transparent;
       border: none;
-      color: #94a3b8;
+      color: var(--text-mid);
       padding: 8px 18px;
       border-radius: 10px;
       font-weight: 600;
@@ -191,7 +191,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
     /* KPI 统计指标卡片 */
     .kpi-title {
       font-size: 12.5px;
-      color: #94a3b8;
+      color: var(--text-mid);
       font-weight: 600;
       display: flex;
       justify-content: space-between;
@@ -205,7 +205,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       margin: 8px 0 6px 0;
       letter-spacing: -0.02em;
     }
-    .kpi-sub { font-size: 12px; color: #64748b; }
+    .kpi-sub { font-size: 12px; color: var(--text-dim); }
 
     /* 表格组件优化 */
     .table-container {
@@ -222,7 +222,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       font-size: 12.5px;
       font-weight: 700;
       letter-spacing: 0.02em;
-      color: #94a3b8;
+      color: var(--text-mid);
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
     td {
@@ -248,7 +248,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
     }
     .btn-primary {
       background: linear-gradient(135deg, #0284c7, #0d9488);
-      color: #fff;
+      color: var(--text-strong);
       box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
     }
     .btn-primary:hover {
@@ -258,12 +258,12 @@ app.get(['/admin', '/dashboard'], (req, res) => {
     }
     .btn-secondary {
       background: #1e293b;
-      color: #e2e8f0;
+      color: var(--text);
       border: 1px solid #334155;
     }
     .btn-secondary:hover {
       background: #334155;
-      color: #fff;
+      color: var(--text-strong);
       border-color: #475569;
     }
     .btn-danger {
@@ -273,7 +273,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
     }
     .btn-danger:hover {
       background: rgba(225, 29, 72, 0.3);
-      color: #fff;
+      color: var(--text-strong);
     }
     .btn-sm { padding: 6px 13px; font-size: 12.5px; border-radius: 8px; }
 
@@ -285,13 +285,13 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       border: 1px solid rgba(255, 255, 255, 0.14);
       padding: 8px 14px;
       border-radius: 10px;
-      color: #fff;
+      color: var(--text-strong);
       font-size: 13.5px;
       outline: none;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
     .input-ctrl:focus {
-      border-color: #38bdf8;
+      border-color: var(--c-blue);
       box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
     }
     textarea.input-ctrl { height: auto; padding: 10px 14px; }
@@ -307,11 +307,11 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       font-family: inherit;
       line-height: 1.3;
     }
-    .badge-green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
-    .badge-blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); }
-    .badge-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
-    .badge-rose { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.35); }
-    .badge-gray { background: rgba(100, 116, 139, 0.2); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.35); }
+    .badge-green { background: rgba(16, 185, 129, 0.15); color: var(--c-green); border: 1px solid rgba(16, 185, 129, 0.35); }
+    .badge-blue { background: rgba(56, 189, 248, 0.15); color: var(--c-blue); border: 1px solid rgba(56, 189, 248, 0.35); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--c-amber); border: 1px solid rgba(245, 158, 11, 0.35); }
+    .badge-rose { background: rgba(244, 63, 94, 0.15); color: var(--c-rose); border: 1px solid rgba(244, 63, 94, 0.35); }
+    .badge-gray { background: rgba(100, 116, 139, 0.2); color: var(--text-mid); border: 1px solid rgba(100, 116, 139, 0.35); }
 
     /* 提示消息条 */
     .alert-box {
@@ -355,7 +355,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
     }
 
     .form-group { margin-bottom: 16px; }
-    .form-group label { display: block; font-size: 12.5px; font-weight: 600; color: #cbd5e1; margin-bottom: 7px; }
+    .form-group label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 7px; }
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
     /* 隐藏类 */
@@ -368,7 +368,150 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       40%, 80% { transform: translateX(6px); }
     }
     .shake { animation: shake 0.4s ease-in-out; }
+
+    /* ==================== 主题变量（黑夜默认 / 白天可切换）与紧凑化尺寸 ==================== */
+    :root {
+      --bg: #0a0e17;
+      --text: #e2e8f0;
+      --text-strong: #ffffff;
+      --text-mid: #94a3b8;
+      --text-dim: #64748b;
+      --border: rgba(255, 255, 255, 0.09);
+      --border-soft: rgba(255, 255, 255, 0.05);
+      --header-bg: rgba(11, 15, 25, 0.88);
+      --card-bg: rgba(15, 23, 42, 0.8);
+      --pill-bg: rgba(2, 6, 23, 0.75);
+      --table-bg: rgba(2, 6, 23, 0.5);
+      --th-bg: rgba(15, 23, 42, 0.95);
+      --input-bg: rgba(2, 6, 23, 0.7);
+      --input-border: rgba(255, 255, 255, 0.14);
+      --modal-bg: #0f172a;
+      --overlay-bg: rgba(4, 7, 15, 0.85);
+      --btn2-bg: #1e293b;
+      --btn2-bg-hover: #334155;
+      --btn2-border: #334155;
+      --btn2-text: #e2e8f0;
+      --shadow-card: 0 8px 24px -6px rgba(0, 0, 0, 0.4);
+      --c-blue: #38bdf8; --c-green: #34d399; --c-amber: #fbbf24; --c-rose: #fb7185; --c-purple: #c084fc;
+      --scroll-track: rgba(2, 6, 23, 0.4);
+      --scroll-thumb: rgba(255, 255, 255, 0.14);
+    }
+    html.light {
+      --bg: #eef1f6;
+      --text: #334155;
+      --text-strong: #0f172a;
+      --text-mid: #64748b;
+      --text-dim: #94a3b8;
+      --border: rgba(15, 23, 42, 0.10);
+      --border-soft: rgba(15, 23, 42, 0.07);
+      --header-bg: rgba(255, 255, 255, 0.92);
+      --card-bg: #ffffff;
+      --pill-bg: #f1f5f9;
+      --table-bg: #ffffff;
+      --th-bg: #f1f5f9;
+      --input-bg: #ffffff;
+      --input-border: rgba(15, 23, 42, 0.18);
+      --modal-bg: #ffffff;
+      --overlay-bg: rgba(15, 23, 42, 0.45);
+      --btn2-bg: #ffffff;
+      --btn2-bg-hover: #f1f5f9;
+      --btn2-border: rgba(15, 23, 42, 0.15);
+      --btn2-text: #0f172a;
+      --shadow-card: 0 6px 18px -6px rgba(15, 23, 42, 0.12);
+      --c-blue: #0284c7; --c-green: #059669; --c-amber: #d97706; --c-rose: #e11d48; --c-purple: #9333ea;
+      --scroll-track: rgba(15, 23, 42, 0.06);
+      --scroll-thumb: rgba(15, 23, 42, 0.22);
+    }
+    html.light body {
+      background-image:
+        radial-gradient(at 10% 10%, rgba(14, 165, 233, 0.07) 0px, transparent 50%),
+        radial-gradient(at 90% 80%, rgba(16, 185, 129, 0.06) 0px, transparent 50%),
+        radial-gradient(at 50% 40%, rgba(99, 102, 241, 0.04) 0px, transparent 60%);
+    }
+    html.light tr:hover td { background: rgba(2, 132, 199, 0.05); }
+    html.light code { color: inherit; }
+    html.light a:hover { color: var(--c-blue); }
+    html.light .btn-danger { color: var(--c-rose); }
+    html.light .alert-error { color: #b91c1c; }
+    html.light .alert-success { color: #047857; }
+    html.light .alert-info { color: #0369a1; }
+    html.light .badge-green { color: #059669; }
+    html.light .badge-blue { color: #0369a1; }
+    html.light .badge-amber { color: #b45309; }
+    html.light .badge-rose { color: #be123c; }
+    html.light .badge-gray { color: #64748b; }
+
+    body { font-size: 14px; background-color: var(--bg); color: var(--text); }
+    ::-webkit-scrollbar-track { background: var(--scroll-track); }
+    ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); }
+
+    .app-header {
+      background: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+    }
+    .nav-tabs { background: var(--pill-bg); border: 1px solid var(--border-soft); padding: 4px; border-radius: 12px; gap: 4px; }
+    .tab-btn { color: var(--text-mid); padding: 7px 14px; border-radius: 9px; font-size: 13px; }
+    .tab-btn:hover { color: var(--text-strong); background: var(--btn2-bg-hover); }
+    .tab-btn.active { background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4); }
+
+    .main-container { max-width: 1400px; padding: 22px 18px; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: var(--shadow-card);
+    }
+    /* KPI 卡片左侧彩色描边（对齐参考控制台） */
+    .kpi-card { border-left-width: 4px; }
+
+    .grid-4 { gap: 16px; }
+    .grid-2 { gap: 16px; }
+
+    .kpi-title { font-size: 12px; color: var(--text-mid); }
+    .kpi-val { font-size: 26px; margin: 6px 0 4px 0; }
+    .kpi-sub { font-size: 11.5px; color: var(--text-dim); }
+
+    .table-container { border: 1px solid var(--border); background: var(--table-bg); border-radius: 12px; }
+    th { background: var(--th-bg); padding: 11px 14px; font-size: 12px; color: var(--text-mid); border-bottom: 1px solid var(--border); }
+    td { padding: 11px 14px; font-size: 13px; border-bottom: 1px solid var(--border-soft); }
+
+    .btn { padding: 8px 15px; border-radius: 9px; font-size: 13px; }
+    .btn-primary, .btn-primary:hover, .tab-btn.active, .btn-danger:hover { color: #ffffff; }
+    .btn-secondary { background: var(--btn2-bg); color: var(--btn2-text); border: 1px solid var(--btn2-border); }
+    .btn-secondary:hover { background: var(--btn2-bg-hover); color: var(--text-strong); border-color: var(--text-dim); }
+    .btn-sm { padding: 5px 11px; font-size: 12px; }
+
+    .input-ctrl {
+      height: 38px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      color: var(--text-strong);
+      font-size: 13px;
+      border-radius: 9px;
+      padding: 8px 12px;
+    }
+    input.input-ctrl::placeholder, textarea.input-ctrl::placeholder { color: var(--text-dim); }
+    select.input-ctrl option { background: var(--modal-bg); color: var(--text-strong); }
+
+    .alert-box { font-size: 13px; }
+
+    .modal-overlay { background: var(--overlay-bg); }
+    .modal-box { background: var(--modal-bg); border: 1px solid var(--border); border-radius: 18px; padding: 24px 28px; }
+
+    .form-group label { font-size: 12px; color: var(--text-mid); }
+    .theme-toggle-btn { white-space: nowrap; }
   </style>
+  <script>
+    // 主题预加载：登录页渲染前应用已保存的白天/黑夜模式，避免闪烁
+    try {
+      if (localStorage.getItem('steammaster_admin_theme') === 'light') {
+        document.documentElement.classList.add('light');
+      }
+    } catch (e) {}
+  </script>
 </head>
 <body>
 
@@ -378,8 +521,8 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <div style="width: 62px; height: 62px; border-radius: 18px; background: #0b1220; border: 1px solid rgba(255,255,255,0.12); margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.35);">
         <img src="${CFD_LOGO_DATA_URI}" alt="春风渡" draggable="false" style="width: 72%; height: 72%; object-fit: contain;" />
       </div>
-      <h1 style="font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 6px;">春风渡</h1>
-      <p style="font-size: 13.5px; color: #94a3b8; margin-bottom: 24px;">云端数据调度引擎 · 激活码与设备安全管控中枢</p>
+      <h1 style="font-size: 20px; font-weight: 800; color: var(--text-strong); margin-bottom: 6px;">春风渡</h1>
+      <p style="font-size: 13.5px; color: var(--text-mid); margin-bottom: 24px;">云端数据调度引擎 · 激活码与设备安全管控中枢</p>
 
       <!-- 登录状态/错误提示框 -->
       <div id="loginNotice" class="alert-box alert-error d-none">
@@ -403,7 +546,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
         </button>
       </div>
 
-      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #64748b; line-height: 1.6;">
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: var(--text-dim); line-height: 1.6;">
         <div>请使用管理员账号登录。首次部署后请立即在「安全配置」中修改默认密码。</div>
       </div>
     </div>
@@ -418,10 +561,10 @@ app.get(['/admin', '/dashboard'], (req, res) => {
         </div>
         <div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <strong style="color: #fff; font-size: 16px; font-weight: 800; letter-spacing: -0.01em;">春风渡</strong>
+            <strong style="color: var(--text-strong); font-size: 16px; font-weight: 800; letter-spacing: -0.01em;">春风渡</strong>
             <span class="badge badge-green">● 云端运行中</span>
           </div>
-          <div style="font-size: 12.5px; color: #94a3b8; margin-top: 1px;">28.8万+ 本地/云端全量库调度中枢 · 客户端设备与激活码管控中心</div>
+          <div style="font-size: 12.5px; color: var(--text-mid); margin-top: 1px;">28.8万+ 本地/云端全量库调度中枢 · 客户端设备与激活码管控中心</div>
         </div>
       </div>
 
@@ -439,10 +582,11 @@ app.get(['/admin', '/dashboard'], (req, res) => {
 
       <!-- 用户信息与退出 -->
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="background: rgba(2,6,23,0.75); padding: 6px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); font-size: 13px; display: flex; align-items: center; gap: 6px;">
-          <span>👤</span> <strong id="adminUsername" style="color: #38bdf8;">admin</strong> <span class="badge badge-blue" style="font-size: 11px;">超级管理员</span>
+        <button id="themeToggleBtn" onclick="toggleTheme()" class="btn btn-secondary btn-sm theme-toggle-btn" title="切换白天 / 黑夜模式">☀️ 白天模式</button>
+        <div style="background: var(--pill-bg); padding: 6px 14px; border-radius: 10px; border: 1px solid var(--border-soft); font-size: 13px; display: flex; align-items: center; gap: 6px;">
+          <span>👤</span> <strong id="adminUsername" style="color: var(--c-blue);">admin</strong> <span class="badge badge-blue" style="font-size: 11px;">超级管理员</span>
         </div>
-        <button onclick="handleLogout()" class="btn btn-secondary btn-sm" style="color: #fb7185; font-weight: 700;">退出登录</button>
+        <button onclick="handleLogout()" class="btn btn-secondary btn-sm" style="color: var(--c-rose); font-weight: 700;">退出登录</button>
       </div>
     </header>
 
@@ -451,24 +595,24 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <!-- ==================== Tab 1: 系统大盘 ==================== -->
       <div id="tab-overview" class="tab-content">
         <div class="grid-4" style="margin-bottom: 24px;">
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-green);">
             <div class="kpi-title"><span>持久化 DepotKey 总量</span> <span>🔑</span></div>
-            <div class="kpi-val" id="kpiKeys" style="color: #34d399;">...</div>
+            <div class="kpi-val" id="kpiKeys" style="color: var(--c-green);">...</div>
             <div class="kpi-sub">含苏大猫与全球历史密钥库</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-blue);">
             <div class="kpi-title"><span>PICS AccessToken 令牌</span> <span>🎫</span></div>
-            <div class="kpi-val" id="kpiTokens" style="color: #38bdf8;">...</div>
+            <div class="kpi-val" id="kpiTokens" style="color: var(--c-blue);">...</div>
             <div class="kpi-sub">苏大猫 993499094 实时同步</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-purple);">
             <div class="kpi-title"><span>累计客户端设备数</span> <span>💻</span></div>
-            <div class="kpi-val" id="kpiDevTotal" style="color: #c084fc;">...</div>
+            <div class="kpi-val" id="kpiDevTotal" style="color: var(--c-purple);">...</div>
             <div class="kpi-sub">已连接本系统的独立机器码总量</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-amber);">
             <div class="kpi-title"><span>今日活跃客户端</span> <span>🔥</span></div>
-            <div class="kpi-val" id="kpiDevToday" style="color: #fbbf24;">...</div>
+            <div class="kpi-val" id="kpiDevToday" style="color: var(--c-amber);">...</div>
             <div class="kpi-sub" id="kpiMem">今日在线与心跳上报</div>
           </div>
         </div>
@@ -476,8 +620,8 @@ app.get(['/admin', '/dashboard'], (req, res) => {
         <div class="card" style="margin-bottom: 24px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
             <div>
-              <strong style="color: #fff; font-size: 16px; font-weight: 700;">⚡ 快捷调度与控制中枢</strong>
-              <div style="color: #94a3b8; font-size: 12.5px; margin-top: 2px;">一键下发指令、触发全网爬虫同步与卡密生命周期管控</div>
+              <strong style="color: var(--text-strong); font-size: 16px; font-weight: 700;">⚡ 快捷调度与控制中枢</strong>
+              <div style="color: var(--text-mid); font-size: 12.5px; margin-top: 2px;">一键下发指令、触发全网爬虫同步与卡密生命周期管控</div>
             </div>
             <span class="badge badge-green">24小时自动引擎运行中</span>
           </div>
@@ -485,7 +629,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
             <button onclick="triggerSyncAll()" id="btnSyncAll" class="btn btn-primary" style="padding: 11px 22px; font-size: 14px;">
               <span>🔄 立即触发全量多源聚合同步</span>
             </button>
-            <button onclick="switchTab('devices', document.querySelectorAll('.tab-btn')[2])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: #c084fc;">
+            <button onclick="switchTab('devices', document.querySelectorAll('.tab-btn')[2])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: var(--c-purple);">
               <span>💻 查看客户端设备监控 ➔</span>
             </button>
             <button onclick="openNoticeModal()" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px;">
@@ -494,7 +638,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
             <button onclick="openVersionModal()" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px;">
               <span>🚀 发布新版本 & 强更</span>
             </button>
-            <button onclick="switchTab('licenses', document.querySelectorAll('.tab-btn')[1])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: #38bdf8;">
+            <button onclick="switchTab('licenses', document.querySelectorAll('.tab-btn')[1])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: var(--c-blue);">
               <span>🔑 批量生成/管理激活码 ➔</span>
             </button>
           </div>
@@ -505,24 +649,24 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <div id="tab-licenses" class="tab-content d-none" style="display: none;">
         <!-- KPI 统计卡片 -->
         <div class="grid-4" style="margin-bottom: 24px;">
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-blue);">
             <div class="kpi-title"><span>总激活码数量</span> <span>🔑</span></div>
-            <div class="kpi-val" id="kpiLicTotal" style="color: #38bdf8;">0</div>
-            <div class="kpi-sub" id="kpiLicTypeBreakdown" style="font-weight: 500; color: #cbd5e1;">月: 0 · 季: 0 · 年: 0 · 永久: 0</div>
+            <div class="kpi-val" id="kpiLicTotal" style="color: var(--c-blue);">0</div>
+            <div class="kpi-sub" id="kpiLicTypeBreakdown" style="font-weight: 500; color: var(--text);">月: 0 · 季: 0 · 年: 0 · 永久: 0</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-green);">
             <div class="kpi-title"><span>未使用 (待分配)</span> <span>📦</span></div>
-            <div class="kpi-val" id="kpiLicUnused" style="color: #34d399;">0</div>
+            <div class="kpi-val" id="kpiLicUnused" style="color: var(--c-green);">0</div>
             <div class="kpi-sub">随时可发放给新用户</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-amber);">
             <div class="kpi-title"><span>已激活 (绑定设备)</span> <span>💻</span></div>
-            <div class="kpi-val" id="kpiLicActive" style="color: #fbbf24;">0</div>
+            <div class="kpi-val" id="kpiLicActive" style="color: var(--c-amber);">0</div>
             <div class="kpi-sub">正常在期设备授权数</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-rose);">
             <div class="kpi-title"><span>已过期 / 冻结</span> <span>⏱️</span></div>
-            <div class="kpi-val" id="kpiLicExpired" style="color: #fb7185;">0</div>
+            <div class="kpi-val" id="kpiLicExpired" style="color: var(--c-rose);">0</div>
             <div class="kpi-sub">已到期或管理员冻结</div>
           </div>
         </div>
@@ -572,13 +716,13 @@ app.get(['/admin', '/dashboard'], (req, res) => {
               </tr>
             </thead>
             <tbody id="licenseTableBody">
-              <tr><td colspan="8" style="text-align: center; color: #64748b; padding: 32px; font-size: 14px;">正在载入激活码数据...</td></tr>
+              <tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 32px; font-size: 14px;">正在载入激活码数据...</td></tr>
             </tbody>
           </table>
         </div>
 
         <!-- 分页控制器 -->
-        <div id="licensePagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px; font-size: 13px; color: #94a3b8;">
+        <div id="licensePagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px; font-size: 13px; color: var(--text-mid);">
           <span id="licensePageInfo">共 0 条记录</span>
           <div style="display: flex; gap: 10px;">
             <button id="licBtnPrev" onclick="changeLicensePage(-1)" class="btn btn-secondary btn-sm" disabled>← 上一页</button>
@@ -591,24 +735,24 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <div id="tab-devices" class="tab-content d-none" style="display: none;">
         <!-- KPI 统计卡片 -->
         <div class="grid-4" style="margin-bottom: 24px;">
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-blue);">
             <div class="kpi-title"><span>累计客户端设备数</span> <span>💻</span></div>
-            <div class="kpi-val" id="kpiDevTabTotal" style="color: #38bdf8;">0</div>
+            <div class="kpi-val" id="kpiDevTabTotal" style="color: var(--c-blue);">0</div>
             <div class="kpi-sub">已连接本系统的独立机器码总量</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-green);">
             <div class="kpi-title"><span>今日活跃设备数</span> <span>🔥</span></div>
-            <div class="kpi-val" id="kpiDevTabToday" style="color: #34d399;">0</div>
+            <div class="kpi-val" id="kpiDevTabToday" style="color: var(--c-green);">0</div>
             <div class="kpi-sub">今日有心跳/入库活跃记录的设备</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-amber);">
             <div class="kpi-title"><span>7天活跃设备数</span> <span>⚡</span></div>
-            <div class="kpi-val" id="kpiDevTabWeek" style="color: #fbbf24;">0</div>
+            <div class="kpi-val" id="kpiDevTabWeek" style="color: var(--c-amber);">0</div>
             <div class="kpi-sub">近7天内启动并连接云端的设备</div>
           </div>
-          <div class="card">
+          <div class="card kpi-card" style="border-left-color: var(--c-purple);">
             <div class="kpi-title"><span>已激活会员设备</span> <span>👑</span></div>
-            <div class="kpi-val" id="kpiDevTabAct" style="color: #c084fc;">0</div>
+            <div class="kpi-val" id="kpiDevTabAct" style="color: var(--c-purple);">0</div>
             <div class="kpi-sub">已绑定有效激活码的设备数</div>
           </div>
         </div>
@@ -625,7 +769,10 @@ app.get(['/admin', '/dashboard'], (req, res) => {
               </select>
               <button onclick="loadDevicesData(1)" class="btn btn-secondary">🔍 筛选检索</button>
             </div>
-            <button onclick="loadDevicesData(currentDevPage)" class="btn btn-secondary" style="font-size: 13.5px;">🔄 刷新列表</button>
+            <div style="display: flex; gap: 12px;">
+              <button onclick="cleanupDevices()" class="btn btn-secondary" style="font-size: 13.5px; color: var(--c-amber);">🧹 清理长期未活跃设备</button>
+              <button onclick="loadDevicesData(currentDevPage)" class="btn btn-secondary" style="font-size: 13.5px;">🔄 刷新列表</button>
+            </div>
           </div>
         </div>
 
@@ -641,16 +788,17 @@ app.get(['/admin', '/dashboard'], (req, res) => {
                 <th>来源 IP</th>
                 <th>首次使用时间</th>
                 <th>最近心跳 / 活跃时间</th>
+                <th style="text-align: right;">管理操作</th>
               </tr>
             </thead>
             <tbody id="deviceTableBody">
-              <tr><td colspan="7" style="text-align: center; color: #64748b; padding: 32px; font-size: 14px;">正在载入设备档案...</td></tr>
+              <tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 32px; font-size: 14px;">正在载入设备档案...</td></tr>
             </tbody>
           </table>
         </div>
 
         <!-- 分页控制器 -->
-        <div id="devicePagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px; font-size: 13px; color: #94a3b8;">
+        <div id="devicePagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px; font-size: 13px; color: var(--text-mid);">
           <span id="devicePageInfo">共 0 台设备</span>
           <div style="display: flex; gap: 10px;">
             <button id="devBtnPrev" onclick="changeDevicePage(-1)" class="btn btn-secondary btn-sm" disabled>← 上一页</button>
@@ -663,8 +811,8 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <div id="tab-notices" class="tab-content d-none" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <div>
-            <strong style="color: #fff; font-size: 17px; font-weight: 700;">📢 系统公告发布与调度中心</strong>
-            <div style="color: #94a3b8; font-size: 13px; margin-top: 2px;">支持弹窗公告、顶部横幅、按客户端版本定向下发与一键启停</div>
+            <strong style="color: var(--text-strong); font-size: 17px; font-weight: 700;">📢 系统公告发布与调度中心</strong>
+            <div style="color: var(--text-mid); font-size: 13px; margin-top: 2px;">支持弹窗公告、顶部横幅、按客户端版本定向下发与一键启停</div>
           </div>
           <button onclick="openNoticeModal()" class="btn btn-primary">+ 发布新公告</button>
         </div>
@@ -678,13 +826,14 @@ app.get(['/admin', '/dashboard'], (req, res) => {
                 <th>展示类型</th>
                 <th>提示级别</th>
                 <th>优先级</th>
+                <th>弹窗频率</th>
                 <th>生效版本</th>
                 <th>更新时间</th>
                 <th style="text-align: right;">管理操作</th>
               </tr>
             </thead>
             <tbody id="noticeTableBody">
-              <tr><td colspan="8" style="text-align: center; color: #64748b; padding: 32px; font-size: 14px;">加载中...</td></tr>
+              <tr><td colspan="9" style="text-align: center; color: var(--text-dim); padding: 32px; font-size: 14px;">加载中...</td></tr>
             </tbody>
           </table>
         </div>
@@ -694,8 +843,8 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <div id="tab-versions" class="tab-content d-none" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <div>
-            <strong style="color: #fff; font-size: 17px; font-weight: 700;">🚀 版本发布与全网更新广播中心</strong>
-            <div style="color: #94a3b8; font-size: 13px; margin-top: 2px;">管理客户端升级规则、更新日志、强制升级及全网推送广播通知</div>
+            <strong style="color: var(--text-strong); font-size: 17px; font-weight: 700;">🚀 版本发布与全网更新广播中心</strong>
+            <div style="color: var(--text-mid); font-size: 13px; margin-top: 2px;">管理客户端升级规则、更新日志、强制升级及全网推送广播通知</div>
           </div>
           <div style="display: flex; gap: 12px;">
             <button onclick="openPushModal()" class="btn btn-secondary" style="color: #a855f7; border-color: rgba(168,85,247,0.3);">📢 发起全网广播推送</button>
@@ -717,7 +866,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
               </tr>
             </thead>
             <tbody id="versionTableBody">
-              <tr><td colspan="7" style="text-align: center; color: #64748b; padding: 32px; font-size: 14px;">加载中...</td></tr>
+              <tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 32px; font-size: 14px;">加载中...</td></tr>
             </tbody>
           </table>
         </div>
@@ -726,7 +875,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <!-- ==================== Tab 5: 密钥检索 ==================== -->
       <div id="tab-keys" class="tab-content d-none" style="display: none;">
         <div class="card" style="margin-bottom: 20px;">
-          <strong style="color: #fff; font-size: 16px; margin-bottom: 10px; display: block;">🔑 28.8万+ DepotKey 密钥与 AccessToken 令牌检索器</strong>
+          <strong style="color: var(--text-strong); font-size: 16px; margin-bottom: 10px; display: block;">🔑 28.8万+ DepotKey 密钥与 AccessToken 令牌检索器</strong>
           <div style="display: flex; gap: 12px;">
             <input type="text" id="keySearchInput" class="input-ctrl" style="height: 44px; font-size: 14.5px;" placeholder="输入 AppID 或 DepotID (例如: 1091500 赛博朋克2077, 271590 GTA5, 1245620 艾尔登法环)..." onkeydown="if(event.key==='Enter') searchKey()" />
             <button onclick="searchKey()" id="btnSearchKey" class="btn btn-primary" style="white-space: nowrap; padding: 10px 24px; font-size: 14.5px;">立即查询</button>
@@ -740,8 +889,8 @@ app.get(['/admin', '/dashboard'], (req, res) => {
       <div id="tab-sources" class="tab-content d-none" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <div>
-            <strong style="color: #fff; font-size: 17px; font-weight: 700;">🌐 多源数据管道与爬虫调度中心</strong>
-            <div style="color: #94a3b8; font-size: 13px; margin-top: 2px;">汇聚苏大猫实时分发源、ManifestHub 历史库与官方 SteamPipe CDN</div>
+            <strong style="color: var(--text-strong); font-size: 17px; font-weight: 700;">🌐 多源数据管道与爬虫调度中心</strong>
+            <div style="color: var(--text-mid); font-size: 13px; margin-top: 2px;">汇聚苏大猫实时分发源、ManifestHub 历史库与官方 SteamPipe CDN</div>
           </div>
           <button onclick="triggerSyncAll()" class="btn btn-primary">🔄 一键全量多源同步</button>
         </div>
@@ -751,8 +900,35 @@ app.get(['/admin', '/dashboard'], (req, res) => {
 
       <!-- ==================== Tab 7: 安全配置 ==================== -->
       <div id="tab-security" class="tab-content d-none" style="display: none;">
+        <div class="grid-2" style="margin-bottom: 24px;">
+          <div class="card">
+            <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 4px; display: block;">🔗 应用内跳转链接配置</strong>
+            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">客户端「功能详解与关于」页的教程 / 常见问题跳转地址，留空表示暂未开放（按钮置灰）</div>
+            <div class="form-group">
+              <label>图文教程链接 (Tutorial URL)</label>
+              <input type="text" id="cfgTutorialUrl" class="input-ctrl" placeholder="https://example.com/tutorial" />
+            </div>
+            <div class="form-group">
+              <label>常见问题链接 (FAQ URL)</label>
+              <input type="text" id="cfgFaqUrl" class="input-ctrl" placeholder="https://example.com/faq" />
+            </div>
+            <button type="button" id="btnSaveLinks" onclick="handleLinksSubmit()" class="btn btn-primary" style="width: 100%; justify-content: center;">保存跳转链接</button>
+          </div>
+
+          <div class="card">
+            <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 4px; display: block;">🧮 未激活用户每日免费额度</strong>
+            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">未激活设备每日可免费入库的不同游戏数（同一游戏当天重复获取不重复计数），保存后立即生效无需重启</div>
+            <div class="form-group">
+              <label>每日免费入库次数 (0 ~ 999)</label>
+              <input type="number" id="cfgFreeDailyLimit" class="input-ctrl" min="0" max="999" value="2" />
+            </div>
+            <div id="quotaMsg" class="alert-box alert-success d-none" style="margin-bottom: 12px;"><span id="quotaMsgText"></span></div>
+            <button type="button" id="btnSaveQuota" onclick="handleFreeQuotaSubmit()" class="btn btn-primary" style="width: 100%; justify-content: center;">保存并立即生效</button>
+          </div>
+        </div>
+
         <div class="card" style="max-width: 540px; margin-bottom: 24px;">
-          <strong style="color: #fff; font-size: 16px; margin-bottom: 14px; display: block;">⚙️ 修改管理员账号与安全密码</strong>
+          <strong style="color: var(--text-strong); font-size: 16px; margin-bottom: 14px; display: block;">⚙️ 修改管理员账号与安全密码</strong>
           <div id="pwdMsg" style="display: none; padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 14px;"></div>
           <div>
             <div class="form-group">
@@ -772,7 +948,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
         </div>
 
         <div class="card">
-          <strong style="color: #fff; font-size: 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+          <strong style="color: var(--text-strong); font-size: 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
             <span>🛡️ 安全审计操作日志 (最近 50 条)</span>
             <button onclick="loadAuditLogs()" class="btn btn-secondary btn-sm">🔄 刷新日志</button>
           </strong>
@@ -789,7 +965,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
                 </tr>
               </thead>
               <tbody id="auditTableBody">
-                <tr><td colspan="6" style="text-align: center; color: #64748b; padding: 24px;">暂无审计日志</td></tr>
+                <tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 24px;">暂无审计日志</td></tr>
               </tbody>
             </table>
           </div>
@@ -803,7 +979,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
   <div id="noticeModal" class="modal-overlay" style="display: none;">
     <div class="modal-box">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
-        <strong id="noticeModalTitle" style="color: #fff; font-size: 17px; font-weight: 700;">📢 发布系统公告</strong>
+        <strong id="noticeModalTitle" style="color: var(--text-strong); font-size: 17px; font-weight: 700;">📢 发布系统公告</strong>
         <button type="button" onclick="closeModal('noticeModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
       <div>
@@ -832,13 +1008,20 @@ app.get(['/admin', '/dashboard'], (req, res) => {
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label>显示优先级 (数字越大越置顶)</label>
+            <label>显示优先级 (数字越大越先弹出)</label>
             <input type="number" id="noticePriority" class="input-ctrl" value="50" />
           </div>
           <div class="form-group">
-            <label>生效版本 (* 为全量所有版本)</label>
-            <input type="text" id="noticeVersion" class="input-ctrl" value="*" />
+            <label>弹窗频率 (Popup Frequency)</label>
+            <select id="noticePopupOnce" class="input-ctrl">
+              <option value="false">每次启动都弹出</option>
+              <option value="true">每个客户端仅弹一次</option>
+            </select>
           </div>
+        </div>
+        <div class="form-group">
+          <label>生效版本 (* 为全量所有版本)</label>
+          <input type="text" id="noticeVersion" class="input-ctrl" value="*" />
         </div>
         <div class="form-group">
           <label>公告详细内容 (Content)</label>
@@ -856,7 +1039,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
   <div id="versionModal" class="modal-overlay" style="display: none;">
     <div class="modal-box">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
-        <strong id="versionModalTitle" style="color: #fff; font-size: 17px; font-weight: 700;">🚀 发布新版本</strong>
+        <strong id="versionModalTitle" style="color: var(--text-strong); font-size: 17px; font-weight: 700;">🚀 发布新版本</strong>
         <button type="button" onclick="closeModal('versionModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
       <div>
@@ -884,7 +1067,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
         </div>
         <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
           <input type="checkbox" id="verForce" style="width: 16px; height: 16px;" />
-          <label for="verForce" style="margin: 0; color: #fb7185; cursor: pointer;">标记为强制全量更新</label>
+          <label for="verForce" style="margin: 0; color: var(--c-rose); cursor: pointer;">标记为强制全量更新</label>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
           <button type="button" onclick="closeModal('versionModal')" class="btn btn-secondary">取消</button>
@@ -898,7 +1081,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
   <div id="pushModal" class="modal-overlay" style="display: none;">
     <div class="modal-box" style="max-width: 480px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
-        <strong style="color: #fff; font-size: 17px; font-weight: 700;">📢 全网版本更新推送广播</strong>
+        <strong style="color: var(--text-strong); font-size: 17px; font-weight: 700;">📢 全网版本更新推送广播</strong>
         <button type="button" onclick="closeModal('pushModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
       <div>
@@ -927,17 +1110,17 @@ app.get(['/admin', '/dashboard'], (req, res) => {
     <div class="modal-box" style="max-width: 480px; border-color: rgba(56, 189, 248, 0.4);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <div style="display: flex; align-items: center; gap: 12px;">
-          <div style="width: 42px; height: 42px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+          <div style="width: 42px; height: 42px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: var(--c-blue); display: flex; align-items: center; justify-content: center; font-size: 20px;">
             🔔
           </div>
           <div>
-            <strong id="previewTitle" style="color: #fff; font-size: 16px; display: block;"></strong>
-            <span style="color: #94a3b8; font-size: 12px;">客户端弹窗实际展示效果预览</span>
+            <strong id="previewTitle" style="color: var(--text-strong); font-size: 16px; display: block;"></strong>
+            <span style="color: var(--text-mid); font-size: 12px;">客户端弹窗实际展示效果预览</span>
           </div>
         </div>
         <button type="button" onclick="closeModal('previewModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
-      <div id="previewContent" style="background: rgba(2, 6, 23, 0.85); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 14px; color: #e2e8f0; font-size: 13.5px; white-space: pre-line; line-height: 1.7; margin-bottom: 20px;"></div>
+      <div id="previewContent" style="background: rgba(2, 6, 23, 0.85); border: 1px solid rgba(255,255,255,0.08); padding: 18px; border-radius: 14px; color: var(--text); font-size: 13.5px; white-space: pre-line; line-height: 1.7; margin-bottom: 20px;"></div>
       <div style="display: flex; justify-content: flex-end;">
         <button type="button" onclick="closeModal('previewModal')" class="btn btn-secondary" style="padding: 8px 18px;">关闭预览</button>
       </div>
@@ -948,7 +1131,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
   <div id="generateLicenseModal" class="modal-overlay" style="display: none;">
     <div class="modal-box" style="max-width: 520px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
-        <strong style="color: #fff; font-size: 17px; font-weight: 700;">⚡ 批量生成激活码 (设备绑定卡密)</strong>
+        <strong style="color: var(--text-strong); font-size: 17px; font-weight: 700;">⚡ 批量生成激活码 (设备绑定卡密)</strong>
         <button type="button" onclick="closeModal('generateLicenseModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
       <div>
@@ -994,7 +1177,7 @@ app.get(['/admin', '/dashboard'], (req, res) => {
   <div id="extendLicenseModal" class="modal-overlay" style="display: none;">
     <div class="modal-box" style="max-width: 440px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
-        <strong style="color: #fff; font-size: 17px; font-weight: 700;">⏱️ 延长卡密有效期</strong>
+        <strong style="color: var(--text-strong); font-size: 17px; font-weight: 700;">⏱️ 延长卡密有效期</strong>
         <button type="button" onclick="closeModal('extendLicenseModal')" class="btn btn-secondary btn-sm">✕</button>
       </div>
       <div>
