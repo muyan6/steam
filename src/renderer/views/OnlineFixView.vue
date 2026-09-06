@@ -47,10 +47,7 @@
     </div>
 
     <!-- 核心联机操作提示横幅 -->
-    <div class="mb-5 p-4 rounded-2xl bg-sky-500/10 border border-sky-500/30 text-sky-200 flex items-start gap-3.5 shadow-sm shrink-0">
-      <div class="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/30 mt-0.5">
-        <Sparkles class="w-[18px] h-[18px]" />
-      </div>
+    <div class="mb-5 p-4 rounded-2xl bg-sky-500/10 border border-sky-500/30 text-sky-200 shadow-sm shrink-0">
       <div class="text-xs leading-relaxed min-w-0">
         <div class="font-bold text-sky-300 text-sm mb-1 flex items-center gap-2">
           <span>联机核心操作指引</span>
