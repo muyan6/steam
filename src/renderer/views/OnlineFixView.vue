@@ -141,7 +141,7 @@
           </div>
           <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
             <div class="font-bold text-emerald-400 flex items-center gap-1.5"><Terminal class="w-3.5 h-3.5" /><span>BAT 脚本注入</span></div>
-            <p class="text-slate-400 leading-relaxed">游戏目录生成 <code>Launch_Online_Fix.bat</code> 注入环境变量启动，效果同上，适合免客户端快速自启</p>
+            <p class="text-slate-400 leading-relaxed">游戏目录生成 <code>Launch_Online_Fix.bat</code> 注入环境变量启动，联机效果同上；此后无需本工具也能直接双击该 bat 联机启动游戏</p>
           </div>
         </div>
       </div>
