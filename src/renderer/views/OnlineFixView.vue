@@ -291,7 +291,7 @@
             />
           </div>
           <span class="text-xs text-slate-400 font-mono">
-            仅 Spacewar / BAT 方式使用；默认480(Spacewar)，可改为游戏实际AppID
+            联机会话所用AppID，三模式通用；默认480(Spacewar)，可改为游戏实际AppID
           </span>
         </div>
       </div>
