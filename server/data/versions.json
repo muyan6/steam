@@ -1,5 +1,25 @@
 [
   {
+    "version": "2.4.0",
+    "channel": "stable",
+    "releaseDate": "2026-09-06",
+    "title": "春风渡 v2.4.0 正式发布",
+    "changelog": [
+      "🚀 联机启动全面重构：精准落地 Open 内核、Spacewar 伪装直启与 BAT 脚本注入三轨联机",
+      "🛠 修复 Unity/Steamworks 游戏自检触发 RestartAppIfNecessary 导致的假运行闪退问题",
+      "🎮 联机通道稳定锚定 480 (Spacewar) 官方免密大厅，支持 Steam 原生 Remote Play 邀请与大厅直连",
+      "✨ OpenSteamTool 内核智能防穿帮：底层走 480 联机通道，好友列表自动美化展示真实中文游戏名",
+      "⚡ 本地游戏列表三级缓存与联机架构预测优化，跨重启秒开"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.4.0/ChunFengDu_2.4.0_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-06T00:00:00.000Z",
+    "updatedAt": "2026-09-06T00:00:00.000Z"
+  },
+  {
     "version": "2.2.2",
     "channel": "stable",
     "releaseDate": "2026-09-06",
