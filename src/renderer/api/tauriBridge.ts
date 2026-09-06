@@ -298,14 +298,17 @@ export const createTauriBridge = () => {
       const pageSize = params?.pageSize || 60;
 
       if (source === 'local_db') {
-        // 本地全量库仅含英文索引，中文查询降级云端中文检索，未命中再回退本地
-        if (/[\u4e00-\u9fa5]/.test(q)) {
-          const cloud = await searchCloud(q, 'cloud_db', page, pageSize);
-          if (cloud && cloud.items.length > 0) {
-            return { ...cloud, source: 'local_db', sourceName: '云端中文索引' };
-          }
+        // 本地全量库（含同步下来的中文名索引）优先；本地未命中（如超新的游戏）
+        // 再回退云端中文检索，云端也无结果时返回本地空结果保持分页结构
+        const local = await searchLocal(q, page, pageSize);
+        if (local && local.items.length > 0) {
+          return local;
         }
-        return await searchLocal(q, page, pageSize);
+        const cloud = await searchCloud(q, 'cloud_db', page, pageSize);
+        if (cloud && cloud.items.length > 0) {
+          return { ...cloud, source: 'local_db', sourceName: '云端中文索引' };
+        }
+        return local;
       }
       if (source === 'steam_official' || source === 'steam_community') {
         const lang = source === 'steam_community' ? 'en' : 'schinese';

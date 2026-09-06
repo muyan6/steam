@@ -66,3 +66,34 @@ export const getGameHeaderImage = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: '服务器内部错误' });
     }
 };
+
+/**
+ * 游戏字典版本查询（客户端比对 SHA256 决定是否需要静默增量更新）
+ */
+export const getGameLibraryVersion = async (req: Request, res: Response) => {
+  try {
+    const version = gameService.getLibraryVersion();
+    res.json({ success: true, data: version });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+};
+
+/**
+ * 游戏字典二进制下载（客户端离线检索基线，需设备标识但不受免费配额限制）
+ */
+export const downloadGameLibrary = async (req: Request, res: Response) => {
+  try {
+    const lib = gameService.getLibraryBinary();
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', String(lib.buffer.length));
+    res.setHeader('X-Dictionary-Sha256', lib.sha256);
+    res.setHeader('X-Dictionary-Count', String(lib.count));
+    res.setHeader('Content-Disposition', 'attachment; filename="game_dict.bin"');
+    res.end(lib.buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+};

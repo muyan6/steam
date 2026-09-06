@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { depotService } from '../services/depotService.js';
 import { gameService } from '../services/gameService.js';
-import { getPopularGames, searchGames, getGameDetail, getGameHeaderImage } from '../controllers/gameController.js';
+import { getPopularGames, searchGames, getGameDetail, getGameHeaderImage, getGameLibraryVersion, downloadGameLibrary } from '../controllers/gameController.js';
 import { getDepotsForGame, getSingleDepotKey } from '../controllers/depotController.js';
 import { getGameMetadata } from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
@@ -148,6 +148,52 @@ router.get('/links', getAppLinks);
 // 游戏库检索与详情
 router.get('/games/popular', getPopularGames);
 router.get('/games/search', searchGames);
+
+// 游戏字典（客户端离线检索基线）版本查询与二进制下载
+// 注意：必须注册在 /games/:appId 之前，否则 "library" 会被动态段吞掉
+// 版本查询：公开只读，客户端比对 SHA256 后决定是否增量下载
+router.get('/games/library/version', getGameLibraryVersion);
+
+// 字典下载设备授权：仅需设备标识（不校验激活、不扣免费入库配额），
+// 但施加轻量内存级每日限次（每设备每日 20 次），防止字典被脚本批量扒取。
+// 本地 Map 每日按日期重置；条目数超上限时先清理过期日再按插入序淘汰，防内存无限膨胀。
+const LIBRARY_DAILY_LIMIT = 20;
+const LIBRARY_USAGE_MAP_MAX = 10000;
+const libraryDailyUsage = new Map<string, { date: string; count: number }>();
+const requireLibraryDeviceAccess = (req: Request, res: Response, next: any) => {
+  // 优先请求头，兼容旧客户端 query 传参（与 requireKeyAccess 一致）
+  const headerId = typeof req.headers['x-device-id'] === 'string' ? req.headers['x-device-id'] : '';
+  const deviceId = String(headerId || req.query.deviceId || '').trim();
+  if (!deviceId || deviceId.length > 128) {
+    return res.status(401).json({ success: false, message: '缺少或非法的 deviceId，请升级客户端后使用' });
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const record = libraryDailyUsage.get(deviceId);
+  if (!record || record.date !== today) {
+    // 每日零点后首次访问自然重置计数
+    if (libraryDailyUsage.size >= LIBRARY_USAGE_MAP_MAX) {
+      // 先清理所有非当日旧记录
+      for (const [k, v] of libraryDailyUsage) {
+        if (v.date !== today) libraryDailyUsage.delete(k);
+      }
+      // 仍超限（当日设备数异常多）则按插入序淘汰最旧条目
+      while (libraryDailyUsage.size >= LIBRARY_USAGE_MAP_MAX) {
+        const oldest = libraryDailyUsage.keys().next().value;
+        if (oldest === undefined) break;
+        libraryDailyUsage.delete(oldest);
+      }
+    }
+    libraryDailyUsage.set(deviceId, { date: today, count: 1 });
+    return next();
+  }
+  if (record.count >= LIBRARY_DAILY_LIMIT) {
+    return res.status(429).json({ success: false, message: '今日字典下载次数已达上限，请明日再试' });
+  }
+  record.count += 1;
+  return next();
+};
+router.get('/games/library/download', requireLibraryDeviceAccess, downloadGameLibrary);
+
 router.get('/games/:appId/header', getGameHeaderImage);
 router.get('/games/:appId', getGameDetail);
 

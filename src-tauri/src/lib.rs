@@ -4,6 +4,7 @@ pub mod device;
 pub mod toolbox;
 pub mod localgames;
 pub mod manifests;
+mod dict_parser;
 pub mod onlinefix;
 pub mod steamless;
 pub mod quota;
@@ -1192,6 +1193,41 @@ async fn search_local_games(
     .unwrap_or_else(|e| json!({ "items": [], "total": 0, "totalPages": 1, "source": "local_db", "sourceName": "本地全量库", "error": format!("任务执行失败: {}", e) }))
 }
 
+// 云端游戏字典同步结果（前端设置/关于页手动触发同步用）
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionarySyncStatus {
+    pub success: bool,
+    pub updated: bool,
+    pub message: String,
+    pub count: Option<u32>,
+}
+
+// 手动触发云端游戏字典同步：版本变化则下载写入 exe 同目录 sidecar（game_dict.dat），
+// 并重置缓存让下次检索热加载；启动后台线程也会自动执行同一逻辑
+#[tauri::command]
+async fn sync_game_dictionary(app: AppHandle) -> DictionarySyncStatus {
+    let resource_dir = app.path().resource_dir().ok();
+    tauri::async_runtime::spawn_blocking(move || {
+        match manifests::check_and_sync_dictionary(resource_dir.as_deref()) {
+            Ok(outcome) => {
+                let message = if outcome.updated {
+                    format!("云端字典已更新，共 {} 条，下次检索自动生效", outcome.count)
+                } else {
+                    format!("本地字典已是最新版本 ({} 条)", outcome.count)
+                };
+                DictionarySyncStatus { success: true, updated: outcome.updated, message, count: Some(outcome.count) }
+            }
+            Err(e) => {
+                manifests::log_diag(&format!("游戏字典同步失败: {}", e));
+                DictionarySyncStatus { success: false, updated: false, message: e, count: None }
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|e| DictionarySyncStatus { success: false, updated: false, message: format!("任务执行失败: {}", e), count: None })
+}
+
 // 已入库游戏详情（真实清单/密钥状态，供 LibraryView 渲染"预缓存"入口）
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1474,6 +1510,31 @@ pub fn run() {
                     ensure_auto_switch_default(&p);
                 }
             });
+            // 启动 8 秒后静默同步云端游戏字典：版本变化则下载写入 exe 同目录
+            // sidecar（game_dict.dat），下次检索自动热加载。内部走 spawn_blocking
+            // （block_on 需要 Tokio 上下文）+ catch_unwind 双重包裹，任何失败或
+            // panic 只记日志，绝不影响应用启动。
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(8));
+                let _ = tauri::async_runtime::spawn_blocking(|| {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        manifests::check_and_sync_dictionary(None)
+                    }));
+                    match result {
+                        Ok(Ok(outcome)) if outcome.updated => {
+                            manifests::log_diag(&format!("启动自动同步: 云端字典已更新至 {} 条", outcome.count));
+                        }
+                        Ok(Ok(_)) => { /* 版本一致，无需更新 */ }
+                        Ok(Err(e)) => {
+                            // 离线/服务端不可达属常态，仅记录不惊扰用户
+                            manifests::log_diag(&format!("启动自动同步失败: {}", e));
+                        }
+                        Err(panic) => {
+                            manifests::log_diag(&format!("启动自动同步 panic: {}", manifests::panic_message(&panic)));
+                        }
+                    }
+                });
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1530,7 +1591,8 @@ pub fn run() {
             check_game_updates,
             update_game_rules,
             check_ost_sync,
-            sync_ost_latest
+            sync_ost_latest,
+            sync_game_dictionary
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

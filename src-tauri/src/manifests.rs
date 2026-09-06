@@ -610,24 +610,56 @@ pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResu
     }
 }
 
-// ==================== 本地 18万+ 全量库检索 ====================
+// ==================== 本地 18万+ 全量库检索（内嵌二进制字典 + 云端同步） ====================
 
 use std::sync::Mutex as StdMutex;
+use sha2::{Digest, Sha256};
+
+use crate::dict_parser::{parse_binary_dict, DictEntry, DICT_MAGIC, EMBEDDED_DICT};
+
+/// 云端字典同步 sidecar 文件名（位于 exe 同目录，版本更新后静默落盘）
+pub const DICT_SIDECAR_FILE: &str = "game_dict.dat";
 
 struct LocalDbState {
     parsed: bool,
-    /// (appId, 名称, 名称小写副本)：小写在载入时预计算一次，
-    /// 避免每次按键检索都对 18 万+ 名称逐个 to_lowercase 分配
-    games: Vec<(u32, String, String)>,
+    games: Vec<DictEntry>,
+    /// 已加载字典的数据来源描述（sidecar / 内嵌 / 遗留 JSON）
+    source: String,
+    /// 已加载字典字节整体 SHA256（即字典版本号，供云端同步比对）
+    sha256: String,
+}
+
+impl Default for LocalDbState {
+    fn default() -> Self {
+        LocalDbState {
+            parsed: false,
+            games: Vec::new(),
+            source: String::new(),
+            sha256: String::new(),
+        }
+    }
 }
 
 fn local_db_state() -> &'static StdMutex<LocalDbState> {
-    static STATE: StdMutex<LocalDbState> = StdMutex::new(LocalDbState { parsed: false, games: Vec::new() });
+    static STATE: StdMutex<LocalDbState> = StdMutex::new(LocalDbState {
+        parsed: false,
+        games: Vec::new(),
+        source: String::new(),
+        sha256: String::new(),
+    });
     &STATE
 }
 
-/// 解析 steam_all_games.json（数组，元素含 appid/name 字段）
-fn parse_local_db_text(text: &str) -> Vec<(u32, String, String)> {
+/// 计算字节切片的 SHA256 十六进制小写串（即字典版本号）
+fn sha256_hex(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let digest = hasher.finalize();
+    digest.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// 解析 steam_all_games.json（数组，元素含 appid/name 字段）——仅作开发模式遗留兜底
+fn parse_local_db_text(text: &str) -> Vec<DictEntry> {
     let mut out = Vec::new();
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
         if let Some(arr) = json.as_array() {
@@ -643,8 +675,13 @@ fn parse_local_db_text(text: &str) -> Vec<(u32, String, String)> {
                     .and_then(|n| n.as_str())
                     .unwrap_or("")
                     .to_string();
+                let name_zh = item
+                    .get("nameZh")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if appid > 0 && !name.is_empty() {
-                    out.push((appid, name.clone(), name.to_lowercase()));
+                    out.push(DictEntry::new(appid, name, name_zh));
                 }
             }
         }
@@ -652,7 +689,8 @@ fn parse_local_db_text(text: &str) -> Vec<(u32, String, String)> {
     out
 }
 
-/// 定位全量库数据文件：Tauri 资源目录 → 开发目录
+/// 定位遗留全量库 JSON 数据文件：Tauri 资源目录 → 开发目录。
+/// 仅作开发模式兜底（正式包已内嵌二进制字典），不做任何迁移/删除
 fn locate_local_db_file(resource_dir: Option<&Path>) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(rd) = resource_dir {
@@ -667,6 +705,213 @@ fn locate_local_db_file(resource_dir: Option<&Path>) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
+/// 云端同步落盘的 sidecar 路径（exe 同目录 game_dict.dat）
+fn sidecar_dict_path() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(DICT_SIDECAR_FILE)))
+}
+
+/// 单一数据源载入结果
+struct DictLoad {
+    games: Vec<DictEntry>,
+    sha256: String,
+    source: &'static str,
+}
+
+/// 从 sidecar 二进制载入（云端同步更新后的版本）
+fn load_sidecar_dict() -> Option<DictLoad> {
+    let path = sidecar_dict_path()?;
+    let bytes = fs::read(&path).ok()?;
+    let games = parse_binary_dict(&bytes);
+    if games.is_empty() {
+        // sidecar 损坏（魔数/版本/截断异常）：按空处理，回退内嵌字典
+        println!("[Manifests] sidecar 字典无效，回退内嵌字典: {}", path.display());
+        return None;
+    }
+    Some(DictLoad { games, sha256: sha256_hex(&bytes), source: "sidecar" })
+}
+
+/// 从编译期内嵌二进制载入（正式包主路径）
+fn load_embedded_dict() -> DictLoad {
+    let games = parse_binary_dict(EMBEDDED_DICT);
+    if games.is_empty() {
+        // 内嵌字典理论上不可能损坏（编译期校验 + 测试覆盖），仅防御性兜底
+        println!("[Manifests] 内嵌字典解析异常，请检查 game_dict.bin");
+    }
+    DictLoad { games, sha256: sha256_hex(EMBEDDED_DICT), source: "embedded" }
+}
+
+/// 从遗留 steam_all_games.json 载入（开发模式兜底，无中文名）
+fn load_legacy_json_dict(resource_dir: Option<&Path>) -> Option<DictLoad> {
+    let path = locate_local_db_file(resource_dir)?;
+    let bytes = fs::read(&path).ok()?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let games = parse_local_db_text(&text);
+    if games.is_empty() {
+        return None;
+    }
+    Some(DictLoad { games, sha256: sha256_hex(&bytes), source: "legacy_json" })
+}
+
+/// 确保全量库已载入（懒加载：首次检索/首次同步时解析并缓存，约 18.3 万条）。
+/// 加载优先级：exe 同目录 sidecar（云端更新产物）→ 编译期内嵌字典 → 遗留 JSON
+fn ensure_local_db_loaded(resource_dir: Option<&Path>) {
+    let mut state = local_db_state().lock().unwrap_or_else(|e| e.into_inner());
+    if state.parsed {
+        return;
+    }
+    state.parsed = true;
+
+    let load = load_sidecar_dict()
+        .or_else(|| {
+            let emb = load_embedded_dict();
+            if emb.games.is_empty() {
+                None
+            } else {
+                Some(emb)
+            }
+        })
+        .or_else(|| load_legacy_json_dict(resource_dir));
+
+    match load {
+        Some(l) => {
+            state.games = l.games;
+            state.sha256 = l.sha256;
+            state.source = l.source.to_string();
+            println!(
+                "[Manifests] 本地全量库载入完成: {} 条 (来源: {}, sha256: {})",
+                state.games.len(),
+                state.source,
+                &state.sha256[..state.sha256.len().min(12)]
+            );
+        }
+        None => {
+            // 所有来源均失败：保持空库，检索走纯数字 AppID 兜底
+            state.source = "none".to_string();
+            state.sha256 = String::new();
+            println!("[Manifests] 本地全量库载入失败：无可用数据源");
+        }
+    }
+}
+
+/// 当前已载入字典的 (来源, sha256 版本号, 条目数)
+pub fn local_dictionary_info() -> (String, String, u32) {
+    let state = local_db_state().lock().unwrap_or_else(|e| e.into_inner());
+    (state.source.clone(), state.sha256.clone(), state.games.len() as u32)
+}
+
+/// 云端字典同步结果
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionarySyncOutcome {
+    pub updated: bool,
+    pub count: u32,
+}
+
+/// 检查并同步云端游戏字典：
+/// 1. GET /api/games/library/version 比对 SHA256 版本；
+/// 2. 不一致则 GET /api/games/library/download（带 x-device-id）下载并校验；
+/// 3. 校验通过后原子写入 exe 同目录 sidecar，并重置本地缓存让下次检索热加载。
+/// 任何失败仅返回 Err（记录日志），绝不 panic、离线安全。
+pub fn check_and_sync_dictionary(resource_dir: Option<&Path>) -> Result<DictionarySyncOutcome, String> {
+    // 确保基线字典已载入，否则无从比对版本
+    ensure_local_db_loaded(resource_dir);
+    let (_, current_sha, current_count) = local_dictionary_info();
+
+    // 1. 查询云端版本（10s 超时）
+    let version_url = format!("{}/api/games/library/version", SERVER_API);
+    let resp = block_on(http_client().get(&version_url).timeout(Duration::from_secs(10)).send())
+        .map_err(|e| format!("查询云端字典版本失败: {}", e))?;
+    let status = resp.status();
+    let json: serde_json::Value = block_on(resp.json()).unwrap_or(serde_json::Value::Null);
+    if !status.is_success() {
+        return Err(format!("查询云端字典版本失败 (HTTP {})", status.as_u16()));
+    }
+    let data = json.get("data").ok_or_else(|| "云端字典版本响应缺少 data 字段".to_string())?;
+    let server_sha = data
+        .get("sha256")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "云端字典版本响应缺少 sha256".to_string())?
+        .to_lowercase();
+    let server_count = data.get("count").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+    // 2. 版本一致则无需更新
+    if !current_sha.is_empty() && current_sha == server_sha {
+        println!(
+            "[Manifests] 云端字典版本一致 ({} 条, sha256: {})，跳过同步",
+            current_count,
+            &server_sha[..server_sha.len().min(12)]
+        );
+        return Ok(DictionarySyncOutcome { updated: false, count: current_count });
+    }
+
+    // 3. 下载最新字典（30s 超时，携带设备标识）
+    println!(
+        "[Manifests] 云端字典版本变化，开始下载 (本地 sha256: {}, 云端 sha256: {})",
+        if current_sha.is_empty() { "无".to_string() } else { current_sha[..12.min(current_sha.len())].to_string() },
+        &server_sha[..server_sha.len().min(12)]
+    );
+    let device_id = crate::device::get_device_id();
+    let download_url = format!("{}/api/games/library/download", SERVER_API);
+    let resp = block_on(
+        http_client()
+            .get(&download_url)
+            .timeout(Duration::from_secs(30))
+            .header("x-device-id", device_id)
+            .send(),
+    )
+    .map_err(|e| format!("下载云端字典失败: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("下载云端字典失败 (HTTP {})", status.as_u16()));
+    }
+    let bytes = block_on(resp.bytes()).map_err(|e| format!("读取云端字典响应失败: {}", e))?;
+    let bytes = bytes.as_ref();
+
+    // 4. 校验：SHA256 与版本接口一致 + 魔数 CFGD + 解析条目数 > 10 万
+    let download_sha = sha256_hex(bytes);
+    if download_sha != server_sha {
+        return Err(format!(
+            "云端字典校验失败: SHA256 不匹配 (期望 {}, 实际 {})",
+            &server_sha[..12.min(server_sha.len())],
+            &download_sha[..12.min(download_sha.len())]
+        ));
+    }
+    if bytes.len() < 9 || bytes[0..4] != DICT_MAGIC {
+        return Err("云端字典校验失败: 魔数不符".to_string());
+    }
+    let entries = parse_binary_dict(bytes);
+    if entries.len() <= 100_000 {
+        return Err(format!("云端字典校验失败: 条目数异常 ({})", entries.len()));
+    }
+
+    // 5. 原子写入 sidecar（.tmp + rename，避免半截文件被下次启动当作有效字典）
+    let target = sidecar_dict_path()
+        .ok_or_else(|| "无法定位 exe 目录，无法写入字典 sidecar".to_string())?;
+    let tmp = target.with_extension("dat.tmp");
+    fs::write(&tmp, bytes).map_err(|e| format!("写入字典临时文件失败: {}", e))?;
+    if let Err(e) = fs::rename(&tmp, &target) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("替换字典 sidecar 失败: {}", e));
+    }
+
+    // 6. 重置本地缓存：下次检索按优先级重新从 sidecar 热加载
+    {
+        let mut state = local_db_state().lock().unwrap_or_else(|e| e.into_inner());
+        *state = LocalDbState::default();
+    }
+
+    println!(
+        "[Manifests] 云端字典同步完成: {} 条 (云端标记 {}, sha256: {}) → {}",
+        entries.len(),
+        server_count,
+        &server_sha[..server_sha.len().min(12)],
+        target.display()
+    );
+    Ok(DictionarySyncOutcome { updated: true, count: entries.len() as u32 })
+}
+
 /// 全量库分页检索（与 Electron 版 searchService 的本地模式语义一致）
 pub fn search_local_all(
     resource_dir: Option<&Path>,
@@ -677,35 +922,24 @@ pub fn search_local_all(
     let page = page.max(1);
     let page_size = page_size.clamp(1, 100);
 
-    // 懒加载：首次调用时解析并缓存（约 18.3 万条）
-    {
-        let mut state = local_db_state().lock().unwrap_or_else(|e| e.into_inner());
-        if !state.parsed {
-            state.parsed = true;
-            if let Some(path) = locate_local_db_file(resource_dir) {
-                match fs::read_to_string(&path) {
-                    Ok(text) => {
-                        state.games = parse_local_db_text(&text);
-                        println!("[Manifests] 本地全量库载入完成: {} 条 ({})", state.games.len(), path.display());
-                    }
-                    Err(e) => println!("[Manifests] 读取本地全量库失败: {}", e),
-                }
-            }
-        }
-    }
+    // 懒加载：首次调用时按优先级解析并缓存（约 18.3 万条）
+    ensure_local_db_loaded(resource_dir);
 
     let state = local_db_state().lock().unwrap_or_else(|e| e.into_inner());
     let q = query.unwrap_or("").trim().to_lowercase();
     let is_number = !q.is_empty() && q.chars().all(|c| c.is_ascii_digit());
 
-    let matched: Vec<&(u32, String, String)> = if q.is_empty() {
+    let matched: Vec<&DictEntry> = if q.is_empty() {
         state.games.iter().collect()
     } else {
         state
             .games
             .iter()
-            .filter(|(id, _, name_lower)| {
-                id.to_string().contains(&q) || name_lower.contains(&q)
+            .filter(|e| {
+                // 同时匹配原名与中文名（各自的小写副本已在载入时预计算）
+                e.app_id.to_string().contains(&q)
+                    || e.name_lower.contains(&q)
+                    || e.name_zh_lower.contains(&q)
             })
             .collect()
     };
@@ -738,13 +972,15 @@ pub fn search_local_all(
         .into_iter()
         .skip(start)
         .take(page_size as usize)
-        .map(|(id, name, _)| {
+        .map(|e| {
+            // 优先展示中文名，无中文时回退原名
+            let display = if e.name_zh.is_empty() { e.name.clone() } else { e.name_zh.clone() };
             json!({
-                "appId": id,
-                "name": name,
-                "nameZh": name,
-                "headerUrl": format!("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{}/header.jpg", id),
-                "description": format!("Steam 官方收录应用 (AppID: {})", id)
+                "appId": e.app_id,
+                "name": e.name,
+                "nameZh": display,
+                "headerUrl": format!("https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{}/header.jpg", e.app_id),
+                "description": format!("Steam 官方收录应用 (AppID: {})", e.app_id)
             })
         })
         .collect();

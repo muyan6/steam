@@ -7,6 +7,7 @@ import { CHINESE_KEYWORD_MAP } from '../data/chineseDictionary.js';
 import { CompactGame, SteamGame, SearchSourceId, SearchPaginationResult } from '../types/index.js';
 import { CONFIG } from '../config/index.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
+import { buildGameDictBinary, hashGameDictBinary } from '../utils/gameDictCodec.js';
 
 export class GameService {
   private popularGames: SteamGame[] = [...POPULAR_GAMES_DATABASE];
@@ -28,6 +29,8 @@ export class GameService {
   // 中文缓存防抖落盘：搜索热词命中时避免每次都在事件循环上同步全量写盘
   private cacheDirty = false;
   private cacheFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  // 游戏字典二进制缓存（客户端离线检索基线）：懒构建 + 数据变更后失效重建
+  private libraryCache: { buffer: Buffer; sha256: string; count: number } | null = null;
 
   constructor() {
     this.cacheFilePath = path.join(CONFIG.DATA_DIR, 'chinese_games_cache.json');
@@ -80,6 +83,8 @@ export class GameService {
     try {
       const list = Array.from(this.chineseGamesCache.values());
       writeJsonAtomic(this.cacheFilePath, list);
+      // 中文缓存已持久化变更，字典二进制随之失效，下次访问自动重建
+      this.libraryCache = null;
       console.log(`[GameService] 已将最新中文游戏沉淀入库，当前持久化总数: ${list.length} 款`);
     } catch (e) {
       this.cacheDirty = true;
@@ -94,6 +99,7 @@ export class GameService {
         const content = fs.readFileSync(dbPath, 'utf-8');
         this.allGames = JSON.parse(content);
         this.allGamesById = null; // 数据变动，索引待重建
+        this.libraryCache = null; // 数据变动，游戏字典二进制待重建
         this.isLoaded = true;
         console.log(`[GameService] 成功加载全量 Steam 数据库，共收录 ${this.allGames.length} 款游戏！`);
       } else {
@@ -543,6 +549,48 @@ export class GameService {
   public getTotalGamesCount(): number {
     // 只统计全量库本体，中文缓存与全量库高度重叠，不再叠加造成重复计数
     return this.allGames.length;
+  }
+
+  /**
+   * 懒构建游戏字典二进制缓存（CFGD v1，与 scripts/build-game-dict.mjs 字节级一致）。
+   * 数据源 = 全量库 allGames + 中文缓存 chineseGamesCache 叠加（nameZh 覆盖，规则同脚本：
+   * 中文名取中文缓存且缺失回退原名；中文缓存独有 AppID 也并入字典尾部）。
+   * 缓存在 loadAllGamesDatabase 重载与 flushChineseCache 落盘后自动失效重建。
+   */
+  private getLibraryCache(): { buffer: Buffer; sha256: string; count: number } {
+    if (!this.libraryCache) {
+      // 中文缓存 Map 转数组（SteamGame 自带 nameZh；缺失时由编解码器回退原名）
+      const zhGames = Array.from(this.chineseGamesCache.values()).map((g) => ({
+        appId: g.appId,
+        name: g.name,
+        nameZh: g.nameZh || g.name
+      }));
+      const buffer = buildGameDictBinary(this.allGames, zhGames);
+      this.libraryCache = {
+        buffer,
+        sha256: hashGameDictBinary(buffer),
+        // 条目数直接读头部 u32 LE（9 字节头：4 魔数 + 1 版本 + 4 条目数），与实际编码严格一致
+        count: buffer.readUInt32LE(5)
+      };
+      console.log(`[GameService] 已重建游戏字典二进制：${this.libraryCache.count} 条，` +
+        `体积 ${(buffer.length / 1024 / 1024).toFixed(2)} MB，SHA256 ${this.libraryCache.sha256.slice(0, 16)}…`);
+    }
+    return this.libraryCache;
+  }
+
+  /**
+   * 获取游戏字典二进制下载载荷（客户端静默增量更新用）
+   */
+  public getLibraryBinary(): { buffer: Buffer; sha256: string; count: number } {
+    return this.getLibraryCache();
+  }
+
+  /**
+   * 获取游戏字典版本信息（SHA256 即版本号，客户端比对后决定是否下载）
+   */
+  public getLibraryVersion(): { count: number; sha256: string; size: number } {
+    const c = this.getLibraryCache();
+    return { count: c.count, sha256: c.sha256, size: c.buffer.length };
   }
 }
 
