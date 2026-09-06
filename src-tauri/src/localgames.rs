@@ -664,8 +664,10 @@ pub fn launch_game_online(
             }
             std::thread::sleep(std::time::Duration::from_millis(2000));
         }
-        crate::open_url_cmd(&format!("steam://rungameid/{}", app_id))?;
-        return Ok(format!("已通过 Open内核联机模式唤起游戏 (AppID: {})！", app_id));
+        // 注意：此处不再走 steam://rungameid/真实AppID —— lua 伪许可证只存在于客户端，
+        // Valve 服务器会丢弃无有效许可 AppID 的 presence 广播，好友完全看不到（假启动）。
+        // 改为与 Spacewar 相同的 480 会话直启，落到下方统一启动逻辑，
+        // 由内核把好友列表里的显示名映射成真实游戏名。
     }
 
     let gp = PathBuf::from(game_path);
@@ -684,11 +686,13 @@ pub fn launch_game_online(
         return Ok("未在游戏目录找到 exe，已回退至 Steam 协议启动。".to_string());
     };
 
-    if mode == "spacewar" {
+    if mode == "spacewar" || mode == "open" {
         // 仅注入 SteamAppId 环境变量、严禁写 steam_appid.txt（实测 OST 内核检测到
         // 该文件会把 480 会话改写回真实 AppID，导致 presence 以无许可身份广播、
         // 好友完全看不到 —— 即"假启动"）；环境变量方式广播保持 480，好友可见可加入。
         // 游戏自带的 steam_appid.txt 需备份移除，避免覆盖环境变量语义。
+        // Open 模式与 Spacewar 模式在此汇合：前者额外保证 Steam 带 -onlinefix 运行，
+        // 内核会把好友列表里的 480 显示名映射成真实游戏名。
         let appid_file = gp.join("steam_appid.txt");
         if appid_file.exists() {
             let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
@@ -701,7 +705,8 @@ pub fn launch_game_online(
             .env("SteamOverlayGameId", online_app_id.to_string())
             .spawn()
             .map_err(|e| format!("启动游戏失败: {}", e))?;
-        return Ok(format!("已通过 Spacewar 模式 (AppID: {}) 成功拉起游戏！", online_app_id));
+        let mode_name = if mode == "open" { "Open内核" } else { "Spacewar" };
+        return Ok(format!("已通过 {} 模式 (AppID: {}) 成功拉起游戏！", mode_name, online_app_id));
     }
 
     if mode == "bat" {

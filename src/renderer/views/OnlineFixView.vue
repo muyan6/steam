@@ -133,7 +133,7 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
           <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
             <div class="font-bold text-sky-400 flex items-center gap-1.5"><ArrowLeftRight class="w-3.5 h-3.5" /><span>Open 内核直启</span></div>
-            <p class="text-slate-400 leading-relaxed">带 -onlinefix 参数重启 Steam 后由内核动态拦截，好友看到你玩的是<strong class="text-slate-300">游戏本名</strong>，体验最完整</p>
+            <p class="text-slate-400 leading-relaxed">自动让 Steam 以 <code>-onlinefix</code> 参数运行（内核联机拦截生效），再以 Spacewar (480) 会话拉起游戏，内核把好友看到的名称映射为真实游戏名——纯入库游戏联机的推荐方式</p>
           </div>
           <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
             <div class="font-bold text-purple-400 flex items-center gap-1.5"><Rocket class="w-3.5 h-3.5" /><span>Spacewar 伪装直启</span></div>
