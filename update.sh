@@ -133,7 +133,7 @@ echo -e "📌 ${BOLD}更新总结:${NC}"
 if [[ "$HEALTH_CHECK" =~ "online" ]] || [[ "$HEALTH_CHECK" =~ "true" ]] || [[ "$HEALTH_CHECK" =~ "ok" ]]; then
     echo -e "   • 健康状态:    ${GREEN}● 正常在线 (HTTP 200 OK)${NC}"
 else
-    echo -e "   • 健康状态:    ${YELLOW}● 服务已启动，正在初始化索引${NC}"
+    echo -e "   • 健康状态:    ${YELLOW}● 服务已启动，正在加载数据预热（首次健康检查未就绪，数秒后自动在线）${NC}"
 fi
 
 echo -e "   • PM2 进程名:  ${CYAN}steammaster-server${NC}"
