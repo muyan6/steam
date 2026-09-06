@@ -38,15 +38,17 @@ export function formatIpcError(e: unknown): string {
 
 /** 网络请求统一走 Tauri Rust 通道（无 CORS 限制）；失败返回 null */
 export async function getJson<T = any>(url: string, timeoutMs = 8000): Promise<T | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     const resp = await httpFetch(url, { signal: ctrl.signal });
-    clearTimeout(timer);
     if (!resp.ok) return null;
     return (await resp.json()) as T;
   } catch {
     return null;
+  } finally {
+    // 无论成功、失败或超时都必须清理定时器，避免定时器泄漏
+    clearTimeout(timer);
   }
 }
 
@@ -158,7 +160,8 @@ async function searchSteamOfficial(q: string, page: number, pageSize: number, la
       pageSize,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       source: 'steam_official',
-      sourceName: 'Steam官方API'
+      // l=en 实际走的是商店搜索英文接口，标注为"Steam 商店 (英文)"避免误导
+      sourceName: lang === 'en' ? 'Steam 商店 (英文)' : 'Steam官方API'
     };
   }
   return null;
@@ -286,8 +289,9 @@ export const createTauriBridge = () => {
     updateGame: async (appId: number, name: string, nameZh?: string, lockVersion?: boolean): Promise<{ success: boolean; message: string; keyCount?: number }> =>
       invoke('update_game_rules', { appId, name, nameZh: nameZh || name, lockVersion: lockVersion ?? false }),
 
-    // 搜索服务：多数据源（云端/官方/聚合/本地）
-    searchGames: async (params: any): Promise<any> => {
+      // 搜索服务：多数据源（云端/官方/聚合/本地）
+      // seenIds：调用方可传入跨页共享的去重集合，避免聚合源翻页时 Steam 官方结果重复出现
+      searchGames: async (params: any): Promise<any> => {
       const q = (typeof params === 'string' ? params : params?.query || '').trim();
       const source: string = params?.source || 'steam_official';
       const page = params?.page || 1;
@@ -317,7 +321,8 @@ export const createTauriBridge = () => {
           q ? searchSteamOfficial(q, page, pageSize, 'schinese') : null
         ]);
         if (cloud && official) {
-          const seen = new Set<number>();
+          // 去重集合支持调用方跨页传入， Steam 官方结果不再随翻页重复
+          const seen: Set<number> = params?.seenIds instanceof Set ? params.seenIds : new Set<number>();
           const merged: SteamSearchItem[] = [];
           for (const item of [...official.items, ...cloud.items]) {
             if (!seen.has(item.appId)) {
@@ -379,6 +384,10 @@ export const createTauriBridge = () => {
     installOnlineFixFromWeb: async (gamePath: string, appId: number, gameName?: string): Promise<any> => {
       // 1. Rust 搜索并下载补丁包到临时目录
       const prep = await invoke<any>('onlinefix_prepare', { gamePath, appId, gameName: gameName || null });
+      // 防御性校验：prepare 失败时可能返回空对象/null，避免下方空指针
+      if (!prep || !prep.archivePath || !prep.fileName) {
+        throw new Error('联机补丁下载准备失败：服务端未返回有效的补丁归档信息，请稍后重试');
+      }
       const archivePath = prep.archivePath as string;
       const fileName = prep.fileName as string;
       const isRar = fileName.toLowerCase().endsWith('.rar');
@@ -427,14 +436,14 @@ export const createTauriBridge = () => {
     },
     // 拉取全部生效公告（按优先级降序）：客户端据 priority 依次弹出，popupOnce 逐条独立判断
     checkNoticeList: async (): Promise<any[]> => {
-      try {
-        const json = await getJson(`${API}/api/notice/list`, 3000);
-        return Array.isArray(json?.data) ? json.data : [];
-      } catch {
+      // getJson 失败时返回 null（不会抛异常），故此处用空值判断触发兼容回退
+      const json = await getJson(`${API}/api/notice/list`, 3000);
+      if (!json || !Array.isArray(json?.data)) {
         // 旧版服务端无 /notice/list 时退回单条接口，保持向后兼容
         const single = await window.electronAPI.checkNotice();
         return single ? [single] : [];
       }
+      return json.data;
     },
     checkVersion: async (ver?: string): Promise<any> => {
       const json = await getJson(`${API}/api/version/check?version=${ver || '1.0.0'}`, 3000);

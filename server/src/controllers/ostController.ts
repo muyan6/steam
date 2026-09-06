@@ -26,7 +26,8 @@ export const getLatestOstRelease = async (_req: Request, res: Response) => {
       null;
     res.json({ success: true, tag, publishedAt: resp.data.published_at || null, asset });
   } catch (e: any) {
-    res.status(502).json({ success: false, message: `中转查询 GitHub 失败: ${e.message}` });
+    console.error('[OstController] 中转查询 GitHub 失败:', e.message);
+    res.status(502).json({ success: false, message: '中转查询 GitHub 失败，请稍后重试' });
   }
 };
 
@@ -46,12 +47,22 @@ export const downloadOstAsset = async (req: Request, res: Response) => {
     });
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${asset}"`);
+    // 上游流错误与客户端中途断开都必须显式销毁，防止套接字/上游连接泄漏
+    upstream.data.on('error', (err: any) => {
+      console.error('[OstController] 上游下载流出错:', err?.message || err);
+      res.destroy();
+    });
+    res.on('close', () => {
+      // 客户端中止下载时取消上游流，避免后台继续白耗带宽
+      upstream.data.destroy();
+    });
     upstream.data.pipe(res);
   } catch (e: any) {
+    console.error('[OstController] 中转下载失败:', e.message);
     if (!res.headersSent) {
-      res.status(502).json({ success: false, message: `中转下载失败: ${e.message}` });
+      res.status(502).json({ success: false, message: '中转下载失败，请稍后重试' });
     } else {
-      res.end();
+      res.destroy();
     }
   }
 };

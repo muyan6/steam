@@ -18,9 +18,10 @@ export const getDepotsForGame = async (req: Request, res: Response) => {
 
     const depots = await depotService.getDepotsForGame(appId, dlcs);
     res.json({ success: true, data: depots });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };
 
 export const getSingleDepotKey = async (req: Request, res: Response) => {
@@ -31,7 +32,8 @@ export const getSingleDepotKey = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '未找到该 Depot 解密密钥' });
     }
     res.json({ success: true, data: { depotId, key } });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };

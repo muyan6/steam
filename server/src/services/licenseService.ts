@@ -165,12 +165,12 @@ export class LicenseService {
     }
   }
 
-  private saveKeys(): void {
+  private saveKeys(): boolean {
     // 任何持久化前数据都已变动，反向索引必须失效重建
     this.deviceIndex = null;
     if (this.degraded) {
       console.error('[LicenseService] 数据文件已损坏（.corrupt），拒绝写入以保护数据。请修复后重启服务。');
-      return;
+      return false;
     }
     try {
       const targetDir = path.dirname(this.dataFilePath);
@@ -179,8 +179,10 @@ export class LicenseService {
       }
       const list = Array.from(this.keysCache.values());
       writeJsonAtomic(this.dataFilePath, list);
+      return true;
     } catch (e: any) {
       console.error('[LicenseService] 保存激活码数据失败:', e.message);
+      return false;
     }
   }
 
@@ -200,7 +202,8 @@ export class LicenseService {
    * 生成单个随机卡密字符串（每组 4 字节 = 8 hex，共 96 位熵，防公网爆破）
    */
   private generateRandomCode(type: LicenseType, customPrefix?: string): string {
-    const prefix = customPrefix || TYPE_PREFIX_MAP[type] || 'CFD';
+    // 自定义前缀统一大写，与 loadKeys 的 code 大写键约定一致，避免小写前缀造成重复码
+    const prefix = (customPrefix || TYPE_PREFIX_MAP[type] || 'CFD').toUpperCase();
     const randPart1 = crypto.randomBytes(4).toString('hex').toUpperCase();
     const randPart2 = crypto.randomBytes(4).toString('hex').toUpperCase();
     const randPart3 = crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -244,7 +247,14 @@ export class LicenseService {
       createdList.push(keyItem);
     }
 
-    this.saveKeys();
+    // 持久化失败必须向上传递失败结果，绝不能返回"生成成功"却丢数据
+    if (!this.saveKeys()) {
+      return {
+        success: false,
+        generatedKeys: [],
+        message: '数据保存失败，请稍后重试'
+      };
+    }
     console.log(`[LicenseService] 成功批量生成 ${createdList.length} 张 [${TYPE_NAMES[type]}] 激活码`);
 
     return {
@@ -317,7 +327,10 @@ export class LicenseService {
       key.expiresAt = expDate.toISOString();
     }
 
-    this.saveKeys();
+    // 保存失败时返回失败结果（内存态已变更，但未落盘不能算激活成功）
+    if (!this.saveKeys()) {
+      return { success: false, message: '数据保存失败，请稍后重试' };
+    }
     console.log(`[LicenseService] 成功为设备 [${cleanDeviceId}] 绑定激活码: ${cleanCode} (${key.type})`);
 
     const clientInfo = this.buildClientLicenseInfo(key, cleanDeviceId, true);
@@ -375,7 +388,9 @@ export class LicenseService {
     key.boundAt = new Date().toISOString();
     // 到期时间保持不变：迁移不重置/顺延会员有效期
 
-    this.saveKeys();
+    if (!this.saveKeys()) {
+      return { success: false, message: '数据保存失败，请稍后重试' };
+    }
     console.log(`[LicenseService] 卡密 ${cleanCode} 已从设备 [${previousDevice}] 迁移至 [${cleanNew}]`);
 
     return {
@@ -451,6 +466,7 @@ export class LicenseService {
 
     // 优先选取永久卡，其次选取到期时间最长的卡
     matchedKeys.sort((a, b) => {
+      if (a.type === 'lifetime' && b.type === 'lifetime') return 0;
       if (a.type === 'lifetime') return -1;
       if (b.type === 'lifetime') return 1;
       const tA = a.expiresAt ? new Date(a.expiresAt).getTime() : 0;
@@ -611,14 +627,22 @@ export class LicenseService {
     if (!key) return { success: false, message: '激活码不存在' };
 
     const oldDevice = key.deviceId || '无';
+    // 非永久卡已过到期时间的，解绑后应标记为过期而不是回退为未使用（防止过期卡被再次领取激活）
+    const isExpired =
+      key.type !== 'lifetime' &&
+      !!key.expiresAt &&
+      !isNaN(new Date(key.expiresAt).getTime()) &&
+      new Date(key.expiresAt).getTime() < Date.now();
     key.deviceId = undefined;
     key.boundAt = undefined;
-    key.status = 'unused';
-    if (key.type !== 'lifetime') {
+    key.status = isExpired ? 'expired' : 'unused';
+    if (key.type !== 'lifetime' && !isExpired) {
       key.expiresAt = undefined;
     }
 
-    this.saveKeys();
+    if (!this.saveKeys()) {
+      return { success: false, message: '数据保存失败，请稍后重试' };
+    }
     console.log(`[LicenseService] 成功解除卡密 ${clean} 与设备 [${oldDevice}] 的绑定`);
     return { success: true, message: `已成功解绑设备 [${oldDevice}]，该卡密已重置为未使用状态！` };
   }
@@ -635,16 +659,19 @@ export class LicenseService {
     if (disabled) {
       key.status = 'disabled';
     } else {
-      // 恢复状态
+      // 恢复状态：已过到期时间的卡密解冻后应标记为过期，不能凭空复活为有效激活
       if (key.deviceId) {
-        this.checkAndExpireKey(key);
-        if (key.status === 'disabled') key.status = 'active';
+        const expTime =
+          key.type !== 'lifetime' && key.expiresAt ? new Date(key.expiresAt).getTime() : NaN;
+        key.status = !isNaN(expTime) && expTime < Date.now() ? 'expired' : 'active';
       } else {
         key.status = 'unused';
       }
     }
 
-    this.saveKeys();
+    if (!this.saveKeys()) {
+      return { success: false, message: '数据保存失败，请稍后重试' };
+    }
     return {
       success: true,
       message: disabled ? `卡密 ${clean} 已被冻结停用！` : `卡密 ${clean} 已成功恢复启用！`,
@@ -662,7 +689,9 @@ export class LicenseService {
       return { success: false, message: '卡密不存在或已被删除' };
     }
     this.keysCache.delete(clean);
-    this.saveKeys();
+    if (!this.saveKeys()) {
+      return { success: false, message: '数据保存失败，请稍后重试' };
+    }
     return { success: true, message: `卡密 ${clean} 已成功删除！` };
   }
 
@@ -677,17 +706,25 @@ export class LicenseService {
     if (key.type === 'lifetime') {
       return { success: true, message: '永久卡无需延期', key };
     }
+    // 天数夹取：1~3650，非法/NaN 一律回落默认 30
+    const clampDays = (v: number): number => {
+      const n = Number(v);
+      return Math.min(3650, Math.max(1, isNaN(n) || n <= 0 ? 30 : Math.floor(n)));
+    };
     // 未绑定的卡密只能改"可用时长"，已冻结的卡密须先解冻，防止凭空激活
     if (key.status === 'unused') {
-      key.durationDays = (key.durationDays || 0) + Math.max(1, additionalDays || 30);
-      this.saveKeys();
-      return { success: true, message: `卡密尚未绑定设备，已将可用时长增加 ${Math.max(1, additionalDays || 30)} 天`, key };
+      const addDays = clampDays(additionalDays);
+      key.durationDays = (key.durationDays || 0) + addDays;
+      if (!this.saveKeys()) {
+        return { success: false, message: '数据保存失败，请稍后重试' };
+      }
+      return { success: true, message: `卡密尚未绑定设备，已将可用时长增加 ${addDays} 天`, key };
     }
     if (key.status === 'disabled') {
       return { success: false, message: '卡密已冻结，请先解冻再延期', key };
     }
 
-    const days = Math.max(1, additionalDays || 30);
+    const days = clampDays(additionalDays);
     const baseTime = (key.expiresAt && new Date(key.expiresAt).getTime() > Date.now())
       ? new Date(key.expiresAt).getTime()
       : Date.now();
@@ -697,7 +734,9 @@ export class LicenseService {
     key.durationDays = (key.durationDays || 0) + days;
     key.status = 'active';
 
-    this.saveKeys();
+    if (!this.saveKeys()) {
+      return { success: false, message: '数据保存失败，请稍后重试' };
+    }
     return {
       success: true,
       message: `已成功为卡密 ${clean} 延长 ${days} 天有效期 (新到期时间: ${newExp.toLocaleDateString()})！`,

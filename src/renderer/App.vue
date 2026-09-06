@@ -640,6 +640,21 @@ const openDisclaimerModal = () => {
 // 免责声明展示完毕后待展示的公告队列（按服务端优先级降序依次弹出）
 let noticeQueue: NoticePayload[] = [];
 
+// 已读标记存储键：公告缺失 id 时按标题+内容生成稳定哈希键，
+// 保证同一条公告跨启动的已读状态仍然一致
+const hashString = (s: string): string => {
+  // djb2：32 位稳定字符串哈希
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(36);
+};
+const noticeStorageKey = (item: NoticePayload): string => {
+  const key = item.id || `hash_${hashString(`${item.title || ''}|${item.content || ''}`)}`;
+  return `read_notice_${key}`;
+};
+
 const showQueuedNoticeIfAny = () => {
   if (!popupNotice.value && noticeQueue.length > 0) {
     popupNotice.value = noticeQueue.shift()!;
@@ -648,7 +663,7 @@ const showQueuedNoticeIfAny = () => {
 
 const closePopupNotice = () => {
   if (popupNotice.value && popupNotice.value.popupOnce) {
-    localStorage.setItem(`read_notice_${popupNotice.value.id}`, 'true');
+    localStorage.setItem(noticeStorageKey(popupNotice.value), 'true');
   }
   popupNotice.value = null;
   showQueuedNoticeIfAny();
@@ -688,7 +703,7 @@ const checkNoticeAndVersion = async () => {
         if (!topBanner) topBanner = item;
         continue;
       }
-      const isRead = item.popupOnce && localStorage.getItem(`read_notice_${item.id}`);
+      const isRead = item.popupOnce && localStorage.getItem(noticeStorageKey(item));
       if (!isRead) popups.push(item);
     }
     bannerNotice.value = topBanner;
@@ -790,7 +805,8 @@ onMounted(() => {
   syncMaximizedState();
   window.addEventListener('resize', applyUiScale);
   window.addEventListener('resize', syncMaximizedState);
-  steamInfoTimer = setInterval(fetchSteamInfo, 5000);
+  // 15s 轮询一次 Steam 环境信息即可，5s 过于频繁（纯状态展示无实时性要求）
+  steamInfoTimer = setInterval(fetchSteamInfo, 15000);
   licenseTimer = setInterval(() => loadLicenseInfo(false), 30000);
   // 每日一次的 OST 内核更新静默检测：有新版才轻提示，检测失败不打扰
   const OST_CHECK_KEY = 'ost_last_sync_check';

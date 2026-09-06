@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
@@ -67,12 +68,34 @@ function resolveTrustProxy(): boolean | number | string {
   return v;
 }
 
+/**
+ * 解析管理员初始密码：
+ * - 已配置 ADMIN_PASS：按配置使用；
+ * - 未配置：不再回退内置弱口令 admin123，改为每次启动生成随机密码，
+ *   并在控制台醒目打印一次（仅首次初始化凭据文件时真正使用该值）。
+ */
+function resolveAdminPass(): string {
+  const value = process.env.ADMIN_PASS;
+  if (value && value.trim()) {
+    return value.trim();
+  }
+  const generated = crypto.randomBytes(12).toString('base64url'); // 16 字符随机密码
+  console.warn('==================================================================');
+  console.warn('[安全警告] 未设置 ADMIN_PASS 环境变量，已自动生成随机管理员初始密码：');
+  console.warn(`  账号: ${process.env.ADMIN_USER || 'admin'}`);
+  console.warn(`  密码: ${generated}`);
+  console.warn('该密码仅对首次初始化的管理员凭据生效，请立即登录控制台修改，');
+  console.warn('或在部署环境中固定 ADMIN_PASS 环境变量。');
+  console.warn('==================================================================');
+  return generated;
+}
+
 export const CONFIG = {
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 1257,
   HOST: process.env.HOST || '0.0.0.0',
   DEFAULT_ADMIN_USER: process.env.ADMIN_USER || 'admin',
-  // 仅用于首次初始化凭据文件；登录校验只走 PBKDF2 哈希，不存在密码回退
-  DEFAULT_ADMIN_PASS: process.env.ADMIN_PASS || 'admin123',
+  // 仅用于首次初始化凭据文件；未配置 ADMIN_PASS 时生成随机密码（不再内置 admin123 弱口令）
+  DEFAULT_ADMIN_PASS: resolveAdminPass(),
   JWT_SECRET: requireSecret('JWT_SECRET'),
   TOKEN_EXPIRES_SECONDS: 7 * 24 * 3600, // 7天有效
   MAX_LOGIN_ATTEMPTS: 5,

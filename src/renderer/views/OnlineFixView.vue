@@ -346,11 +346,11 @@
                     <!-- 联机启动按钮 -->
                     <button
                       @click="handleLaunchGame(game)"
-                      :disabled="launchingAppId === game.appId"
+                      :disabled="pendingLaunches.has(game.appId)"
                       class="py-2 px-3 btn-soft-action hover:border-sky-400/40 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
                     >
                       <Play class="w-3.5 h-3.5 fill-current text-sky-400" />
-                      <span>{{ launchingAppId === game.appId ? '启动中...' : '联机启动' }}</span>
+                      <span>{{ pendingLaunches.has(game.appId) ? '启动中...' : '联机启动' }}</span>
                     </button>
 
                     <!-- 修复报错按钮 (橙色高亮，点击弹出脱壳解密确认) -->
@@ -595,18 +595,18 @@
                     <!-- 安装联机补丁按钮 (自动从 online-fix.me 下载并解压) -->
                     <button
                       @click="handleInstallOnlineFixWebPatch(game)"
-                      :disabled="downloadingAppId === game.appId || actionLoading"
+                      :disabled="pendingInstalls.has(game.appId) || actionLoading"
                       class="flex-1 py-2 px-1.5 theme-btn-primary text-[11px] font-bold rounded-xl transition flex items-center justify-center gap-1 whitespace-nowrap shadow-sm cursor-pointer disabled:opacity-50"
                     >
-                      <RotateCw v-if="downloadingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
+                      <RotateCw v-if="pendingInstalls.has(game.appId)" class="w-3.5 h-3.5 animate-spin" />
                       <Download v-else class="w-3.5 h-3.5" />
-                      <span>{{ downloadingAppId === game.appId ? '下载安装中...' : (game.isPatched ? '重新安装' : '安装联机补丁') }}</span>
+                      <span>{{ pendingInstalls.has(game.appId) ? '下载安装中...' : (game.isPatched ? '重新安装' : '安装联机补丁') }}</span>
                     </button>
 
                     <!-- 还原原版按钮 -->
                     <button
                       @click="handleRestorePatchForGame(game)"
-                      :disabled="downloadingAppId === game.appId || actionLoading || (!game.isPatched && !game.hasBackup)"
+                      :disabled="pendingInstalls.has(game.appId) || actionLoading || (!game.isPatched && !game.hasBackup)"
                       class="py-2 px-2 btn-soft-action hover:bg-rose-900/40 text-[11px] font-semibold rounded-xl flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
                       title="还原原始 DLL 文件"
                     >
@@ -788,7 +788,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, type Ref } from 'vue';
 import {
   Gamepad2,
   Rocket,
@@ -840,8 +840,22 @@ const cardScale = ref<number>(100); // 80% ~ 130%
 const isLaunchGamesCollapsed = ref(false);
 const isPatchGamesCollapsed = ref(false);
 
-const launchingAppId = ref<number | null>(null);
-const downloadingAppId = ref<number | null>(null);
+// 并发启动/安装守卫：用集合记录进行中的 appId，避免单值 ref 在多游戏并发操作时
+// 相互覆盖（A 完成后误清 B 的进行中状态，导致按钮可重复点击）
+const pendingLaunches = ref<Set<number>>(new Set());
+const pendingInstalls = ref<Set<number>>(new Set());
+
+// 变更集合并触发响应式更新（直接 mutate Set 不会触发 Vue 依赖收集）
+const addPending = (set: Ref<Set<number>>, id: number) => {
+  const next = new Set(set.value);
+  next.add(id);
+  set.value = next;
+};
+const removePending = (set: Ref<Set<number>>, id: number) => {
+  const next = new Set(set.value);
+  next.delete(id);
+  set.value = next;
+};
 
 // 修复报错 Steamless Modal
 const showRepairModal = ref(false);
@@ -884,7 +898,7 @@ const handleRefreshLocalGames = async (force: boolean = false, silent: boolean =
       emit('notify', `成功扫描到 ${localGames.value.length} 款本地已安装 Steam 游戏！`, 'success');
     }
   } catch (err: any) {
-    emit('notify', `扫描本地游戏失败: ${err.message}`, 'error');
+    emit('notify', `扫描本地游戏失败: ${formatIpcError(err)}`, 'error');
   } finally {
     isScanning.value = false;
   }
@@ -892,7 +906,7 @@ const handleRefreshLocalGames = async (force: boolean = false, silent: boolean =
 
 // 启动游戏
 const handleLaunchGame = async (game: LocalInstalledGame) => {
-  launchingAppId.value = game.appId;
+  addPending(pendingLaunches, game.appId);
   try {
     emit('notify', `正在以【${selectedLaunchMode.value}】模式启动《${game.name}》...`, 'info');
     const res = await window.electronAPI.launchLocalGame({
@@ -909,9 +923,9 @@ const handleLaunchGame = async (game: LocalInstalledGame) => {
       emit('notify', res.message, 'error');
     }
   } catch (err: any) {
-    emit('notify', `启动失败: ${err.message}`, 'error');
+    emit('notify', `启动失败: ${formatIpcError(err)}`, 'error');
   } finally {
-    launchingAppId.value = null;
+    removePending(pendingLaunches, game.appId);
   }
 };
 
@@ -939,7 +953,7 @@ const confirmExecuteRepair = async () => {
       emit('notify', res.message, 'error');
     }
   } catch (err: any) {
-    emit('notify', `修复执行失败: ${err.message}`, 'error');
+    emit('notify', `修复执行失败: ${formatIpcError(err)}`, 'error');
   } finally {
     repairExecuting.value = false;
   }
@@ -947,7 +961,7 @@ const confirmExecuteRepair = async () => {
 
 // 联机补丁模式：从 online-fix.me 自动检索下载并解压安装补丁
 const handleInstallOnlineFixWebPatch = async (game: LocalInstalledGame) => {
-  downloadingAppId.value = game.appId;
+  addPending(pendingInstalls, game.appId);
   try {
     emit('notify', `正在 online-fix.me 检索《${game.name}》(AppID: ${game.appId}) 联机补丁...`, 'info');
     const res = await window.electronAPI.installOnlineFixFromWeb(
@@ -958,16 +972,17 @@ const handleInstallOnlineFixWebPatch = async (game: LocalInstalledGame) => {
 
     if (res.success) {
       emit('notify', res.message || `成功为《${game.name}》安装 online-fix.me 联机补丁！`, 'success');
-      game.isPatched = true;
-      game.hasBackup = true;
-      game.patchMode = 'goldberg';
+      // 强制重扫本地库同步磁盘真实补丁状态（仅静默更新列表，不重复弹提示），
+      // 避免仅靠内存硬编码 isPatched 与磁盘状态不一致
+      await handleRefreshLocalGames(true, true);
     } else {
       emit('notify', res.message || '未在 online-fix.me 搜索到该游戏的联机补丁', 'warning');
     }
   } catch (e: any) {
     emit('notify', `下载安装补丁失败: ${formatIpcError(e)}`, 'error');
   } finally {
-    downloadingAppId.value = null;
+    // 只移除自己的 appId，不影响其他游戏仍在进行的安装
+    removePending(pendingInstalls, game.appId);
   }
 };
 

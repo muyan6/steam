@@ -167,7 +167,7 @@
 
           <div class="mt-6 flex items-center gap-2">
             <button
-              @click="handleCheckOstSync"
+              @click="handleCheckOstSync()"
               :disabled="activeAction !== null"
               class="flex-1 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-bold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
@@ -366,6 +366,7 @@ import {
   Search
 } from 'lucide-vue-next';
 import { ToolboxStatusInfo } from '../../types';
+import { formatIpcError } from '../api/tauriBridge';
 
 const emit = defineEmits<{
   (e: 'notify', message: string, type?: 'success' | 'error' | 'warning' | 'info'): void;
@@ -425,7 +426,7 @@ const handleClearCache = async () => {
       emit('notify', `清理失败: ${res.message}`, 'error');
     }
   } catch (err: any) {
-    emit('notify', `清理异常: ${err.message}`, 'error');
+    emit('notify', `清理异常: ${formatIpcError(err)}`, 'error');
   } finally {
     activeAction.value = null;
     await fetchStatus();
@@ -453,7 +454,7 @@ const handleRepairKernel = async () => {
       emit('notify', `修复失败: ${res.message}`, 'error');
     }
   } catch (err: any) {
-    emit('notify', `修复异常: ${err.message}`, 'error');
+    emit('notify', `修复异常: ${formatIpcError(err)}`, 'error');
   } finally {
     activeAction.value = null;
     await fetchStatus();
@@ -465,13 +466,16 @@ const handleRepairKernel = async () => {
 const ostSyncInfo = ref<any>(null);
 const ostCheckFailed = ref(false);
 
-const handleCheckOstSync = async () => {
-  activeAction.value = 'ost_check';
+// silent=true：静默预检（onMounted 自动触发时使用），失败不弹错误提示、
+// 不占用 activeAction 加载态，仅更新卡片上的 ostCheckFailed 状态
+const handleCheckOstSync = async (silent: boolean = false) => {
+  if (!silent) activeAction.value = 'ost_check';
   try {
     const res = await window.electronAPI.checkOstSync();
     if (res && res.latestTag) {
       ostSyncInfo.value = res;
       ostCheckFailed.value = false;
+      if (silent) return;
       if (res.updateAvailable) {
         emit('notify', `官方最新内核为 ${res.latestTag}，当前为 ${res.currentTag}，可执行同步`, 'info');
       } else {
@@ -479,13 +483,13 @@ const handleCheckOstSync = async () => {
       }
     } else {
       ostCheckFailed.value = true;
-      emit('notify', res?.message || '未能获取官方最新版本信息', 'error');
+      if (!silent) emit('notify', res?.message || '未能获取官方最新版本信息', 'error');
     }
   } catch (err: any) {
     ostCheckFailed.value = true;
-    emit('notify', `检测异常: ${err.message}`, 'error');
+    if (!silent) emit('notify', `检测异常: ${formatIpcError(err)}`, 'error');
   } finally {
-    activeAction.value = null;
+    if (!silent) activeAction.value = null;
   }
 };
 
@@ -509,7 +513,7 @@ const handleSyncOst = async () => {
       emit('notify', `同步失败: ${res.message}`, 'error');
     }
   } catch (err: any) {
-    emit('notify', `同步异常: ${err.message}`, 'error');
+    emit('notify', `同步异常: ${formatIpcError(err)}`, 'error');
   } finally {
     activeAction.value = null;
     await fetchStatus();
@@ -537,7 +541,7 @@ const handleFillSha256 = async () => {
       emit('notify', `补齐失败: ${res.message}`, 'error');
     }
   } catch (err: any) {
-    emit('notify', `补齐异常: ${err.message}`, 'error');
+    emit('notify', `补齐异常: ${formatIpcError(err)}`, 'error');
   } finally {
     activeAction.value = null;
     await fetchStatus();
@@ -565,7 +569,7 @@ const handleAutoSwitchManifest = async () => {
       emit('notify', `配置失败: ${res.message}`, 'error');
     }
   } catch (err: any) {
-    emit('notify', `配置异常: ${err.message}`, 'error');
+    emit('notify', `配置异常: ${formatIpcError(err)}`, 'error');
   } finally {
     activeAction.value = null;
     await fetchStatus();
@@ -575,7 +579,7 @@ const handleAutoSwitchManifest = async () => {
 
 onMounted(() => {
   fetchStatus();
-  // 静默预检内核版本：仅更新卡片上的版本状态，不打扰用户
-  handleCheckOstSync();
+  // 静默预检内核版本：仅更新卡片上的版本状态，不打扰用户（失败也不弹错误提示）
+  handleCheckOstSync(true);
 });
 </script>

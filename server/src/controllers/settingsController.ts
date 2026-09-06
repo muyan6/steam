@@ -19,9 +19,10 @@ export const getSettingsAdmin = (req: Request, res: Response) => {
         links: appLinksService.getLinks()
       }
     });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };
 
 /**
@@ -51,7 +52,8 @@ export const updateFreeQuotaLimitAdmin = (req: Request, res: Response) => {
       message: `已生效：未激活用户每日免费入库 ${next.freeDailyLimit} 次`,
       data: next
     });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };

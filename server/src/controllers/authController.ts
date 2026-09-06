@@ -17,8 +17,9 @@ export const login = (req: Request, res: Response) => {
     }
 
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[AuthController] 登录异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -33,8 +34,9 @@ export const getProfile = (req: Request, res: Response) => {
         currentOperator: user?.username || profile.username
       }
     });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[AuthController] 获取管理员信息异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -63,8 +65,9 @@ export const changePassword = (req: Request, res: Response) => {
     }
 
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[AuthController] 修改密码异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -84,10 +87,13 @@ export const logout = (req: Request, res: Response) => {
 
 export const getAuditLogs = (req: Request, res: Response) => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    // limit 夹取：1~200，非法/缺省回落 50
+    const raw = parseInt(req.query.limit as string, 10);
+    const limit = isNaN(raw) ? 50 : Math.min(200, Math.max(1, raw));
     const logs = authService.getAuditLogs(limit);
     res.json({ success: true, data: logs });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[AuthController] 读取审计日志异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };

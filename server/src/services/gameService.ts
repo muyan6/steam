@@ -13,6 +13,11 @@ export class GameService {
   private allGames: CompactGame[] = [];
   private chineseGamesCache: Map<number, SteamGame> = new Map();
   private imageCache: Map<number, string> = new Map();
+  // 封面图拉取失败的短 TTL 负缓存（appId -> 失败时间戳），防止重复请求打穿 Steam API
+  private negativeHeaderCache: Map<number, number> = new Map();
+  private static NEGATIVE_HEADER_TTL_MS = 5 * 60 * 1000;
+  // 内存缓存硬上限：超过时按插入序淘汰最旧条目
+  private static IMAGE_CACHE_MAX = 5000;
   private isLoaded = false;
   private cacheFilePath: string;
   // 全量库 appId 索引：28.8万条线性扫描是每次详情查询的热点，建 Map 后 O(1)
@@ -65,6 +70,8 @@ export class GameService {
       this.cacheFlushTimer = null;
       this.flushChineseCache();
     }, 60 * 1000);
+    // 计时器不阻止进程退出
+    (this.cacheFlushTimer as any).unref?.();
   }
 
   private flushChineseCache(): void {
@@ -108,6 +115,11 @@ export class GameService {
     if (this.imageCache.has(appId)) {
       return this.imageCache.get(appId)!;
     }
+    // 负缓存：5 分钟内拉取过的失败 AppID 直接返回 null，不反复打 Steam API
+    const negTs = this.negativeHeaderCache.get(appId);
+    if (negTs && Date.now() - negTs < GameService.NEGATIVE_HEADER_TTL_MS) {
+      return null;
+    }
 
     try {
       const url = `https://store.steampowered.com/api/appdetails?appids=${appId}&l=schinese`;
@@ -119,11 +131,18 @@ export class GameService {
       if (data && data.data && data.data.header_image) {
         const imgUrl = data.data.header_image;
         this.imageCache.set(appId, imgUrl);
+        this.negativeHeaderCache.delete(appId);
+        // 内存上限保护：超限按插入序淘汰最旧条目
+        if (this.imageCache.size > GameService.IMAGE_CACHE_MAX) {
+          const oldest = this.imageCache.keys().next().value;
+          if (oldest !== undefined) this.imageCache.delete(oldest);
+        }
         return imgUrl;
       }
     } catch {
       // ignore
     }
+    this.negativeHeaderCache.set(appId, Date.now());
     return null;
   }
 
@@ -236,6 +255,12 @@ export class GameService {
           for (const [k, v] of this.onlineSearchCache) {
             if (now - v.ts > GameService.ONLINE_SEARCH_TTL_MS) this.onlineSearchCache.delete(k);
           }
+          // 仍超限时按插入序强制淘汰最旧条目至 400 以内（不论 TTL）
+          while (this.onlineSearchCache.size > 400) {
+            const oldestKey = this.onlineSearchCache.keys().next().value;
+            if (oldestKey === undefined) break;
+            this.onlineSearchCache.delete(oldestKey);
+          }
         }
         return newResults;
       }
@@ -271,6 +296,15 @@ export class GameService {
     }
 
     return Array.from(keywords);
+  }
+
+  /**
+   * 数字关键词匹配收紧：只按「精确相等或前缀」命中，
+   * 避免 includes 模式在热门库/中文缓存中命中巨量 AppID（如搜 "12" 命中一切含 12 的编号）
+   */
+  private matchNumeric(appId: number, query: string): boolean {
+    const s = appId.toString();
+    return s === query || s.startsWith(query);
   }
 
   /**
@@ -374,7 +408,8 @@ export class GameService {
     else if (source === 'cloud_db') {
       // 热门与中文库优先
       for (const g of this.popularGames) {
-        if (isNumber && g.appId.toString().includes(rawQ) && !seenAppIds.has(g.appId)) {
+        if (allMatched.length >= 200) break;
+        if (isNumber && this.matchNumeric(g.appId, rawQ) && !seenAppIds.has(g.appId)) {
           allMatched.push(g);
           seenAppIds.add(g.appId);
         } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw))) && !seenAppIds.has(g.appId)) {
@@ -384,7 +419,8 @@ export class GameService {
       }
 
       for (const g of this.chineseGamesCache.values()) {
-        if (isNumber && g.appId.toString().includes(rawQ) && !seenAppIds.has(g.appId)) {
+        if (allMatched.length >= 200) break;
+        if (isNumber && this.matchNumeric(g.appId, rawQ) && !seenAppIds.has(g.appId)) {
           allMatched.push(g);
           seenAppIds.add(g.appId);
         } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw))) && !seenAppIds.has(g.appId)) {
@@ -430,8 +466,9 @@ export class GameService {
       }
 
       for (const g of this.popularGames) {
+        if (allMatched.length >= 200) break;
         if (!seenAppIds.has(g.appId)) {
-          if (isNumber && g.appId.toString().includes(rawQ)) {
+          if (isNumber && this.matchNumeric(g.appId, rawQ)) {
             allMatched.push(g);
             seenAppIds.add(g.appId);
           } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw)))) {
@@ -442,8 +479,9 @@ export class GameService {
       }
 
       for (const g of this.chineseGamesCache.values()) {
+        if (allMatched.length >= 200) break;
         if (!seenAppIds.has(g.appId)) {
-          if (isNumber && g.appId.toString().includes(rawQ)) {
+          if (isNumber && this.matchNumeric(g.appId, rawQ)) {
             allMatched.push(g);
             seenAppIds.add(g.appId);
           } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw)))) {
@@ -503,7 +541,8 @@ export class GameService {
   }
 
   public getTotalGamesCount(): number {
-    return this.allGames.length + this.chineseGamesCache.size;
+    // 只统计全量库本体，中文缓存与全量库高度重叠，不再叠加造成重复计数
+    return this.allGames.length;
   }
 }
 

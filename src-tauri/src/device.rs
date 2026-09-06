@@ -10,6 +10,13 @@ use winreg::RegKey;
 /// 必须逐字节复刻旧版算法：老用户的授权卡在服务端绑定的是该 ID，
 /// 任何偏差都会导致已激活设备被判定为未激活。
 pub fn get_device_id() -> String {
+    // 进程级缓存：设备码一生只算一次（注册表 + 网卡枚举 + CPU 逐核查询），
+    // 而它出现在每一次云端请求的头里，重复计算纯属浪费
+    static DEVICE_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    DEVICE_ID.get_or_init(compute_device_id).clone()
+}
+
+fn compute_device_id() -> String {
     // 1. MachineGuid（保留原始大小写与连字符，与旧版 reg query 捕获结果一致）
     let raw_identifier = read_machine_guid()
         .map(|g| format!("win_guid_{}", g))
@@ -96,11 +103,14 @@ fn enumerate_adapters() -> Vec<(Vec<u8>, usize)> {
 
     let mut out = Vec::new();
     let mut size: u32 = 15 * 1024;
-    let mut buffer: Vec<u8>;
+    let mut buffer: Vec<u64>;
     // ERROR_BUFFER_OVERFLOW 重试加上限：API 异常时避免死循环
     let mut retries = 0u8;
     loop {
-        buffer = vec![0u8; size as usize];
+        // 以 u64 为元素分配：IP_ADAPTER_ADDRESSES_LH 含指针成员，
+        // 要求 8 字节对齐，直接 Vec<u8> 的首地址无法保证对齐（UB）。
+        // u64 恒 8 字节对齐，长度向上取整覆盖 API 需要的字节数
+        buffer = vec![0u64; (size as usize).div_ceil(8)];
         let rc = unsafe {
             GetAdaptersAddresses(
                 AF_UNSPEC as u32,

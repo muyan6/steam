@@ -13,16 +13,18 @@ export const getSourcesList = (req: Request, res: Response) => {
         sources
       }
     });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };
 
 export const triggerSyncFromSources = async (req: Request, res: Response) => {
   try {
     const result = await syncService.syncAll();
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };

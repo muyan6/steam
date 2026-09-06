@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { CONFIG } from '../config/index.js';
 import { ManifestServerNode, ToolboxRepairLog, ToolboxStatsResponse } from '../types/index.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
@@ -38,7 +39,7 @@ export class ToolboxService {
     {
       id: 'cloud_direct',
       name: '春风渡 云端直连加速节点',
-      endpoint: '150.158.129.222:1257',
+      endpoint: 'steam.myil.top',
       region: '腾讯云 华东 BGP',
       isRecommended: true,
       status: 'online',
@@ -104,7 +105,7 @@ export class ToolboxService {
     const clean = (v: unknown, max: number): string | undefined =>
       typeof v === 'string' && v.length > 0 ? v.slice(0, max) : undefined;
     const newRecord: ToolboxRepairLog = {
-      id: `repair_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `repair_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
       actionType: log.actionType,
       success: log.success,
       deviceId: clean(log.deviceId, 128),
@@ -215,7 +216,7 @@ export class ToolboxService {
   /**
    * 服务端转发检索 Online-Fix.me 补丁
    */
-  public async searchOnlineFix(appId: string | number, gameName?: string): Promise<{
+  public async searchOnlineFix(appId: string | number): Promise<{
     found: boolean;
     query: string;
     searchUrl: string;

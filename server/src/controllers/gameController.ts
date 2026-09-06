@@ -5,9 +5,10 @@ export const getPopularGames = async (req: Request, res: Response) => {
   try {
     const list = gameService.getPopularGames();
     res.json({ success: true, data: list });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };
 
 export const searchGames = async (req: Request, res: Response) => {
@@ -24,9 +25,10 @@ export const searchGames = async (req: Request, res: Response) => {
       pageSize
     });
     res.json({ success: true, data: result });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };
 
 export const getGameDetail = async (req: Request, res: Response) => {
@@ -41,9 +43,10 @@ export const getGameDetail = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '未收录该游戏' });
     }
     res.json({ success: true, data: game });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };
 
 export const getGameHeaderImage = async (req: Request, res: Response) => {
@@ -58,7 +61,8 @@ export const getGameHeaderImage = async (req: Request, res: Response) => {
       return res.json({ success: true, headerUrl });
     }
     res.status(404).json({ success: false, message: '该应用暂无官方封面图' });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };

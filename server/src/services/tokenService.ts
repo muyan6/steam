@@ -26,8 +26,15 @@ export class TokenService {
         this.isLoaded = true;
       }
     } catch (e) {
-      // fail-closed：损坏文件备份为 .corrupt，保留已加载数据，禁止空库覆写
-      try { const dbPath = path.join(CONFIG.DATA_DIR, 'steam_tokens.json'); if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, dbPath + '.corrupt'); } catch {}
+      // fail-closed：损坏文件备份为 .corrupt（已存在则跳过，保留首次完整备份），
+      // 保留已加载数据并置为已加载，禁止空库覆写与反复重载
+      try {
+        const dbPath = path.join(CONFIG.DATA_DIR, 'steam_tokens.json');
+        if (fs.existsSync(dbPath) && !fs.existsSync(dbPath + '.corrupt')) {
+          fs.copyFileSync(dbPath, dbPath + '.corrupt');
+        }
+      } catch {}
+      this.isLoaded = true;
       this.saveBlocked = true;
       console.error('[TokenService] AccessToken 数据库损坏！已备份到 .corrupt，写入功能已禁用，请修复文件后重启服务:', e);
     }

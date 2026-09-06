@@ -33,6 +33,52 @@ export class DeviceService {
   constructor() {
     this.filePath = path.join(CONFIG.DATA_DIR, 'devices.json');
     this.loadDevices();
+    this.startDailyCleanup();
+  }
+
+  /**
+   * 每日自动清理：删除 30 天以上未活跃、且未绑定任何卡密授权（无 licenseCode
+   * 且未激活）的设备档案。绑定了卡密的设备档案永不自动删除，交由管理员手动处理。
+   */
+  private startDailyCleanup(): void {
+    const run = () => {
+      try {
+        const removed = this.cleanupInactiveUnlicensed(30);
+        if (removed > 0) {
+          console.log(`[DeviceService] 每日自动清理完成：移除 ${removed} 台 30 天未活跃且未绑定卡密的设备档案`);
+        }
+      } catch (e) {
+        console.error('[DeviceService] 每日自动清理失败:', e);
+      }
+    };
+    // 启动 1 分钟后先跑一次，之后每 24 小时一次；计时器不阻止进程退出
+    const initial = setTimeout(run, 60 * 1000);
+    (initial as any).unref?.();
+    const timer = setInterval(run, 24 * 3600 * 1000);
+    (timer as any).unref?.();
+  }
+
+  /**
+   * 清理超过 inactiveDays 天未活跃、且没有任何卡密绑定痕迹的设备档案
+   */
+  private cleanupInactiveUnlicensed(inactiveDays: number): number {
+    const cutoff = Date.now() - Math.max(1, inactiveDays) * 24 * 3600 * 1000;
+    let removed = 0;
+    for (const [id, d] of this.devicesMap) {
+      if (
+        new Date(d.lastSeenAt).getTime() < cutoff &&
+        !d.licenseCode &&
+        !d.isActivated
+      ) {
+        this.devicesMap.delete(id);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      this.devicesDirty = true;
+      this.flushDevices();
+    }
+    return removed;
   }
 
   private loadDevices(): void {
@@ -69,6 +115,8 @@ export class DeviceService {
       this.devicesFlushTimer = null;
       this.flushDevices();
     }, 10 * 1000);
+    // 计时器不阻止进程退出
+    (this.devicesFlushTimer as any).unref?.();
   }
 
   private flushDevices(): void {

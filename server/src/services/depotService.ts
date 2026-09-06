@@ -33,8 +33,15 @@ export class DepotService {
         this.isLoaded = true;
       }
     } catch (e) {
-      // fail-closed：损坏文件备份为 .corrupt，保留已加载数据，禁止空库覆写
-      try { const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json'); if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, dbPath + '.corrupt'); } catch {}
+      // fail-closed：损坏文件备份为 .corrupt（已存在则跳过，保留首次完整备份），
+      // 保留已加载数据并置为已加载，禁止空库覆写与反复重载
+      try {
+        const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json');
+        if (fs.existsSync(dbPath) && !fs.existsSync(dbPath + '.corrupt')) {
+          fs.copyFileSync(dbPath, dbPath + '.corrupt');
+        }
+      } catch {}
+      this.isLoaded = true;
       console.error('[DepotService] DepotKey 数据库损坏！已备份到 .corrupt，写入功能已禁用，请修复文件后重启服务:', e);
     }
   }
@@ -103,17 +110,18 @@ export class DepotService {
         this.depotKeysDb.set(k, v);
       }
 
-      // 紧凑序列化：直接拼最终 JSON 字符串原子落盘，
-      // 免去 Object.fromEntries 构建的 30 万条中间副本与缩进体积
+      // 紧凑序列化：分块收集后一次性 join，避免 30 万次字符串 += 累积的
+      // O(n²) 中间串分配，同时免去 Object.fromEntries 构建的大体积中间副本
       const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json');
-      let json = '{';
+      const chunks: string[] = ['{'];
       let first = true;
       for (const [k, v] of this.depotKeysDb) {
-        if (!first) json += ',';
-        json += JSON.stringify(k) + ':' + JSON.stringify(v);
+        if (!first) chunks.push(',');
+        chunks.push(JSON.stringify(k), ':', JSON.stringify(v));
         first = false;
       }
-      json += '}';
+      chunks.push('}');
+      const json = chunks.join('');
       writeStringAtomic(dbPath, json);
       this.isLoaded = true;
       console.log(`[DepotService] 已成功保存 ${this.depotKeysDb.size} 条 DepotKey（新增 ${added} 条）到 ${dbPath}`);

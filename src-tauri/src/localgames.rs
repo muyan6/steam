@@ -313,14 +313,16 @@ const SKIP_APP_IDS: [u32; 5] = [228980, 1070560, 1391110, 1628350, 223750];
 /// 扫描结果缓存：TTL 内重复请求（切换页面/再次进入联机修复中心）直接复用，
 /// 避免每次点击都全量重扫所有游戏目录
 struct ScanCacheEntry {
-    games: Vec<LocalInstalledGame>,
+    games: std::sync::Arc<Vec<LocalInstalledGame>>,
     at: Instant,
 }
 
 static SCAN_CACHE: Mutex<Option<ScanCacheEntry>> = Mutex::new(None);
 const SCAN_CACHE_TTL: Duration = Duration::from_secs(60);
 
-pub fn scan_installed_games_cached(steam_path: &Path, force: bool) -> Vec<LocalInstalledGame> {
+/// 返回 Arc 共享引用：TTL 内的缓存命中只克隆 Arc（引用计数），
+/// 不再整份克隆可能上百条、每条含完整 exe 列表的游戏 Vec
+pub fn scan_installed_games_cached(steam_path: &Path, force: bool) -> std::sync::Arc<Vec<LocalInstalledGame>> {
     if !force {
         if let Ok(guard) = SCAN_CACHE.lock() {
             if let Some(entry) = guard.as_ref() {
@@ -330,7 +332,7 @@ pub fn scan_installed_games_cached(steam_path: &Path, force: bool) -> Vec<LocalI
             }
         }
     }
-    let games = scan_installed_games(steam_path);
+    let games = std::sync::Arc::new(scan_installed_games(steam_path));
     if let Ok(mut guard) = SCAN_CACHE.lock() {
         *guard = Some(ScanCacheEntry { games: games.clone(), at: Instant::now() });
     }
@@ -481,6 +483,8 @@ pub fn launch_game_online(
                 steam::kill_steam();
             }
             steam::restart_steam(&sp, &["-onlinefix".to_string()]);
+            // 就绪检测前先失效运行状态缓存，否则 8 秒旧值会让前几轮轮询读到过期结果
+            steam::clear_steam_running_cache();
             // 等待 steam.exe 真正就绪（冷启动可达 15s+），就绪后再发协议
             let mut ready = false;
             for _ in 0..20 {
@@ -533,7 +537,8 @@ pub fn launch_game_online(
     }
 
     if mode == "bat" {
-        let exe_name = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let dir_name = gp.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let exe_name_orig = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         // 目录名/exe 名直接拼进 bat 命令行，& | ^ < > % 等字符会被 cmd 解析
         // 成额外命令或变量展开（文件夹名合法含这些字符），必须先清洗
         let sanitize = |s: &str| -> String {
@@ -543,8 +548,17 @@ pub fn launch_game_online(
                 .trim()
                 .to_string()
         };
-        let bat_title = sanitize(&gp.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
-        let exe_name = sanitize(&exe_name);
+        let bat_title = sanitize(&dir_name);
+        let exe_name = sanitize(&exe_name_orig);
+        // 清洗改变了原名（含 cmd 元字符）：bat 里的路径已与真实文件不一致，
+        // 绝不能生成启动失败的 bat，回退 Steam 协议正常启动路径
+        if bat_title != dir_name || exe_name != exe_name_orig {
+            crate::open_url_cmd(&format!("steam://rungameid/{}", app_id))?;
+            return Ok(format!(
+                "游戏路径含命令行特殊字符，无法生成 bat 联机脚本，已回退 Steam 协议启动 (AppID: {})。",
+                app_id
+            ));
+        }
         let bat = format!(
             "@echo off\ntitle Online Fix Launcher - {}\ncd /d \"%~dp0\"\nset SteamAppId={}\nset SteamGameId={}\nset SteamOverlayGameId={}\nstart \"\" \"{}\" %*\nexit\n",
             bat_title,

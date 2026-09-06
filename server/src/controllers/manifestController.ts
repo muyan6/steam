@@ -19,8 +19,9 @@ export const getManifestsForApp = async (req: Request, res: Response) => {
 
     const result = await manifestService.getManifestsForApp(appId, dlcs);
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[ManifestController] 获取清单列表异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -40,8 +41,19 @@ export const downloadManifestFile = async (req: Request, res: Response) => {
 
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${depotId}_${manifestId}.manifest"`);
-    fs.createReadStream(filePath).pipe(res);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+    // 文件流错误与客户端中途断开都必须显式销毁，防止读流句柄泄漏
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', (err) => {
+      console.error('[ManifestController] 清单文件读取流出错:', err.message);
+      res.destroy();
+    });
+    res.on('close', () => {
+      // 客户端中止下载时取消文件流
+      stream.destroy();
+    });
+    stream.pipe(res);
+  } catch (e) {
+    console.error('[ManifestController] 清单下载异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };

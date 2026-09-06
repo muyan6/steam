@@ -41,12 +41,22 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction) =>
   });
 };
 
+// 统一兜底错误响应：不向客户端透出内部异常细节
+const internalError = (res: Response, logTag: string, e: unknown): void => {
+  console.error(logTag, e);
+  res.status(500).json({ success: false, message: '服务器内部错误' });
+};
+
 export const updateNotice = (req: Request, res: Response) => {
   try {
     const updated = noticeService.updateNotice(req.body.id || 'notice_default', req.body);
     res.json({ success: true, message: '公告已成功更新并对所有客户端生效', data: updated });
   } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+    // 业务性"不存在"错误返回 404，系统异常返回通用 500
+    if (e?.message && e.message.includes('不存在')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    internalError(res, '[AdminController] 更新公告失败:', e);
   }
 };
 
@@ -55,7 +65,10 @@ export const updateVersion = (req: Request, res: Response) => {
     const updated = versionService.publishVersion(req.body);
     res.json({ success: true, message: '版本升级规则已成功更新', data: updated });
   } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+    if (e?.message && e.message.includes('不存在')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    internalError(res, '[AdminController] 更新版本失败:', e);
   }
 };
 
@@ -71,8 +84,8 @@ export const triggerSyncGames = async (req: Request, res: Response) => {
     });
     const result = await syncService.syncGames();
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    internalError(res, '[AdminController] 同步接口异常:', e);
   }
 };
 
@@ -88,8 +101,8 @@ export const triggerSyncDepots = async (req: Request, res: Response) => {
     });
     const result = await syncService.syncDepotKeys();
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    internalError(res, '[AdminController] 同步接口异常:', e);
   }
 };
 
@@ -105,8 +118,8 @@ export const triggerSyncTokens = async (req: Request, res: Response) => {
     });
     const result = await syncService.syncTokens();
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    internalError(res, '[AdminController] 同步接口异常:', e);
   }
 };
 
@@ -122,8 +135,8 @@ export const triggerSyncAll = async (req: Request, res: Response) => {
     });
     const result = await syncService.syncAll();
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    internalError(res, '[AdminController] 同步接口异常:', e);
   }
 };
 
@@ -137,8 +150,8 @@ export const getPublicStats = (req: Request, res: Response) => {
       time: new Date().toISOString()
     };
     res.json({ success: true, data: stats });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    internalError(res, '[AdminController] 同步接口异常:', e);
   }
 };
 
@@ -162,8 +175,8 @@ export const getServerStats = (req: Request, res: Response) => {
       versionsCount: allVersions.length
     };
     res.json({ success: true, data: stats });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    internalError(res, '[AdminController] 同步接口异常:', e);
   }
 };
 
@@ -198,7 +211,7 @@ export const searchDebugKeys = async (req: Request, res: Response) => {
         game
       }
     });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    internalError(res, '[AdminController] 同步接口异常:', e);
   }
 };

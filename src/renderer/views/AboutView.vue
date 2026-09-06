@@ -259,7 +259,8 @@ const checkUpdates = async () => {
   isCheckingUpdate.value = true;
   try {
     const res = await window.electronAPI.checkVersion(appVersion);
-    if (res && res.hasUpdate) {
+    // hasUpdate 为真但 latest/version 缺失时按"无更新"处理，避免访问 undefined 属性报错
+    if (res && res.hasUpdate && res.latest?.version) {
       emit('notify', `发现新版本 v${res.latest.version}，可前往下载！`, 'info');
     } else {
       emit('notify', '当前已是最新版本 (v' + appVersion + ')！', 'success');

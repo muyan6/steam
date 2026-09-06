@@ -19,8 +19,9 @@ export const getLatestNotice = (req: Request, res: Response) => {
     const version = req.query.version as string | undefined;
     const notice = noticeService.getLatestNotice(version);
     res.json({ success: true, data: notice });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[NoticeController] 公告接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -29,8 +30,9 @@ export const getActiveNoticesList = (req: Request, res: Response) => {
     const version = req.query.version as string | undefined;
     const list = noticeService.getActiveNotices(version);
     res.json({ success: true, data: list });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[NoticeController] 公告接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -40,8 +42,9 @@ export const getAllNoticesAdmin = (req: Request, res: Response) => {
   try {
     const list = noticeService.getAllNotices();
     res.json({ success: true, data: list });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[NoticeController] 公告接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -53,8 +56,9 @@ export const getNoticeDetailAdmin = (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '公告不存在' });
     }
     res.json({ success: true, data: notice });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[NoticeController] 公告接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -72,8 +76,9 @@ export const createNoticeAdmin = (req: Request, res: Response) => {
     });
 
     res.json({ success: true, message: '公告创建成功并已即时生效', data: newNotice });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[NoticeController] 公告接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -92,8 +97,9 @@ export const updateNoticeAdmin = (req: Request, res: Response) => {
     });
 
     res.json({ success: true, message: '公告信息已更新', data: updated });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[NoticeController] 公告接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -121,8 +127,9 @@ export const toggleNoticeAdmin = (req: Request, res: Response) => {
       message: `公告已${toggled.enabled ? '启用' : '停用'}`,
       data: toggled
     });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[NoticeController] 公告接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -145,7 +152,8 @@ export const deleteNoticeAdmin = (req: Request, res: Response) => {
     });
 
     res.json({ success: true, message: '公告已成功删除' });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[NoticeController] 公告接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };

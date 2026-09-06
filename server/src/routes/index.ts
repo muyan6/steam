@@ -167,8 +167,13 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
     return next();
   }
   // 未激活：免费配额检查。带 :appId 参数的路由按 AppID 计数；
-  // 其余密钥类路由（如 manifest 文件下载、单 depotKey）仅要求仍有剩余额度
+  // 其余密钥类路由（如 manifest 文件下载、单 depotKey、OST 中转）按「当日不同 depotId」计数
   const quotaExhausted = { success: false, message: '', data: { quotaExhausted: true, remaining: 0 } };
+  // 二级 IP 限制：同 IP 每日最多 30 台独立未激活设备，防止批量伪造 deviceId 刷免费配额
+  if (!freeQuotaService.consumeIpDevice(req.ip || '', deviceId)) {
+    quotaExhausted.message = '当前网络环境下免费设备数已达上限，请激活后使用';
+    return res.status(403).json(quotaExhausted);
+  }
   const appIdRaw = req.params && req.params.appId ? String(req.params.appId) : '';
   const appId = parseInt(appIdRaw, 10);
   if (!isNaN(appId) && appId > 0) {
@@ -180,7 +185,11 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
     res.setHeader('X-Free-Quota-Remaining', String(r.remaining));
     return next();
   }
-  if (freeQuotaService.hasRemaining(deviceId)) {
+  // 无 appId 的密钥类路由：按「当日不同 depotId」扣减配额（每日最多 100 个不同 depotId）
+  const depotId = String(
+    (req.params && (req.params.depotId || req.params.asset || req.params.tag)) || 'ost:latest'
+  ).trim();
+  if (freeQuotaService.consumeKeyAccess(deviceId, depotId)) {
     return next();
   }
   quotaExhausted.message = '今日免费入库额度已用完，请激活后使用';
@@ -200,7 +209,8 @@ router.get('/stats', (req: Request, res: Response) => {
       }
     });
   } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+    console.error('[Routes] 统计查询异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 });
 

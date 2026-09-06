@@ -529,8 +529,8 @@ export const LANDING_HTML = `<!DOCTYPE html>
                 <div class="hero-sub">One-Click Steam Library & OnlineFix Engine</div>
 
                 <div class="hero-stats">
-                    <div class="stat-badge"><strong>183,751</strong> 全量游戏收录</div>
-                    <div class="stat-badge"><strong>28.8万+</strong> 真实 DepotKey</div>
+                    <div class="stat-badge"><strong>海量</strong> 游戏全量收录</div>
+                    <div class="stat-badge"><strong>海量</strong> 真实 DepotKey 资源</div>
                     <div class="stat-badge"><strong>0ms</strong> 本地极速响应</div>
                 </div>
             </div>
@@ -541,7 +541,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
                 <div class="section">
                     <div class="section-label">Tutorial</div>
                     <div class="section-title">使用教程</div>
-                    <a href="https://doc.guyunsq.com/1.html" target="_blank" class="link-btn">
+                    <a href="https://doc.guyunsq.com/1.html" target="_blank" rel="noopener noreferrer" class="link-btn">
                         <span>
                             查看完整图文使用教程
                             <div class="link-url">doc.guyunsq.com/1.html</div>
@@ -606,7 +606,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
                 <div class="section">
                     <div class="section-label">Support</div>
                     <div class="section-title">入库没有效果？</div>
-                    <a href="https://doc.guyunsq.com/" target="_blank" class="link-btn">
+                    <a href="https://doc.guyunsq.com/" target="_blank" rel="noopener noreferrer" class="link-btn">
                         <div>
                             <div>查看常见问题大全中心</div>
                             <div class="link-url">doc.guyunsq.com</div>
@@ -627,7 +627,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
                             <div class="download-item">
                                 <div class="dl-badge lanzou">蓝奏云</div>
                                 <div class="dl-info">
-                                    <a href="https://hackv.lanzouu.com/b01to9g4sd" target="_blank">点击前往蓝奏云高速下载</a>
+                                    <a href="https://hackv.lanzouu.com/b01to9g4sd" target="_blank" rel="noopener noreferrer">点击前往蓝奏云高速下载</a>
                                     <div class="dl-url">hackv.lanzouu.com/b01to9g4sd</div>
                                     <div class="dl-pass">提取码 <code>6666</code></div>
                                 </div>
@@ -635,14 +635,14 @@ export const LANDING_HTML = `<!DOCTYPE html>
                             <div class="download-item">
                                 <div class="dl-badge pan123">123盘</div>
                                 <div class="dl-info">
-                                    <a href="https://www.123pan.com/s/dYNRVv-E8Uf.html" target="_blank">点击前往 123 盘备用下载</a>
+                                    <a href="https://www.123pan.com/s/dYNRVv-E8Uf.html" target="_blank" rel="noopener noreferrer">点击前往 123 盘备用下载</a>
                                     <div class="dl-url">123pan.com/s/dYNRVv-E8Uf</div>
                                 </div>
                             </div>
                             <div class="download-item">
                                 <div class="dl-badge github">GitHub</div>
                                 <div class="dl-info">
-                                    <a href="https://github.com/muyan6/steam/releases" target="_blank">点击前往 GitHub Releases 官方发布页</a>
+                                    <a href="https://github.com/muyan6/steam/releases" target="_blank" rel="noopener noreferrer">点击前往 GitHub Releases 官方发布页</a>
                                     <div class="dl-url">github.com/muyan6/steam/releases</div>
                                 </div>
                             </div>
@@ -670,7 +670,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
         <div class="footer">
             <p>春风渡 (ChunFengDu Tools) &mdash; Built for Steam Players</p>
             <p style="margin-top: 8px;">
-                <a href="/admin">管理控制台登录</a> · <a href="https://github.com/muyan6/steam" target="_blank">GitHub 开源</a>
+                <a href="/admin">管理控制台登录</a> · <a href="https://github.com/muyan6/steam" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
             </p>
         </div>
 

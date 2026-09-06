@@ -158,10 +158,17 @@ export class ManifestService {
           if (Array.isArray(data)) {
             for (const item of data) {
               if (item.depot_id && item.manifest_id) {
+                // 上游 download_url 白名单校验：仅允许 https，或 GMRC 源自身的 http 地址，
+                // 其余一律回落为默认构造地址，防止客户端被引导到任意 http 端点
+                const rawUrl = typeof item.download_url === 'string' ? item.download_url : '';
+                const safeUrl =
+                  rawUrl.startsWith('https://') || rawUrl.startsWith('http://gmrc.wudrm.com/')
+                    ? rawUrl
+                    : `${u}/${item.depot_id}`;
                 list.push({
                   depotId: item.depot_id.toString(),
                   manifestId: item.manifest_id.toString(),
-                  downloadUrl: item.download_url || `${u}/${item.depot_id}`,
+                  downloadUrl: safeUrl,
                   source: 'gmrc',
                   key: depotService.getDepotKey(item.depot_id.toString()) || undefined
                 });
@@ -241,6 +248,11 @@ export class ManifestService {
    * 保存清单文件到服务端缓存
    */
   public saveManifestFile(depotId: string, manifestId: string, buffer: Buffer): boolean {
+    // depotId/manifestId 必须是纯数字：防止路径穿越等非法 ID 拼进文件名
+    if (!/^\d+$/.test(String(depotId)) || !/^\d+$/.test(String(manifestId))) {
+      console.error('[ManifestService] 保存清单文件失败: 非法的 depotId/manifestId');
+      return false;
+    }
     try {
       const filePath = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
       fs.writeFileSync(filePath, buffer);

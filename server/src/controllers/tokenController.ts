@@ -15,16 +15,18 @@ export const getTokenForApp = async (req: Request, res: Response) => {
     }
 
     return res.json({ success: true, data: { appId, token } });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };
 
 export const getTokensStats = async (req: Request, res: Response) => {
   try {
     const count = tokenService.getTotalTokensCount();
     return res.json({ success: true, data: { count } });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
-  }
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+    }
 };

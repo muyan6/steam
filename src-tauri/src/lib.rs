@@ -74,9 +74,9 @@ fn app_quit(app_handle: AppHandle) {
     app_handle.exit(0);
 }
 
-// 设备机器码
+// 设备机器码（device::get_device_id 自带 OnceLock 缓存，调用代价可忽略）
 #[tauri::command]
-fn get_device_id() -> String {
+async fn get_device_id() -> String {
     device::get_device_id()
 }
 
@@ -369,46 +369,76 @@ async fn check_game_updates(app_ids: Vec<u32>) -> serde_json::Value {
     let Some(steam_path) = steam::detect_steam_path() else {
         return json!([]);
     };
-    // 每个游戏一次云端实时查询，逐个派发到阻塞线程池并发执行（与入库流程同款阻塞模式）
-    let mut handles = Vec::new();
-    for id in app_ids {
-        let sp = steam_path.clone();
-        handles.push((id, tauri::async_runtime::spawn_blocking(move || ost::check_game_update_status(&sp, id))));
-    }
-    let mut out = Vec::with_capacity(handles.len());
-    for (id, h) in handles {
-        let status = h.await.unwrap_or_else(|e| ost::GameUpdateStatus {
-            app_id: id,
-            checked: false,
-            pinned: false,
-            has_update: false,
-            changed_depots: Vec::new(),
-            message: Some(format!("任务执行失败: {}", e)),
-        });
-        out.push(status);
+    // 每个游戏一次云端实时查询。游戏数可达数百，一次性全部派发会瞬间打满
+    // 线程池并向服务器打出数百并发；按 16 个一组分批派发、批间串行汇合，
+    // 兼顾吞吐与对服务端/本机的友好性
+    let mut out = Vec::with_capacity(app_ids.len());
+    for chunk in app_ids.chunks(16) {
+        let mut handles = Vec::new();
+        for &id in chunk {
+            let sp = steam_path.clone();
+            handles.push((id, tauri::async_runtime::spawn_blocking(move || ost::check_game_update_status(&sp, id))));
+        }
+        for (id, h) in handles {
+            let status = h.await.unwrap_or_else(|e| ost::GameUpdateStatus {
+                app_id: id,
+                checked: false,
+                pinned: false,
+                has_update: false,
+                changed_depots: Vec::new(),
+                message: Some(format!("任务执行失败: {}", e)),
+            });
+            out.push(status);
+        }
     }
     json!(out)
 }
 
 #[tauri::command]
-fn get_unlocked_games() -> Vec<u32> {
-    if let Some(steam_path) = steam::detect_steam_path() {
-        ost::get_unlocked_app_ids(&steam_path)
-    } else {
-        Vec::new()
-    }
+async fn get_unlocked_games() -> Vec<u32> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            ost::get_unlocked_app_ids(&steam_path)
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]
-fn remove_unlocked_game(app_id: u32) -> serde_json::Value {
-    if let Some(steam_path) = steam::detect_steam_path() {
-        match ost::remove_unlocked_rule(&steam_path, app_id) {
-            Ok(_) => json!({ "success": true, "message": format!("已成功移除 AppID {} 的入库规则", app_id) }),
-            Err(e) => json!({ "success": false, "message": e }),
+async fn remove_unlocked_game(app_id: u32) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            match ost::remove_unlocked_rule(&steam_path, app_id) {
+                Ok((removed, failed)) => {
+                    if failed > 0 {
+                        if removed == 0 {
+                            json!({
+                                "success": false,
+                                "message": format!("AppID {} 的规则文件删除失败（Steam 可能正在运行），请先退出 Steam 后重试", app_id)
+                            })
+                        } else {
+                            // 部分落点删除失败：整体结果保留 success 供前端兼容，
+                            // 消息明确提示残留，避免用户误以为已彻底清理
+                            json!({
+                                "success": true,
+                                "message": format!("已移除 AppID {} 的入库规则，但部分规则文件删除失败（Steam 可能正在运行）", app_id)
+                            })
+                        }
+                    } else {
+                        json!({ "success": true, "message": format!("已成功移除 AppID {} 的入库规则", app_id) })
+                    }
+                }
+                Err(e) => json!({ "success": false, "message": e }),
+            }
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 安装路径" })
         }
-    } else {
-        json!({ "success": false, "message": "未找到 Steam 安装路径" })
-    }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
 }
 
 #[tauri::command]
@@ -419,6 +449,9 @@ async fn clear_all_games() -> serde_json::Value {
                 Ok(res) => {
                     if res.failed > 0 {
                         json!({ "success": false, "count": res.removed, "message": format!("已移除 {} 条规则，但 {} 条删除失败（可能被占用）", res.removed, res.failed) })
+                    } else if res.skipped > 0 {
+                        // 第三方脚本（内核自带/用户手写，无生成标记）不删只跳过
+                        json!({ "success": true, "count": res.removed, "message": format!("已清空本工具生成的 {} 条入库规则，另有 {} 个第三方规则脚本已保留", res.removed, res.skipped) })
                     } else {
                         json!({ "success": true, "count": res.removed, "message": format!("已清空全部 {} 个游戏的入库规则！", res.removed) })
                     }
@@ -434,15 +467,19 @@ async fn clear_all_games() -> serde_json::Value {
 }
 
 #[tauri::command]
-fn uninstall_injection() -> serde_json::Value {
-    if let Some(steam_path) = steam::detect_steam_path() {
-        match ost::uninstall_injection_files(&steam_path) {
-            Ok(_) => json!({ "success": true, "message": "已成功卸载 OpenSteamTool 注入文件。" }),
-            Err(failed) => json!({ "success": false, "message": format!("部分注入文件卸载失败: {}", failed) }),
+async fn uninstall_injection() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            match ost::uninstall_injection_files(&steam_path) {
+                Ok(_) => json!({ "success": true, "message": "已成功卸载 OpenSteamTool 注入文件。" }),
+                Err(failed) => json!({ "success": false, "message": format!("部分注入文件卸载失败: {}", failed) }),
+            }
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 安装路径" })
         }
-    } else {
-        json!({ "success": false, "message": "未找到 Steam 安装路径" })
-    }
+    })
+    .await
+    .unwrap_or(json!({ "success": false, "message": "任务执行失败" }))
 }
 
 // 环境体检：返回与 Electron 版一致的 EnvironmentDiagnosticResult 结构
@@ -644,17 +681,17 @@ fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
     let mut auto_switch = false;
     let mut server = "steamrun".to_string();
     if let Ok(content) = std::fs::read_to_string(toml_path) {
-        auto_switch = content.contains("auto_switch = true");
+        // 逐行解析：trim → 去掉 # 注释 → 按 = 拆键值并两侧 trim。
+        // 旧 contains("auto_switch = true") 写法无法匹配 "auto_switch=true"（无空格）
         for line in content.lines() {
-            let line = line.trim();
-            if let Some(rest) = line.strip_prefix("server") {
-                let rest = rest.trim_start();
-                if let Some(rest) = rest.strip_prefix('=') {
-                    let v = rest.trim().trim_matches('"');
-                    if !v.is_empty() {
-                        server = v.to_string();
-                    }
-                }
+            let line = line.split('#').next().unwrap_or("").trim();
+            let Some((key, value)) = line.split_once('=') else { continue };
+            let key = key.trim();
+            let value = value.trim().trim_matches('"').trim();
+            if key == "auto_switch" {
+                auto_switch = value.eq_ignore_ascii_case("true");
+            } else if key == "server" && !value.is_empty() {
+                server = value.to_string();
             }
         }
     }
@@ -668,13 +705,16 @@ fn ensure_auto_switch_default(steam_path: &std::path::Path) {
     if !toml_path.exists() {
         return;
     }
+    // 读-判-写必须与字段级更新互斥（后台迁移线程 vs 工具箱命令并发），
+    // 在锁内完成整个序列；update_toml_manifest_fields_locked 不再加锁
+    let _guard = ost::TOML_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let has_field = std::fs::read_to_string(&toml_path)
         .map(|c| c.contains("auto_switch"))
         .unwrap_or(true);
     if has_field {
         return;
     }
-    let _ = update_toml_manifest_fields(
+    let _ = update_toml_manifest_fields_locked(
         steam_path,
         &[
             ("auto_switch", "true"),
@@ -714,11 +754,32 @@ async fn get_toolbox_status() -> serde_json::Value {
         }
     })
     .await
-    .unwrap_or(json!({ "success": false, "message": "任务执行失败" }))
+    // JoinError 兜底必须与成功路径同构（不含 success 字段），否则前端
+    // 直接读 steamPath/isRunning 等字段会拿到 undefined 引发渲染异常
+    .unwrap_or(json!({
+        "steamPath": null,
+        "isRunning": false,
+        "hasOpenSteamTool": false,
+        "hasSha256Cache": false,
+        "autoSwitchEnabled": false,
+        "currentManifestServer": "steamrun",
+        "message": "任务执行失败"
+    }))
 }
 
 /// 对 opensteamtool.toml 做 [manifest] 段内字段级更新（保留其余用户配置）
+/// 外部入口：加进程级 TOML 锁后执行，防止与 generate_toml_config /
+/// ensure_auto_switch_default 的读-改-写并发交错
 fn update_toml_manifest_fields(
+    steam_path: &std::path::Path,
+    updates: &[(&str, &str)],
+) -> Result<(), String> {
+    let _guard = ost::TOML_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    update_toml_manifest_fields_locked(steam_path, updates)
+}
+
+/// 不加锁的核心实现：仅在已持有 ost::TOML_LOCK 的上下文调用
+fn update_toml_manifest_fields_locked(
     steam_path: &std::path::Path,
     updates: &[(&str, &str)],
 ) -> Result<(), String> {
@@ -870,13 +931,17 @@ async fn fill_sha256() -> ToolboxActionResult {
         "meta": { "autoValidate": true, "skipCorrupted": false, "manifestIntegrityCheck": true }
     });
     let target = ost_dir.join("sha256.json");
-    match std::fs::write(&target, serde_json::to_string_pretty(&payload).unwrap_or_default()) {
+    // 序列化失败绝不能 unwrap_or_default 落一个空文件：内核读到空 sha256.json
+    // 会把全部 DLL 判为校验失败，比没有校验文件更糟
+    let payload_text = serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("序列化 SHA256 校验数据失败: {}", e));
+    match payload_text.and_then(|text| std::fs::write(&target, text).map_err(|e| format!("写入失败: {}", e))) {
         Ok(_) => {
             steps.push("✓ SHA256 校验数据已写入 opensteamtool/sha256.json".to_string());
             toolbox_action(true, "OpenSteamTool SHA256 校验数据已成功补齐并就绪！".to_string(), steps)
         }
         Err(e) => {
-            steps.push(format!("[错误] 写入失败: {}", e));
+            steps.push(format!("[错误] {}", e));
             toolbox_action(false, format!("补齐 SHA256 失败: {}", e), steps)
         }
     } })
@@ -936,14 +1001,18 @@ async fn is_spacewar_installed() -> serde_json::Value {
     }
 
 #[tauri::command]
-async fn scan_local_games(force: Option<bool>) -> Vec<localgames::LocalInstalledGame> {
+async fn scan_local_games(force: Option<bool>) -> serde_json::Value {
     let force = force.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || { match steam::detect_steam_path() {
-        Some(sp) => localgames::scan_installed_games_cached(&sp, force),
-        None => vec![],
-    } })
-        .await
-        .unwrap_or_else(|_e| Vec::new())
+    tauri::async_runtime::spawn_blocking(move || match steam::detect_steam_path() {
+        Some(sp) => {
+            // 缓存命中返回 Arc 共享引用：直接序列化引用，不再整份克隆游戏列表
+            let games = localgames::scan_installed_games_cached(&sp, force);
+            serde_json::to_value(&*games).unwrap_or(json!([]))
+        }
+        None => json!([]),
+    })
+    .await
+    .unwrap_or_else(|_e| json!([]))
     }
 
 /// 查询未激活设备的今日免费入库额度（不扣减）
@@ -959,35 +1028,51 @@ fn consume_free_unlock_quota(is_activated: Option<bool>) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn check_game_dir(dir_path: String) -> serde_json::Value {
-    let p = PathBuf::from(&dir_path);
-    let has_backup = p.join("steam_api64_o.dll").exists() || p.join("steam_api_o.dll").exists();
-    let (is_patched, mode, app_id) = localgames::check_game_directory(&p);
-    json!({ "gamePath": dir_path, "hasBackup": has_backup, "isPatched": is_patched, "mode": mode, "appId": app_id })
+async fn check_game_dir(dir_path: String) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = PathBuf::from(&dir_path);
+        let has_backup = p.join("steam_api64_o.dll").exists() || p.join("steam_api_o.dll").exists();
+        let (is_patched, mode, app_id) = localgames::check_game_directory(&p);
+        json!({ "gamePath": dir_path, "hasBackup": has_backup, "isPatched": is_patched, "mode": mode, "appId": app_id })
+    })
+    .await
+    .unwrap_or_else(|_| json!({ "gamePath": "", "hasBackup": false, "isPatched": false, "mode": "none", "appId": null }))
 }
 
 #[tauri::command]
-fn apply_spacewar_fix(dir_path: String, real_app_id: u32) -> serde_json::Value {
-    match localgames::apply_spacewar_fix(Path::new(&dir_path), real_app_id) {
-        Ok(msg) => json!({ "success": true, "message": msg }),
-        Err(e) => json!({ "success": false, "message": e }),
-    }
+async fn apply_spacewar_fix(dir_path: String, real_app_id: u32) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        match localgames::apply_spacewar_fix(Path::new(&dir_path), real_app_id) {
+            Ok(msg) => json!({ "success": true, "message": msg }),
+            Err(e) => json!({ "success": false, "message": e }),
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
 }
 
 #[tauri::command]
-fn apply_goldberg_fix(dir_path: String, app_id: u32, player_name: Option<String>) -> serde_json::Value {
-    match localgames::apply_goldberg_fix(Path::new(&dir_path), app_id, player_name.as_deref().unwrap_or("春风渡玩家")) {
-        Ok(msg) => json!({ "success": true, "message": msg }),
-        Err(e) => json!({ "success": false, "message": e }),
-    }
+async fn apply_goldberg_fix(dir_path: String, app_id: u32, player_name: Option<String>) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        match localgames::apply_goldberg_fix(Path::new(&dir_path), app_id, player_name.as_deref().unwrap_or("春风渡玩家")) {
+            Ok(msg) => json!({ "success": true, "message": msg }),
+            Err(e) => json!({ "success": false, "message": e }),
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
 }
 
 #[tauri::command]
-fn restore_game(dir_path: String) -> serde_json::Value {
-    match localgames::restore_original_game(Path::new(&dir_path)) {
-        Ok(msg) => json!({ "success": true, "message": msg }),
-        Err(e) => json!({ "success": false, "message": e }),
-    }
+async fn restore_game(dir_path: String) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        match localgames::restore_original_game(Path::new(&dir_path)) {
+            Ok(msg) => json!({ "success": true, "message": msg }),
+            Err(e) => json!({ "success": false, "message": e }),
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
 }
 
 #[tauri::command]
@@ -1070,9 +1155,17 @@ async fn onlinefix_deploy(
     }
 
 #[tauri::command]
-fn get_steamless_status(app: AppHandle) -> steamless::SteamlessStatusInfo {
-    let resource_dir = app.path().resource_dir().ok();
-    steamless::get_status_with_resource(resource_dir.as_deref())
+async fn get_steamless_status(app: AppHandle) -> steamless::SteamlessStatusInfo {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resource_dir = app.path().resource_dir().ok();
+        steamless::get_status_with_resource(resource_dir.as_deref())
+    })
+    .await
+    .unwrap_or_else(|_| steamless::SteamlessStatusInfo {
+        available: false,
+        engine: "Steamless 状态查询任务执行失败".to_string(),
+        cli_path: None,
+    })
 }
 
 #[tauri::command]
@@ -1228,15 +1321,23 @@ async fn sync_ost_latest() -> serde_json::Value {
 
 /// 应用内下载更新安装包：流式写盘并通过 update-download-progress 事件上报进度，
 /// 完成后返回安装包临时路径，由前端调用 launch_installer 拉起安装程序。
+/// sha256：服务端更新载荷可选提供的安装包摘要（64 位 hex），提供时强校验
 #[tauri::command]
-async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, String> {
+async fn download_update(app: tauri::AppHandle, url: String, sha256: Option<String>) -> Result<String, String> {
     use tauri::Emitter;
     let clean_url = url.trim().to_string();
-    if clean_url.is_empty() || clean_url.len() > 1024 || !(clean_url.starts_with("http://") || clean_url.starts_with("https://")) {
-        return Err("无效的下载地址".to_string());
+    // 仅允许 https：安装包是即将以用户权限执行的可执行文件，
+    // http 明文通道可被中间人替换为任意程序；github/代理镜像均支持 https
+    if clean_url.is_empty() || clean_url.len() > 1024 || !clean_url.starts_with("https://") {
+        return Err("无效的下载地址（仅支持 https 直链）".to_string());
     }
+    // 摘要校验参数规范化：空串/非 64 位 hex 一律忽略（向后兼容无摘要的服务端）
+    let expected_sha256 = sha256
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()));
 
     tauri::async_runtime::spawn_blocking(move || {
+        use sha2::{Digest, Sha256};
         // 独立 client：不设总超时（安装包可能较大、网速较慢），仅限制连接超时
         let client = manifests::http_client_builder()
             .connect_timeout(std::time::Duration::from_secs(10))
@@ -1259,6 +1360,7 @@ async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, S
         let total = resp.content_length();
         let mut file = std::fs::File::create(&target).map_err(|e| format!("创建临时文件失败: {}", e))?;
         use std::io::Write;
+        let mut hasher = Sha256::new();
         let mut resp = resp;
         let mut downloaded: u64 = 0;
         let mut last_emitted: u64 = 0;
@@ -1266,6 +1368,7 @@ async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, S
             let chunk = manifests::block_on(resp.chunk()).map_err(|e| format!("下载中断: {}", e))?;
             let Some(bytes) = chunk else { break };
             file.write_all(&bytes).map_err(|e| format!("写入临时文件失败: {}", e))?;
+            hasher.update(&bytes);
             downloaded += bytes.len() as u64;
             // 每累计 512KB 上报一次进度，避免事件刷屏
             if downloaded - last_emitted >= 512 * 1024 {
@@ -1276,11 +1379,22 @@ async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, S
                 );
             }
         }
-        file.flush().ok();
+        // flush 失败意味着数据可能未真正落盘，必须报错而不是静默忽略
+        file.flush().map_err(|e| format!("刷新安装包文件失败: {}", e))?;
         let _ = app.emit(
             "update-download-progress",
             serde_json::json!({ "downloaded": downloaded, "total": total }),
         );
+
+        // 服务端提供了摘要时强校验：不一致立即删除安装包并拒绝，
+        // 防止被篡改/损坏的安装包进入 launch_installer 执行
+        if let Some(expected) = &expected_sha256 {
+            let actual = format!("{:x}", hasher.finalize());
+            if &actual != expected {
+                let _ = std::fs::remove_file(&target);
+                return Err(format!("安装包 SHA256 校验失败（期望 {}，实际 {}），已删除下载内容。下载可能被篡改或中断，请重试", expected, actual));
+            }
+        }
         Ok(target.to_string_lossy().to_string())
     })
     .await
@@ -1292,7 +1406,8 @@ async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, S
 fn launch_installer(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
     // 安全校验：只允许执行位于系统临时目录、刚由 download_update 下载的 exe
-    let is_temp_exe = p.extension().map(|e| e == "exe").unwrap_or(false)
+    // （扩展名比较大小写不敏感，Windows 文件系统本身不区分大小写）
+    let is_temp_exe = p.extension().map(|e| e.eq_ignore_ascii_case("exe")).unwrap_or(false)
         && p.parent().map(|dir| dir == std::env::temp_dir()).unwrap_or(false);
     if !is_temp_exe {
         return Err("非法的安装包路径".to_string());
@@ -1316,7 +1431,9 @@ fn launch_installer(app: tauri::AppHandle, path: String) -> Result<(), String> {
 /// 解析 "#rrggbb" 为 tauri Color（RGBA 不透明）
 fn parse_color_hex(hex: &str) -> Option<tauri::utils::config::Color> {
     let h = hex.trim().trim_start_matches('#');
-    if h.len() != 6 {
+    // is_ascii 必须前置：非 ASCII 字符按字节切片可能切在多字节字符中间，
+    // 直接 panic（外部传入的主题色不可信）
+    if h.len() != 6 || !h.is_ascii() {
         return None;
     }
     let r = u8::from_str_radix(&h[0..2], 16).ok()?;

@@ -105,6 +105,8 @@ export interface AdminCredentials {
   updatedAt: string;
   /** 递增后使所有旧 JWT 失效（修改密码时递增） */
   tokenVersion?: number;
+  /** PBKDF2 迭代次数；历史凭据无此字段时视为 10000，登录成功后透明升级 */
+  pbkdf2Iterations?: number;
 }
 
 export interface AdminUser {

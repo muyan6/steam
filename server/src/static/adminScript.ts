@@ -14,8 +14,7 @@ function getHeaders() {
   var t = authToken || localStorage.getItem('steammaster_admin_token') || '';
   return {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer ' + t,
-    'x-admin-token': t
+    'Authorization': 'Bearer ' + t
   };
 }
 
@@ -47,6 +46,8 @@ function hideNotice() {
   }
 }
 
+var authInitialized = false;
+
 function checkAuth() {
   var t = authToken || localStorage.getItem('steammaster_admin_token') || '';
   var loginSec = document.getElementById('loginSection');
@@ -55,7 +56,11 @@ function checkAuth() {
     authToken = t;
     if (loginSec) { loginSec.classList.add('d-none'); loginSec.style.cssText = 'display: none !important;'; }
     if (dashSec) { dashSec.classList.remove('d-none'); dashSec.style.cssText = 'display: block !important;'; }
-    loadAllData();
+    // 防止 DOMContentLoaded 与 window.onload 双重触发导致 loadAllData 重复执行
+    if (!authInitialized) {
+      authInitialized = true;
+      loadAllData();
+    }
   } else {
     if (loginSec) { loginSec.classList.remove('d-none'); loginSec.style.cssText = 'display: flex !important;'; }
     if (dashSec) { dashSec.classList.add('d-none'); dashSec.style.cssText = 'display: none !important;'; }
@@ -102,6 +107,7 @@ async function handleLoginSubmit() {
 
 function handleLogout() {
   authToken = '';
+  authInitialized = false;
   localStorage.removeItem('steammaster_admin_token');
   checkAuth();
 }
@@ -157,6 +163,7 @@ async function loadStats() {
     }
 
     var devResp = await fetch('/api/admin/devices/stats', { headers: getHeaders() });
+    if (devResp.status === 401) { handleLogout(); return; }
     var devRes = await devResp.json();
     if (devRes && devRes.success && devRes.data) {
       var ds = devRes.data;
@@ -241,24 +248,24 @@ async function loadLicensesData(page) {
           }
 
           var actionBtns = [
-            '<button onclick="copyLicenseCode(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" title="复制卡密">复制</button>'
+            '<button onclick="copyLicenseCode(\\'' + attrSafe(item.code) + '\\')" class="btn btn-secondary btn-sm" title="复制卡密">复制</button>'
           ];
 
           if (item.deviceId) {
-            actionBtns.push('<button onclick="handleUnbindLicense(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-amber);" title="解绑设备">解绑</button>');
+            actionBtns.push('<button onclick="handleUnbindLicense(\\'' + attrSafe(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-amber);" title="解绑设备">解绑</button>');
           }
 
           if (item.type !== 'lifetime') {
-            actionBtns.push('<button onclick="openExtendLicenseModal(\\'' + safeId(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-blue);" title="延长有效期">延期</button>');
+            actionBtns.push('<button onclick="openExtendLicenseModal(\\'' + attrSafe(item.code) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-blue);" title="延长有效期">延期</button>');
           }
 
           if (item.status === 'disabled') {
-            actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',false)" class="btn btn-secondary btn-sm" style="color:var(--c-green);">启用</button>');
+            actionBtns.push('<button onclick="handleToggleLicense(\\'' + attrSafe(item.code) + '\\',false)" class="btn btn-secondary btn-sm" style="color:var(--c-green);">启用</button>');
           } else {
-            actionBtns.push('<button onclick="handleToggleLicense(\\'' + item.code + '\\',true)" class="btn btn-secondary btn-sm" style="color:var(--c-rose);">冻结</button>');
+            actionBtns.push('<button onclick="handleToggleLicense(\\'' + attrSafe(item.code) + '\\',true)" class="btn btn-secondary btn-sm" style="color:var(--c-rose);">冻结</button>');
           }
 
-          actionBtns.push('<button onclick="handleDeleteLicense(\\'' + safeId(item.code) + '\\')" class="btn btn-danger btn-sm">删除</button>');
+          actionBtns.push('<button onclick="handleDeleteLicense(\\'' + attrSafe(item.code) + '\\')" class="btn btn-danger btn-sm">删除</button>');
 
           return '<tr>' +
             '<td><strong style="color:var(--text-strong);font-family:monospace;font-size:12px;">' + escapeHtml(item.code) + '</strong></td>' +
@@ -283,7 +290,7 @@ async function loadLicensesData(page) {
     }
   } catch(e) {
     console.error('loadLicensesData error:', e);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--c-rose);padding:24px;">载入异常: ' + e.message + '</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--c-rose);padding:24px;">载入异常: ' + escapeHtml(e && e.message ? e.message : String(e)) + '</td></tr>';
   }
 }
 
@@ -367,7 +374,12 @@ function openExtendLicenseModal(code) {
 
 async function handleExtendLicenseSubmit() {
   var code = document.getElementById('extLicCode').value;
-  var days = parseInt(document.getElementById('extLicDays').value, 10) || 30;
+  var daysRaw = (document.getElementById('extLicDays').value || '').trim();
+  var days = parseInt(daysRaw, 10);
+  if (!daysRaw || !isFinite(days) || days < 1 || String(days) !== daysRaw) {
+    alert('请输入大于等于 1 的整数延期天数');
+    return;
+  }
   try {
     var resp = await fetch('/api/admin/license/extend', {
       method: 'POST',
@@ -478,7 +490,7 @@ async function loadDevicesData(page) {
   var s = statusFilter ? statusFilter.value : 'all';
 
   var tbody = document.getElementById('deviceTableBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:24px;">正在载入客户端设备档案...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:24px;">正在载入客户端设备档案...</td></tr>';
 
   try {
     var url = '/api/admin/devices/list?page=' + currentDevPage + '&limit=20&search=' + q + '&status=' + s;
@@ -522,7 +534,7 @@ async function loadDevicesData(page) {
             '<td>' + firstStr + '</td>' +
             '<td><strong style="color:var(--c-green);">' + lastStr + '</strong></td>' +
             '<td style="text-align:right;white-space:nowrap;">' +
-              '<button onclick="deleteDevice(\\'' + safeId(item.deviceId) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
+              '<button onclick="deleteDevice(\\'' + attrSafe(item.deviceId) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
             '</td>' +
           '</tr>';
         }).join('');
@@ -538,7 +550,7 @@ async function loadDevicesData(page) {
     }
   } catch(e) {
     console.error('loadDevicesData error:', e);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--c-rose);padding:24px;">载入异常: ' + e.message + '</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--c-rose);padding:24px;">载入异常: ' + escapeHtml(e && e.message ? e.message : String(e)) + '</td></tr>';
   }
 }
 
@@ -632,8 +644,8 @@ async function loadVersions() {
           '<td>' + (v.forceUpdate ? '<span class="badge badge-rose">强制全量</span>' : '<span class="badge badge-blue">推荐更新</span>') + '</td>' +
           '<td><span class="badge ' + (v.enabled ? 'badge-green' : 'badge-gray') + '">' + (v.enabled ? '活跃上线' : '已归档') + '</span></td>' +
           '<td style="text-align:right;">' +
-            '<button onclick="openPushModal(\\'' + safeId(v.version) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-amber);">全网广播</button> ' +
-            '<button onclick="deleteVersion(\\'' + safeId(v.version) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
+            '<button onclick="openPushModal(\\'' + attrSafe(v.version) + '\\')" class="btn btn-secondary btn-sm" style="color:var(--c-amber);">全网广播</button> ' +
+            '<button onclick="deleteVersion(\\'' + attrSafe(v.version) + '\\')" class="btn btn-danger btn-sm">删除</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -644,6 +656,7 @@ async function loadVersions() {
 async function loadSources() {
   try {
     var resp = await fetch('/api/sources', { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
     var res = await resp.json();
     var grid = document.getElementById('sourcesGrid');
     if (res && res.success && grid) {
@@ -661,7 +674,7 @@ async function loadSources() {
           '</div>' +
           '<div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">' +
             '<span style="font-size:10px;color:var(--text-dim);">维护: ' + escapeHtml(s.author || '社区') + '</span>' +
-            '<a href="' + escapeHtml(s.sourceUrl || '#') + '" target="_blank" style="font-size:11px;color:var(--c-blue);">上游主页 ➔</a>' +
+            '<a href="' + (/^https?:\\/\\//i.test(s.sourceUrl || '') ? escapeHtml(s.sourceUrl) : '#') + '" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--c-blue);">上游主页 ➔</a>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -672,6 +685,7 @@ async function loadSources() {
 async function loadAuditLogs() {
   try {
     var resp = await fetch('/api/auth/audit-logs', { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
     var res = await resp.json();
     var tbody = document.getElementById('auditTableBody');
     if (res && res.success && tbody) {
@@ -802,7 +816,7 @@ async function searchKey() {
   var val = (input ? input.value : '').trim();
   if (!val) return;
   var container = document.getElementById('keySearchResult');
-  if (container) { container.style.display = 'block'; container.innerHTML = '<div style="color:var(--text-dim);">正在检索云端 28.8万条密钥库...</div>'; }
+  if (container) { container.style.display = 'block'; container.innerHTML = '<div style="color:var(--text-dim);">正在检索云端密钥库...</div>'; }
   try {
     // 走管理员专用检索接口（requireAdmin 保护）。/api/metadata/:appId 要求
     // 客户端设备授权头，控制台请求永远不带 x-device-id，必然 401
@@ -931,20 +945,44 @@ async function handlePushSubmit() {
 }
 
 async function toggleNotice(id, enable) {
-  await fetch('/api/admin/notices/' + id + '/toggle', { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ enabled: enable }) });
-  loadNotices();
+  try {
+    var resp = await fetch('/api/admin/notices/' + id + '/toggle', { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ enabled: enable }) });
+    if (resp.status === 401) { handleLogout(); return; }
+    var res = await resp.json();
+    if (res && res.success) {
+      loadNotices();
+    } else {
+      alert((res && res.message) || '操作失败');
+    }
+  } catch(e) { alert('操作失败: ' + (e && e.message ? e.message : String(e))); }
 }
 
 async function deleteNotice(id) {
   if (!confirm('确定删除此公告？')) return;
-  await fetch('/api/admin/notices/' + id, { method: 'DELETE', headers: getHeaders() });
-  loadNotices();
+  try {
+    var resp = await fetch('/api/admin/notices/' + id, { method: 'DELETE', headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
+    var res = await resp.json();
+    if (res && res.success) {
+      loadNotices();
+    } else {
+      alert((res && res.message) || '操作失败');
+    }
+  } catch(e) { alert('操作失败: ' + (e && e.message ? e.message : String(e))); }
 }
 
 async function deleteVersion(ver) {
   if (!confirm('确定删除版本 v' + ver + ' 记录？')) return;
-  await fetch('/api/admin/versions/' + ver, { method: 'DELETE', headers: getHeaders() });
-  loadVersions();
+  try {
+    var resp = await fetch('/api/admin/versions/' + encodeURIComponent(ver), { method: 'DELETE', headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
+    var res = await resp.json();
+    if (res && res.success) {
+      loadVersions();
+    } else {
+      alert((res && res.message) || '操作失败');
+    }
+  } catch(e) { alert('操作失败: ' + (e && e.message ? e.message : String(e))); }
 }
 
 function formatTime(iso) {
@@ -961,8 +999,28 @@ function escapeHtml(str) {
 }
 
 // 用于拼进 onclick="fn(\'...\')" 的 ID：只允许安全字符，杜绝属性逃逸
+// 白名单含点号，避免版本号 1.0.0 被清洗成 100
 function safeId(id) {
-  return String(id || '').replace(/[^a-zA-Z0-9_:-]/g, '');
+  return String(id || '').replace(/[^a-zA-Z0-9_.:-]/g, '');
+}
+
+// 用于把任意用户可控文本（卡密、版本号、设备 ID 等）安全拼进
+// onclick="fn(\'...\')" 这类「HTML 属性 + JS 字符串」双重上下文：
+// 先按 JS 字符串规则把危险字符转成 xHH 形式的转义序列，输出中不再含有
+// 原始的引号 / 尖括号 / &，因此天然满足 HTML 属性上下文，不会再被
+// 浏览器做属性解码后还原出逃逸字符。
+function attrSafe(v) {
+  var s = String(v == null ? '' : v);
+  var bs = String.fromCharCode(92); // 反斜杠
+  s = s.split(bs).join(bs + bs); // \ -> \\
+  s = s.split(String.fromCharCode(39)).join(bs + 'x27'); // ' -> \x27
+  s = s.split(String.fromCharCode(34)).join(bs + 'x22'); // " -> \x22
+  s = s.split('<').join(bs + 'x3c'); // < -> \x3c
+  s = s.split('>').join(bs + 'x3e'); // > -> \x3e
+  s = s.split('&').join(bs + 'x26'); // & -> \x26
+  s = s.split(String.fromCharCode(10)).join(bs + 'n'); // 换行
+  s = s.split(String.fromCharCode(13)).join(bs + 'r'); // 回车
+  return s;
 }
 
 function loadAllData() {

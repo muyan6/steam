@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { CONFIG } from '../config/index.js';
 import { Announcement } from '../types/index.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
@@ -88,9 +89,17 @@ export class NoticeService {
   private readAll(): Announcement[] {
     try {
       if (fs.existsSync(this.noticesFilePath)) {
+        // mtime 缓存：公告文件读多写少，内容未变化时避免每次请求同步读盘
+        const stat = fs.statSync(this.noticesFilePath);
+        if (this.readCache && this.readCacheMtimeMs === stat.mtimeMs) {
+          return this.readCache;
+        }
         const content = fs.readFileSync(this.noticesFilePath, 'utf-8');
         const list: Announcement[] = JSON.parse(content);
-        return Array.isArray(list) ? list : [];
+        const result = Array.isArray(list) ? list : [];
+        this.readCache = result;
+        this.readCacheMtimeMs = stat.mtimeMs;
+        return result;
       }
     } catch (e) {
       console.error('[NoticeService] 读取公告列表失败:', e);
@@ -98,9 +107,16 @@ export class NoticeService {
     return [];
   }
 
+  // 公告文件 mtime 缓存（写路径失效）
+  private readCache: Announcement[] | null = null;
+  private readCacheMtimeMs: number = -1;
+
   private saveAll(notices: Announcement[]) {
     try {
       writeJsonAtomic(this.noticesFilePath, notices);
+      // 写入后立即失效缓存，保证同进程读写一致
+      this.readCache = null;
+      this.readCacheMtimeMs = -1;
       this.syncLegacyFile();
     } catch (e) {
       console.error('[NoticeService] 保存公告列表失败:', e);
@@ -165,8 +181,12 @@ export class NoticeService {
       }
 
       // 版本号匹配规则（如有指定）
-      if (item.targetVersion && item.targetVersion !== '*' && clientVersion) {
-        // 如果指定了目标版本且与客户端不符
+      if (item.targetVersion && item.targetVersion !== '*') {
+        // 客户端未上报版本号时按不匹配处理（fail-closed）：
+        // 定向公告不能因参数缺失而对全量客户端放开
+        if (!clientVersion) {
+          return false;
+        }
         if (!this.matchesVersionRule(clientVersion, item.targetVersion)) {
           return false;
         }
@@ -213,22 +233,67 @@ export class NoticeService {
     return active.length > 0 ? active[0] : null;
   }
 
+  /**
+   * 公告字段白名单清洗：类型校验 + 长度截断 + 优先级夹取。
+   * 管理端创建/更新接口一律经此清洗后再落盘，防止任意字段注入与超大 payload。
+   */
+  private sanitizeNoticeData(data: Partial<Announcement>): Partial<Announcement> {
+    const cleanStr = (v: unknown, max: number): string | undefined =>
+      typeof v === 'string' ? v.replace(/[\x00-\x1F\x7F]/g, '').slice(0, max) : undefined;
+    const out: Partial<Announcement> = {};
+
+    const title = cleanStr(data.title, 100);
+    if (title !== undefined) out.title = title;
+    const content = cleanStr(data.content, 5000);
+    if (content !== undefined) out.content = content;
+
+    if (data.type === 'popup' || data.type === 'banner' || data.type === 'notification') {
+      out.type = data.type;
+    }
+    if (data.level === 'info' || data.level === 'warning' || data.level === 'danger' || data.level === 'success') {
+      out.level = data.level;
+    }
+    if (typeof data.priority === 'number' && !isNaN(data.priority)) {
+      out.priority = Math.min(1000, Math.max(0, Math.floor(data.priority)));
+    }
+    if (typeof data.popupOnce === 'boolean') {
+      out.popupOnce = data.popupOnce;
+    }
+    if (data.interaction === 'confirm' || data.interaction === 'consent') {
+      out.interaction = data.interaction;
+    }
+    const link = cleanStr(data.link, 500);
+    if (link !== undefined) out.link = link;
+    const targetVersion = cleanStr(data.targetVersion, 64);
+    if (targetVersion !== undefined) out.targetVersion = targetVersion;
+    if (typeof data.enabled === 'boolean') {
+      out.enabled = data.enabled;
+    }
+    const startTime = cleanStr(data.startTime, 40);
+    if (startTime !== undefined) out.startTime = startTime;
+    const endTime = cleanStr(data.endTime, 40);
+    if (endTime !== undefined) out.endTime = endTime;
+
+    return out;
+  }
+
   public createNotice(data: Partial<Announcement>): Announcement {
     const list = this.readAll();
+    const clean = this.sanitizeNoticeData(data);
     const newNotice: Announcement = {
-      id: data.id || `notice_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      title: data.title || '新公告',
-      content: data.content || '',
-      type: data.type || 'popup',
-      level: data.level || 'info',
-      priority: typeof data.priority === 'number' ? data.priority : 10,
-      popupOnce: Boolean(data.popupOnce),
-      interaction: data.interaction === 'consent' ? 'consent' : 'confirm',
-      link: data.link || '',
-      targetVersion: data.targetVersion || '*',
-      enabled: data.enabled !== false,
-      startTime: data.startTime || undefined,
-      endTime: data.endTime || undefined,
+      id: data.id || `notice_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
+      title: clean.title || '新公告',
+      content: clean.content || '',
+      type: clean.type || 'popup',
+      level: clean.level || 'info',
+      priority: typeof clean.priority === 'number' ? clean.priority : 10,
+      popupOnce: Boolean(clean.popupOnce),
+      interaction: clean.interaction === 'consent' ? 'consent' : 'confirm',
+      link: clean.link || '',
+      targetVersion: clean.targetVersion || '*',
+      enabled: clean.enabled !== false,
+      startTime: clean.startTime || undefined,
+      endTime: clean.endTime || undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -247,13 +312,27 @@ export class NoticeService {
       throw new Error(`公告 ID 不存在: ${id}，请刷新列表后重试`);
     }
 
-    list[index] = {
+    // 白名单字段逐项赋值，绝不整包 ...data 透传（防止 id/createdAt 等被注入篡改）
+    const clean = this.sanitizeNoticeData(data);
+    const updated: Announcement = {
       ...list[index],
-      ...data,
+      ...(clean.title !== undefined && { title: clean.title }),
+      ...(clean.content !== undefined && { content: clean.content }),
+      ...(clean.type !== undefined && { type: clean.type }),
+      ...(clean.level !== undefined && { level: clean.level }),
+      ...(clean.priority !== undefined && { priority: clean.priority }),
+      ...(clean.popupOnce !== undefined && { popupOnce: clean.popupOnce }),
+      ...(clean.interaction !== undefined && { interaction: clean.interaction }),
+      ...(clean.link !== undefined && { link: clean.link }),
+      ...(clean.targetVersion !== undefined && { targetVersion: clean.targetVersion }),
+      ...(clean.enabled !== undefined && { enabled: clean.enabled }),
+      ...(clean.startTime !== undefined && { startTime: clean.startTime }),
+      ...(clean.endTime !== undefined && { endTime: clean.endTime }),
       id,
       updatedAt: new Date().toISOString()
     };
 
+    list[index] = updated;
     this.saveAll(list);
     return list[index];
   }

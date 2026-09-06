@@ -270,6 +270,8 @@ const getLicenseBadgeClass = (status: string, type?: LicenseType) => {
     return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30';
   }
   if (status === 'expired') return 'bg-rose-500/10 text-rose-300 border-rose-500/30';
+  // unverified：本地缓存不完整待联网校验，样式与未激活一致
+  if (status === 'unverified') return 'bg-slate-800/80 text-slate-400 border-white/10';
   return 'bg-slate-800/80 text-slate-400 border-white/10';
 };
 
@@ -279,6 +281,8 @@ const getLicenseStatusText = (info: ClientLicenseInfo) => {
     return `⏱️ ${info.typeName || '会员'} (剩 ${info.remainingDays || 0} 天)`;
   }
   if (info.status === 'expired') return '⏱️ 授权已到期';
+  // unverified：本地授权数据不完整需联网校验，文案上等同于未激活
+  if (info.status === 'unverified') return '⚠️ 未激活';
   return '⚠️ 未激活';
 };
 
@@ -310,6 +314,9 @@ const handleCopyDeviceId = () => {
     }).catch(() => {
       emit('notify', '复制失败：剪贴板不可用，请手动选择复制', 'error');
     });
+  } else {
+    // 剪贴板 API 不可用（如非安全上下文）时明确提示，避免点击后无任何反馈
+    emit('notify', '剪贴板不可用，请手动选择复制', 'error');
   }
 };
 

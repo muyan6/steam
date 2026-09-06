@@ -917,6 +917,9 @@ const copyDeviceId = () => {
     }).catch(() => {
       emit('notify', '复制失败：浏览器剪贴板不可用，请手动选择复制', 'error');
     });
+  } else {
+    // 剪贴板 API 不可用（如非安全上下文）时明确提示，避免点击后无任何反馈
+    emit('notify', '剪贴板不可用，请手动选择复制', 'error');
   }
 };
 
@@ -924,6 +927,8 @@ onMounted(() => {
   loadEnvInfo();
   loadDbStats();
   runEnvironmentHealthCheck();
-  loadLicenseData(true);
+  // App.vue 启动时已强制校验授权并每 30s 轮询，此处仅读取缓存，
+  // 避免设置页挂载时再发起一次多余的网络校验请求
+  loadLicenseData(false);
 });
 </script>

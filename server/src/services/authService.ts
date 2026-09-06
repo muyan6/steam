@@ -8,8 +8,18 @@ import { writeJsonAtomic, readJsonOrThrow } from '../utils/atomicJson.js';
 export class AuthService {
   private credFilePath: string;
   private auditFilePath: string;
+  // 新哈希使用的 PBKDF2 迭代次数（OWASP 2023 推荐 sha512 ≥ 210000）
+  private static PBKDF2_ITERATIONS = 210000;
+  private static LEGACY_PBKDF2_ITERATIONS = 10000;
   // 失败计数带时间窗：窗口外未锁定的记录自动清理，避免任意时间跨度内累计触发锁定
   private loginAttempts: Map<string, { count: number; lockedUntil: number; lastAttemptAt: number }> = new Map();
+  // 凭据内存缓存：verifyToken 是每个管理请求的热点路径，避免每次同步读盘；
+  // 在任何凭据写入点（初始化/改密/透明升级）失效
+  private credsCache: AdminCredentials | null = null;
+  // 审计日志内存态：加载一次 + 防抖批量落盘，避免每次失败尝试都全量读+写
+  private auditLogs: AuditLog[] | null = null;
+  private auditDirty = false;
+  private auditFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.credFilePath = path.join(CONFIG.DATA_DIR, 'admin_credentials.json');
@@ -17,8 +27,15 @@ export class AuthService {
     this.ensureCredentials();
   }
 
-  private hashPassword(password: string, salt: string): string {
-    return crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  private hashPassword(password: string, salt: string, iterations: number = AuthService.PBKDF2_ITERATIONS): string {
+    return crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex');
+  }
+
+  /** 凭据存储迭代次数：历史记录无字段视为旧版 10000 */
+  private storedIterations(creds: AdminCredentials): number {
+    return creds.pbkdf2Iterations && creds.pbkdf2Iterations > 0
+      ? creds.pbkdf2Iterations
+      : AuthService.LEGACY_PBKDF2_ITERATIONS;
   }
 
   private ensureCredentials() {
@@ -34,55 +51,96 @@ export class AuthService {
         passwordHash,
         salt,
         tokenVersion: 1,
+        pbkdf2Iterations: AuthService.PBKDF2_ITERATIONS,
         updatedAt: new Date().toISOString()
       };
       writeJsonAtomic(this.credFilePath, defaultCreds);
+      this.credsCache = defaultCreds;
       console.log(`[AuthService] 已初始化管理员账号: ${defaultCreds.username}（首次登录请立即在「安全配置」中修改密码）`);
     }
   }
 
   private getCredentials(): AdminCredentials {
+    if (this.credsCache) {
+      return this.credsCache;
+    }
     this.ensureCredentials();
     // 凭据文件损坏时抛出错误拒绝服务，绝不静默重置为默认弱口令
-    return readJsonOrThrow<AdminCredentials>(this.credFilePath, '管理员凭据');
+    const creds = readJsonOrThrow<AdminCredentials>(this.credFilePath, '管理员凭据');
+    this.credsCache = creds;
+    return creds;
+  }
+
+  /** 写入凭据并失效内存缓存 */
+  private saveCredentials(creds: AdminCredentials): void {
+    writeJsonAtomic(this.credFilePath, creds);
+    this.credsCache = creds;
+  }
+
+  // ==================== 审计日志：内存态 + 防抖落盘 ====================
+
+  private loadAuditLogs(): AuditLog[] {
+    if (this.auditLogs) return this.auditLogs;
+    try {
+      if (fs.existsSync(this.auditFilePath)) {
+        try {
+          this.auditLogs = JSON.parse(fs.readFileSync(this.auditFilePath, 'utf-8'));
+        } catch {
+          this.auditLogs = [];
+        }
+      } else {
+        this.auditLogs = [];
+      }
+    } catch {
+      this.auditLogs = [];
+    }
+    if (!Array.isArray(this.auditLogs)) this.auditLogs = [];
+    return this.auditLogs;
+  }
+
+  private scheduleAuditFlush(): void {
+    if (this.auditFlushTimer) return;
+    this.auditFlushTimer = setTimeout(() => {
+      this.auditFlushTimer = null;
+      this.flushAuditLogs();
+    }, 3 * 1000);
+    // 计时器不阻止进程退出
+    (this.auditFlushTimer as any).unref?.();
+  }
+
+  private flushAuditLogs(): void {
+    if (!this.auditDirty || !this.auditLogs) return;
+    this.auditDirty = false;
+    try {
+      writeJsonAtomic(this.auditFilePath, this.auditLogs);
+    } catch (e) {
+      this.auditDirty = true;
+      console.error('[AuthService] 审计日志落盘失败:', e);
+    }
   }
 
   public recordAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {
     try {
-      let logs: AuditLog[] = [];
-      if (fs.existsSync(this.auditFilePath)) {
-        try {
-          logs = JSON.parse(fs.readFileSync(this.auditFilePath, 'utf-8'));
-        } catch {
-          logs = [];
-        }
-      }
+      const logs = this.loadAuditLogs();
       const entry: AuditLog = {
-        id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        id: `audit_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
         timestamp: new Date().toISOString(),
         ...log
       };
       logs.unshift(entry);
       // 保留最新的 200 条审计记录
       if (logs.length > 200) {
-        logs = logs.slice(0, 200);
+        logs.length = 200;
       }
-      writeJsonAtomic(this.auditFilePath, logs);
+      this.auditDirty = true;
+      this.scheduleAuditFlush();
     } catch (e) {
       console.error('[AuthService] 记录审计日志失败:', e);
     }
   }
 
   public getAuditLogs(limit: number = 50): AuditLog[] {
-    try {
-      if (fs.existsSync(this.auditFilePath)) {
-        const logs: AuditLog[] = JSON.parse(fs.readFileSync(this.auditFilePath, 'utf-8'));
-        return logs.slice(0, limit);
-      }
-    } catch (e) {
-      console.error('[AuthService] 读取审计日志失败:', e);
-    }
-    return [];
+    return this.loadAuditLogs().slice(0, limit);
   }
 
   public generateToken(username: string, role: string = 'superadmin'): string {
@@ -144,6 +202,18 @@ export class AuthService {
     }
   }
 
+  /**
+   * IP 锁定键归一化：IPv6 取前 4 个 hextet（/64 网段），
+   * 防止攻击者在同一 /64 内轮换海量地址绕过失败锁定；IPv4 原样使用。
+   */
+  private normalizeLockKey(ip: string): string {
+    const clean = (ip || '').trim();
+    if (clean.includes(':')) {
+      return clean.split(':').slice(0, 4).join(':');
+    }
+    return clean;
+  }
+
   public login(
     username: string,
     pass: string,
@@ -153,6 +223,7 @@ export class AuthService {
     const now = Date.now();
     const cleanUser = (username || '').trim();
     const cleanPass = (pass || '').trim();
+    const lockKey = this.normalizeLockKey(ip);
 
     // 锁定检查必须先于凭据校验，防止爆破
     // 清理过期记录：已解除锁定、或超出失败计数窗口（15 分钟）的记录一律移除
@@ -164,7 +235,7 @@ export class AuthService {
         this.loginAttempts.delete(key);
       }
     }
-    const attempt = this.loginAttempts.get(ip);
+    const attempt = this.loginAttempts.get(lockKey);
     if (attempt && attempt.lockedUntil > now) {
       const remainMinutes = Math.ceil((attempt.lockedUntil - now) / 60000);
       this.recordAuditLog({
@@ -183,7 +254,8 @@ export class AuthService {
 
     // 安全策略：只接受 PBKDF2 哈希匹配，不存在默认密码/主密钥等任何回退通道
     const creds = this.getCredentials();
-    const computedHash = this.hashPassword(cleanPass, creds.salt);
+    const iterations = this.storedIterations(creds);
+    const computedHash = this.hashPassword(cleanPass, creds.salt, iterations);
     const hashBuf = Buffer.from(computedHash);
     const storedBuf = Buffer.from(creds.passwordHash);
     const isPassValid =
@@ -192,7 +264,25 @@ export class AuthService {
       cleanUser.toLowerCase() === creds.username.toLowerCase();
 
     if (isUserValid && isPassValid) {
-      this.loginAttempts.delete(ip);
+      this.loginAttempts.delete(lockKey);
+
+      // 透明升级：旧迭代次数（10000）的哈希在登录成功时用新迭代次数重哈希落盘
+      if (iterations < AuthService.PBKDF2_ITERATIONS) {
+        try {
+          const newSalt = crypto.randomBytes(16).toString('hex');
+          this.saveCredentials({
+            ...creds,
+            passwordHash: this.hashPassword(cleanPass, newSalt),
+            salt: newSalt,
+            pbkdf2Iterations: AuthService.PBKDF2_ITERATIONS,
+            updatedAt: new Date().toISOString()
+          });
+          console.log('[AuthService] 已将管理员凭据 PBKDF2 迭代次数透明升级至 210000');
+        } catch (e) {
+          console.error('[AuthService] 凭据哈希透明升级失败（不影响本次登录）:', e);
+        }
+      }
+
       const token = this.generateToken(creds.username, 'superadmin');
       const user: AdminUser = {
         username: creds.username,
@@ -228,7 +318,7 @@ export class AuthService {
       lockMsg = ' (连续错误已达上限，IP 将被锁定 15 分钟)';
     }
 
-    this.loginAttempts.set(ip, { count: currentCount, lockedUntil, lastAttemptAt: now });
+    this.loginAttempts.set(lockKey, { count: currentCount, lockedUntil, lastAttemptAt: now });
     this.recordAuditLog({
       action: 'LOGIN_FAILED',
       operator: cleanUser,
@@ -254,7 +344,7 @@ export class AuthService {
   ): { success: boolean; message: string; token?: string } {
     const creds = this.getCredentials();
     const cleanCurrent = (currentPass || '').trim();
-    const currentHash = this.hashPassword(cleanCurrent, creds.salt);
+    const currentHash = this.hashPassword(cleanCurrent, creds.salt, this.storedIterations(creds));
     const curBuf = Buffer.from(currentHash);
     const storedBuf = Buffer.from(creds.passwordHash);
     const isCurrentValid =
@@ -286,10 +376,11 @@ export class AuthService {
       passwordHash: newPasswordHash,
       salt: newSalt,
       tokenVersion: (creds.tokenVersion ?? 1) + 1,
+      pbkdf2Iterations: AuthService.PBKDF2_ITERATIONS,
       updatedAt: new Date().toISOString()
     };
 
-    writeJsonAtomic(this.credFilePath, updatedCreds);
+    this.saveCredentials(updatedCreds);
 
     this.recordAuditLog({
       action: 'CHANGE_PASSWORD_SUCCESS',

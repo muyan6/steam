@@ -388,7 +388,7 @@ const unlockingId = ref<number | null>(null);
 const searchSources: SearchSourceConfig[] = [
   { id: 'local_db', name: '本地18万+全量库', nameEn: 'Local 180K+ DB', desc: '纯客户端本地内存检索与分页 (3,800+页 0延迟/0服务器流量)', badge: '18万+' },
   { id: 'steam_official', name: 'Steam官方API', nameEn: 'Steam Official', desc: '直连 Steam 官方 Store 实时搜索，涵盖最新上架与热门游戏', badge: '官方' },
-  { id: 'steam_community', name: 'Steam社区搜索源', nameEn: 'Steam Community', desc: '直连 Steam 社区应用与创意工坊检索', badge: '社区' },
+  { id: 'steam_community', name: 'Steam 商店 (英文)', nameEn: 'Steam Store (EN)', desc: '直连 Steam 官方商店英文实时搜索，覆盖面更广（原社区源实为商店检索）', badge: '英文' },
   { id: 'hybrid', name: '全域智能聚合源', nameEn: 'Hybrid Aggregate', desc: '本地全量库与 Steam 官方源智能融合并去重', badge: '聚合' }
 ];
 
@@ -460,8 +460,11 @@ const handleImgError = async (game: SteamGame) => {
   }
 
   // 所有 CDN 均失败：尝试一次 Steam 官方 API 动态获取（每 appId 仅一次，超过 CDN
-  // 模板数的索引表示 API 已尝试过，直接判定失败）
-  if (currentIdx > CDN_TEMPLATES.length) return;
+  // 模板数的索引表示 API 已尝试过，直接判定失败并标记占位图）
+  if (currentIdx > CDN_TEMPLATES.length) {
+    failedImgs.add(game.appId);
+    return;
+  }
   imgCdnIndices.set(game.appId, CDN_TEMPLATES.length + 1);
   try {
     const url = `https://store.steampowered.com/api/appdetails?appids=${game.appId}&l=schinese`;
@@ -483,6 +486,11 @@ const quickTags = ['后室', '艾尔登法环', '双人成行', '只狼', '博�
 // 搜索竞态守卫：只有最新一次请求的结果才允许落地
 let searchRequestId = 0;
 
+// 聚合源跨页去重集合：同一搜索会话（关键词+数据源不变）内共享，
+// 翻页时由桥接层据此剔除已展示过的 Steam 官方结果，避免重复出现
+let searchSessionKey = '';
+let sessionSeenIds = new Set<number>();
+
 // 执行搜索
 const handleSearch = async (page = 1) => {
   const requestId = ++searchRequestId;
@@ -490,12 +498,20 @@ const handleSearch = async (page = 1) => {
   currentPage.value = page;
   showSourceDropdown.value = false;
 
+  // 关键词或数据源变化视为新搜索会话，重置跨页去重集合
+  const sessionKey = `${currentSource.value}|${searchQuery.value.trim()}`;
+  if (sessionKey !== searchSessionKey) {
+    searchSessionKey = sessionKey;
+    sessionSeenIds = new Set<number>();
+  }
+
   try {
     const res = await window.electronAPI.searchGames({
       query: searchQuery.value,
       source: currentSource.value,
       page,
-      pageSize: pageSize.value
+      pageSize: pageSize.value,
+      seenIds: sessionSeenIds
     });
 
     if (requestId !== searchRequestId) return; // 已有更新的请求，丢弃过期结果

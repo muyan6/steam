@@ -427,7 +427,11 @@ const handleCheckUpdates = async (silent: boolean) => {
 };
 
 const handleSetVersionStrategy = async (appId: number, name: string, lock: boolean) => {
-  if (updatingAppId.value) return;
+  if (updatingAppId.value) {
+    // 并发点击不再静默吞掉，明确提示用户等待当前操作完成
+    emit('notify', '另有版本策略操作进行中，请稍候', 'info');
+    return;
+  }
   updatingAppId.value = appId;
   try {
     emit('notify', lock ? `正在将「${name}」锁定到当前官方最新版本...` : `正在将「${name}」切换为跟随官方最新版...`, 'info');

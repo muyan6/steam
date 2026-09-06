@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' https: http: data: blob:; connect-src 'self' https: http: ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' https: http: data: blob:; connect-src 'self' https://steam.myil.top https://api.steampowered.com https://store.steampowered.com https://*.steampowered.com https://api.steamcmd.net https://*.steamstatic.com https://*.steamcontent.com https://steamcdn-a.akamaihd.net https://github.com https://*.githubusercontent.com https://ghfast.top https://gh-proxy.com https://online-fix.me https://hosters.online-fix.me:2053 https://pixeldrain.com https://manifest.steam.run https://opensteamtool.com http://gmrc.wudrm.com ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"
     }
   },
   "bundle": {

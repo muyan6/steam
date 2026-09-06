@@ -62,14 +62,143 @@ fn account_path() -> Option<PathBuf> {
     appdata_dir().map(|d| d.join("onlinefix_account.json"))
 }
 
+/// 账号文件加密标记前缀：DPAPI:<base64(CryptProtectData(blob))>
+const ACCOUNT_ENC_PREFIX: &str = "DPAPI:";
+
+/// Windows DPAPI 加密（当前用户作用域，仅本机本用户可解），
+/// 避免联机账号密码明文落盘。flags=0：不跨机器、不提示 UI
+#[cfg(windows)]
+fn dpapi_protect(plain: &[u8]) -> Result<Vec<u8>, String> {
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
+    unsafe {
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: plain.len() as u32,
+            pbData: plain.as_ptr() as *mut u8,
+        };
+        let mut output = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: std::ptr::null_mut(),
+        };
+        if CryptProtectData(
+            &input,
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            &mut output,
+        ) == 0
+        {
+            return Err("CryptProtectData 调用失败".to_string());
+        }
+        let out = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        // 密钥 blob 由系统分配，用完必须释放，否则泄漏
+        LocalFree(output.pbData as _);
+        Ok(out)
+    }
+}
+
+#[cfg(windows)]
+fn dpapi_unprotect(blob: &[u8]) -> Result<Vec<u8>, String> {
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
+    unsafe {
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: blob.len() as u32,
+            pbData: blob.as_ptr() as *mut u8,
+        };
+        let mut output = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: std::ptr::null_mut(),
+        };
+        if CryptUnprotectData(
+            &input,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            &mut output,
+        ) == 0
+        {
+            return Err("CryptUnprotectData 调用失败".to_string());
+        }
+        let out = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        LocalFree(output.pbData as _);
+        Ok(out)
+    }
+}
+
+/// 写入账号文件：一律以 DPAPI 加密落盘（base64 of blob）；
+/// 非 Windows 构建无 DPAPI，回退明文（本应用仅发布 Windows 包）
+fn write_account_encrypted(payload: &serde_json::Value, path: &Path) {
+    let text = payload.to_string();
+    #[cfg(windows)]
+    {
+        match dpapi_protect(text.as_bytes()) {
+            Ok(blob) => {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&blob);
+                let _ = fs::write(path, format!("{}{}", ACCOUNT_ENC_PREFIX, encoded));
+                return;
+            }
+            Err(e) => {
+                // 加密失败时保守处理：不落盘明文，直接放弃写入并记录
+                eprintln!("[OnlineFix] 账号 DPAPI 加密失败，已放弃写入: {}", e);
+                return;
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = fs::write(path, text);
+    }
+}
+
+/// 读取账号文件内容为 JSON 文本：支持 DPAPI 加密格式与旧版明文格式。
+/// 旧明文解析成功后立即迁移为加密格式重写（一次性升级）
+fn load_account_json_text(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    if let Some(encoded) = content.strip_prefix(ACCOUNT_ENC_PREFIX) {
+        #[cfg(windows)]
+        {
+            let blob = base64::engine::general_purpose::STANDARD
+                .decode(encoded.trim())
+                .ok()?;
+            let plain = dpapi_unprotect(&blob).ok()?;
+            return String::from_utf8(plain).ok();
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = encoded;
+            return None;
+        }
+    }
+    // 旧版明文 JSON：先原样返回供调用方解析；解析成功（下面的 load_account）
+    // 后会触发 migrate_account_file 重写为加密格式
+    Some(content)
+}
+
+/// 把旧版明文账号文件迁移为 DPAPI 加密格式
+fn migrate_account_file(path: &Path, plain_json: &str) {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(plain_json) {
+        write_account_encrypted(&v, path);
+    }
+}
+
 fn load_account() -> Option<(String, String)> {
     let p = account_path()?;
-    let content = fs::read_to_string(p).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let json_text = load_account_json_text(&p)?;
+    let v: serde_json::Value = serde_json::from_str(&json_text).ok()?;
     let user = v.get("username")?.as_str()?.trim().to_string();
     let pass = v.get("password")?.as_str()?.to_string();
     if user.is_empty() || pass.is_empty() {
         return None;
+    }
+    // 旧版明文 JSON 读取成功：立即迁移重写为 DPAPI 加密格式（一次性升级）
+    let raw = fs::read_to_string(&p).unwrap_or_default();
+    if !raw.starts_with(ACCOUNT_ENC_PREFIX) {
+        migrate_account_file(&p, &json_text);
     }
     Some((user, pass))
 }
@@ -77,7 +206,7 @@ fn load_account() -> Option<(String, String)> {
 pub fn set_account(username: &str, password: &str) {
     if let Some(p) = account_path() {
         let payload = serde_json::json!({ "username": username.trim(), "password": password });
-        let _ = fs::write(p, payload.to_string());
+        write_account_encrypted(&payload, &p);
     }
     // 重建会话客户端
     if let Ok(mut guard) = SESSION.lock() {
@@ -728,6 +857,7 @@ pub fn deploy_patch_entries(
     let resolved_game = canonicalize_normalized(&gp);
 
     let mut count = 0usize;
+    let mut rejected = 0usize;
     for entry in entries {
         // 先拒绝含盘符/根目录/.. 等非法组件的条目，再做路径归一化比较
         if !Path::new(&entry.name)
@@ -735,24 +865,31 @@ pub fn deploy_patch_entries(
             .all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir))
         {
             println!("[OnlineFix] 已拒绝解压越界条目: {}", entry.name);
+            rejected += 1;
             continue;
         }
         let dest = gp.join(&entry.name);
         let dest_resolved = canonicalize_normalized(&dest);
         if !starts_with_ci(&dest_resolved, &resolved_game) {
             println!("[OnlineFix] 已拒绝解压越界条目: {}", entry.name);
+            rejected += 1;
             continue;
         }
 
         let data = match B64.decode(&entry.data_b64) {
             Ok(d) => d,
-            Err(_) => continue,
+            Err(_) => {
+                rejected += 1;
+                continue;
+            }
         };
         if let Some(parent) = dest_resolved.parent() {
             let _ = fs::create_dir_all(parent);
         }
         if fs::write(&dest_resolved, &data).is_ok() {
             count += 1;
+        } else {
+            rejected += 1;
         }
     }
 
@@ -762,9 +899,21 @@ pub fn deploy_patch_entries(
         }
     }
 
+    // 0 部署或整体失败时必须给出失败原因，而不是照搬成功文案
+    // （"成功…共解压部署 0 个文件"会误导用户以为补丁已生效）
+    let (success, message) = if count > 0 {
+        (true, format!("成功从 online-fix.me 下载并安装联机补丁，共解压部署 {} 个文件！", count))
+    } else {
+        (false, format!(
+            "联机补丁部署失败：0 个文件写入成功（共 {} 个条目，其中 {} 个被拒绝或写入失败）。请检查游戏目录是否被游戏进程/杀毒软件占用后重试。",
+            entries.len(),
+            rejected
+        ))
+    };
+
     OnlineFixPatchResult {
-        success: count > 0,
-        message: format!("成功从 online-fix.me 下载并安装联机补丁，共解压部署 {} 个文件！", count),
+        success,
+        message,
         file_name: None,
         extracted_count: Some(count),
         article_url: None,
@@ -783,6 +932,11 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
     let dest_resolved = canonicalize_normalized(&dest);
     let mut count = 0usize;
     let mut skipped = 0usize;
+    // zip 炸弹防护：单条目 ≤512MB、累计解压 ≤2GB，超限立即中止。
+    // entry.size() 为声明解压后大小，读取前即可判断，避免先把膨胀内容读进内存
+    const MAX_ENTRY_SIZE: u64 = 512 * 1024 * 1024;
+    const MAX_TOTAL_SIZE: u64 = 2 * 1024 * 1024 * 1024;
+    let mut total_out: u64 = 0;
 
     for i in 0..archive.len() {
         // 解密失败（密码不匹配）或损坏的条目直接跳过，绝不回退明文读取——
@@ -806,6 +960,14 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
         if entry.is_dir() {
             let _ = fs::create_dir_all(&out_path);
         } else {
+            let entry_size = entry.size();
+            if entry_size > MAX_ENTRY_SIZE || total_out + entry_size > MAX_TOTAL_SIZE {
+                return Err(format!(
+                    "归档解压量超出安全限制（单文件上限 512MB / 总量上限 2GB），已中止：条目 {} 解压后 {} 字节",
+                    safe_name.display(),
+                    entry_size
+                ));
+            }
             if let Some(parent) = out_path.parent() {
                 let _ = fs::create_dir_all(parent);
             }
@@ -813,6 +975,7 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
             if entry.read_to_end(&mut buf).is_ok() {
                 if fs::write(&out_path, &buf).is_ok() {
                     count += 1;
+                    total_out += entry_size;
                 }
             }
         }

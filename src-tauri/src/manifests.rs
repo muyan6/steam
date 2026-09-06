@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::json;
 
-pub const SERVER_API: &str = "http://150.158.129.222:1257";
+pub const SERVER_API: &str = "https://steam.myil.top";
 
 /// 在同步命令线程池中阻塞执行 async reqwest 调用
 pub fn block_on<F: std::future::Future>(fut: F) -> F::Output {
@@ -520,22 +520,25 @@ pub struct PrecacheResult {
 }
 
 /// 将 panic 详情追加到临时目录日志，GUI 版没有控制台可看，
-/// 线上排障只能靠这里（附时间戳，按大小轮转防止无限增长）
+/// 线上排障只能靠这里（附时间戳，按大小轮转防止无限增长）。
+/// 多线程可能同时追加/轮转，必须经互斥锁串行化，否则轮转时新写入会丢失
 pub fn log_diag(line: &str) {
     use std::io::Write;
+    static LOG_LOCK: StdMutex<()> = StdMutex::new(());
+    let _guard = LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = std::env::temp_dir().join("chunfengdu_diag.log");
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    // 追加前先检查当前大小：现有内容 + 本次追加将超过 512KB 时先截断，
+    // 防止（多线程并发下）轮转判断与追加交错导致无限增长
+    let cur_len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    if cur_len + line.len() as u64 + 32 > 512 * 1024 {
+        let _ = std::fs::write(&path, b"");
+    }
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         let _ = writeln!(f, "[{}] {}", ts, line);
-        // 超过 512KB 时截断重开，防止无限增长
-        if let Ok(meta) = std::fs::metadata(&path) {
-            if meta.len() > 512 * 1024 {
-                let _ = std::fs::write(&path, b"");
-            }
-        }
     }
 }
 
@@ -613,7 +616,9 @@ use std::sync::Mutex as StdMutex;
 
 struct LocalDbState {
     parsed: bool,
-    games: Vec<(u32, String)>,
+    /// (appId, 名称, 名称小写副本)：小写在载入时预计算一次，
+    /// 避免每次按键检索都对 18 万+ 名称逐个 to_lowercase 分配
+    games: Vec<(u32, String, String)>,
 }
 
 fn local_db_state() -> &'static StdMutex<LocalDbState> {
@@ -622,7 +627,7 @@ fn local_db_state() -> &'static StdMutex<LocalDbState> {
 }
 
 /// 解析 steam_all_games.json（数组，元素含 appid/name 字段）
-fn parse_local_db_text(text: &str) -> Vec<(u32, String)> {
+fn parse_local_db_text(text: &str) -> Vec<(u32, String, String)> {
     let mut out = Vec::new();
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
         if let Some(arr) = json.as_array() {
@@ -639,7 +644,7 @@ fn parse_local_db_text(text: &str) -> Vec<(u32, String)> {
                     .unwrap_or("")
                     .to_string();
                 if appid > 0 && !name.is_empty() {
-                    out.push((appid, name));
+                    out.push((appid, name.clone(), name.to_lowercase()));
                 }
             }
         }
@@ -693,14 +698,14 @@ pub fn search_local_all(
     let q = query.unwrap_or("").trim().to_lowercase();
     let is_number = !q.is_empty() && q.chars().all(|c| c.is_ascii_digit());
 
-    let matched: Vec<&(u32, String)> = if q.is_empty() {
+    let matched: Vec<&(u32, String, String)> = if q.is_empty() {
         state.games.iter().collect()
     } else {
         state
             .games
             .iter()
-            .filter(|(id, name)| {
-                id.to_string().contains(&q) || name.to_lowercase().contains(&q)
+            .filter(|(id, _, name_lower)| {
+                id.to_string().contains(&q) || name_lower.contains(&q)
             })
             .collect()
     };
@@ -733,7 +738,7 @@ pub fn search_local_all(
         .into_iter()
         .skip(start)
         .take(page_size as usize)
-        .map(|(id, name)| {
+        .map(|(id, name, _)| {
             json!({
                 "appId": id,
                 "name": name,

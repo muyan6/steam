@@ -135,10 +135,11 @@ fn find_executables(dir: &Path, max_depth: usize) -> Vec<PathBuf> {
 /// 运行 Steamless CLI 处理单个 exe（30 秒超时，超时强杀）
 /// 注意：Steamless 的输出文件名规则是「输入路径原样追加 .unpacked.exe」：
 ///   game.exe -> game.exe.unpacked.exe
+/// 返回 (是否成功, 消息, 状态, 是否实际创建了备份)
 fn unpack_single(
     cli: &str,
     exe_path: &Path,
-) -> (bool, String, &'static str) {
+) -> (bool, String, &'static str, bool) {
     let dir = exe_path.parent().unwrap_or(Path::new("."));
     let unpacked = PathBuf::from(format!("{}.unpacked.exe", exe_path.display()));
     let file_label = exe_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -155,17 +156,17 @@ fn unpack_single(
 
     let mut child = match child {
         Ok(c) => c,
-        Err(e) => return (false, format!("启动 Steamless CLI 失败: {}", e), "error"),
+        Err(e) => return (false, format!("启动 Steamless CLI 失败: {}", e), "error", false),
     };
 
     let deadline = Instant::now() + Duration::from_secs(30);
-    let mut timed_out = false;
+    let mut aborted = false;
     loop {
         match child.try_wait() {
             Ok(Some(_)) => break,
             Ok(None) => {
                 if Instant::now() >= deadline {
-                    timed_out = true;
+                    aborted = true;
                     let _ = Command::new("taskkill")
                         .args(["/PID", &child.id().to_string(), "/T", "/F"])
                         .creation_flags(0x08000000)
@@ -174,25 +175,37 @@ fn unpack_single(
                 }
                 std::thread::sleep(Duration::from_millis(200));
             }
-            Err(_) => break,
+            Err(_) => {
+                // try_wait 异常（子进程状态不可知）：残留 CLI 可能继续占用
+                // 游戏文件，强杀整棵进程树后再按异常终止处理
+                aborted = true;
+                let _ = Command::new("taskkill")
+                    .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                    .creation_flags(0x08000000)
+                    .output();
+                break;
+            }
         }
     }
 
     // 超时被强杀时输出可能是残缺文件，绝不能用它覆盖原 exe
-    if timed_out {
+    if aborted {
         let _ = fs::remove_file(&unpacked);
-        return (false, format!("Steamless CLI 处理 {} 超时，已放弃本次解密", file_label), "error");
+        return (false, format!("Steamless CLI 处理 {} 超时或异常终止，已放弃本次解密", file_label), "error", false);
     }
 
     if unpacked.exists() && fs::metadata(&unpacked).map(|m| m.len() > 0).unwrap_or(false) {
         // 备份命名与 Steamless 输出同规则追加：game.exe -> game.exe.bak
         let backup = PathBuf::from(format!("{}.bak", exe_path.display()));
+        let mut backup_created = false;
         if !backup.exists() {
-            let _ = fs::copy(exe_path, &backup);
+            if fs::copy(exe_path, &backup).is_ok() {
+                backup_created = true;
+            }
         }
         if fs::copy(&unpacked, exe_path).is_ok() {
             let _ = fs::remove_file(&unpacked);
-            return (true, format!("成功通过 Steamless CLI 解密并替换 ({})", file_label), "unpacked");
+            return (true, format!("成功通过 Steamless CLI 解密并替换 ({})", file_label), "unpacked", backup_created);
         }
         // 替换失败时清理残留的解密输出，避免占用磁盘且干扰下次判断
         let _ = fs::remove_file(&unpacked);
@@ -202,6 +215,7 @@ fn unpack_single(
         false,
         format!("Steamless CLI 处理 {} 未产生解密输出（该文件可能未加壳或不被支持）", file_label),
         "error",
+        false,
     )
 }
 
@@ -249,10 +263,11 @@ pub fn repair_game_with_resource(game_dir: &str, game_name: Option<&str>, resour
     };
 
     let mut repaired = 0;
+    let mut backups = 0;
     let mut details = Vec::new();
     for exe in &exes {
         let name = exe.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let (ok, msg, _status) = unpack_single(&cli.to_string_lossy(), exe);
+        let (ok, msg, _status, backup_created) = unpack_single(&cli.to_string_lossy(), exe);
         details.push(SteamlessDetail {
             file: name,
             status: _status.to_string(),
@@ -260,6 +275,9 @@ pub fn repair_game_with_resource(game_dir: &str, game_name: Option<&str>, resour
         });
         if ok {
             repaired += 1;
+        }
+        if backup_created {
+            backups += 1;
         }
     }
 
@@ -274,7 +292,7 @@ pub fn repair_game_with_resource(game_dir: &str, game_name: Option<&str>, resour
         },
         total_found: exes.len(),
         repaired_count: repaired,
-        backup_count: repaired,
+        backup_count: backups,
         // unpack_single 只会返回 unpacked/error，skipped 分支是死代码，恒为 0
         skipped_count: 0,
         details,

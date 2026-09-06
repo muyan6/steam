@@ -16,6 +16,8 @@ export interface DataSourceInfo {
   totalRecordsCount: number;
   description: string;
   licenseOrNote: string;
+  /** 最近一次同步失败的错误信息（同步成功后清除） */
+  lastError?: string;
 }
 
 export class SourceRegistryService {
@@ -168,6 +170,10 @@ export class SourceRegistryService {
       this.sources[id].lastSyncTime = nowStr;
       this.sources[id].status = 'active';
       this.sources[id].totalRecordsCount = count;
+      // 同步成功后清除上次的错误记录，且绝不覆盖 upstream 引用说明字段
+      if (this.sources[id].lastError) {
+        this.sources[id].lastError = undefined;
+      }
       this.saveRegistry();
     }
   }
@@ -175,7 +181,8 @@ export class SourceRegistryService {
   public recordSyncError(id: string, errorMessage: string): void {
     if (this.sources[id]) {
       this.sources[id].status = 'error';
-      this.sources[id].licenseOrNote = `最后一次同步报错: ${errorMessage}`;
+      // 错误信息写入独立的 lastError 字段（截断防超大），不再覆盖 licenseOrNote
+      this.sources[id].lastError = `最后一次同步报错: ${String(errorMessage || '').slice(0, 500)}`;
       this.saveRegistry();
     }
   }

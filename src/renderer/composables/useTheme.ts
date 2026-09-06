@@ -85,6 +85,13 @@ export function initThemeEarly() {
       currentTheme.value = 'midnight';
     }
     document.documentElement.setAttribute('data-theme', currentTheme.value);
+    // 同步原生窗口背景色：与 applyTheme 保持一致，避免冷启动首帧边缘白缝
+    const theme = THEME_LIST.find((t) => t.id === currentTheme.value);
+    if (theme?.bgHex) {
+      try {
+        window.electronAPI?.setWindowBackground?.(theme.bgHex);
+      } catch {}
+    }
   } catch {}
 }
 

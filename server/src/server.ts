@@ -3,7 +3,6 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { CONFIG } from './config/index.js';
 import apiRouter from './routes/index.js';
-import { tokenService } from './services/tokenService.js';
 import { syncService } from './services/syncService.js';
 import { depotService } from './services/depotService.js';
 import { gameService } from './services/gameService.js';
@@ -65,14 +64,8 @@ app.get(['/', '/ruku.html', '/index.html'], (req, res) => {
 });
 
 // 2. 后端管理控制台 (100% 独立内联、零外部 CDN 依赖、秒开原生 SPA)
-app.get(['/admin', '/dashboard'], (req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.setHeader('Surrogate-Control', 'no-store');
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-
-  const html = `<!DOCTYPE html>
+// HTML 模板为纯静态内容（Logo 与内联脚本在模块加载期注入），提升为模块级常量，避免每次请求重建巨型字符串
+const ADMIN_HTML = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -1213,17 +1206,14 @@ ${ADMIN_JS}
 </body>
 </html>`;
 
-  res.send(html);
+app.get(['/admin', '/dashboard'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(ADMIN_HTML);
 });
-
-// 静态服务: 管理控制台 JS 路由 (直接返回编译内嵌脚本，无文件路径与 require 报错隐患)
-app.get('/admin.js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.send(ADMIN_JS);
-});
-
-
 
 // 404 处理
 app.use((req, res) => {
@@ -1257,8 +1247,7 @@ const server = app.listen(CONFIG.PORT, CONFIG.HOST, () => {
 ======================================================
   `);
 
-  // 初始化 Token 数据库与定时自动抓取引擎
-  tokenService.loadTokensDb();
+  // 启动定时自动同步引擎（Token 数据库已由 tokenService 构造函数加载，无需重复加载）
   syncService.startScheduledDailySync();
 });
 

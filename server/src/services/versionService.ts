@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { CONFIG } from '../config/index.js';
 import { VersionRelease, PushUpdateRecord } from '../types/index.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
@@ -84,9 +85,17 @@ export class VersionService {
   private readAll(): VersionRelease[] {
     try {
       if (fs.existsSync(this.versionsFilePath)) {
+        // mtime 缓存：版本文件读多写少，内容未变化时避免每次请求同步读盘
+        const stat = fs.statSync(this.versionsFilePath);
+        if (this.readCache && this.readCacheMtimeMs === stat.mtimeMs) {
+          return this.readCache;
+        }
         const content = fs.readFileSync(this.versionsFilePath, 'utf-8');
         const list: VersionRelease[] = JSON.parse(content);
-        return Array.isArray(list) ? list : [];
+        const result = Array.isArray(list) ? list : [];
+        this.readCache = result;
+        this.readCacheMtimeMs = stat.mtimeMs;
+        return result;
       }
     } catch (e) {
       console.error('[VersionService] 读取版本列表失败:', e);
@@ -94,9 +103,16 @@ export class VersionService {
     return [];
   }
 
+  // 版本文件 mtime 缓存（写路径失效）
+  private readCache: VersionRelease[] | null = null;
+  private readCacheMtimeMs: number = -1;
+
   private saveAll(versions: VersionRelease[]) {
     try {
       writeJsonAtomic(this.versionsFilePath, versions);
+      // 写入后立即失效缓存，保证同进程读写一致
+      this.readCache = null;
+      this.readCacheMtimeMs = -1;
       this.syncLegacyFile();
     } catch (e) {
       console.error('[VersionService] 保存版本列表失败:', e);
@@ -105,7 +121,7 @@ export class VersionService {
 
   private syncLegacyFile() {
     try {
-      const latest = this.getLatestVersion();
+      const latest = this.getLatestVersion() || this.defaultRelease();
       writeJsonAtomic(this.legacyVersionFilePath, latest);
     } catch (e) {
       console.error('[VersionService] 同步 legacyVersionFile 失败:', e);
@@ -140,20 +156,10 @@ export class VersionService {
     return list.find((v) => v.version.replace(/^v/i, '') === clean) || null;
   }
 
-  public getLatestVersion(channel: string = 'stable'): VersionRelease {
-    const list = this.getAllVersions();
-    const enabledList = list.filter((v) => v.enabled !== false);
-    
-    let matched = enabledList.find((v) => (v.channel || 'stable') === channel);
-    if (!matched && enabledList.length > 0) {
-      matched = enabledList[0];
-    }
-
-    if (matched) {
-      return matched;
-    }
-
-    // 回退默认对象
+  /**
+   * 渠道兜底默认对象（无任何可用版本时返回）
+   */
+  private defaultRelease(): VersionRelease {
     return {
       version: '1.0.0',
       channel: 'stable',
@@ -167,12 +173,30 @@ export class VersionService {
     };
   }
 
+  /**
+   * 获取指定渠道的最新已上架版本。
+   * 安全语义：只在请求渠道自身的已上架版本中取最新，绝不跨渠道回退
+   * （stable 请求永远不能拿到 beta/preview 版本）。
+   * 请求渠道没有任何已上架版本时返回 null。
+   */
+  public getLatestVersion(channel: string = 'stable'): VersionRelease | null {
+    const list = this.getAllVersions();
+    const enabledList = list.filter((v) => v.enabled !== false);
+
+    const matched = enabledList.find((v) => (v.channel || 'stable') === channel);
+    if (matched) {
+      return matched;
+    }
+
+    return null;
+  }
+
   public checkUpdate(currentVersion: string, channel: string = 'stable'): {
     hasUpdate: boolean;
     latest: VersionRelease;
     forceUpdate: boolean;
   } {
-    const latest = this.getLatestVersion(channel);
+    const latest = this.getLatestVersion(channel) || this.defaultRelease();
     const hasUpdate = this.compareVersions(latest.version, currentVersion) > 0;
 
     let force = false;
@@ -210,7 +234,10 @@ export class VersionService {
       releaseDate: data.releaseDate || new Date().toISOString().split('T')[0],
       title: data.title || `SteamMaster v${cleanVersion}`,
       changelog: Array.isArray(data.changelog)
-        ? data.changelog.filter((l) => Boolean(l.trim()))
+        ? (data.changelog as unknown[])
+            .filter((l): l is string => typeof l === 'string')
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0)
         : [],
       downloadUrl: data.downloadUrl || 'https://gitee.com/muyan6/steam/releases',
       downloadUrlBackup: data.downloadUrlBackup || '',
@@ -239,13 +266,17 @@ export class VersionService {
     return newRelease;
   }
 
+  /**
+   * 更新指定版本（PUT 语义）：版本不存在时抛错由控制器返回 404，
+   * 绝不静默自动创建新版本
+   */
   public updateVersion(version: string, data: Partial<VersionRelease>): VersionRelease {
     const list = this.readAll();
     const clean = version.replace(/^v/i, '');
     const idx = list.findIndex((v) => v.version.replace(/^v/i, '') === clean);
 
     if (idx === -1) {
-      return this.publishVersion({ ...data, version });
+      throw new Error(`版本不存在: ${version}，请刷新列表后重试`);
     }
 
     list[idx] = {
@@ -287,9 +318,13 @@ export class VersionService {
     customContent?: string,
     operator: string = 'admin'
   ): PushUpdateRecord {
-    const targetVer = this.getVersionByNumber(version) || this.getLatestVersion();
+    // 指定版本号必须真实存在，绝不静默回退为"推送最新版"造成误导性广播
+    const targetVer = this.getVersionByNumber(version);
+    if (!targetVer) {
+      throw new Error(`版本不存在: ${version}，请刷新列表后重试`);
+    }
     const record: PushUpdateRecord = {
-      id: `push_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `push_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
       version: targetVer.version,
       targetChannel: targetVer.channel || 'stable',
       title: customTitle || `🚀 全新版本 v${targetVer.version} 推送`,

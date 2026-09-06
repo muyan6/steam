@@ -106,19 +106,42 @@ pub fn detect_steam_path() -> Option<PathBuf> {
     None
 }
 
+/// is_steam_running 结果缓存（8 秒）：tasklist 子进程冷启动约 0.1~0.3s，
+/// 而 get_steam_info / check_environment_health 等高频路径都会调用。
+/// 单次持锁完成"查缓存 → 探测 → 写缓存"，避免双次加锁之间的竞态
+static RUNNING_CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+
+const RUNNING_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// 强制失效 is_steam_running 缓存：kill_steam / restart_steam 等轮询
+/// 进程状态的场景必须读取实时结果，否则轮询会被 8 秒旧值卡死
+pub fn clear_steam_running_cache() {
+    if let Ok(mut guard) = RUNNING_CACHE.lock() {
+        *guard = None;
+    }
+}
+
 pub fn is_steam_running() -> bool {
     // CREATE_NO_WINDOW：GUI 发布版（windows_subsystem）下不加会闪现控制台黑框
+    let mut guard = RUNNING_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, val)) = *guard {
+        if at.elapsed() < RUNNING_CACHE_TTL {
+            return val;
+        }
+    }
     let output = Command::new("tasklist")
         .args(["/FI", "IMAGENAME eq steam.exe", "/NH"])
         .creation_flags(0x08000000)
         .output();
 
-    if let Ok(out) = output {
+    let val = if let Ok(out) = output {
         let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
         text.contains("steam.exe")
     } else {
         false
-    }
+    };
+    *guard = Some((std::time::Instant::now(), val));
+    val
 }
 
 pub fn is_onlinefix_running() -> bool {
@@ -254,6 +277,7 @@ pub fn kill_steam() -> bool {
 
     // 2. 轮询强制结束：steam.exe / steamwebhelper.exe / steamservice.exe 全家桶
     for _ in 0..4 {
+        clear_steam_running_cache();
         if !is_steam_running() {
             return true;
         }
@@ -267,6 +291,7 @@ pub fn kill_steam() -> bool {
     }
 
     // 3. 兜底：Steam 以管理员身份运行时普通 taskkill 无效，触发 UAC 提权强杀
+    clear_steam_running_cache();
     if is_steam_running() {
         let _ = Command::new("powershell")
             .args([
@@ -279,6 +304,7 @@ pub fn kill_steam() -> bool {
         std::thread::sleep(std::time::Duration::from_millis(1500));
     }
 
+    clear_steam_running_cache();
     !is_steam_running()
 }
 
@@ -301,6 +327,15 @@ pub fn launch_steam(steam_path: &Path, extra_args: &[String]) -> bool {
 
 pub fn restart_steam(steam_path: &Path, extra_args: &[String]) -> bool {
     kill_steam();
-    std::thread::sleep(std::time::Duration::from_millis(800));
+    // 轮询确认进程真正退出（最多 5s，每 250ms 一次），替代固定 800ms：
+    // 机器慢时 800ms 可能 Steam 尚未完全退出，立即重启会导致窗口丢失/自更新失败
+    clear_steam_running_cache();
+    for _ in 0..20 {
+        if !is_steam_running() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        clear_steam_running_cache();
+    }
     launch_steam(steam_path, extra_args)
 }

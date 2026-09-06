@@ -267,7 +267,7 @@ export interface LicenseKey {
 
 export interface ClientLicenseInfo {
   isActivated: boolean;
-  status: 'unactivated' | 'active' | 'expired' | 'disabled' | 'error';
+  status: 'unactivated' | 'active' | 'expired' | 'disabled' | 'error' | 'unverified';
   type?: LicenseType;
   typeName?: string;
   code?: string;

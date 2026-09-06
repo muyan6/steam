@@ -90,7 +90,12 @@ fn read_used_today(path: Option<&PathBuf>) -> u32 {
 fn write_used(path: Option<&PathBuf>, used: u32) {
     if let Some(p) = path {
         let data = serde_json::json!({ "date": local_today(), "used": used });
-        let _ = fs::write(p, data.to_string());
+        // 先写临时文件再原子 rename：进程中途被杀时不会留下写了一半的 JSON
+        //（半截文件解析失败会被当成 used=0，导致额度被重置）
+        let tmp = p.with_extension("json.tmp");
+        if fs::write(&tmp, data.to_string()).is_ok() {
+            let _ = fs::rename(&tmp, p);
+        }
     }
 }
 

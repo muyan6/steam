@@ -23,6 +23,10 @@ interface ManifestHub3Data {
 
 const manifestHub3Cache = new Map<number, { data: ManifestHub3Data | null; fetchedAt: number }>();
 const MANIFEST_HUB3_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时内存缓存，避免逐请求拉取
+// 同一 AppID 的在途请求去重：并发请求共享同一次上游拉取
+const manifestHub3InFlight = new Map<number, Promise<ManifestHub3Data | null>>();
+// 缓存条目硬上限，超限时先清过期再淘汰最旧，防止被脚本灌海量 AppID 撑爆内存
+const MANIFEST_HUB3_CACHE_MAX = 500;
 
 function parseManifestHub3Lua(lua: string): ManifestHub3Data {
   const depotKeys = new Map<string, string>();
@@ -62,32 +66,60 @@ function parseManifestHub3Lua(lua: string): ManifestHub3Data {
 }
 
 async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null> {
+  const now = Date.now();
   const cached = manifestHub3Cache.get(appId);
-  if (cached && Date.now() - cached.fetchedAt < MANIFEST_HUB3_TTL_MS) {
+  if (cached && now - cached.fetchedAt < MANIFEST_HUB3_TTL_MS) {
     return cached.data;
   }
 
-  const urls = [
-    // 直连 GitHub raw（海外服务器可达）
-    `https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
-    // ghfast.top 加速代理（中国大陆服务器直连 raw 往往超时）
-    `https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`
-  ];
-
-  let data: ManifestHub3Data | null = null;
-  for (const u of urls) {
-    try {
-      const resp = await axios.get(u, { httpsAgent, timeout: 6000 });
-      const lua = typeof resp.data === 'string' ? resp.data : '';
-      if (lua.includes('addappid') || lua.includes('setManifestid')) {
-        data = parseManifestHub3Lua(lua);
-        break;
-      }
-    } catch {}
+  // 在途请求去重：同一 AppID 的并发请求共享同一次上游拉取
+  const pending = manifestHub3InFlight.get(appId);
+  if (pending) {
+    return pending;
   }
 
-  manifestHub3Cache.set(appId, { data, fetchedAt: Date.now() });
-  return data;
+  const task = (async (): Promise<ManifestHub3Data | null> => {
+    const urls = [
+      // 直连 GitHub raw（海外服务器可达）
+      `https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
+      // ghfast.top 加速代理（中国大陆服务器直连 raw 往往超时）
+      `https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`
+    ];
+
+    let data: ManifestHub3Data | null = null;
+    for (const u of urls) {
+      try {
+        const resp = await axios.get(u, { httpsAgent, timeout: 6000 });
+        const lua = typeof resp.data === 'string' ? resp.data : '';
+        if (lua.includes('addappid') || lua.includes('setManifestid')) {
+          data = parseManifestHub3Lua(lua);
+          break;
+        }
+      } catch {}
+    }
+
+    // 写入前先清理：删除全部过期条目；仍超限则按插入序淘汰最旧
+    if (manifestHub3Cache.size >= MANIFEST_HUB3_CACHE_MAX) {
+      const ts = Date.now();
+      for (const [k, v] of manifestHub3Cache) {
+        if (ts - v.fetchedAt >= MANIFEST_HUB3_TTL_MS) manifestHub3Cache.delete(k);
+      }
+      while (manifestHub3Cache.size >= MANIFEST_HUB3_CACHE_MAX) {
+        const oldest = manifestHub3Cache.keys().next().value;
+        if (oldest === undefined) break;
+        manifestHub3Cache.delete(oldest);
+      }
+    }
+    manifestHub3Cache.set(appId, { data, fetchedAt: Date.now() });
+    return data;
+  })();
+
+  manifestHub3InFlight.set(appId, task);
+  try {
+    return await task;
+  } finally {
+    manifestHub3InFlight.delete(appId);
+  }
 }
 
 export const getGameMetadata = async (req: Request, res: Response) => {
@@ -99,7 +131,9 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     }
 
     const sAppId = appId.toString();
-    const hintName = typeof req.query.name === 'string' ? req.query.name : '';
+    // 客户端自报的游戏名只作提示回显：去除控制字符并截断，防止反射注入与超大参数
+    const rawHint = typeof req.query.name === 'string' ? req.query.name : '';
+    const hintName = rawHint.replace(/[\x00-\x1F\x7F]/g, '').slice(0, 64);
 
     let gameName = hintName;
     let dlcIds: string[] = [];
@@ -125,16 +159,28 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 2. 若缺少详细信息，由后端向 Steam 官方 Store API 实时聚合
-    if (!gameName || dlcIds.length === 0 || depots.length === 0) {
-      try {
-        const storeResp = await axios.get('https://store.steampowered.com/api/appdetails', {
+    // 2/3. Steam Store API 与 SteamCMD API 相互独立（一个补名称/DLC，一个补分包/GID），
+    // 并行发起以减半上游等待延迟；任一失败静默降级，不影响另一个的结果
+    const needStoreInfo = !gameName || dlcIds.length === 0 || depots.length === 0;
+    const storeRequest = needStoreInfo
+      ? axios.get('https://store.steampowered.com/api/appdetails', {
           params: { appids: sAppId, l: 'zh-CN', cc: 'CN' },
           httpsAgent,
           timeout: 4000,
           headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
-        });
+        })
+      : Promise.resolve(null as any);
+    const cmdRequest = axios.get(`https://api.steamcmd.net/v1/info/${sAppId}`, {
+      httpsAgent,
+      timeout: 5000,
+      headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
+    });
+    const [storeSettled, cmdSettled] = await Promise.allSettled([storeRequest, cmdRequest]);
 
+    // 处理 Store API 结果：补全游戏名与 DLC 列表
+    if (storeSettled.status === 'fulfilled' && storeSettled.value) {
+      try {
+        const storeResp = storeSettled.value;
         if (storeResp.data && storeResp.data[sAppId] && storeResp.data[sAppId].success) {
           const sData = storeResp.data[sAppId].data;
           if (!gameName && sData.name) {
@@ -148,15 +194,12 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       } catch {}
     }
 
-    // 3. 从 SteamCMD API 补全精确的分包与 Manifest GID
-    try {
-      const cmdResp = await axios.get(`https://api.steamcmd.net/v1/info/${sAppId}`, {
-        httpsAgent,
-        timeout: 5000,
-        headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
-      });
-      const depotsData = cmdResp.data?.data?.[sAppId]?.depots;
-      if (depotsData && typeof depotsData === 'object') {
+    // 处理 SteamCMD 结果：补全精确的分包与 Manifest GID
+    if (cmdSettled.status === 'fulfilled') {
+      try {
+        const cmdResp = cmdSettled.value;
+        const depotsData = cmdResp.data?.data?.[sAppId]?.depots;
+        if (depotsData && typeof depotsData === 'object') {
         const skipPatterns = ['config', 'sharedinstall', 'shareddepot', 'redist'];
         for (const [dId, info] of Object.entries(depotsData)) {
           if (!info || typeof info !== 'object') continue;
@@ -190,8 +233,9 @@ export const getGameMetadata = async (req: Request, res: Response) => {
             depots.push({ depotId: dId, manifestGid, depotKey: depotKey || undefined });
           }
         }
-      }
-    } catch {}
+        }
+      } catch {}
+    }
 
     // 如果仍没有分包，默认生成主体候选 Depot
     if (depots.length === 0) {
@@ -277,6 +321,6 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     });
   } catch (e: any) {
     console.error('[MetadataController] 获取游戏元数据异常:', e);
-    return res.status(500).json({ success: false, message: `获取元数据失败: ${e.message}` });
+    return res.status(500).json({ success: false, message: '获取元数据失败，请稍后重试' });
   }
 };

@@ -21,8 +21,9 @@ export const checkVersion = (req: Request, res: Response) => {
     const channel = (req.query.channel as string) || 'stable';
     const result = versionService.checkUpdate(currentVersion, channel);
     res.json({ success: true, data: result });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[VersionController] 版本接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -31,8 +32,9 @@ export const getLatestVersionInfo = (req: Request, res: Response) => {
     const channel = (req.query.channel as string) || 'stable';
     const info = versionService.getLatestVersion(channel);
     res.json({ success: true, data: info });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[VersionController] 版本接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -42,8 +44,9 @@ export const getAllVersionsAdmin = (req: Request, res: Response) => {
   try {
     const list = versionService.getAllVersions();
     res.json({ success: true, data: list });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[VersionController] 版本接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -55,8 +58,9 @@ export const getVersionDetailAdmin = (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '版本记录不存在' });
     }
     res.json({ success: true, data: release });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[VersionController] 版本接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -95,7 +99,12 @@ export const updateVersionAdmin = (req: Request, res: Response) => {
 
     res.json({ success: true, message: `版本 v${updated.version} 信息已更新`, data: updated });
   } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+    // 业务性"不存在"错误返回 404，系统异常返回通用 500（不透出内部细节）
+    if (e?.message && e.message.includes('不存在')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    console.error('[VersionController] 更新版本信息失败:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -123,8 +132,9 @@ export const toggleVersionAdmin = (req: Request, res: Response) => {
       message: `版本 v${version} 已${toggled.enabled ? '上架启用' : '下架停用'}`,
       data: toggled
     });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[VersionController] 版本接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -147,8 +157,9 @@ export const deleteVersionAdmin = (req: Request, res: Response) => {
     });
 
     res.json({ success: true, message: `版本 v${version} 记录已删除` });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[VersionController] 版本接口异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
@@ -177,16 +188,23 @@ export const pushBroadcastAdmin = (req: Request, res: Response) => {
       data: record
     });
   } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+    // 指定版本号不存在时返回 404，绝不静默回退推送最新版
+    if (e?.message && e.message.includes('不存在')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    console.error('[VersionController] 发起推送广播失败:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 
 export const getPushLogsAdmin = (req: Request, res: Response) => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 30;
+    const raw = parseInt(req.query.limit as string, 10);
+    const limit = isNaN(raw) ? 30 : Math.min(200, Math.max(1, raw));
     const logs = versionService.getPushLogs(limit);
     res.json({ success: true, data: logs });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[VersionController] 读取推送记录失败:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };

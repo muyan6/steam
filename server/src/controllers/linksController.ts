@@ -8,8 +8,9 @@ import { appLinksService } from '../services/appLinksService.js';
 export function getAppLinks(_req: Request, res: Response) {
   try {
     res.json({ success: true, data: appLinksService.getLinks() });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: `获取链接配置失败: ${e.message}` });
+  } catch (e) {
+    console.error('[LinksController] 获取链接配置失败:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }
 
@@ -27,7 +28,8 @@ export function updateAppLinks(req: Request, res: Response) {
     }
     const data = appLinksService.updateLinks({ tutorialUrl, faqUrl });
     res.json({ success: true, message: '链接配置已更新', data });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: `更新链接配置失败: ${e.message}` });
+  } catch (e) {
+    console.error('[LinksController] 更新链接配置失败:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }

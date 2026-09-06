@@ -36,11 +36,11 @@ export async function activateLicense(req: Request, res: Response) {
         message: result.message
       });
     }
-  } catch (e: any) {
+  } catch (e) {
     console.error('[LicenseController] 激活异常:', e);
     return res.status(500).json({
       success: false,
-      message: `激活失败: ${e.message}`
+      message: '服务器内部错误'
     });
   }
 }
@@ -69,11 +69,11 @@ export async function verifyLicense(req: Request, res: Response) {
       success: true,
       data: info
     });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[LicenseController] 验签异常:', e);
     return res.status(500).json({
       success: false,
-      message: `验签失败: ${e.message}`
+      message: '服务器内部错误'
     });
   }
 }
@@ -115,11 +115,11 @@ export async function rebindLicense(req: Request, res: Response) {
       success: false,
       message: result.message
     });
-  } catch (e: any) {
+  } catch (e) {
     console.error('[LicenseController] 迁移异常:', e);
     return res.status(500).json({
       success: false,
-      message: `迁移失败: ${e.message}`
+      message: '服务器内部错误'
     });
   }
 }
@@ -140,8 +140,9 @@ export async function getDeviceLicenseStatus(req: Request, res: Response) {
       success: true,
       data: info
     });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[LicenseController] 接口异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }
 
@@ -165,8 +166,9 @@ export async function getLicenseListAdmin(req: Request, res: Response) {
       success: true,
       data: result
     });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[LicenseController] 接口异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }
 
@@ -180,8 +182,9 @@ export async function getLicenseStatsAdmin(req: Request, res: Response) {
       success: true,
       data: stats
     });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[LicenseController] 接口异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }
 
@@ -197,15 +200,31 @@ export async function generateLicensesAdmin(req: Request, res: Response) {
         message: '卡密类型无效，支持: monthly, quarterly, yearly, lifetime'
       });
     }
+    // 自定义前缀白名单校验：仅允许字母/数字/连字符，最长 16 位
+    const cleanPrefix = prefix ? String(prefix).trim() : '';
+    if (cleanPrefix && !/^[A-Za-z0-9-]{0,16}$/.test(cleanPrefix)) {
+      return res.status(400).json({
+        success: false,
+        message: '卡密前缀格式非法：仅允许字母、数字与连字符，最长 16 位'
+      });
+    }
 
     const user = (req as any).adminUser || { username: 'admin' };
     const result = licenseService.generateBatch({
       type: type as LicenseType,
       count: Number(count) || 1,
-      prefix: prefix ? String(prefix).trim() : undefined,
+      prefix: cleanPrefix || undefined,
       remark: remark ? String(remark).trim() : undefined,
       createdBy: user.username
     });
+
+    // 批量生成失败（如持久化失败）须返回失败结果而不是假成功
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        message: result.message
+      });
+    }
 
     return res.json({
       success: true,
@@ -215,8 +234,9 @@ export async function generateLicensesAdmin(req: Request, res: Response) {
         keys: result.generatedKeys
       }
     });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[LicenseController] 接口异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }
 
@@ -232,8 +252,9 @@ export async function unbindLicenseAdmin(req: Request, res: Response) {
 
     const result = licenseService.unbind(code);
     return res.json(result);
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[LicenseController] 接口异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }
 
@@ -249,8 +270,9 @@ export async function toggleLicenseAdmin(req: Request, res: Response) {
 
     const result = licenseService.toggleStatus(code, Boolean(disabled));
     return res.json(result);
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[LicenseController] 接口异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }
 
@@ -267,8 +289,9 @@ export async function deleteLicenseAdmin(req: Request, res: Response) {
 
     const result = licenseService.deleteKey(sCode);
     return res.json(result);
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[LicenseController] 接口异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }
 
@@ -284,7 +307,8 @@ export async function extendLicenseAdmin(req: Request, res: Response) {
 
     const result = licenseService.extendDays(code, Number(additionalDays) || 30);
     return res.json(result);
-  } catch (e: any) {
-    return res.status(500).json({ success: false, message: e.message });
+  } catch (e) {
+    console.error('[LicenseController] 接口异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 }

@@ -9,8 +9,8 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "http://150.158.129.222:1257" },
-        { "url": "http://150.158.129.222:1257/*" },
+        { "url": "https://steam.myil.top" },
+        { "url": "https://steam.myil.top/*" },
         { "url": "https://store.steampowered.com" },
         { "url": "https://store.steampowered.com/*" }
       ]
