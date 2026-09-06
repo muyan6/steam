@@ -1,5 +1,23 @@
 [
   {
+    "version": "2.2.2",
+    "channel": "stable",
+    "releaseDate": "2026-09-06",
+    "title": "春风渡 v2.2.2 正式发布",
+    "changelog": [
+      "🛠 联机补丁新增 filekeeper 分流源直链解析（op=download2 表单流程），被墙/限流时多源接力下载",
+      "📊 下载源智能排序：可用性高的源优先，匿名已失效的源（gofile/vikingfile）沉底",
+      "🎨 联机修复中心「还原原版」按钮文字单行不换行，与补丁按钮完全等高"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.2.2/ChunFengDu_2.2.2_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-06T00:00:00.000Z",
+    "updatedAt": "2026-09-06T00:00:00.000Z"
+  },
+  {
     "version": "2.2.1",
     "channel": "stable",
     "releaseDate": "2026-09-05",

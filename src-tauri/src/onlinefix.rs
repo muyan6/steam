@@ -373,15 +373,24 @@ pub fn search_onlinefix_patch(app_id: u32, game_name: Option<&str>) -> OnlineFix
         .collect();
 
     // 下载源优先级：Fix_Repair 小补丁包 > 其他候选；
-    // 同优先级内 PixelDrain 排最前（速度最快，但部分地区网络不可达，
-    // 失败后由 prepare 阶段自动回退到后续源，绝不吊死在单一源上）
+    // 同优先级内按网盘可达性排序：PixelDrain（速度快但部分地区被墙）→
+    // fileditch/filekeeper（可直下/可解析）→ 其余 → gofile/vikingfile
+    // （匿名已无法下载，仅作占位）。任一源失败由 prepare 阶段自动换下一个
+    let host_rank = |l: &str| -> u8 {
+        if l.contains("pixeldrain.com/u/") {
+            0
+        } else if l.contains("fileditchfiles.st") || l.contains("filekeeper.net") {
+            1
+        } else if l.contains("gofile.io") || l.contains("vikingfile.com") {
+            3
+        } else {
+            2
+        }
+    };
     let rank = |(l, n): &(String, String)| -> (u8, u8) {
-        let is_fix = {
-            let ln = n.to_lowercase();
-            ln.contains("fix") || ln.contains("repair") || ln.contains("patch")
-        };
-        let pd = if l.contains("pixeldrain.com/u/") { 0 } else { 1 };
-        (if is_fix { 0 } else { 1 }, pd)
+        let ln = n.to_lowercase();
+        let is_fix = ln.contains("fix") || ln.contains("repair") || ln.contains("patch");
+        (if is_fix { 0 } else { 1 }, host_rank(l))
     };
 
     // 补丁包本体是几 MB 的 Fix_Repair 归档；同一文章里的 partN.rar 是整包游戏
@@ -548,7 +557,39 @@ fn try_download_candidate(download_url: &str, app_id: u32) -> Result<PathBuf, St
         .cookie_store(true)
         .build()
         .map_err(|e| format!("构建下载客户端失败: {}", e))?;
-    let mut resp = crate::manifests::block_on(client.get(download_url).send())
+
+    // filekeeper 是 op=download2 型网盘：直链访问只会得到倒计时页面，
+    // 必须先 GET 页面（下发 file_code cookie）解析表单参数，再 POST 回去
+    // 才会 302 到真实文件直链（reqwest 自动跟随）
+    let request = if download_url.contains("filekeeper.net/") {
+        let page_resp = crate::manifests::block_on(client.get(download_url).send())
+            .map_err(|e| format!("连接失败 {}", e))?;
+        if !page_resp.status().is_success() {
+            return Err(format!("HTTP {}", page_resp.status()));
+        }
+        let page = crate::manifests::block_on(page_resp.text())
+            .map_err(|e| format!("读取分流页面失败: {}", e))?;
+        let attr = |name: &str| find_between(&page, &format!("data-{}=\"", name), "\"").unwrap_or("").to_string();
+        let code = if attr("code").is_empty() {
+            download_url.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string()
+        } else {
+            attr("code")
+        };
+        client
+            .post(download_url)
+            .header("Referer", download_url)
+            .form(&[
+                ("op", "download2".to_string()),
+                ("id", code),
+                ("rand", attr("rand")),
+                ("referer", attr("referer")),
+                ("method_free", attr("method")),
+                ("down_direct", "1".to_string()),
+            ])
+    } else {
+        client.get(download_url)
+    };
+    let mut resp = crate::manifests::block_on(request.send())
         .map_err(|e| format!("连接失败 {}", e))?;
 
     if !resp.status().is_success() {

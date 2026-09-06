@@ -610,7 +610,7 @@
                     <button
                       @click="handleRestorePatchForGame(game)"
                       :disabled="downloadingAppId === game.appId || actionLoading || (!game.isPatched && !game.hasBackup)"
-                      class="py-2 px-3 btn-soft-action hover:bg-rose-900/40 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+                      class="py-2 px-2 btn-soft-action hover:bg-rose-900/40 text-[11px] font-semibold rounded-xl flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
                       title="还原原始 DLL 文件"
                     >
                       <RotateCcw class="w-3.5 h-3.5" />
