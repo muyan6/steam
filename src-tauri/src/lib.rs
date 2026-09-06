@@ -1002,18 +1002,32 @@ async fn is_spacewar_installed() -> serde_json::Value {
     }
 
 #[tauri::command]
-async fn scan_local_games(force: Option<bool>) -> serde_json::Value {
+async fn scan_local_games(app: AppHandle, force: Option<bool>) -> serde_json::Value {
     let force = force.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || match steam::detect_steam_path() {
-        Some(sp) => {
-            // 缓存命中返回 Arc 共享引用：直接序列化引用，不再整份克隆游戏列表
-            let games = localgames::scan_installed_games_cached(&sp, force);
-            serde_json::to_value(&*games).unwrap_or(json!([]))
+    tauri::async_runtime::spawn_blocking(move || {
+        // 磁盘缓存落在应用本地数据目录，跨重启可秒开列表
+        let cache_file = app
+            .path()
+            .app_local_data_dir()
+            .ok()
+            .map(|d| d.join("local_games_scan_cache.json"));
+        match steam::detect_steam_path() {
+            Some(sp) => {
+                // 缓存命中返回 Arc 共享引用：直接序列化引用，不再整份克隆游戏列表
+                let out = localgames::scan_installed_games_cached(&sp, force, cache_file.as_deref());
+                json!({
+                    "games": &*out.games,
+                    "scannedAt": out.scanned_at_ms,
+                    "fromCache": out.from_cache,
+                    // 陈旧 = 超过 24h 未扫描，前端秒开旧数据后应后台静默重刷
+                    "stale": localgames::is_scan_stale(out.scanned_at_ms),
+                })
+            }
+            None => json!({ "games": [], "scannedAt": 0, "fromCache": false, "stale": true }),
         }
-        None => json!([]),
     })
     .await
-    .unwrap_or_else(|_e| json!([]))
+    .unwrap_or_else(|_e| json!({ "games": [], "scannedAt": 0, "fromCache": false, "stale": true }))
     }
 
 /// 查询未激活设备的今日免费入库额度（不扣减）

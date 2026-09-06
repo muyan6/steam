@@ -76,6 +76,15 @@
             <span>{{ isScanning ? '扫描中...' : '刷新列表' }}</span>
           </button>
 
+          <!-- 列表扫描时间提示（磁盘缓存秒开，超过 24h 自动后台静默更新） -->
+          <span
+            v-if="scanAgoText && !isScanning"
+            class="text-[11px] text-slate-500 font-mono cursor-help"
+            title="本地游戏列表的扫描时间。列表优先使用缓存秒开，超过 24 小时会自动在后台静默更新；安装了新游戏可点「刷新列表」立即重扫。"
+          >
+            扫描于 {{ scanAgoText }}{{ isBgRefreshing ? ' · 后台更新中' : '' }}
+          </span>
+
           <button
             @click="showTutorialModal = true"
             class="px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
@@ -318,7 +327,19 @@
                     @error="handleCardImgError($event, game.appId)"
                   />
                   <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent pointer-events-none"></div>
-                  
+
+                  <!-- 左上角联机架构预测徽章（基于本地文件指纹） -->
+                  <div class="absolute top-2.5 left-2.5 max-w-[70%]">
+                    <span
+                      v-if="netBadgeOf(game)"
+                      :class="netBadgeOf(game)!.cls"
+                      :title="netBadgeOf(game)!.tip"
+                      class="px-2.5 py-0.5 rounded-lg backdrop-blur-md text-[11px] font-bold shadow-sm truncate block cursor-help"
+                    >
+                      {{ netBadgeOf(game)!.label }}
+                    </span>
+                  </div>
+
                   <!-- 右上角 AppID 胶囊 -->
                   <div class="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 text-[11px] font-mono theme-text-accent font-bold shadow-sm">
                     ID: {{ game.appId }}
@@ -385,6 +406,15 @@
             <RotateCw class="w-4 h-4" :class="isScanning ? 'animate-spin' : ''" />
             <span>{{ isScanning ? '扫描中...' : '刷新列表' }}</span>
           </button>
+
+          <!-- 列表扫描时间提示（磁盘缓存秒开，超过 24h 自动后台静默更新） -->
+          <span
+            v-if="scanAgoText && !isScanning"
+            class="text-[11px] text-slate-500 font-mono cursor-help"
+            title="本地游戏列表的扫描时间。列表优先使用缓存秒开，超过 24 小时会自动在后台静默更新；安装了新游戏可点「刷新列表」立即重扫。"
+          >
+            扫描于 {{ scanAgoText }}{{ isBgRefreshing ? ' · 后台更新中' : '' }}
+          </span>
 
           <button
             @click="showCustomDirModal = !showCustomDirModal"
@@ -813,6 +843,7 @@ import {
 } from 'lucide-vue-next';
 import {
   LocalInstalledGame,
+  LocalGamesScanResult,
   OnlineLaunchMode,
   SpacewarStatus
 } from '../../types';
@@ -887,13 +918,20 @@ const filteredGames = computed(() => {
   );
 });
 
-// 扫描加载本地 Steam 游戏：force=true 强制重扫；silent=true 不弹成功提示
-// （默认走后端 60s 结果缓存，避免每次进入页面/点击都全量重扫一遍）
+// 扫描加载本地 Steam 游戏：force=true 强制重扫；silent=true 不弹成功提示。
+// 后端三级策略：内存(60s) → 磁盘缓存(跨重启秒开) → 现场全量扫描
+const lastScanAt = ref(0);
+const isBgRefreshing = ref(false);
+
+const applyScanResult = (res: LocalGamesScanResult) => {
+  localGames.value = res.games || [];
+  lastScanAt.value = res.scannedAt || 0;
+};
+
 const handleRefreshLocalGames = async (force: boolean = false, silent: boolean = false) => {
   isScanning.value = true;
   try {
-    const list = await window.electronAPI.scanLocalGames(force);
-    localGames.value = list || [];
+    applyScanResult(await window.electronAPI.scanLocalGames(force));
     if (!silent) {
       emit('notify', `成功扫描到 ${localGames.value.length} 款本地已安装 Steam 游戏！`, 'success');
     }
@@ -901,6 +939,80 @@ const handleRefreshLocalGames = async (force: boolean = false, silent: boolean =
     emit('notify', `扫描本地游戏失败: ${formatIpcError(err)}`, 'error');
   } finally {
     isScanning.value = false;
+  }
+};
+
+// 磁盘缓存超过 24h 时后台静默重扫：不阻塞页面、不转圈，完成后静默替换列表
+const backgroundRefreshIfStale = async () => {
+  if (isBgRefreshing.value) return;
+  isBgRefreshing.value = true;
+  try {
+    applyScanResult(await window.electronAPI.scanLocalGames(true));
+  } catch {
+    // 静默失败：保留磁盘缓存数据，不打断用户
+  } finally {
+    isBgRefreshing.value = false;
+  }
+};
+
+// 「扫描于 x 前」提示文本
+const scanAgoText = computed(() => {
+  if (!lastScanAt.value) return '';
+  const diff = Date.now() - lastScanAt.value;
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
+});
+
+// 联机架构预测徽章：基于扫描时命中的本地文件指纹给出联机方式建议
+interface NetBadge {
+  label: string;
+  cls: string;
+  tip: string;
+}
+const netBadgeOf = (game: LocalInstalledGame): NetBadge | null => {
+  const signals = (game.netSignals || []).filter(Boolean).join('、');
+  const tipTail = signals ? `\n命中指纹: ${signals}` : '';
+  switch (game.netType) {
+    case 'patched':
+      return {
+        label: '已装联机补丁',
+        cls: 'bg-emerald-500/90 text-slate-950',
+        tip: '已通过联机补丁模式部署 OnlineFix/Goldberg，直接联机启动即可。' + tipTail
+      };
+    case 'steamworks':
+      return {
+        label: 'Steamworks 联机',
+        cls: 'bg-emerald-500/90 text-slate-950',
+        tip: '检测到 Steamworks SDK 封装，联机走 Steam 官方接口，推荐使用 Open 内核联机模式。' + tipTail
+      };
+    case 'mixed':
+      return {
+        label: 'Steamworks+三方',
+        cls: 'bg-emerald-500/85 text-slate-950',
+        tip: '游戏同时使用 Steamworks 与第三方网络组件（如 Photon/EOS 语音），核心联机大概率可用 Open 内核，语音等附属功能可能走第三方。' + tipTail
+      };
+    case 'api_only':
+      return {
+        label: 'Steam API',
+        cls: 'bg-sky-500/85 text-slate-950',
+        tip: '检测到 Steam API 接入但无明确网络 SDK 指纹，联机方式不确定，建议先尝试 Open 内核，无效再换联机补丁模式。' + tipTail
+      };
+    case 'thirdparty':
+      return {
+        label: '第三方网络',
+        cls: 'bg-amber-500/90 text-slate-950',
+        tip: '检测到 Photon/EOS/PlayFab 等第三方网络组件且无 Steamworks 联机封装，Open 内核大概率无效，建议直接使用「联机补丁模式」。' + tipTail
+      };
+    case 'unknown':
+      return {
+        label: '联机未知',
+        cls: 'bg-slate-950/80 text-slate-400 border border-white/10',
+        tip: '未发现已知联机指纹，可能为单机游戏或自研网络，可尝试 Open 内核。' + tipTail
+      };
+    default:
+      return null;
   }
 };
 
@@ -1115,7 +1227,16 @@ const handleCardImgError = (e: Event, appId: number) => {
 
 onMounted(async () => {
   await fetchSpacewarStatus(false);
-  // 进入页面默认走后端缓存静默加载（60s 内复用上次结果），点「刷新列表」才会强制重扫
-  await handleRefreshLocalGames(false, true);
+  // 秒开磁盘缓存列表；无缓存时现场扫描一次，缓存超过 24h 则后台静默重扫更新
+  try {
+    const cached = await window.electronAPI.scanLocalGames(false);
+    applyScanResult(cached);
+    if (cached.stale) {
+      // 不 await：后台静默重扫，页面先渲染缓存数据
+      backgroundRefreshIfStale();
+    }
+  } catch {
+    await handleRefreshLocalGames(false, true);
+  }
 });
 </script>

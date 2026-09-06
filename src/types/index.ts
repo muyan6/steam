@@ -128,6 +128,21 @@ export interface LocalInstalledGame {
   isPatched?: boolean;
   patchMode?: 'spacewar' | 'goldberg' | 'none';
   hasBackup?: boolean;
+  /** 联机架构预测: patched | steamworks | mixed | api_only | thirdparty | unknown */
+  netType?: string;
+  /** 命中的联机指纹文件名（提示详情用） */
+  netSignals?: string[];
+}
+
+/** 本地游戏扫描结果（含缓存元信息，供前端秒开与陈旧判定） */
+export interface LocalGamesScanResult {
+  games: LocalInstalledGame[];
+  /** 最近一次全量扫描的时间戳(ms)，0 表示未知 */
+  scannedAt: number;
+  /** 本次结果是否来自缓存（内存/磁盘）而非现场扫描 */
+  fromCache: boolean;
+  /** 缓存是否超过 24h，true 时前端应触发一次后台静默重扫 */
+  stale: boolean;
 }
 
 export interface OnlineFixPatchResult {

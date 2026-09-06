@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
-import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult } from '../../types';
+import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult, LocalGamesScanResult } from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
 import { APP_CONFIG } from '../../config/appConfig';
@@ -358,8 +358,10 @@ export const createTauriBridge = () => {
       await invoke('open_url', { url: 'steam://install/480' });
       return true;
     },
-    // force=true 强制重扫本地库；默认走 Rust 端 60s 缓存，避免每次进入页面/点击都全量重扫
-    scanLocalGames: async (force: boolean = false): Promise<any[]> => invoke('scan_local_games', { force }),
+    // force=true 强制重扫本地库；默认优先内存(60s)/磁盘(跨重启)缓存秒开，
+    // 返回值带 scannedAt/stale，前端对超过 24h 的陈旧缓存做后台静默重刷
+    scanLocalGames: async (force: boolean = false): Promise<LocalGamesScanResult> =>
+      invoke('scan_local_games', { force }),
     launchLocalGame: async (params: {
       appId: number;
       gamePath: string;
