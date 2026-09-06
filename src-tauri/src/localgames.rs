@@ -671,18 +671,24 @@ pub fn launch_game_online(
         // 若只把 -onlinefix 放在 steam.exe 自身启动参数上，内核不做伪装，
         // 真实 AppID 的广播会被 Valve 服务器丢弃（伪许可仅客户端有效）→ 假启动。
         let gp_open = PathBuf::from(game_path);
-        let appid_file = gp_open.join("steam_appid.txt");
-        if appid_file.exists() {
-            // 会话为真实 AppID 上下文，steam_appid.txt 会干扰身份声明，备份移除
-            let _ = fs::copy(&appid_file, gp_open.join("steam_appid.txt.cfd_bak"));
-            let _ = fs::remove_file(&appid_file);
+        if gp_open.exists() {
+            let appid_file = gp_open.join("steam_appid.txt");
+            if appid_file.exists() {
+                let _ = fs::copy(&appid_file, gp_open.join("steam_appid.txt.cfd_bak"));
+            }
+            // 关键：必须写入 480 作为 RestartAppIfNecessary 的自检免死金牌，
+            // 阻止 Unity/Steamworks 游戏在启动 2 秒后因环境变量与内置 AppID 不一致而自杀并跳回假运行
+            let _ = fs::write(&appid_file, online_app_id.to_string());
         }
         let sp_launch = steam::detect_steam_path()
             .ok_or("未找到 Steam 安装路径，无法使用 Open 内核联机模式启动游戏")?;
-        Command::new(sp_launch.join("steam.exe"))
+        let res = Command::new(sp_launch.join("steam.exe"))
             .args(["-applaunch", &app_id.to_string(), "-onlinefix"])
-            .spawn()
-            .map_err(|e| format!("启动游戏失败: {}", e))?;
+            .spawn();
+        if res.is_err() {
+            // 直接唤起失败时使用 steam:// 协议兜底
+            crate::open_url_cmd(&format!("steam://run/{}//-onlinefix/", app_id))?;
+        }
         return Ok(format!(
             "已通过 Open内核联机模式拉起游戏 (AppID: {})，会话由内核伪装为 Spacewar 通道！",
             app_id
@@ -706,15 +712,12 @@ pub fn launch_game_online(
     };
 
     if mode == "spacewar" {
-        // 仅注入 SteamAppId 环境变量、严禁写 steam_appid.txt（实测 OST 内核检测到
-        // 该文件会把 480 会话改写回真实 AppID，导致 presence 以无许可身份广播、
-        // 好友完全看不到 —— 即"假启动"）；环境变量方式广播保持 480，好友可见可加入。
-        // 游戏自带的 steam_appid.txt 需备份移除，避免覆盖环境变量语义。
+        // 关键：写入 steam_appid.txt=480，阻止 SteamAPI_RestartAppIfNecessary 自检自杀并跳回假运行
         let appid_file = gp.join("steam_appid.txt");
         if appid_file.exists() {
             let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
-            let _ = fs::remove_file(&appid_file);
         }
+        let _ = fs::write(&appid_file, online_app_id.to_string());
         Command::new(&target)
             .current_dir(target.parent().unwrap_or(&gp))
             .env("SteamAppId", online_app_id.to_string())
@@ -722,18 +725,16 @@ pub fn launch_game_online(
             .env("SteamOverlayGameId", online_app_id.to_string())
             .spawn()
             .map_err(|e| format!("启动游戏失败: {}", e))?;
-        let mode_name = if mode == "open" { "Open内核" } else { "Spacewar" };
-        return Ok(format!("已通过 {} 模式 (AppID: {}) 成功拉起游戏！", mode_name, online_app_id));
+        return Ok(format!("已通过 Spacewar 模式 (AppID: {}) 成功拉起游戏！", online_app_id));
     }
 
     if mode == "bat" {
-        // 与 Spacewar 模式同理：已有 steam_appid.txt（旧版残留/补丁模式遗留）会让
-        // OST 内核把 480 会话改写回真实 AppID，启动前备份移除，仅靠环境变量伪装
+        // 关键：写入 steam_appid.txt=480，阻止 SteamAPI_RestartAppIfNecessary 自检自杀并跳回假运行
         let appid_file = gp.join("steam_appid.txt");
         if appid_file.exists() {
             let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
-            let _ = fs::remove_file(&appid_file);
         }
+        let _ = fs::write(&appid_file, online_app_id.to_string());
         let dir_name = gp.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let exe_name_orig = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         // 目录名/exe 名直接拼进 bat 命令行，& | ^ < > % 等字符会被 cmd 解析
@@ -757,8 +758,9 @@ pub fn launch_game_online(
             ));
         }
         let bat = format!(
-            "@echo off\ntitle Online Fix Launcher - {}\ncd /d \"%~dp0\"\nset SteamAppId={}\nset SteamGameId={}\nset SteamOverlayGameId={}\nstart \"\" \"{}\" %*\nexit\n",
+            "@echo off\ntitle Online Fix Launcher - {}\ncd /d \"%~dp0\"\necho {}>steam_appid.txt\nset SteamAppId={}\nset SteamGameId={}\nset SteamOverlayGameId={}\nstart \"\" \"{}\" %*\nexit\n",
             bat_title,
+            online_app_id,
             online_app_id,
             online_app_id,
             online_app_id,
