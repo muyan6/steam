@@ -223,6 +223,7 @@ export class NoticeService {
       level: data.level || 'info',
       priority: typeof data.priority === 'number' ? data.priority : 10,
       popupOnce: Boolean(data.popupOnce),
+      interaction: data.interaction === 'consent' ? 'consent' : 'confirm',
       link: data.link || '',
       targetVersion: data.targetVersion || '*',
       enabled: data.enabled !== false,

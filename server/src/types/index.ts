@@ -54,6 +54,7 @@ export interface Announcement {
   level?: 'info' | 'warning' | 'danger' | 'success';
   priority?: number; // 优先级：数字越大越靠前
   popupOnce: boolean; // 是否只弹出一次
+  interaction?: 'confirm' | 'consent'; // 交互方式：confirm=普通通知(仅"我知道了")，consent=强制同意/拒绝(拒绝退出)
   link?: string;
   targetVersion?: string; // 目标生效版本，例如 '*' 或 '>=1.0.0'
   enabled: boolean;

@@ -1019,9 +1019,18 @@ app.get(['/admin', '/dashboard'], (req, res) => {
             </select>
           </div>
         </div>
-        <div class="form-group">
-          <label>生效版本 (* 为全量所有版本)</label>
-          <input type="text" id="noticeVersion" class="input-ctrl" value="*" />
+        <div class="form-row">
+          <div class="form-group">
+            <label>交互方式 (Interaction)</label>
+            <select id="noticeInteraction" class="input-ctrl">
+              <option value="confirm">普通通知 (仅"我知道了"按钮)</option>
+              <option value="consent">强制确认 (同意/拒绝，拒绝退出程序)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>生效版本 (* 为全量所有版本)</label>
+            <input type="text" id="noticeVersion" class="input-ctrl" value="*" />
+          </div>
         </div>
         <div class="form-group">
           <label>公告详细内容 (Content)</label>

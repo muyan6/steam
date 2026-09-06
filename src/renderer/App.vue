@@ -202,8 +202,8 @@
     <!-- 全局系统公告 / 免责声明弹窗 -->
     <div v-if="popupNotice" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
       <div class="theme-card-static rounded-3xl w-full max-w-lg p-7 shadow-2xl animate-in fade-in zoom-in-95 duration-200 border flex flex-col items-center">
-        <!-- 顶部黄色警告感叹号圆圈图标 -->
-        <div class="w-16 h-16 rounded-full bg-amber-400/95 text-slate-950 flex items-center justify-center shadow-lg shadow-amber-400/30 mb-3 select-none">
+        <!-- 顶部级别圆圈图标：info 蓝 / success 绿 / warning 黄 / danger 红 -->
+        <div :class="noticeIconClass" class="w-16 h-16 rounded-full text-slate-950 flex items-center justify-center shadow-lg mb-3 select-none">
           <span class="text-3xl font-black font-sans leading-none">!</span>
         </div>
 
@@ -212,7 +212,7 @@
           {{ popupNotice.title || '免责声明' }}
         </h2>
 
-        <!-- 免责条款列表 (浅底色容器) -->
+        <!-- 公告正文 (浅底色容器) -->
         <div class="w-full text-xs text-slate-300 leading-relaxed space-y-3 bg-slate-950/60 p-5 rounded-2xl border border-white/10 mb-6 font-medium max-h-72 overflow-y-auto">
           <div v-if="popupNotice.kind === 'disclaimer'" class="space-y-3">
             <p class="text-justify">1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。</p>
@@ -226,8 +226,8 @@
           </div>
         </div>
 
-        <!-- 底部按钮组 (左: ✓ 同意, 右: ✕ 拒绝 -> 退出软件) -->
-        <div class="w-full grid grid-cols-2 gap-4">
+        <!-- 底部按钮组：强制确认(interaction=consent)为 同意/拒绝(拒绝退出)；普通通知仅"我知道了" -->
+        <div v-if="popupNotice.kind === 'disclaimer' || popupNotice.interaction === 'consent'" class="w-full grid grid-cols-2 gap-4">
           <button
             @click="handleAgreeNotice"
             class="w-full py-3 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white text-xs font-bold rounded-2xl transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5"
@@ -241,6 +241,15 @@
           >
             <X class="w-4 h-4 stroke-[3]" />
             <span>拒绝</span>
+          </button>
+        </div>
+        <div v-else class="w-full">
+          <button
+            @click="closePopupNotice"
+            class="w-full py-3 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white text-xs font-bold rounded-2xl transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5"
+          >
+            <Check class="w-4 h-4 stroke-[3]" />
+            <span>我知道了</span>
           </button>
         </div>
       </div>
@@ -515,12 +524,28 @@ interface NoticePayload {
   title?: string;
   content?: string;
   type?: 'popup' | 'banner';
+  level?: 'info' | 'warning' | 'danger' | 'success';
   popupOnce?: boolean;
+  interaction?: 'confirm' | 'consent';
   link?: string;
   enabled?: boolean;
   kind?: 'disclaimer' | 'notice';
 }
 const popupNotice = ref<NoticePayload | null>(null);
+
+// 弹窗顶部级别圆圈图标配色：与后台"提示级别"一一对应
+const noticeIconClass = computed(() => {
+  switch (popupNotice.value?.level) {
+    case 'info':
+      return 'bg-sky-400/95 shadow-lg shadow-sky-400/30';
+    case 'success':
+      return 'bg-emerald-400/95 shadow-lg shadow-emerald-400/30';
+    case 'danger':
+      return 'bg-rose-500/95 shadow-lg shadow-rose-500/30';
+    default:
+      return 'bg-amber-400/95 shadow-lg shadow-amber-400/30';
+  }
+});
 const bannerNotice = ref<NoticePayload | null>(null);
 const versionModal = ref<any>(null);
 
@@ -630,9 +655,12 @@ const closePopupNotice = () => {
 };
 
 const handleAgreeNotice = () => {
-  localStorage.setItem(DISCLAIMER_STORAGE_KEY, 'true');
+  // 仅免责声明需要持久化"已同意"状态；普通强制确认公告点同意只是关闭并按 popupOnce 记已读
+  if (popupNotice.value?.kind === 'disclaimer') {
+    localStorage.setItem(DISCLAIMER_STORAGE_KEY, 'true');
+    addToast('您已同意免责声明，欢迎使用春风渡！', 'success');
+  }
   closePopupNotice();
-  addToast('您已同意免责声明，欢迎使用春风渡！', 'success');
 };
 
 const handleDeclineNotice = async () => {

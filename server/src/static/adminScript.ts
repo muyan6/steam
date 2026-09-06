@@ -597,7 +597,7 @@ async function loadNotices() {
         return '<tr>' +
           '<td><span class="badge ' + (n.enabled ? 'badge-green' : 'badge-gray') + '">' + (n.enabled ? '启用中' : '已停用') + '</span></td>' +
           '<td><strong>' + escapeHtml(n.title) + '</strong></td>' +
-          '<td>' + (n.type === 'popup' ? '弹窗' : '横幅') + '</td>' +
+          '<td>' + (n.type === 'popup' ? '弹窗' : '横幅') + (n.interaction === 'consent' ? ' <span class="badge badge-rose">同意制</span>' : '') + '</td>' +
           '<td>' + escapeHtml(n.level || 'info') + '</td>' +
           '<td>' + escapeHtml(String(n.priority || 0)) + '</td>' +
           '<td>' + (n.popupOnce ? '<span class="badge badge-amber">仅弹一次</span>' : '<span class="badge badge-blue">每次启动</span>') + '</td>' +
@@ -848,6 +848,7 @@ function openNoticeModal() {
   var type = document.getElementById('noticeType'); if (type) type.value = 'popup';
   var level = document.getElementById('noticeLevel'); if (level) level.value = 'info';
   var once = document.getElementById('noticePopupOnce'); if (once) once.value = 'false';
+  var inter = document.getElementById('noticeInteraction'); if (inter) inter.value = 'confirm';
   document.getElementById('noticeModal').style.display = 'flex';
 }
 
@@ -865,6 +866,7 @@ function editNotice(id) {
   var type = document.getElementById('noticeType'); if (type) type.value = n.type || 'popup';
   var level = document.getElementById('noticeLevel'); if (level) level.value = n.level || 'info';
   var once = document.getElementById('noticePopupOnce'); if (once) once.value = n.popupOnce ? 'true' : 'false';
+  var inter = document.getElementById('noticeInteraction'); if (inter) inter.value = n.interaction === 'consent' ? 'consent' : 'confirm';
   var m = document.getElementById('noticeModal');
   if (m) m.style.display = 'flex';
 }
@@ -888,7 +890,7 @@ async function handleNoticeSubmit() {
   var title = (document.getElementById('noticeTitle').value || '').trim();
   var content = (document.getElementById('noticeContent').value || '').trim();
   if (!title || !content) { alert('请填写公告标题与内容'); return; }
-  var payload = { title: title, type: document.getElementById('noticeType').value, level: document.getElementById('noticeLevel').value, priority: parseInt(document.getElementById('noticePriority').value, 10) || 10, popupOnce: document.getElementById('noticePopupOnce').value === 'true', targetVersion: document.getElementById('noticeVersion').value || '*', content: content, enabled: true };
+  var payload = { title: title, type: document.getElementById('noticeType').value, level: document.getElementById('noticeLevel').value, priority: parseInt(document.getElementById('noticePriority').value, 10) || 10, popupOnce: document.getElementById('noticePopupOnce').value === 'true', interaction: document.getElementById('noticeInteraction').value || 'confirm', targetVersion: document.getElementById('noticeVersion').value || '*', content: content, enabled: true };
   var editId = (document.getElementById('noticeId').value || '').trim();
   try {
     var resp = editId
