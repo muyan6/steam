@@ -664,10 +664,29 @@ pub fn launch_game_online(
             }
             std::thread::sleep(std::time::Duration::from_millis(2000));
         }
-        // 注意：此处不再走 steam://rungameid/真实AppID —— lua 伪许可证只存在于客户端，
-        // Valve 服务器会丢弃无有效许可 AppID 的 presence 广播，好友完全看不到（假启动）。
-        // 改为与 Spacewar 相同的 480 会话直启，落到下方统一启动逻辑，
-        // 由内核把好友列表里的显示名映射成真实游戏名。
+        // 古韵盒子同款启动配方（内核日志逐包验证有效）：
+        // steam.exe -applaunch <真实AppID> -onlinefix —— 关键在 -onlinefix 必须作为
+        // -applaunch 的启动参数传给游戏会话，OST 内核才会对该会话做 presence 伪装：
+        // 广播改写为 Spacewar (480) 并映射真实游戏名，Steam 弹出原生邀请对话框。
+        // 若只把 -onlinefix 放在 steam.exe 自身启动参数上，内核不做伪装，
+        // 真实 AppID 的广播会被 Valve 服务器丢弃（伪许可仅客户端有效）→ 假启动。
+        let gp_open = PathBuf::from(game_path);
+        let appid_file = gp_open.join("steam_appid.txt");
+        if appid_file.exists() {
+            // 会话为真实 AppID 上下文，steam_appid.txt 会干扰身份声明，备份移除
+            let _ = fs::copy(&appid_file, gp_open.join("steam_appid.txt.cfd_bak"));
+            let _ = fs::remove_file(&appid_file);
+        }
+        let sp_launch = steam::detect_steam_path()
+            .ok_or("未找到 Steam 安装路径，无法使用 Open 内核联机模式启动游戏")?;
+        Command::new(sp_launch.join("steam.exe"))
+            .args(["-applaunch", &app_id.to_string(), "-onlinefix"])
+            .spawn()
+            .map_err(|e| format!("启动游戏失败: {}", e))?;
+        return Ok(format!(
+            "已通过 Open内核联机模式拉起游戏 (AppID: {})，会话由内核伪装为 Spacewar 通道！",
+            app_id
+        ));
     }
 
     let gp = PathBuf::from(game_path);
