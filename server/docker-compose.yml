@@ -18,4 +18,5 @@ services:
     deploy:
       resources:
         limits:
-          memory: 300M
+          # 密钥库+游戏库常驻 ~130-180MB，每日同步存在瞬时尖峰；300M 会把同步中的容器 OOM 杀掉
+          memory: 512M

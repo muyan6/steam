@@ -6,13 +6,21 @@ import path from 'path';
  * 避免进程崩溃/断电产生截断 JSON 导致数据静默丢失。
  */
 export function writeJsonAtomic(filePath: string, data: unknown): void {
+  writeStringAtomic(filePath, JSON.stringify(data, null, 2));
+}
+
+/**
+ * 原子化写入文本文件（供超大库紧凑序列化使用：
+ * 直接接收最终字符串，避免为 30 万条密钥额外构建一份对象副本）。
+ */
+export function writeStringAtomic(filePath: string, content: string): void {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
   const tmpPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
   try {
-    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.writeFileSync(tmpPath, content, 'utf-8');
     fs.renameSync(tmpPath, filePath);
   } catch (e) {
     try { fs.unlinkSync(tmpPath); } catch {}

@@ -47,12 +47,13 @@ export class TokenService {
       return false;
     }
     try {
-      // 合并而非整库替换：上游返回子集/截断数据时不会丢掉本地已有 token
-      this.tokensDb = { ...this.tokensDb, ...tokens };
+      // 合并而非整库替换：上游返回子集/截断数据时不会丢掉本地已有 token。
+      // 原地 Object.assign，避免 {...旧, ...新} 产生一份与主库等大的瞬时副本
+      Object.assign(this.tokensDb, tokens);
       const dbPath = path.join(CONFIG.DATA_DIR, 'steam_tokens.json');
       writeJsonAtomic(dbPath, this.tokensDb);
       this.isLoaded = true;
-      console.log(`[TokenService] 已成功持久化保存 ${Object.keys(tokens).length} 条 AccessToken 到 ${dbPath}`);
+      console.log(`[TokenService] 已成功持久化保存 ${Object.keys(this.tokensDb).length} 条 AccessToken 到 ${dbPath}`);
       return true;
     } catch (e: any) {
       console.error('[TokenService] 保存 AccessToken 数据库失败:', e.message);

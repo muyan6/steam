@@ -3,10 +3,15 @@ module.exports = {
     {
       name: 'steammaster-server',
       script: './dist/server.js',
-      instances: 1, // 商业基础版单实例，内存占用极小 (~50MB)
+      instances: 1, // 商业基础版单实例；密钥库+游戏库常驻约 130-180MB
       autorestart: true,
       watch: false,
-      max_memory_restart: '300M',
+      // 数据稳定占用 ~130MB，每日定时同步解析 18MB 密钥库时存在瞬时尖峰，
+      // 阈值过低会把同步中的进程强杀（表现为服务随机重启），给足一倍余量
+      max_memory_restart: '512M',
+      // 收紧 V8 老生代上限：数据规模固定时让 GC 提前介入，
+      // 避免低负载下堆长期缓慢膨胀（RSS 稳定在 ~200MB 内）
+      node_args: '--max-old-space-size=384',
       env: {
         NODE_ENV: 'production',
         PORT: 1257,

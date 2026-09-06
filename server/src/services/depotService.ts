@@ -2,10 +2,17 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
 import { gameService } from './gameService.js';
-import { writeJsonAtomic } from '../utils/atomicJson.js';
+import { writeStringAtomic } from '../utils/atomicJson.js';
 
+/**
+ * DepotKey 内存优化说明：
+ * - 30 万条密钥用 Map 存储（实测约为普通对象字典的一半内存，~32MB vs ~62MB）；
+ * - 同步合并改为原地 set，不再 {...旧, ...新} 整库复制（此前每日同步会产生
+ *   一次与主库等大的瞬时副本，是内存尖峰的主要来源）；
+ * - 落盘改为紧凑序列化（单字符串原子写），同时省去美化缩进的磁盘/解析开销。
+ */
 export class DepotService {
-  private depotKeysDb: { [depotId: string]: string } = {};
+  private depotKeysDb: Map<string, string> = new Map();
   private isLoaded = false;
 
   constructor() {
@@ -17,12 +24,12 @@ export class DepotService {
       const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json');
       if (fs.existsSync(dbPath)) {
         const content = fs.readFileSync(dbPath, 'utf-8');
-        this.depotKeysDb = JSON.parse(content);
+        this.depotKeysDb = new Map(Object.entries(JSON.parse(content) as Record<string, string>));
         this.isLoaded = true;
-        console.log(`[DepotService] 成功加载 DepotKey 数据库，共收录 ${Object.keys(this.depotKeysDb).length} 条解密密钥！`);
+        console.log(`[DepotService] 成功加载 DepotKey 数据库，共收录 ${this.depotKeysDb.size} 条解密密钥！`);
       } else {
         console.warn(`[DepotService] 未找到 DepotKey 数据库文件: ${dbPath}`);
-        this.depotKeysDb = {};
+        this.depotKeysDb = new Map();
         this.isLoaded = true;
       }
     } catch (e) {
@@ -71,8 +78,8 @@ export class DepotService {
 
     // 4. 遍历并在 28.8万条密钥库中高精度匹配
     for (const dId of candidateDepotIds) {
-      const key = this.depotKeysDb[dId.toString()];
-      if (isValidKey(key)) {
+      const key = this.depotKeysDb.get(String(dId));
+      if (key && isValidKey(key)) {
         if (!matchedKeys[dId] || !isValidKey(matchedKeys[dId])) {
           matchedKeys[dId] = key;
         }
@@ -84,17 +91,32 @@ export class DepotService {
 
   public getDepotKey(depotId: string): string | null {
     if (!this.isLoaded) this.loadDepotKeysDb();
-    return this.depotKeysDb[depotId] || null;
+    return this.depotKeysDb.get(depotId) || null;
   }
 
   public saveDepotKeys(newKeys: Record<string, string>): boolean {
     try {
-      // 增量合并，保留已有有效密钥
-      this.depotKeysDb = { ...this.depotKeysDb, ...newKeys };
+      // 原地合并（增量），保留已有有效密钥；不做整库展开复制，避免内存尖峰
+      let added = 0;
+      for (const [k, v] of Object.entries(newKeys)) {
+        if (!this.depotKeysDb.has(k)) added++;
+        this.depotKeysDb.set(k, v);
+      }
+
+      // 紧凑序列化：直接拼最终 JSON 字符串原子落盘，
+      // 免去 Object.fromEntries 构建的 30 万条中间副本与缩进体积
       const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json');
-      writeJsonAtomic(dbPath, this.depotKeysDb);
+      let json = '{';
+      let first = true;
+      for (const [k, v] of this.depotKeysDb) {
+        if (!first) json += ',';
+        json += JSON.stringify(k) + ':' + JSON.stringify(v);
+        first = false;
+      }
+      json += '}';
+      writeStringAtomic(dbPath, json);
       this.isLoaded = true;
-      console.log(`[DepotService] 已成功保存 ${Object.keys(this.depotKeysDb).length} 条 DepotKey 到 ${dbPath}`);
+      console.log(`[DepotService] 已成功保存 ${this.depotKeysDb.size} 条 DepotKey（新增 ${added} 条）到 ${dbPath}`);
       return true;
     } catch (e: any) {
       console.error('[DepotService] 保存 DepotKey 数据库失败:', e.message);
@@ -104,7 +126,7 @@ export class DepotService {
 
   public getTotalKeysCount(): number {
     if (!this.isLoaded) this.loadDepotKeysDb();
-    return Object.keys(this.depotKeysDb).length;
+    return this.depotKeysDb.size;
   }
 }
 
