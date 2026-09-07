@@ -896,7 +896,15 @@ const ADMIN_HTML = `<!DOCTYPE html>
         <div class="grid-2" style="margin-bottom: 24px;">
           <div class="card">
             <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 4px; display: block;">🔗 应用内跳转链接配置</strong>
-            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">客户端「功能详解与关于」页的教程 / 常见问题跳转地址，留空表示暂未开放（按钮置灰）</div>
+            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">客户端顶栏「提交反馈」QQ群、「赞助支持」页面及「关于」页教程与常见问题跳转地址，留空表示暂未开放</div>
+            <div class="form-group">
+              <label>QQ 交流/反馈群链接 (QQ Group URL)</label>
+              <input type="text" id="cfgQqGroupUrl" class="input-ctrl" placeholder="https://qm.qq.com/q/xxxxxx" />
+            </div>
+            <div class="form-group">
+              <label>赞助支持页面链接 (Sponsor URL - 爱发电等)</label>
+              <input type="text" id="cfgSponsorUrl" class="input-ctrl" placeholder="https://afdian.com/a/xxxxxx" />
+            </div>
             <div class="form-group">
               <label>图文教程链接 (Tutorial URL)</label>
               <input type="text" id="cfgTutorialUrl" class="input-ctrl" placeholder="https://example.com/tutorial" />

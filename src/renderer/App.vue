@@ -100,17 +100,37 @@
               <span>{{ getLicenseHeaderBadgeText(licenseInfo) }}</span>
             </button>
 
-            <span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-500/10 text-sky-300 font-mono text-xs font-semibold border border-sky-500/20">
-              <Cloud class="w-3.5 h-3.5" />
-              <span>18万+ 本地全量库</span>
-            </span>
-            <span 
-              class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold border"
-              :class="steamInfo.ostInstalled ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'"
+            <!-- 赞助支持按钮 -->
+            <button
+              @click="showSponsorModal = true"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/25 transition shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
+              title="了解赞助说明与卡密激活"
             >
-              <ShieldCheck class="w-3.5 h-3.5" />
-              <span>{{ steamInfo.ostInstalled ? 'OST 内核' : '待同步' }}</span>
-            </span>
+              <HeartHandshake class="w-3.5 h-3.5 text-rose-400" />
+              <span>赞助支持</span>
+            </button>
+
+            <!-- 提交反馈按钮 -->
+            <button
+              @click="handleOpenFeedback"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/25 transition shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
+              title="加入 QQ 群提交反馈与交流建议"
+            >
+              <MessageSquare class="w-3.5 h-3.5 text-sky-400" />
+              <span>提交反馈</span>
+            </button>
+
+            <!-- 运行环境状态指示徽章 (替代原 18万+ 本地全量库 与 OST内核) -->
+            <button
+              @click="handleEnvironmentBadgeClick"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold border transition shadow-sm cursor-pointer"
+              :class="isEnvironmentReady ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25 hover:bg-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/25 hover:bg-amber-500/20'"
+              :title="isEnvironmentReady ? 'Steam 路径已配置且 OST 内核正常，运行环境已就绪' : '运行环境未完全就绪，点击查看诊断向导'"
+            >
+              <ShieldCheck v-if="isEnvironmentReady" class="w-3.5 h-3.5 text-emerald-400" />
+              <AlertTriangle v-else class="w-3.5 h-3.5 text-amber-400" />
+              <span>{{ isEnvironmentReady ? '环境已就绪' : (!steamInfo.steamPath ? '未检测到Steam' : '内核未就绪') }}</span>
+            </button>
           </div>
 
           <!-- 沉浸式窗口最小化、最大化、关闭按钮组 -->
@@ -220,7 +240,7 @@
             <p class="text-justify">2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。</p>
             <p class="text-justify">3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。</p>
             <p class="text-justify">4. 本工具不提供任何破解、盗版相关的技术支持或服务。</p>
-            <p class="text-justify">5. 如有权利方认为本工具涉及侵权，请联系3142755779进行下架处理。</p>
+            <p class="text-justify">5. 如有权利方认为本工具涉及侵权，请联系 huasjj@163.com 进行下架处理。</p>
           </div>
           <div v-else class="whitespace-pre-line text-justify">
             {{ popupNotice.content }}
@@ -343,6 +363,19 @@
       @notify="addToast"
     />
 
+    <!-- 赞助说明与卡密激活弹窗 -->
+    <SponsorModal
+      v-if="showSponsorModal"
+      :license-info="licenseInfo"
+      :sponsor-url="appLinks.sponsorUrl"
+      :qq-group-url="appLinks.qqGroupUrl"
+      @close="showSponsorModal = false"
+      @refresh="loadLicenseInfo(true)"
+      @switch-tab="switchMainTab"
+      @open-license-modal="showLicenseModal = true"
+      @notify="addToast"
+    />
+
     <!-- 全局 Toast 提示 -->
     <Toast :toasts="toasts" />
   </div>
@@ -368,11 +401,13 @@ import {
   Square,
   Copy,
   Heart,
+  HeartHandshake,
   User,
   Wrench,
   Check,
   Info,
-  Download
+  Download,
+  MessageSquare
 } from 'lucide-vue-next';
 import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
@@ -382,6 +417,7 @@ import AboutView from './views/AboutView.vue';
 import SettingsView from './views/SettingsView.vue';
 import StartupWizardModal from './components/StartupWizardModal.vue';
 import LicenseModal from './components/LicenseModal.vue';
+import SponsorModal from './components/SponsorModal.vue';
 import Toast, { ToastItem } from './components/Toast.vue';
 import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
@@ -395,7 +431,66 @@ const showStartupWizard = ref(false);
 // 启动引导打开来源：首次启动(环境未就绪)为强引导不可关闭；设置页手动打开可随时关闭
 const wizardClosable = ref(false);
 const showLicenseModal = ref(false);
+const showSponsorModal = ref(false);
 const isMaximized = ref(false);
+
+// 服务端下发应用内跳转链接（教程/FAQ/QQ群/赞助）
+const appLinks = ref<{ tutorialUrl: string; faqUrl: string; qqGroupUrl: string; sponsorUrl: string }>({
+  tutorialUrl: '',
+  faqUrl: '',
+  qqGroupUrl: '',
+  sponsorUrl: ''
+});
+
+// 运行环境就绪判断（Steam 目录已检测且 OST 内核就绪）
+const isEnvironmentReady = computed(() => {
+  return !!(steamInfo.value && steamInfo.value.steamPath && steamInfo.value.ostInstalled);
+});
+
+const switchMainTab = (tab: any) => {
+  currentTab.value = tab;
+};
+
+const loadAppLinks = async () => {
+  try {
+    const links = await window.electronAPI.getAppLinks();
+    if (links) {
+      appLinks.value = {
+        tutorialUrl: links.tutorialUrl || '',
+        faqUrl: links.faqUrl || '',
+        qqGroupUrl: links.qqGroupUrl || '',
+        sponsorUrl: links.sponsorUrl || ''
+      };
+    }
+  } catch (e: any) {
+    console.warn('获取链接配置异常:', formatIpcError(e));
+  }
+};
+
+const handleOpenFeedback = async () => {
+  const url = appLinks.value.qqGroupUrl && appLinks.value.qqGroupUrl.trim();
+  if (url) {
+    try {
+      await window.electronAPI.openExternalUrl(url);
+      addToast('正在打开 QQ 反馈交流群链接...', 'info');
+    } catch (e: any) {
+      addToast('打开外部链接失败: ' + formatIpcError(e), 'error');
+    }
+  } else {
+    addToast('QQ 反馈群暂未配置，请前往「关于」页面查看联系方式', 'info');
+    currentTab.value = 'about';
+  }
+};
+
+const handleEnvironmentBadgeClick = () => {
+  if (isEnvironmentReady.value) {
+    addToast('环境已就绪：Steam 根目录已识别且 OST 内核正常运行！', 'success');
+  } else {
+    addToast('环境未就绪：请跟随向导完成 Steam 目录配置或修复 OST 内核', 'warning');
+    wizardClosable.value = true;
+    showStartupWizard.value = true;
+  }
+};
 
 // -------------------------------------------------------------
 // 全局 UI 界面与字体缩放自适应系统 (UI Scale System)
@@ -634,7 +729,7 @@ const openDisclaimerModal = () => {
     id: 'notice_disclaimer_01',
     title: '免责声明',
     kind: 'disclaimer',
-    content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n5. 如有权利方认为本工具涉及侵权，请联系3142755779进行下架处理。',
+    content: '1. 本工具仅供学习和技术研究用途，严禁用于任何商业用途。\n2. 本工具所生成的文件内容由用户自行上传，开发者不对内容的合法性、准确性、完整性承担任何责任。\n3. 使用本工具所产生的一切后果由使用者自行承担，与开发者无关。\n4. 本工具不提供任何破解、盗版相关的技术支持或服务。\n5. 如有权利方认为本工具涉及侵权，请联系 huasjj@163.com 进行下架处理。',
     popupOnce: false
   };
 };
@@ -759,15 +854,15 @@ const getLicenseHeaderBadgeClass = (info: ClientLicenseInfo) => {
 const getLicenseHeaderBadgeText = (info: ClientLicenseInfo) => {
   if (info.isActivated) {
     if (info.type === 'lifetime' || info.isLifetime) {
-      return '💖 终身赞助者';
+      return '终身赞助者';
     }
     const days = info.remainingDays ?? 0;
-    return `💖 赞助者 (剩${days}天)`;
+    return `赞助者 (剩${days}天)`;
   }
   if (info.status === 'expired') {
-    return '⏱️ 赞助已到期';
+    return '赞助已到期';
   }
-  return '👤 普通用户';
+  return '普通用户';
 };
 
 const initApp = async () => {
@@ -788,6 +883,7 @@ const initApp = async () => {
 
   checkNoticeAndVersion();
   loadLicenseInfo(false);
+  loadAppLinks();
 };
 
 const syncMaximizedState = async () => {

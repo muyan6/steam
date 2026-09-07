@@ -232,11 +232,11 @@ const getLicenseBadgeClass = (status: string, type?: LicenseType) => {
 
 const getLicenseStatusText = (info: ClientLicenseInfo) => {
   if (info.isActivated) {
-    if (info.isLifetime) return '💖 终身赞助者';
-    return `💖 赞助者 (剩 ${info.remainingDays || 0} 天)`;
+    if (info.isLifetime) return '终身赞助者';
+    return `赞助者 (剩 ${info.remainingDays || 0} 天)`;
   }
-  if (info.status === 'expired') return '⏱️ 赞助已到期';
-  return '👤 普通用户';
+  if (info.status === 'expired') return '赞助已到期';
+  return '普通用户';
 };
 
 const formatDateTime = (iso: string) => {

@@ -460,10 +460,15 @@ export const createTauriBridge = () => {
     launchInstaller: async (path: string): Promise<void> => invoke('launch_installer', { path }),
     // 原生窗口背景色 (#rrggbb)：主题切换时同步，覆盖 WebView 边缘原生缝隙的默认白底
     setWindowBackground: async (hex: string): Promise<void> => invoke('set_window_background', { hex }),
-    // 应用内跳转链接 (教程/FAQ) —— 由服务端配置，未配置为空串时前端按钮置灰
-    getAppLinks: async (): Promise<{ tutorialUrl: string; faqUrl: string }> => {
+    // 应用内跳转链接 (教程/FAQ/QQ群/赞助) —— 由服务端配置，未配置为空串
+    getAppLinks: async (): Promise<{ tutorialUrl: string; faqUrl: string; qqGroupUrl: string; sponsorUrl: string }> => {
       const json = await getJson(`${API}/api/links`, 3000);
-      return json?.data || { tutorialUrl: '', faqUrl: '' };
+      return json?.data || { tutorialUrl: '', faqUrl: '', qqGroupUrl: '', sponsorUrl: '' };
+    },
+    // 调用系统默认浏览器或外部协议打开外部链接
+    openExternalUrl: async (url: string): Promise<void> => {
+      if (!url) return;
+      await invoke('open_url', { url });
     },
     getDatabaseStats: async (): Promise<any> => {
       const json = await getJson(`${API}/api/stats`, 3000);

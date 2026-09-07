@@ -19,14 +19,20 @@ export function getAppLinks(_req: Request, res: Response) {
  */
 export function updateAppLinks(req: Request, res: Response) {
   try {
-    const { tutorialUrl, faqUrl } = req.body || {};
+    const { tutorialUrl, faqUrl, qqGroupUrl, sponsorUrl } = req.body || {};
     if (tutorialUrl !== undefined && typeof tutorialUrl !== 'string') {
       return res.status(400).json({ success: false, message: 'tutorialUrl 必须为字符串或空' });
     }
     if (faqUrl !== undefined && typeof faqUrl !== 'string') {
       return res.status(400).json({ success: false, message: 'faqUrl 必须为字符串或空' });
     }
-    const data = appLinksService.updateLinks({ tutorialUrl, faqUrl });
+    if (qqGroupUrl !== undefined && typeof qqGroupUrl !== 'string') {
+      return res.status(400).json({ success: false, message: 'qqGroupUrl 必须为字符串或空' });
+    }
+    if (sponsorUrl !== undefined && typeof sponsorUrl !== 'string') {
+      return res.status(400).json({ success: false, message: 'sponsorUrl 必须为字符串或空' });
+    }
+    const data = appLinksService.updateLinks({ tutorialUrl, faqUrl, qqGroupUrl, sponsorUrl });
     res.json({ success: true, message: '链接配置已更新', data });
   } catch (e) {
     console.error('[LinksController] 更新链接配置失败:', e);

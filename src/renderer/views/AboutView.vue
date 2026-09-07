@@ -158,6 +158,27 @@
           <ExternalLink class="w-4 h-4 text-slate-600" />
         </div>
       </div>
+
+      <!-- QQ 交流反馈群 -->
+      <div v-if="appLinks.qqGroupUrl" class="md:col-span-2 theme-card rounded-3xl p-5 flex items-center justify-between border border-sky-500/20 bg-sky-950/10">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+            <MessageSquare class="w-5 h-5" />
+          </div>
+          <div>
+            <h4 class="text-sm font-bold text-slate-100">官方交流与意见反馈群</h4>
+            <p class="text-xs text-slate-400 mt-0.5">遇到使用问题、程序 Bug 或有新功能想法？欢迎加群交流</p>
+          </div>
+        </div>
+        <a
+          :href="appLinks.qqGroupUrl"
+          target="_blank"
+          class="px-4 py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 hover:text-sky-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+        >
+          <span>加入 QQ 反馈群</span>
+          <ExternalLink class="w-3.5 h-3.5" />
+        </a>
+      </div>
     </div>
 
     <!-- 运行环境与设备参数 -->
@@ -212,7 +233,8 @@ import {
   FileText, 
   HelpCircle, 
   ExternalLink,
-  Cpu
+  Cpu,
+  MessageSquare
 } from 'lucide-vue-next';
 
 const emit = defineEmits<{
@@ -225,8 +247,13 @@ const isCheckingUpdate = ref(false);
 const deviceId = ref('');
 const ostInstalled = ref(false);
 const isActivated = ref(false);
-// 教程/FAQ 跳转链接由服务端配置 (GET /api/links)，未配置时按钮置灰
-const appLinks = ref<{ tutorialUrl: string; faqUrl: string }>({ tutorialUrl: '', faqUrl: '' });
+// 教程/FAQ/QQ群/赞助 跳转链接由服务端配置 (GET /api/links)
+const appLinks = ref<{ tutorialUrl: string; faqUrl: string; qqGroupUrl: string; sponsorUrl: string }>({
+  tutorialUrl: '',
+  faqUrl: '',
+  qqGroupUrl: '',
+  sponsorUrl: ''
+});
 
 const loadAppLinks = async () => {
   try {
@@ -234,7 +261,9 @@ const loadAppLinks = async () => {
     if (links) {
       appLinks.value = {
         tutorialUrl: links.tutorialUrl || '',
-        faqUrl: links.faqUrl || ''
+        faqUrl: links.faqUrl || '',
+        qqGroupUrl: links.qqGroupUrl || '',
+        sponsorUrl: links.sponsorUrl || ''
       };
     }
   } catch {

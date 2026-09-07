@@ -718,6 +718,8 @@ async function loadAdminSettings() {
     var res = await resp.json();
     if (res && res.success && res.data) {
       var links = res.data.links || {};
+      var qq = document.getElementById('cfgQqGroupUrl'); if (qq) qq.value = links.qqGroupUrl || '';
+      var sp = document.getElementById('cfgSponsorUrl'); if (sp) sp.value = links.sponsorUrl || '';
       var tut = document.getElementById('cfgTutorialUrl'); if (tut) tut.value = links.tutorialUrl || '';
       var faq = document.getElementById('cfgFaqUrl'); if (faq) faq.value = links.faqUrl || '';
       var quota = document.getElementById('cfgFreeDailyLimit');
@@ -727,6 +729,8 @@ async function loadAdminSettings() {
 }
 
 async function handleLinksSubmit() {
+  var qqGroupUrl = (document.getElementById('cfgQqGroupUrl').value || '').trim();
+  var sponsorUrl = (document.getElementById('cfgSponsorUrl').value || '').trim();
   var tutorialUrl = (document.getElementById('cfgTutorialUrl').value || '').trim();
   var faqUrl = (document.getElementById('cfgFaqUrl').value || '').trim();
   var btn = document.getElementById('btnSaveLinks');
@@ -735,11 +739,16 @@ async function handleLinksSubmit() {
     var resp = await fetch('/api/admin/links', {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ tutorialUrl: tutorialUrl, faqUrl: faqUrl })
+      body: JSON.stringify({
+        qqGroupUrl: qqGroupUrl,
+        sponsorUrl: sponsorUrl,
+        tutorialUrl: tutorialUrl,
+        faqUrl: faqUrl
+      })
     });
     var res = await resp.json();
     if (res && res.success) {
-      alert('跳转链接已保存！客户端「功能详解与关于」页即时生效（空 = 按钮置灰显示暂未开放）');
+      alert('跳转链接已保存！客户端即时生效（空 = 暂未开放）');
     } else {
       alert('保存失败: ' + (res.message || '未知错误'));
     }
