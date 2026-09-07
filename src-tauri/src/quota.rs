@@ -132,3 +132,33 @@ pub fn consume_free_quota(is_activated: bool) -> QuotaStatus {
     write_used(path.as_ref(), new_used);
     build_status(false, new_used, true)
 }
+
+fn license_cache_file() -> Option<PathBuf> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    let dir = PathBuf::from(appdata).join("com.chunfengdu.app");
+    fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("license_cache.json"))
+}
+
+pub fn save_license_cache_str(data: &str) -> bool {
+    if let Some(path) = license_cache_file() {
+        fs::write(path, data).is_ok()
+    } else {
+        false
+    }
+}
+
+pub fn load_license_cache_str() -> Option<String> {
+    let path = license_cache_file()?;
+    fs::read_to_string(path).ok()
+}
+
+pub fn clear_license_cache_file() -> bool {
+    if let Some(path) = license_cache_file() {
+        if path.exists() {
+            let _ = fs::remove_file(path);
+        }
+    }
+    true
+}
+

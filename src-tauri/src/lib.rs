@@ -1043,6 +1043,21 @@ fn consume_free_unlock_quota(is_activated: Option<bool>) -> serde_json::Value {
 }
 
 #[tauri::command]
+fn save_license_cache(data: String) -> bool {
+    quota::save_license_cache_str(&data)
+}
+
+#[tauri::command]
+fn load_license_cache() -> Option<String> {
+    quota::load_license_cache_str()
+}
+
+#[tauri::command]
+fn clear_license_cache() -> bool {
+    quota::clear_license_cache_file()
+}
+
+#[tauri::command]
 async fn check_game_dir(dir_path: String) -> serde_json::Value {
     tauri::async_runtime::spawn_blocking(move || {
         let p = PathBuf::from(&dir_path);
@@ -1587,6 +1602,9 @@ pub fn run() {
             scan_local_games,
             get_free_unlock_quota,
             consume_free_unlock_quota,
+            save_license_cache,
+            load_license_cache,
+            clear_license_cache,
             check_game_dir,
             apply_spacewar_fix,
             apply_goldberg_fix,

@@ -189,7 +189,7 @@
         <div class="p-3 rounded-2xl bg-slate-950/40 border border-white/5">
           <div class="text-slate-400 text-[11px] mb-1">授权状态</div>
           <div class="font-bold" :class="isActivated ? 'text-emerald-400' : 'text-slate-300'">
-            {{ isActivated ? '已激活正版授权' : '公益基础版' }}
+            {{ isActivated ? '社区赞助版' : '普通用户 (基础版)' }}
           </div>
         </div>
       </div>

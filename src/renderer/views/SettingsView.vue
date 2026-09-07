@@ -294,13 +294,13 @@
       <div class="theme-card-static rounded-3xl p-5 xl:p-6 shadow-lg border">
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div class="flex items-center gap-2.5">
-            <Crown class="w-5 h-5 text-amber-400" />
-            <h3 class="font-bold text-base text-slate-100">软件会员授权与设备绑定</h3>
+            <Heart class="w-5 h-5 text-rose-400" />
+            <h3 class="font-bold text-base text-slate-100">软件授权与赞助状态</h3>
             <span
               class="px-3 py-0.5 rounded-full text-xs font-mono font-bold border"
-              :class="licenseInfo.isActivated ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-white/10'"
+              :class="licenseInfo.isActivated ? 'bg-rose-500/10 text-rose-300 border-rose-500/30' : 'bg-slate-800 text-slate-400 border-white/10'"
             >
-              {{ licenseInfo.isActivated ? (licenseInfo.isLifetime ? '👑 永久尊享会员' : `👑 ${licenseInfo.typeName || 'VIP会员'} (剩 ${licenseInfo.remainingDays || 0} 天)`) : '⚠️ 未激活' }}
+              {{ licenseInfo.isActivated ? (licenseInfo.isLifetime ? '💖 终身赞助者' : `💖 赞助者 (剩 ${licenseInfo.remainingDays || 0} 天)`) : '👤 普通用户' }}
             </span>
           </div>
           <button
@@ -308,7 +308,7 @@
             class="theme-btn-primary px-4 py-2 text-xs font-bold rounded-xl transition flex items-center gap-2 shadow"
           >
             <Key class="w-4 h-4" />
-            <span>{{ licenseInfo.isActivated ? '续费 / 更换卡密' : '输入卡密激活' }}</span>
+            <span>{{ licenseInfo.isActivated ? '更换赞助码' : '输入赞助码绑定' }}</span>
           </button>
         </div>
 
@@ -352,13 +352,13 @@
             </div>
             <div class="text-xs text-slate-200 space-y-1.5 bg-slate-950/60 px-3.5 py-2.5 rounded-xl border border-white/5">
               <div class="flex justify-between">
-                <span class="text-slate-400">已绑卡密:</span>
+                <span class="text-slate-400">已绑赞助码:</span>
                 <span class="font-mono font-bold text-slate-100">{{ licenseInfo.code || '无' }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-slate-400">有效期:</span>
                 <span :class="licenseInfo.isActivated ? 'text-emerald-400 font-bold' : 'text-slate-400'">
-                  {{ licenseInfo.isLifetime ? '终身永久有效' : (licenseInfo.expiresAt ? `剩余 ${licenseInfo.remainingDays} 天` : '未激活') }}
+                  {{ licenseInfo.isLifetime ? '终身永久有效' : (licenseInfo.expiresAt ? `剩余 ${licenseInfo.remainingDays} 天` : '普通用户') }}
                 </span>
               </div>
             </div>
@@ -573,7 +573,7 @@ import {
   ShieldAlert,
   Moon,
   Sun,
-  Crown,
+  Heart,
   Laptop,
   ZoomIn
 } from 'lucide-vue-next';
@@ -899,7 +899,7 @@ const loadLicenseData = async (forceVerify: boolean = false) => {
     if (info) {
       licenseInfo.value = info;
       if (forceVerify && info.isActivated) {
-        emit('notify', `授权状态已刷新：${info.typeName || '会员有效'}`, 'success');
+        emit('notify', `授权状态已刷新：${info.isLifetime ? '终身赞助有效' : (info.typeName || '赞助有效')}`, 'success');
       }
     }
   } catch (e: any) {

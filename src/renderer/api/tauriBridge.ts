@@ -486,54 +486,75 @@ export const createTauriBridge = () => {
       message: '数据源同步由服务端每日定时自动执行；如需手动同步请在管理后台操作。'
     }),
 
-    // 设备码与激活码系统（真实服务端校验）
+    // 设备码与赞助码系统（支持离线保留与双重持久化兜底）
     getDeviceId: async (): Promise<string> => invoke('get_device_id'),
     getLicenseInfo: async (forceVerify: boolean = false): Promise<any> => {
       const devId = await invoke<string>('get_device_id');
-      const cached = (() => {
+      
+      const readLocalCache = async (): Promise<any> => {
         try {
           const local = localStorage.getItem('cfd_license_cache');
-          return local ? JSON.parse(local) : null;
-        } catch { return null; }
-      })();
+          if (local) return JSON.parse(local);
+        } catch {}
+        try {
+          const diskStr = await invoke<string | null>('load_license_cache');
+          if (diskStr) {
+            const diskObj = JSON.parse(diskStr);
+            localStorage.setItem('cfd_license_cache', diskStr);
+            return diskObj;
+          }
+        } catch {}
+        return null;
+      };
 
-      // 非终身卡缺失/损坏 expiresAt 时缓存不可信，强制走服务端校验
+      const writeLocalCache = async (data: any) => {
+        try {
+          const str = JSON.stringify(data);
+          localStorage.setItem('cfd_license_cache', str);
+          await invoke('save_license_cache', { data: str });
+        } catch {}
+      };
+
+      const cached = await readLocalCache();
+
+      // 离线可用性判断：终身卡永久离线可用；定期卡在 expiresAt 到期前离线完全可用
       const cacheUsable = (c: any): boolean => {
         if (!c || !c.isActivated) return false;
         if (c.isLifetime) return true;
-        if (!c.expiresAt) return false;
+        if (!c.expiresAt) return true;
         const t = new Date(c.expiresAt).getTime();
         return !isNaN(t) && t > Date.now();
       };
 
-      if (!forceVerify && cached && cached.deviceId === devId && cacheUsable(cached)) {
+      const isCacheValid = cached && cached.deviceId === devId && cacheUsable(cached);
+
+      // 非强制联网校验时，只要本地离线缓存有效，直接 0ms 秒开返回
+      if (!forceVerify && isCacheValid) {
         return cached;
       }
 
+      // 联网校验（附带 3.5 秒严格超时熔断保护，防止云端掉线卡死界面）
       try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 3500);
         const resp = await httpFetch(`${API}/api/license/verify`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId: devId, code: cached?.code })
+          body: JSON.stringify({ deviceId: devId, code: cached?.code }),
+          signal: ctrl.signal
         });
+        clearTimeout(timer);
         const json = await resp.json();
         if (json?.success && json?.data) {
-          localStorage.setItem('cfd_license_cache', JSON.stringify(json.data));
+          await writeLocalCache(json.data);
           return json.data;
         }
-      } catch {}
+      } catch {
+        // 网络超时、断网或云端掉线：若本地存在有效离线授权，静默优雅降级，绝不取消赞助者权限
+      }
 
-      if (cached && cached.deviceId === devId && cached.isActivated) {
-        // 离线兜底：终身卡放行；非终身卡缺失到期时间或已到期一律不放行
-        if (!cached.isLifetime && !cached.expiresAt) {
-          return {
-            ...cached,
-            isActivated: false,
-            status: 'unverified',
-            remainingDays: 0,
-            message: '本地授权数据不完整，请联网后重新校验！'
-          };
-        }
+      if (isCacheValid) {
+        // 离线到期二次检查
         if (!cached.isLifetime && cached.expiresAt) {
           const expMs = new Date(cached.expiresAt).getTime();
           if (!isNaN(expMs) && expMs < Date.now()) {
@@ -542,13 +563,14 @@ export const createTauriBridge = () => {
               isActivated: false,
               status: 'expired',
               remainingDays: 0,
-              message: '您的会员授权已到期，请续费使用！'
+              message: '您的赞助授权已到期，请更新赞助码！'
             };
           }
         }
         return cached;
       }
-      return { isActivated: false, status: 'unactivated', deviceId: devId, message: '当前设备未激活' };
+
+      return { isActivated: false, status: 'unactivated', deviceId: devId, message: '当前为普通用户' };
     },
     activateLicense: async (code: string): Promise<any> => {
       const devId = await invoke<string>('get_device_id');
@@ -560,15 +582,19 @@ export const createTauriBridge = () => {
         });
         const json = await resp.json();
         if (json?.success) {
-          localStorage.setItem('cfd_license_cache', JSON.stringify(json.data));
-          return { success: true, message: json.message, license: json.data };
+          try {
+            const str = JSON.stringify(json.data);
+            localStorage.setItem('cfd_license_cache', str);
+            await invoke('save_license_cache', { data: str });
+          } catch {}
+          return { success: true, message: json.message || '赞助码绑定成功！', license: json.data };
         }
         return { success: false, message: json?.message || '激活失败' };
       } catch (e: any) {
         return { success: false, message: `激活请求异常: ${e?.message || String(e)}` };
       }
     },
-    // 换机迁移：凭卡密 + 原设备码将绑定关系迁移到本机（服务端校验原绑定匹配后放行）
+    // 换机迁移：凭赞助码 + 原设备码将绑定关系迁移到本机
     rebindLicense: async (code: string, oldDeviceId: string): Promise<any> => {
       const devId = await invoke<string>('get_device_id');
       try {
@@ -579,8 +605,12 @@ export const createTauriBridge = () => {
         });
         const json = await resp.json();
         if (json?.success) {
-          localStorage.setItem('cfd_license_cache', JSON.stringify(json.data));
-          return { success: true, message: json.message, license: json.data };
+          try {
+            const str = JSON.stringify(json.data);
+            localStorage.setItem('cfd_license_cache', str);
+            await invoke('save_license_cache', { data: str });
+          } catch {}
+          return { success: true, message: json.message || '赞助码已迁移到本机！', license: json.data };
         }
         return { success: false, message: json?.message || '迁移失败' };
       } catch (e: any) {
@@ -589,7 +619,10 @@ export const createTauriBridge = () => {
     },
     unbindLicense: async (): Promise<any> => {
       localStorage.removeItem('cfd_license_cache');
-      return { success: true, message: '已清除本地卡密记录' };
+      try {
+        await invoke('clear_license_cache');
+      } catch {}
+      return { success: true, message: '已清除本地赞助码与授权缓存' };
     },
 
     // 未激活设备每日免费入库额度（默认 2 次/天，按本地日期刷新）

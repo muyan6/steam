@@ -6,8 +6,8 @@
       <!-- 弹窗顶部栏 -->
       <div class="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-slate-950/40">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <Crown class="w-5 h-5" />
+          <div class="w-9 h-9 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+            <Heart class="w-5 h-5" />
           </div>
           <div>
             <h3 class="text-sm font-bold text-slate-100 flex items-center gap-2">
@@ -19,7 +19,7 @@
                 {{ getLicenseStatusText(licenseInfo) }}
               </span>
             </h3>
-            <p class="text-[11px] text-slate-400">支持月卡、季卡、年卡及永久卡 · 一机一码绑定</p>
+            <p class="text-[11px] text-slate-400">本机硬件指纹 · 一机一码绑定</p>
           </div>
         </div>
         <button
@@ -62,33 +62,33 @@
           class="p-4 rounded-2xl border transition-all"
           :class="licenseInfo.isActivated 
             ? 'bg-emerald-950/20 border-emerald-500/30' 
-            : 'bg-amber-950/20 border-amber-500/30'"
+            : 'bg-slate-950/40 border-white/10'"
         >
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
               <Sparkles v-if="licenseInfo.isActivated" class="w-4 h-4 text-emerald-400" />
-              <AlertCircle v-else class="w-4 h-4 text-amber-400" />
+              <User v-else class="w-4 h-4 text-slate-400" />
               <span class="font-bold text-slate-200 text-xs">
-                {{ licenseInfo.isActivated ? '当前会员权益状态' : '当前设备尚未激活' }}
+                {{ licenseInfo.isActivated ? '当前服务状态' : '当前用户状态' }}
               </span>
             </div>
             <span
               class="text-[11px] font-mono font-bold"
-              :class="licenseInfo.isActivated ? 'text-emerald-400' : 'text-amber-400'"
+              :class="licenseInfo.isActivated ? 'text-emerald-400' : 'text-slate-300'"
             >
-              {{ licenseInfo.typeName || (licenseInfo.isActivated ? '尊享会员' : '未激活') }}
+              {{ licenseInfo.isActivated ? (licenseInfo.isLifetime ? '终身赞助者' : '赞助者') : '普通用户' }}
             </span>
           </div>
 
           <div v-if="licenseInfo.isActivated" class="space-y-1.5 text-[11px] text-slate-300 pt-1 border-t border-white/5">
             <div class="flex justify-between">
-              <span class="text-slate-400">已绑定激活码:</span>
+              <span class="text-slate-400">已绑定赞助码:</span>
               <span class="font-mono text-slate-200 font-bold">{{ licenseInfo.code || '-' }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-slate-400">有效时长:</span>
               <span class="font-bold text-emerald-300 font-mono">
-                {{ licenseInfo.isLifetime ? '永久终身有效' : `剩余 ${licenseInfo.remainingDays || 0} 天` }}
+                {{ licenseInfo.isLifetime ? '终身有效' : `剩余 ${licenseInfo.remainingDays || 0} 天` }}
               </span>
             </div>
             <div v-if="!licenseInfo.isLifetime && licenseInfo.expiresAt" class="flex justify-between">
@@ -97,16 +97,16 @@
             </div>
           </div>
           <div v-else class="text-[11px] text-slate-400 leading-relaxed pt-1 border-t border-white/5">
-            请输入管理员发放的卡密激活码完成设备绑定。激活后立享 28.8万+ DepotKey 云端高速秒查与全量游戏极速入库！
+            当前为普通用户，支持本地核心入库功能。输入赞助码可升级为赞助者，享受全量云端高速检索与完整生态服务。
           </div>
         </div>
 
-        <!-- 3. 输入激活码 -->
+        <!-- 3. 输入赞助码 -->
         <div class="space-y-2">
           <label class="font-bold text-slate-200 text-xs flex items-center justify-between">
             <span class="flex items-center gap-1.5">
               <Key class="w-3.5 h-3.5 text-amber-400" />
-              <span>输入卡密激活码</span>
+              <span>输入赞助码</span>
             </span>
             <button
               @click="handlePasteCode"
@@ -131,19 +131,19 @@
             >
               <RotateCw v-if="activating" class="w-3.5 h-3.5 animate-spin" />
               <Zap v-else class="w-3.5 h-3.5" />
-              <span>{{ activating ? '正在核销...' : (licenseInfo.isActivated ? '续费/换码' : '立即激活') }}</span>
+              <span>{{ activating ? '正在核销...' : (licenseInfo.isActivated ? '更换赞助码' : '立即绑定') }}</span>
             </button>
           </div>
         </div>
 
-        <!-- 3.5 换机迁移（激活码已被其他设备绑定时出现） -->
+        <!-- 3.5 换机迁移（赞助码已被其他设备绑定时出现） -->
         <div v-if="showRebind" class="space-y-2 p-3 rounded-2xl bg-sky-950/30 border border-sky-500/30">
           <div class="font-bold text-sky-300 text-xs flex items-center gap-1.5">
             <ArrowLeftRight class="w-3.5 h-3.5" />
             <span>换机迁移绑定</span>
           </div>
           <p class="text-[11px] text-slate-400 leading-relaxed">
-            该激活码已绑定其他设备。若旧设备已报废/重装系统，可填入旧设备上显示的设备码，验证匹配后将绑定迁移到本机。
+            该赞助码已绑定其他设备。若旧设备已报废或重装系统，可填入旧设备显示的设备码，验证匹配后迁移到本机。
           </p>
           <div class="flex items-center gap-2">
             <input
@@ -162,48 +162,6 @@
             </button>
           </div>
         </div>
-
-        <!-- 4. 卡种权益卡片网格 -->
-        <div class="pt-2">
-          <div class="text-[11px] font-bold text-slate-400 mb-2 flex items-center gap-1">
-            <ShieldCheck class="w-3.5 h-3.5 text-slate-400" />
-            <span>支持的卡密类型与特权说明</span>
-          </div>
-
-          <div class="grid grid-cols-2 gap-2">
-            <div class="p-2.5 rounded-xl bg-slate-950/40 border border-white/5">
-              <div class="font-bold text-sky-400 text-[11px] flex items-center justify-between">
-                <span>月卡会员</span>
-                <span class="text-[10px] font-mono text-slate-400">30天</span>
-              </div>
-              <p class="text-[10px] text-slate-400 mt-0.5">全量 28.8万条密钥云端极速入库与联机修复</p>
-            </div>
-
-            <div class="p-2.5 rounded-xl bg-slate-950/40 border border-white/5">
-              <div class="font-bold text-emerald-400 text-[11px] flex items-center justify-between">
-                <span>季卡会员</span>
-                <span class="text-[10px] font-mono text-slate-400">90天</span>
-              </div>
-              <p class="text-[10px] text-slate-400 mt-0.5">季度畅玩 · 实时游戏更新与热重载</p>
-            </div>
-
-            <div class="p-2.5 rounded-xl bg-slate-950/40 border border-white/5">
-              <div class="font-bold text-amber-400 text-[11px] flex items-center justify-between">
-                <span>年卡会员</span>
-                <span class="text-[10px] font-mono text-slate-400">365天</span>
-              </div>
-              <p class="text-[10px] text-slate-400 mt-0.5">年度超值 · 独享 PICS 访问令牌与专属节点</p>
-            </div>
-
-            <div class="p-2.5 rounded-xl bg-slate-950/40 border border-amber-500/20 bg-amber-500/5">
-              <div class="font-bold text-amber-300 text-[11px] flex items-center justify-between">
-                <span>永久尊享卡</span>
-                <span class="text-[10px] font-mono text-amber-400 font-bold">终身</span>
-              </div>
-              <p class="text-[10px] text-slate-400 mt-0.5">永久有效 · 换机无忧 · 尊贵身份标识</p>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- 弹窗底部操作栏 -->
@@ -215,7 +173,7 @@
         >
           清除本机授权缓存
         </button>
-        <span v-else class="text-[11px] text-slate-400">如需获取激活码请联系软件管理员</span>
+        <span v-else class="text-[11px] text-slate-400">如有疑问请联系技术支持</span>
 
         <button
           @click="emit('close')"
@@ -231,16 +189,15 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import {
-  Crown,
+  Heart,
+  User,
   X,
   Laptop,
   Copy,
   Sparkles,
-  AlertCircle,
   Key,
   RotateCw,
   Zap,
-  ShieldCheck,
   ArrowLeftRight
 } from 'lucide-vue-next';
 import { ClientLicenseInfo, LicenseType } from '../../types';
@@ -266,24 +223,20 @@ const rebinding = ref(false);
 
 const getLicenseBadgeClass = (status: string, type?: LicenseType) => {
   if (status === 'active') {
-    if (type === 'lifetime') return 'bg-amber-500/10 text-amber-300 border-amber-500/30';
+    if (type === 'lifetime') return 'bg-rose-500/10 text-rose-300 border-rose-500/30';
     return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30';
   }
-  if (status === 'expired') return 'bg-rose-500/10 text-rose-300 border-rose-500/30';
-  // unverified：本地缓存不完整待联网校验，样式与未激活一致
-  if (status === 'unverified') return 'bg-slate-800/80 text-slate-400 border-white/10';
+  if (status === 'expired') return 'bg-amber-500/10 text-amber-300 border-amber-500/30';
   return 'bg-slate-800/80 text-slate-400 border-white/10';
 };
 
 const getLicenseStatusText = (info: ClientLicenseInfo) => {
   if (info.isActivated) {
-    if (info.isLifetime) return '👑 永久尊享会员';
-    return `⏱️ ${info.typeName || '会员'} (剩 ${info.remainingDays || 0} 天)`;
+    if (info.isLifetime) return '💖 终身赞助者';
+    return `💖 赞助者 (剩 ${info.remainingDays || 0} 天)`;
   }
-  if (info.status === 'expired') return '⏱️ 授权已到期';
-  // unverified：本地授权数据不完整需联网校验，文案上等同于未激活
-  if (info.status === 'unverified') return '⚠️ 未激活';
-  return '⚠️ 未激活';
+  if (info.status === 'expired') return '⏱️ 赞助已到期';
+  return '👤 普通用户';
 };
 
 const formatDateTime = (iso: string) => {
@@ -315,7 +268,6 @@ const handleCopyDeviceId = () => {
       emit('notify', '复制失败：剪贴板不可用，请手动选择复制', 'error');
     });
   } else {
-    // 剪贴板 API 不可用（如非安全上下文）时明确提示，避免点击后无任何反馈
     emit('notify', '剪贴板不可用，请手动选择复制', 'error');
   }
 };
@@ -335,7 +287,7 @@ const handlePasteCode = async () => {
 const handleActivate = async () => {
   const code = activationCodeInput.value.trim().toUpperCase();
   if (!code) {
-    emit('notify', '请输入激活码后再点击激活', 'warning');
+    emit('notify', '请输入赞助码后再点击绑定', 'warning');
     return;
   }
 
@@ -344,18 +296,18 @@ const handleActivate = async () => {
   try {
     const res = await window.electronAPI.activateLicense(code);
     if (res.success) {
-      emit('notify', res.message || '恭喜，激活成功！', 'success');
+      emit('notify', res.message || '恭喜，赞助码绑定成功！', 'success');
       activationCodeInput.value = '';
       emit('refresh');
     } else {
-      emit('notify', res.message || '激活失败', 'error');
-      // 激活码已被其他设备绑定时，展开换机迁移入口
+      emit('notify', res.message || '绑定失败', 'error');
+      // 赞助码已被其他设备绑定时，展开换机迁移入口
       if ((res.message || '').includes('已被其他设备绑定')) {
         showRebind.value = true;
       }
     }
   } catch (e: any) {
-    emit('notify', `激活失败: ${formatIpcError(e)}`, 'error');
+    emit('notify', `绑定失败: ${formatIpcError(e)}`, 'error');
   } finally {
     activating.value = false;
   }
@@ -365,14 +317,14 @@ const handleRebind = async () => {
   const code = activationCodeInput.value.trim().toUpperCase();
   const oldDeviceId = rebindOldDeviceId.value.trim().toUpperCase();
   if (!code || !oldDeviceId) {
-    emit('notify', '请填写激活码与旧设备码后再迁移', 'warning');
+    emit('notify', '请填写赞助码与旧设备码后再迁移', 'warning');
     return;
   }
   rebinding.value = true;
   try {
     const res = await window.electronAPI.rebindLicense(code, oldDeviceId);
     if (res.success) {
-      emit('notify', res.message || '绑定已成功迁移到本机！', 'success');
+      emit('notify', res.message || '赞助码已成功迁移到本机！', 'success');
       showRebind.value = false;
       rebindOldDeviceId.value = '';
       activationCodeInput.value = '';
@@ -388,7 +340,7 @@ const handleRebind = async () => {
 };
 
 const handleUnbindLocal = async () => {
-  if (!confirm('确定要清除本机的卡密授权缓存吗？')) return;
+  if (!confirm('确定要清除本机的赞助授权缓存吗？')) return;
   try {
     const res = await window.electronAPI.unbindLicense();
     if (res.success) {

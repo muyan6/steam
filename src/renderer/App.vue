@@ -93,9 +93,10 @@
               @click="showLicenseModal = true"
               class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold border transition shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
               :class="getLicenseHeaderBadgeClass(licenseInfo)"
-              :title="licenseInfo.isActivated ? (licenseInfo.isLifetime ? '永久卡会员' : `会员到期剩余 ${licenseInfo.remainingDays} 天`) : '点击输入激活码'"
+              :title="licenseInfo.isActivated ? (licenseInfo.isLifetime ? '终身赞助者' : `赞助有效期剩余 ${licenseInfo.remainingDays} 天`) : '点击查看软件授权与赞助状态'"
             >
-              <Crown class="w-3.5 h-3.5" :class="licenseInfo.isActivated ? 'text-amber-400' : 'text-slate-400'" />
+              <Heart v-if="licenseInfo.isActivated" class="w-3.5 h-3.5 text-rose-400" />
+              <User v-else class="w-3.5 h-3.5 text-slate-400" />
               <span>{{ getLicenseHeaderBadgeText(licenseInfo) }}</span>
             </button>
 
@@ -366,7 +367,8 @@ import {
   Minus,
   Square,
   Copy,
-  Crown,
+  Heart,
+  User,
   Wrench,
   Check,
   Info,
@@ -744,12 +746,12 @@ const loadLicenseInfo = async (forceVerify: boolean = false) => {
 const getLicenseHeaderBadgeClass = (info: ClientLicenseInfo) => {
   if (info.isActivated) {
     if (info.type === 'lifetime' || info.isLifetime) {
-      return 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20';
+      return 'bg-rose-500/10 text-rose-300 border-rose-500/30 hover:bg-rose-500/20';
     }
     return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20';
   }
   if (info.status === 'expired') {
-    return 'bg-rose-500/10 text-rose-300 border-rose-500/30 hover:bg-rose-500/20';
+    return 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20';
   }
   return 'bg-slate-800/80 text-slate-300 border-white/10 hover:bg-white/10';
 };
@@ -757,15 +759,15 @@ const getLicenseHeaderBadgeClass = (info: ClientLicenseInfo) => {
 const getLicenseHeaderBadgeText = (info: ClientLicenseInfo) => {
   if (info.isActivated) {
     if (info.type === 'lifetime' || info.isLifetime) {
-      return '👑 永久会员';
+      return '💖 终身赞助者';
     }
     const days = info.remainingDays ?? 0;
-    return `👑 ${info.typeName?.replace('会员', '') || 'VIP'} (剩${days}天)`;
+    return `💖 赞助者 (剩${days}天)`;
   }
   if (info.status === 'expired') {
-    return '⏱️ 授权已到期';
+    return '⏱️ 赞助已到期';
   }
-  return '🔑 未激活';
+  return '👤 普通用户';
 };
 
 const initApp = async () => {
@@ -785,7 +787,7 @@ const initApp = async () => {
   }
 
   checkNoticeAndVersion();
-  loadLicenseInfo(true);
+  loadLicenseInfo(false);
 };
 
 const syncMaximizedState = async () => {

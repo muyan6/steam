@@ -595,10 +595,10 @@ const unlockGame = async (game: SteamGame) => {
     const lic = await window.electronAPI.getLicenseInfo();
     activated = !!(lic && lic.isActivated);
     if (!activated) {
-      // 未激活设备：每日 2 次免费入库额度（按天刷新），用完需激活
+      // 普通用户设备：每日 2 次免费体验入库额度（按天刷新）
       const quota = await window.electronAPI.getFreeUnlockQuota(false);
       if (!quota || !quota.allowed) {
-        emit('notify', '今日免费入库次数已用完，请激活使用！激活后入库不限次数。', 'warning');
+        emit('notify', '今日免费体验额度已用完，绑定赞助码后可享无限制极速入库。', 'warning');
         emit('open-license-modal');
         return;
       }
