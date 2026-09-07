@@ -19,6 +19,15 @@
 
       <div class="flex items-center gap-2.5">
         <button
+          @click="handleOpenFeedback"
+          class="px-4 py-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 hover:text-sky-200 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer"
+          title="加入官方 QQ 交流反馈群"
+        >
+          <MessageSquare class="w-3.5 h-3.5 text-sky-400" />
+          <span>提交反馈</span>
+        </button>
+
+        <button
           @click="checkUpdates"
           :disabled="isCheckingUpdate"
           class="px-4 py-2.5 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer"
@@ -268,6 +277,20 @@ const loadAppLinks = async () => {
     }
   } catch {
     // 服务端不可用时保持置灰，不阻塞页面
+  }
+};
+
+const handleOpenFeedback = async () => {
+  const url = appLinks.value.qqGroupUrl && appLinks.value.qqGroupUrl.trim();
+  if (url) {
+    try {
+      await window.electronAPI.openExternalUrl(url);
+      emit('notify', '正在打开 QQ 反馈交流群链接...', 'info');
+    } catch (e: any) {
+      emit('notify', '打开外部链接失败: ' + formatIpcError(e), 'error');
+    }
+  } else {
+    emit('notify', '官方 QQ 反馈群暂未配置，请联系开发者或稍后重试', 'warning');
   }
 };
 

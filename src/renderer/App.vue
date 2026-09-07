@@ -110,16 +110,6 @@
               <span>赞助支持</span>
             </button>
 
-            <!-- 提交反馈按钮 -->
-            <button
-              @click="handleOpenFeedback"
-              class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-mono text-xs font-semibold bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/25 transition shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
-              title="加入 QQ 群提交反馈与交流建议"
-            >
-              <MessageSquare class="w-3.5 h-3.5 text-sky-400" />
-              <span>提交反馈</span>
-            </button>
-
             <!-- 运行环境状态指示徽章 (替代原 18万+ 本地全量库 与 OST内核) -->
             <button
               @click="handleEnvironmentBadgeClick"
@@ -358,6 +348,7 @@
     <LicenseModal
       v-if="showLicenseModal"
       :license-info="licenseInfo"
+      :sponsor-url="appLinks.sponsorUrl"
       @close="showLicenseModal = false"
       @refresh="loadLicenseInfo(true)"
       @notify="addToast"

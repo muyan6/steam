@@ -570,7 +570,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
         <button class="tab-btn" onclick="switchTab('versions', this)">🚀 版本与推送</button>
         <button class="tab-btn" onclick="switchTab('keys', this)">🔍 密钥检索</button>
         <button class="tab-btn" onclick="switchTab('sources', this)">🌐 多源调度</button>
-        <button class="tab-btn" onclick="switchTab('security', this)">⚙️ 安全配置</button>
+        <button class="tab-btn" onclick="switchTab('security', this)">⚙️ 链接与系统设置</button>
       </div>
 
       <!-- 用户信息与退出 -->
@@ -621,6 +621,9 @@ const ADMIN_HTML = `<!DOCTYPE html>
           <div style="display: flex; gap: 14px; flex-wrap: wrap;">
             <button onclick="triggerSyncAll()" id="btnSyncAll" class="btn btn-primary" style="padding: 11px 22px; font-size: 14px;">
               <span>🔄 立即触发全量多源聚合同步</span>
+            </button>
+            <button onclick="switchTab('security', document.querySelectorAll('.tab-btn')[7])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: var(--c-amber);">
+              <span>💖 配置赞助与反馈群链接 ➔</span>
             </button>
             <button onclick="switchTab('devices', document.querySelectorAll('.tab-btn')[2])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: var(--c-purple);">
               <span>💻 查看客户端设备监控 ➔</span>
@@ -896,14 +899,14 @@ const ADMIN_HTML = `<!DOCTYPE html>
         <div class="grid-2" style="margin-bottom: 24px;">
           <div class="card">
             <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 4px; display: block;">🔗 应用内跳转链接配置</strong>
-            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">客户端顶栏「提交反馈」QQ群、「赞助支持」页面及「关于」页教程与常见问题跳转地址，留空表示暂未开放</div>
+            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">配置客户端「赞助支持」页面跳转地址（如爱发电/赞助主页）以及「功能详解与关于」界面的 QQ 交流反馈群、图文教程与常见问题跳转链接，保存后客户端即时生效</div>
             <div class="form-group">
-              <label>QQ 交流/反馈群链接 (QQ Group URL)</label>
-              <input type="text" id="cfgQqGroupUrl" class="input-ctrl" placeholder="https://qm.qq.com/q/xxxxxx" />
+              <label>💖 赞助支持页面链接 (Sponsor URL - 爱发电/个人主页等)</label>
+              <input type="text" id="cfgSponsorUrl" class="input-ctrl" placeholder="https://afdian.com/a/xxxxxx" />
             </div>
             <div class="form-group">
-              <label>赞助支持页面链接 (Sponsor URL - 爱发电等)</label>
-              <input type="text" id="cfgSponsorUrl" class="input-ctrl" placeholder="https://afdian.com/a/xxxxxx" />
+              <label>💬 QQ 交流/反馈群链接 (QQ Group URL)</label>
+              <input type="text" id="cfgQqGroupUrl" class="input-ctrl" placeholder="https://qm.qq.com/q/xxxxxx" />
             </div>
             <div class="form-group">
               <label>图文教程链接 (Tutorial URL)</label>

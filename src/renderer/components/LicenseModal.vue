@@ -96,8 +96,16 @@
               <span class="font-mono text-slate-400">{{ formatDateTime(licenseInfo.expiresAt) }}</span>
             </div>
           </div>
-          <div v-else class="text-[11px] text-slate-400 leading-relaxed pt-1 border-t border-white/5">
-            当前为普通用户，支持本地核心入库功能。输入赞助码可升级为赞助者，享受全量云端高速检索与完整生态服务。
+          <div v-else class="text-[11px] text-slate-400 leading-relaxed pt-1 border-t border-white/5 space-y-1.5">
+            <p>当前为普通用户，支持本地核心入库功能。输入赞助码可升级为赞助者，享受全量云端高速检索与完整生态服务。</p>
+            <div v-if="sponsorUrl" class="pt-0.5">
+              <button
+                @click="handleOpenSponsorPage"
+                class="text-rose-400 hover:text-rose-300 font-medium transition cursor-pointer flex items-center gap-1"
+              >
+                <span>前往赞助支持页面获取卡密 ➔</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -205,6 +213,7 @@ import { formatIpcError } from '../api/tauriBridge';
 
 const props = defineProps<{
   licenseInfo: ClientLicenseInfo;
+  sponsorUrl?: string;
 }>();
 
 const emit = defineEmits<{
@@ -220,6 +229,20 @@ const activating = ref(false);
 const showRebind = ref(false);
 const rebindOldDeviceId = ref('');
 const rebinding = ref(false);
+
+const handleOpenSponsorPage = async () => {
+  const url = props.sponsorUrl && props.sponsorUrl.trim();
+  if (url) {
+    try {
+      await window.electronAPI.openExternalUrl(url);
+      emit('notify', '正在打开赞助支持页面...', 'info');
+    } catch (e: any) {
+      emit('notify', '打开链接失败: ' + formatIpcError(e), 'error');
+    }
+  } else {
+    emit('notify', '后端暂未配置赞助链接，感谢您的支持！', 'info');
+  }
+};
 
 const getLicenseBadgeClass = (status: string, type?: LicenseType) => {
   if (status === 'active') {
