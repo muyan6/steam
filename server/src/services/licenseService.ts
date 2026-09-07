@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { CONFIG } from '../config/index.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
+import { licenseSignService } from './licenseSignService.js';
 
 let baseDir = process.cwd();
 try {
@@ -45,6 +46,8 @@ export interface ClientLicenseInfo {
   remainingDays?: number;
   isLifetime?: boolean;
   message?: string;
+  signature?: string;
+  issuedAt?: number;
 }
 
 export interface LicenseStats {
@@ -456,11 +459,24 @@ export class LicenseService {
     }
 
     if (matchedKeys.length === 0) {
+      const now = Date.now();
+      const payload = {
+        deviceId: cleanDeviceId,
+        isActivated: false,
+        status: 'unactivated',
+        type: '',
+        isLifetime: false,
+        expiresAt: null,
+        issuedAt: now
+      };
+      const { signature } = licenseSignService.sign(payload);
       return {
         isActivated: false,
         status: 'unactivated',
         deviceId: cleanDeviceId,
-        message: '当前设备尚未激活授权'
+        message: '当前设备尚未激活授权',
+        signature,
+        issuedAt: now
       };
     }
 
@@ -504,8 +520,20 @@ export class LicenseService {
       remainingDays = Math.max(0, Math.ceil((expMs - nowMs) / (24 * 60 * 60 * 1000)));
     }
 
+    const isActivated = key.status === 'active';
+    const now = Date.now();
+    const { signature } = licenseSignService.sign({
+      deviceId,
+      isActivated,
+      status: key.status,
+      type: key.type,
+      isLifetime,
+      expiresAt: key.expiresAt,
+      issuedAt: now
+    });
+
     return {
-      isActivated: key.status === 'active',
+      isActivated,
       status: key.status as any,
       type: key.type,
       typeName: TYPE_NAMES[key.type] || key.type,
@@ -517,7 +545,9 @@ export class LicenseService {
       isLifetime,
       message: isLifetime
         ? '永久卡授权有效'
-        : `会员授权有效，剩余 ${remainingDays} 天`
+        : (isActivated ? `会员授权有效，剩余 ${remainingDays} 天` : '授权已失效'),
+      signature,
+      issuedAt: now
     };
   }
 

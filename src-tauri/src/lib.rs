@@ -8,6 +8,7 @@ mod dict_parser;
 pub mod onlinefix;
 pub mod steamless;
 pub mod quota;
+pub mod license_verify;
 
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -1058,6 +1059,25 @@ fn clear_license_cache() -> bool {
 }
 
 #[tauri::command]
+fn verify_offline_license() -> serde_json::Value {
+    match license_verify::verify_offline_license() {
+        Ok(v) => json!({
+            "success": true,
+            "isActivated": v.is_activated,
+            "isLifetime": v.is_lifetime,
+            "expiresAt": v.expires_at,
+            "deviceId": v.device_id,
+            "message": v.message
+        }),
+        Err(e) => json!({
+            "success": false,
+            "isActivated": false,
+            "message": e
+        })
+    }
+}
+
+#[tauri::command]
 async fn check_game_dir(dir_path: String) -> serde_json::Value {
     tauri::async_runtime::spawn_blocking(move || {
         let p = PathBuf::from(&dir_path);
@@ -1605,6 +1625,7 @@ pub fn run() {
             save_license_cache,
             load_license_cache,
             clear_license_cache,
+            verify_offline_license,
             check_game_dir,
             apply_spacewar_fix,
             apply_goldberg_fix,

@@ -292,6 +292,8 @@ export interface ClientLicenseInfo {
   remainingDays?: number;
   isLifetime?: boolean;
   message?: string;
+  signature?: string;
+  issuedAt?: number;
 }
 
 export interface LicenseStats {

@@ -28,6 +28,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-http = "2"
 sha2 = "0.10"
 base64 = "0.22"
+ed25519-dalek = { version = "2.1", default-features = false, features = ["fast"] }
 zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots", "cookies"] }
 winreg = "0.52"

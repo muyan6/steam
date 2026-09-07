@@ -528,9 +528,15 @@ export const createTauriBridge = () => {
 
       const isCacheValid = cached && cached.deviceId === devId && cacheUsable(cached);
 
-      // 非强制联网校验时，只要本地离线缓存有效，直接 0ms 秒开返回
+      // 非强制联网校验时，先用 Rust 原生 Ed25519 引擎对离线缓存做权威验签（防本地篡改）
       if (!forceVerify && isCacheValid) {
-        return cached;
+        const verifyRes = await invoke<any>('verify_offline_license').catch(() => null);
+        if (verifyRes && verifyRes.isActivated) {
+          return cached;
+        } else if (verifyRes && !verifyRes.isActivated) {
+          console.warn('[License] 本地离线授权签名校验失败:', verifyRes.message);
+          // 签名被篡改或无效：不放行本地缓存
+        }
       }
 
       // 联网校验（附带 3.5 秒严格超时熔断保护，防止云端掉线卡死界面）
@@ -550,10 +556,22 @@ export const createTauriBridge = () => {
           return json.data;
         }
       } catch {
-        // 网络超时、断网或云端掉线：若本地存在有效离线授权，静默优雅降级，绝不取消赞助者权限
+        // 网络超时、断网或云端掉线：走离线优雅降级
       }
 
       if (isCacheValid) {
+        // 断网离线状态下二次验证 Rust 端数字签名
+        const verifyRes = await invoke<any>('verify_offline_license').catch(() => null);
+        if (verifyRes && !verifyRes.isActivated) {
+          return {
+            ...cached,
+            isActivated: false,
+            status: 'unverified',
+            remainingDays: 0,
+            message: verifyRes.message || '本地授权签名损坏或被篡改，请联网后重新校验！'
+          };
+        }
+
         // 离线到期二次检查
         if (!cached.isLifetime && cached.expiresAt) {
           const expMs = new Date(cached.expiresAt).getTime();

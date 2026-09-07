@@ -4,6 +4,7 @@ import { depotService } from '../services/depotService.js';
 import { gameService } from '../services/gameService.js';
 import { getPopularGames, searchGames, getGameDetail, getGameHeaderImage, getGameLibraryVersion, downloadGameLibrary } from '../controllers/gameController.js';
 import { getDepotsForGame, getSingleDepotKey } from '../controllers/depotController.js';
+import { licenseSignService } from '../services/licenseSignService.js';
 import { getGameMetadata } from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
 import { getManifestsForApp, downloadManifestFile } from '../controllers/manifestController.js';
@@ -305,6 +306,9 @@ router.post('/license/activate', activateLimiter, activateLicense);
 router.post('/license/verify', verifyLimiter, verifyLicense);
 router.post('/license/rebind', activateLimiter, rebindLicense);
 router.get('/license/status/:deviceId', statusLimiter, getDeviceLicenseStatus);
+router.get('/license/pubkey', (req: Request, res: Response) => {
+  res.json({ success: true, data: { publicKeyHex: licenseSignService.getPublicKeyRawHex() } });
+});
 
 // 工具箱 (Toolbox) 与清单高可用节点 (公开接口)
 router.get('/toolbox/nodes', getManifestNodes);

@@ -182,11 +182,215 @@ pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
     match parse_metadata_from_server(app_id) {
         Ok(m) if !m.depots.is_empty() => Ok(m),
         // 授权被拒（未激活/免费额度耗尽）属于权限问题而非数据问题：
-        // 直接透传服务端原因并终止，不再 SteamCMD 降级（降级也拿不到密钥）
+        // 直接透传服务端原因并终止，不再降级（降级也拿不到密钥）
         Err(e) if e.contains("云端密钥服务拒绝") => Err(e),
-        // 服务端不可达或无该游戏数据时，直连 SteamCMD 降级补全清单 GID（无密钥）
-        _ => parse_metadata_from_steamcmd(app_id),
+        // 服务端不可达/网络异常时：严格校验本地离线会员防篡改数字签名
+        Err(server_err) => match crate::license_verify::verify_offline_license() {
+            Ok(_verified) => {
+                log_diag(&format!(
+                    "云端服务不可达 ({})，已成功离线验签会员资格，切换至备用容灾源拉取...",
+                    server_err
+                ));
+                fetch_metadata_from_backup_sources(app_id)
+            }
+            Err(lic_err) => Err(format!(
+                "云端密钥服务连接失败（{}），且未激活离线会员容灾资格：{}。请检查网络或激活后重试。",
+                server_err, lic_err
+            )),
+        },
+        Ok(_) => match crate::license_verify::verify_offline_license() {
+            Ok(_verified) => {
+                log_diag(&format!("云端未收录游戏 {}，尝试备用容灾源...", app_id));
+                fetch_metadata_from_backup_sources(app_id)
+            }
+            Err(_) => parse_metadata_from_steamcmd(app_id),
+        },
     }
+}
+
+/// 解析 ManifestHub3 分支 Lua 脚本中的分包、解密密钥及清单 GID
+fn parse_lua_metadata(lua: &str, app_id: u32) -> AppMetadata {
+    let mut depots_map: BTreeMap<String, DepotMeta> = BTreeMap::new();
+    let mut depot_keys: BTreeMap<String, String> = BTreeMap::new();
+    let mut dlc_ids: Vec<u32> = Vec::new();
+    let mut access_token: Option<String> = None;
+    let mut app_level_key: Option<String> = None;
+
+    let s_app_id = app_id.to_string();
+
+    for line in lua.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("--") || trimmed.is_empty() {
+            continue;
+        }
+
+        // addtoken(appid, "hex")
+        if let Some(rest) = trimmed.strip_prefix("addtoken(") {
+            if let Some(inner) = rest.split(')').next() {
+                let parts: Vec<&str> = inner.split(',').collect();
+                if parts.len() >= 2 {
+                    let token = parts[1].trim().trim_matches('"').trim_matches('\'').trim();
+                    if !token.is_empty() {
+                        access_token = Some(token.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        // setManifestid(depot, "gid"[, 0])
+        if let Some(rest) = trimmed.strip_prefix("setManifestid(") {
+            if let Some(inner) = rest.split(')').next() {
+                let parts: Vec<&str> = inner.split(',').collect();
+                if parts.len() >= 2 {
+                    let d_id = parts[0].trim();
+                    let gid = parts[1].trim().trim_matches('"').trim_matches('\'').trim();
+                    if d_id.chars().all(|c| c.is_ascii_digit()) && !gid.is_empty() && gid != "0" {
+                        let entry = depots_map.entry(d_id.to_string()).or_insert_with(|| DepotMeta {
+                            depot_id: d_id.to_string(),
+                            manifest_gid: None,
+                            depot_key: None,
+                        });
+                        entry.manifest_gid = Some(gid.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        // setDepotKey(depot, "key")
+        if let Some(rest) = trimmed.strip_prefix("setDepotKey(") {
+            if let Some(inner) = rest.split(')').next() {
+                let parts: Vec<&str> = inner.split(',').collect();
+                if parts.len() >= 2 {
+                    let d_id = parts[0].trim();
+                    let key = parts[1].trim().trim_matches('"').trim_matches('\'').trim();
+                    if d_id.chars().all(|c| c.is_ascii_digit()) && is_valid_key(key) {
+                        depot_keys.insert(d_id.to_string(), key.to_string());
+                        let entry = depots_map.entry(d_id.to_string()).or_insert_with(|| DepotMeta {
+                            depot_id: d_id.to_string(),
+                            manifest_gid: None,
+                            depot_key: None,
+                        });
+                        entry.depot_key = Some(key.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        // addappid(depot, 0|1, "key") or addappid(appid)
+        if let Some(rest) = trimmed.strip_prefix("addappid(") {
+            if let Some(inner) = rest.split(')').next() {
+                let parts: Vec<&str> = inner.split(',').collect();
+                if parts.len() >= 3 {
+                    let d_id = parts[0].trim();
+                    let key = parts[2].trim().trim_matches('"').trim_matches('\'').trim();
+                    if d_id.chars().all(|c| c.is_ascii_digit()) && is_valid_key(key) {
+                        depot_keys.insert(d_id.to_string(), key.to_string());
+                        let entry = depots_map.entry(d_id.to_string()).or_insert_with(|| DepotMeta {
+                            depot_id: d_id.to_string(),
+                            manifest_gid: None,
+                            depot_key: None,
+                        });
+                        entry.depot_key = Some(key.to_string());
+                        if d_id == s_app_id {
+                            app_level_key = Some(key.to_string());
+                        }
+                    }
+                } else if parts.len() == 1 {
+                    let id_str = parts[0].trim();
+                    if let Ok(id) = id_str.parse::<u32>() {
+                        if id != app_id && !dlc_ids.contains(&id) {
+                            dlc_ids.push(id);
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+    }
+
+    AppMetadata {
+        depots: depots_map.into_values().collect(),
+        depot_keys,
+        dlc_ids,
+        app_level_key,
+        access_token,
+    }
+}
+
+/// 从备用容灾源（ManifestHub3 镜像加速 + SteamCMD）拉取分包与密钥数据（仅限合法会员）
+pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, String> {
+    let mut lua_content: Option<String> = None;
+    let urls = [
+        format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+    ];
+
+    for url in &urls {
+        if let Ok(resp) = block_on(http_client().get(url).timeout(Duration::from_secs(8)).send()) {
+            if resp.status().is_success() {
+                if let Ok(text) = block_on(resp.text()) {
+                    if text.contains("addappid") || text.contains("setManifestid") || text.contains("setDepotKey") {
+                        lua_content = Some(text);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut meta = if let Some(lua) = &lua_content {
+        parse_lua_metadata(lua, app_id)
+    } else {
+        AppMetadata {
+            depots: Vec::new(),
+            depot_keys: BTreeMap::new(),
+            dlc_ids: Vec::new(),
+            app_level_key: None,
+            access_token: None,
+        }
+    };
+
+    // 结合 SteamCMD 补充公共分支分包结构与最新清单 GID
+    if let Ok(cmd_meta) = parse_metadata_from_steamcmd(app_id) {
+        for cmd_depot in cmd_meta.depots {
+            if let Some(existing) = meta.depots.iter_mut().find(|d| d.depot_id == cmd_depot.depot_id) {
+                if existing.manifest_gid.is_none() && cmd_depot.manifest_gid.is_some() {
+                    existing.manifest_gid = cmd_depot.manifest_gid;
+                }
+            } else {
+                let d_id = cmd_depot.depot_id.clone();
+                let key = meta.depot_keys.get(&d_id).cloned();
+                meta.depots.push(DepotMeta {
+                    depot_id: d_id,
+                    manifest_gid: cmd_depot.manifest_gid,
+                    depot_key: key,
+                });
+            }
+        }
+        for dlc in cmd_meta.dlc_ids {
+            if !meta.dlc_ids.contains(&dlc) {
+                meta.dlc_ids.push(dlc);
+            }
+        }
+    }
+
+    if meta.depots.is_empty() {
+        return Err(format!(
+            "备用容灾源暂未收录 AppID {} 的规则，建议云端恢复后重试。",
+            app_id
+        ));
+    }
+
+    Ok(meta)
 }
 
 /// 直连 SteamCMD 公共 API 获取清单 GID（降级路径，不产生 DepotKey）
