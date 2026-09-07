@@ -1,5 +1,25 @@
 [
   {
+    "version": "2.4.2",
+    "channel": "stable",
+    "releaseDate": "2026-09-07",
+    "title": "春风渡 v2.4.2 正式发布",
+    "changelog": [
+      "💬 提交反馈迁移与聚焦：功能详解与关于页面右上角集成「提交反馈」直达官方交流群",
+      "💖 顶栏全新优化：顶栏精简三段式布局，新增赞助支持弹窗与卡密快速激活核销通道",
+      "🔗 后端赞助与交流群动态热配置：管理控制台新增赞助主页与反馈群链接热配置，即改即生效",
+      "🛡 状态指示升级：上线动态响应式「环境已就绪」指示徽章，直观监控 Steam 与 OST 内核健康度",
+      "✨ 体验与安全加固：修复双红心冗余显示，优化 Ed25519 离线签名验签与会员专属容灾备用源"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.4.2/ChunFengDu_2.4.2_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-07T00:00:00.000Z",
+    "updatedAt": "2026-09-07T00:00:00.000Z"
+  },
+  {
     "version": "2.4.1",
     "channel": "stable",
     "releaseDate": "2026-09-07",
