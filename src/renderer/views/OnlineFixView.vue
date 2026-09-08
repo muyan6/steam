@@ -767,9 +767,13 @@
         </h3>
 
         <!-- 说明文案 (与截图文字完全一致) -->
-        <p class="text-xs text-slate-300 leading-relaxed max-w-xs mb-6">
+        <p class="text-xs text-slate-300 leading-relaxed max-w-xs mb-3">
           将对《{{ targetRepairGame.name }}》目录下所有exe执行Steamless解密，原exe会被解密后的文件替换。<br />
           确认执行？
+        </p>
+        <p class="text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-xl border border-white/5 mb-6 text-left leading-relaxed">
+          <span class="text-amber-400 font-bold">💡 什么是 Steamless？</span><br />
+          Steamless 是专门用于移除 Valve 官方 SteamStub DRM 保护壳的脱壳工具（仅用于解决部分单机/老游戏启动报错）。它不是用来阻止游戏联网的；若游戏本身未加 Steam 壳，程序会自动识别并安全跳过。
         </p>
 
         <!-- 按钮组 (✔ 确认修复 + ✖ 取消) -->
@@ -1080,7 +1084,11 @@ const confirmExecuteRepair = async () => {
     const res = await window.electronAPI.repairGameSteamless(game.fullInstallPath, game.name);
 
     if (res.success) {
-      emit('notify', res.message, 'success');
+      if (res.repairedCount > 0) {
+        emit('notify', res.message, 'success');
+      } else {
+        emit('notify', res.message, 'info');
+      }
       showRepairModal.value = false;
       await handleRefreshLocalGames(true);
     } else {

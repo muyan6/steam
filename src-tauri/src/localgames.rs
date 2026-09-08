@@ -626,6 +626,55 @@ pub fn scan_installed_games(steam_path: &Path) -> Vec<LocalInstalledGame> {
     games
 }
 
+/// 在游戏目录及所有包含 exe 或 steam_api*.dll 的子目录中递归写入 steam_appid.txt
+/// 确保无论 exe 位于根目录还是 Binaries/Win64/ 或 子工程目录，SteamAPI 均能稳定读到 480
+pub fn write_steam_appid_txt_all_locations(game_path: &Path, app_id: u32) {
+    let mut dirs_to_write: Vec<PathBuf> = Vec::new();
+    dirs_to_write.push(game_path.to_path_buf());
+
+    fn collect_dirs(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+        if depth > 3 {
+            return;
+        }
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        let mut has_target_file = false;
+        let mut subdirs = Vec::new();
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            if p.is_dir() {
+                let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+                if !["_redist", "directx", "support", "redist", ".git", "node_modules"].contains(&name.as_str()) {
+                    subdirs.push(p);
+                }
+            } else if p.is_file() {
+                let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+                if name.ends_with(".exe") || name.starts_with("steam_api") {
+                    has_target_file = true;
+                }
+            }
+        }
+        if has_target_file && !out.contains(&dir.to_path_buf()) {
+            out.push(dir.to_path_buf());
+        }
+        for sub in subdirs {
+            collect_dirs(&sub, depth + 1, out);
+        }
+    }
+
+    collect_dirs(game_path, 0, &mut dirs_to_write);
+
+    for d in dirs_to_write {
+        let appid_file = d.join("steam_appid.txt");
+        if appid_file.exists() {
+            let bak = d.join("steam_appid.txt.cfd_bak");
+            if !bak.exists() {
+                let _ = fs::copy(&appid_file, &bak);
+            }
+        }
+        let _ = fs::write(&appid_file, app_id.to_string());
+    }
+}
+
 /// 启动联机模式：open(Open内核) / spacewar(环境变量直启) / bat(批处理)
 pub fn launch_game_online(
     app_id: u32,
@@ -650,35 +699,30 @@ pub fn launch_game_online(
             steam::restart_steam(&sp, &["-onlinefix".to_string()]);
             // 就绪检测前先失效运行状态缓存，否则 8 秒旧值会让前几轮轮询读到过期结果
             steam::clear_steam_running_cache();
-            // 等待 steam.exe 真正就绪（冷启动可达 15s+），就绪后再发协议
-            let mut ready = false;
-            for _ in 0..20 {
-                if steam::is_steam_running() {
-                    ready = true;
+            // 关键：等待 steam.exe 与 steamwebhelper.exe 真正就绪
+            // 冷启动包括更新校验、网络登录与 OST 规则注入（需 6~15s+）
+            // 过早发送 -applaunch 会因凭据/规则尚未加载进内存而直接触发 Steam 弹窗「无许可」
+            let mut helper_ready = false;
+            for _ in 0..30 {
+                if steam::is_steamwebhelper_running() {
+                    helper_ready = true;
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(1000));
             }
-            if !ready {
+            if !helper_ready && !steam::is_steam_running() {
                 return Err("Steam 未能以联机模式启动，请手动启动 Steam 后重试".to_string());
             }
-            std::thread::sleep(std::time::Duration::from_millis(2000));
+            // 额外留足 4 秒供 OST 内存钩子挂载与 config/lua 规则解析就绪
+            std::thread::sleep(std::time::Duration::from_millis(4000));
         }
         // 古韵盒子同款启动配方（内核日志逐包验证有效）：
         // steam.exe -applaunch <真实AppID> -onlinefix —— 关键在 -onlinefix 必须作为
         // -applaunch 的启动参数传给游戏会话，OST 内核才会对该会话做 presence 伪装：
         // 广播改写为 Spacewar (480) 并映射真实游戏名，Steam 弹出原生邀请对话框。
-        // 若只把 -onlinefix 放在 steam.exe 自身启动参数上，内核不做伪装，
-        // 真实 AppID 的广播会被 Valve 服务器丢弃（伪许可仅客户端有效）→ 假启动。
         let gp_open = PathBuf::from(game_path);
         if gp_open.exists() {
-            let appid_file = gp_open.join("steam_appid.txt");
-            if appid_file.exists() {
-                let _ = fs::copy(&appid_file, gp_open.join("steam_appid.txt.cfd_bak"));
-            }
-            // 关键：必须写入 480 作为 RestartAppIfNecessary 的自检免死金牌，
-            // 阻止 Unity/Steamworks 游戏在启动 2 秒后因环境变量与内置 AppID 不一致而自杀并跳回假运行
-            let _ = fs::write(&appid_file, online_app_id.to_string());
+            write_steam_appid_txt_all_locations(&gp_open, online_app_id);
         }
         let sp_launch = steam::detect_steam_path()
             .ok_or("未找到 Steam 安装路径，无法使用 Open 内核联机模式启动游戏")?;
@@ -712,12 +756,8 @@ pub fn launch_game_online(
     };
 
     if mode == "spacewar" {
-        // 关键：写入 steam_appid.txt=480，阻止 SteamAPI_RestartAppIfNecessary 自检自杀并跳回假运行
-        let appid_file = gp.join("steam_appid.txt");
-        if appid_file.exists() {
-            let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
-        }
-        let _ = fs::write(&appid_file, online_app_id.to_string());
+        // 关键：递归写入 steam_appid.txt=480，阻止 SteamAPI_RestartAppIfNecessary 自检自杀并跳回假运行
+        write_steam_appid_txt_all_locations(&gp, online_app_id);
         Command::new(&target)
             .current_dir(target.parent().unwrap_or(&gp))
             .env("SteamAppId", online_app_id.to_string())
@@ -729,16 +769,11 @@ pub fn launch_game_online(
     }
 
     if mode == "bat" {
-        // 关键：写入 steam_appid.txt=480，阻止 SteamAPI_RestartAppIfNecessary 自检自杀并跳回假运行
-        let appid_file = gp.join("steam_appid.txt");
-        if appid_file.exists() {
-            let _ = fs::copy(&appid_file, gp.join("steam_appid.txt.cfd_bak"));
-        }
-        let _ = fs::write(&appid_file, online_app_id.to_string());
+        // 关键：递归写入 steam_appid.txt=480，阻止 SteamAPI_RestartAppIfNecessary 自检自杀并跳回假运行
+        write_steam_appid_txt_all_locations(&gp, online_app_id);
+        let target_dir = target.parent().unwrap_or(&gp);
         let dir_name = gp.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let exe_name_orig = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        // 目录名/exe 名直接拼进 bat 命令行，& | ^ < > % 等字符会被 cmd 解析
-        // 成额外命令或变量展开（文件夹名合法含这些字符），必须先清洗
         let sanitize = |s: &str| -> String {
             s.chars()
                 .filter(|c| !"&|^<>%\"!".contains(*c))
@@ -748,8 +783,6 @@ pub fn launch_game_online(
         };
         let bat_title = sanitize(&dir_name);
         let exe_name = sanitize(&exe_name_orig);
-        // 清洗改变了原名（含 cmd 元字符）：bat 里的路径已与真实文件不一致，
-        // 绝不能生成启动失败的 bat，回退 Steam 协议正常启动路径
         if bat_title != dir_name || exe_name != exe_name_orig {
             crate::open_url_cmd(&format!("steam://rungameid/{}", app_id))?;
             return Ok(format!(
@@ -758,7 +791,7 @@ pub fn launch_game_online(
             ));
         }
         let bat = format!(
-            "@echo off\ntitle Online Fix Launcher - {}\ncd /d \"%~dp0\"\necho {}>steam_appid.txt\nset SteamAppId={}\nset SteamGameId={}\nset SteamOverlayGameId={}\nstart \"\" \"{}\" %*\nexit\n",
+            "@echo off\r\ntitle Online Fix Launcher - {}\r\ncd /d \"%~dp0\"\r\necho {}>steam_appid.txt\r\nset SteamAppId={}\r\nset SteamGameId={}\r\nset SteamOverlayGameId={}\r\nstart \"\" \"{}\" %*\r\nexit\r\n",
             bat_title,
             online_app_id,
             online_app_id,
@@ -766,12 +799,14 @@ pub fn launch_game_online(
             online_app_id,
             exe_name
         );
-        let bat_path = gp.join("Launch_Online_Fix.bat");
+        let bat_path = target_dir.join("Launch_Online_Fix.bat");
         fs::write(&bat_path, bat).map_err(|e| format!("写入启动脚本失败: {}", e))?;
+        if target_dir != gp {
+            let _ = fs::copy(&bat_path, gp.join("Launch_Online_Fix.bat"));
+        }
         Command::new("cmd.exe")
             .args(["/c", "Launch_Online_Fix.bat"])
-            .current_dir(&gp)
-            // CREATE_NO_WINDOW：bat 由 start 拉起游戏 GUI，执行 cmd 本身无需窗口
+            .current_dir(target_dir)
             .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| format!("执行启动脚本失败: {}", e))?;

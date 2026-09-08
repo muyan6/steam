@@ -144,6 +144,20 @@ pub fn is_steam_running() -> bool {
     val
 }
 
+pub fn is_steamwebhelper_running() -> bool {
+    let output = Command::new("tasklist")
+        .args(["/FI", "IMAGENAME eq steamwebhelper.exe", "/NH"])
+        .creation_flags(0x08000000)
+        .output();
+
+    if let Ok(out) = output {
+        let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        text.contains("steamwebhelper.exe")
+    } else {
+        false
+    }
+}
+
 pub fn is_onlinefix_running() -> bool {
     // 结果缓存 8 秒：PowerShell CIM 冷启动 0.5~2s，而本函数被 get_steam_info
     // 等高频路径调用，不缓存会导致明显的 UI 卡顿

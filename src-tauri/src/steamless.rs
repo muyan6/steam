@@ -282,19 +282,23 @@ pub fn repair_game_with_resource(game_dir: &str, game_name: Option<&str>, resour
     }
 
     let title = game_name.map(|n| format!("《{}》", n)).unwrap_or_else(|| "游戏".to_string());
-    let success = repaired > 0 || details.iter().all(|d| d.status != "error");
+    let all_no_drm = repaired == 0 && details.iter().all(|d| {
+        d.message.as_ref().map(|m| m.contains("未产生解密输出") || m.contains("未加壳")).unwrap_or(false)
+    });
+    let message = if repaired > 0 {
+        format!("已成功对 {} 目录下 {} 个可执行文件完成 Steamless 解密脱壳与修复！", title, repaired)
+    } else if all_no_drm {
+        format!("{} 目录下的可执行文件未检测到 SteamStub DRM 加壳，无需脱壳解密（该游戏未采用 Valve DRM 保护）。", title)
+    } else {
+        "部分可执行文件解密修复时遇到异常，请查看明细日志。".to_string()
+    };
     SteamlessRepairResult {
-        success,
-        message: if success {
-            format!("已成功对 {} 目录下 {} 个可执行文件完成 Steamless 解密脱壳与修复！", title, exes.len())
-        } else {
-            "部分可执行文件解密修复时遇到异常，请查看明细日志。".to_string()
-        },
+        success: repaired > 0 || all_no_drm,
+        message,
         total_found: exes.len(),
         repaired_count: repaired,
         backup_count: backups,
-        // unpack_single 只会返回 unpacked/error，skipped 分支是死代码，恒为 0
-        skipped_count: 0,
+        skipped_count: if all_no_drm { exes.len() } else { 0 },
         details,
     }
 }
