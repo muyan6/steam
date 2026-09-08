@@ -610,6 +610,8 @@ export const createTauriBridge = () => {
             localStorage.setItem('cfd_license_cache', str);
             await invoke('save_license_cache', { data: str });
           } catch {}
+          // 激活成功后立即主动上报一次心跳，使云端控制台零延迟显示已激活
+          void sendTauriHeartbeatNow();
           return { success: true, message: json.message || '赞助码绑定成功！', license: json.data };
         }
         return { success: false, message: json?.message || '激活失败' };
@@ -633,6 +635,8 @@ export const createTauriBridge = () => {
             localStorage.setItem('cfd_license_cache', str);
             await invoke('save_license_cache', { data: str });
           } catch {}
+          // 迁移成功后立即主动上报一次心跳
+          void sendTauriHeartbeatNow();
           return { success: true, message: json.message || '赞助码已迁移到本机！', license: json.data };
         }
         return { success: false, message: json?.message || '迁移失败' };
@@ -645,6 +649,7 @@ export const createTauriBridge = () => {
       try {
         await invoke('clear_license_cache');
       } catch {}
+      void sendTauriHeartbeatNow();
       return { success: true, message: '已清除本地赞助码与授权缓存' };
     },
 
@@ -681,29 +686,31 @@ export const createTauriBridge = () => {
 
 
 // Tauri 版设备心跳：对齐 Electron 版行为（启动一次 + 每 30 分钟一次），
-// 保证 Dashboard 设备统计不因客户端版本而失真
+// 保证 Dashboard 设备统计不因客户端版本而失真；激活/换机时支持即时主动触发
+export async function sendTauriHeartbeatNow(): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  try {
+    const deviceId = await invoke<string>('get_device_id');
+    let license: any = null;
+    try { license = JSON.parse(localStorage.getItem('cfd_license_cache') || 'null'); } catch {}
+    await httpFetch(`${APP_CONFIG.API_BASE_URL}/api/telemetry/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId,
+        clientVersion: APP_CONFIG.VERSION,
+        osVersion: `tauri ${navigator.platform || 'windows'}`,
+        isActivated: !!(license && license.isActivated),
+        licenseCode: license?.code
+      })
+    });
+  } catch {}
+}
+
 let heartbeatStarted = false;
 export function startTauriHeartbeat(): void {
   if (heartbeatStarted || !isTauriEnvironment()) return;
   heartbeatStarted = true;
-  const send = async () => {
-    try {
-      const deviceId = await invoke<string>('get_device_id');
-      let license: any = null;
-      try { license = JSON.parse(localStorage.getItem('cfd_license_cache') || 'null'); } catch {}
-      await httpFetch(`${APP_CONFIG.API_BASE_URL}/api/telemetry/heartbeat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deviceId,
-          clientVersion: APP_CONFIG.VERSION,
-          osVersion: `tauri ${navigator.platform || 'windows'}`,
-          isActivated: !!(license && license.isActivated),
-          licenseCode: license?.code
-        })
-      });
-    } catch {}
-  };
-  void send();
-  setInterval(send, 30 * 60 * 1000);
+  void sendTauriHeartbeatNow();
+  setInterval(sendTauriHeartbeatNow, 30 * 60 * 1000);
 }

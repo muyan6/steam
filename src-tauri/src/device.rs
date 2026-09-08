@@ -9,11 +9,112 @@ use winreg::RegKey;
 ///
 /// 必须逐字节复刻旧版算法：老用户的授权卡在服务端绑定的是该 ID，
 /// 任何偏差都会导致已激活设备被判定为未激活。
+/// 验证设备码格式是否符合 CFD-XXXX-XXXX-XXXX-XXXX
+pub fn is_valid_device_id(id: &str) -> bool {
+    let trimmed = id.trim();
+    if trimmed.len() != 19 || !trimmed.starts_with("CFD-") {
+        return false;
+    }
+    let parts: Vec<&str> = trimmed.split('-').collect();
+    if parts.len() != 5 || parts[0] != "CFD" {
+        return false;
+    }
+    parts[1..].iter().all(|seg| seg.len() == 4 && seg.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+fn read_persisted_file() -> Option<String> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    let path = std::path::PathBuf::from(appdata).join("com.chunfengdu.app").join("device_id.txt");
+    let content = std::fs::read_to_string(path).ok()?;
+    let trimmed = content.trim().to_uppercase();
+    if is_valid_device_id(&trimmed) {
+        Some(trimmed)
+    } else {
+        None
+    }
+}
+
+fn write_persisted_file(id: &str) {
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let dir = std::path::PathBuf::from(appdata).join("com.chunfengdu.app");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("device_id.txt");
+        let _ = std::fs::write(path, id.trim().to_uppercase());
+    }
+}
+
+fn read_persisted_registry() -> Option<String> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let sub = hkcu.open_subkey("Software\\ChunFengDu").ok()?;
+    let id: String = sub.get_value("DeviceId").ok()?;
+    let trimmed = id.trim().to_uppercase();
+    if is_valid_device_id(&trimmed) {
+        Some(trimmed)
+    } else {
+        None
+    }
+}
+
+fn write_persisted_registry(id: &str) {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok((sub, _)) = hkcu.create_subkey("Software\\ChunFengDu") {
+        let _ = sub.set_value("DeviceId", &id.trim().to_uppercase());
+    }
+}
+
+/// 尝试从本地已有的 license_cache.json 中找回之前已成功激活的有效设备码
+fn recover_from_license_cache() -> Option<String> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    let path = std::path::PathBuf::from(appdata).join("com.chunfengdu.app").join("license_cache.json");
+    let content = std::fs::read_to_string(path).ok()?;
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+        if let Some(dev_id) = json.get("deviceId").and_then(|v| v.as_str()) {
+            let clean = dev_id.trim().to_uppercase();
+            if is_valid_device_id(&clean) {
+                return Some(clean);
+            }
+        }
+    }
+    None
+}
+
+/// 获取本机唯一设备码（终生固化锁定 + 历史自愈 + CFD 算法）
+///
+/// 1. 优先读取已持久化的设备码（文件与注册表双副本）
+/// 2. 自动从既有激活缓存自愈已激活的设备码，杜绝因网卡变动/加速器启停导致设备码漂移丢授权
+/// 3. 若均无则通过硬件特征动态计算，并立即双重持久化锁定
 pub fn get_device_id() -> String {
-    // 进程级缓存：设备码一生只算一次（注册表 + 网卡枚举 + CPU 逐核查询），
-    // 而它出现在每一次云端请求的头里，重复计算纯属浪费
     static DEVICE_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    DEVICE_ID.get_or_init(compute_device_id).clone()
+    DEVICE_ID.get_or_init(resolve_and_lock_device_id).clone()
+}
+
+fn resolve_and_lock_device_id() -> String {
+    // 1. 优先读取持久化文件
+    if let Some(id) = read_persisted_file() {
+        write_persisted_registry(&id);
+        return id;
+    }
+
+    // 2. 其次读取注册表持久化
+    if let Some(id) = read_persisted_registry() {
+        write_persisted_file(&id);
+        return id;
+    }
+
+    // 3. 历史激活自愈（防止升级后因网络环境不同导致已激活卡密失效）
+    if let Some(id) = recover_from_license_cache() {
+        write_persisted_file(&id);
+        write_persisted_registry(&id);
+        return id;
+    }
+
+    // 4. 计算初始设备码
+    let id = compute_device_id();
+
+    // 5. 立即双重持久化，终身锁定
+    write_persisted_file(&id);
+    write_persisted_registry(&id);
+    id
 }
 
 fn compute_device_id() -> String {

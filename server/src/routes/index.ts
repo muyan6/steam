@@ -82,6 +82,16 @@ import { getSettingsAdmin, updateFreeQuotaLimitAdmin } from '../controllers/sett
 
 const router = Router();
 
+// 注入卡密核验器：使设备列表与监控统计与卡密服务保持实时权威对齐
+deviceService.setLicenseVerifier((deviceId: string) => {
+  const v = licenseService.verify(deviceId);
+  return {
+    isActivated: v.isActivated,
+    code: v.isActivated ? v.code : undefined,
+    type: v.isActivated ? v.type : undefined
+  };
+});
+
 // ==================== 1. 公开客户端 API ====================
 
 // 健康与统计

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { licenseService, LicenseType } from '../services/licenseService.js';
+import { deviceService } from '../services/deviceService.js';
 
 // ==================== 1. 公开客户端接口 ====================
 
@@ -25,6 +26,16 @@ export async function activateLicense(req: Request, res: Response) {
 
     const result = licenseService.activate(code, deviceId);
     if (result.success) {
+      try {
+        deviceService.updateDeviceActivation(
+          deviceId,
+          true,
+          code,
+          result.license?.type
+        );
+      } catch (err) {
+        console.warn('[LicenseController] 同步设备状态失败:', err);
+      }
       return res.json({
         success: true,
         message: result.message,
@@ -105,6 +116,12 @@ export async function rebindLicense(req: Request, res: Response) {
 
     const result = licenseService.rebind(code, oldDeviceId, newDeviceId);
     if (result.success) {
+      try {
+        deviceService.updateDeviceActivation(oldDeviceId, false);
+        deviceService.updateDeviceActivation(newDeviceId, true, code, result.license?.type);
+      } catch (err) {
+        console.warn('[LicenseController] 迁移同步设备状态失败:', err);
+      }
       return res.json({
         success: true,
         message: result.message,
@@ -251,6 +268,13 @@ export async function unbindLicenseAdmin(req: Request, res: Response) {
     }
 
     const result = licenseService.unbind(code);
+    if (result.success && result.oldDeviceId && result.oldDeviceId !== '无') {
+      try {
+        deviceService.updateDeviceActivation(result.oldDeviceId, false);
+      } catch (err) {
+        console.warn('[LicenseController] 解绑同步设备状态失败:', err);
+      }
+    }
     return res.json(result);
   } catch (e) {
     console.error('[LicenseController] 接口异常:', e);

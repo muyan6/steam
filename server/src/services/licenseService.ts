@@ -650,13 +650,14 @@ export class LicenseService {
   /**
    * 一键解绑设备码 (允许换机)
    */
-  public unbind(code: string): { success: boolean; message: string } {
+  public unbind(code: string): { success: boolean; message: string; oldDeviceId?: string } {
     if (!code) return { success: false, message: '请指定激活码' };
     const clean = code.trim().toUpperCase();
     const key = this.keysCache.get(clean);
     if (!key) return { success: false, message: '激活码不存在' };
 
     const oldDevice = key.deviceId || '无';
+    const oldDevId = key.deviceId;
     // 非永久卡已过到期时间的，解绑后应标记为过期而不是回退为未使用（防止过期卡被再次领取激活）
     const isExpired =
       key.type !== 'lifetime' &&
@@ -674,7 +675,11 @@ export class LicenseService {
       return { success: false, message: '数据保存失败，请稍后重试' };
     }
     console.log(`[LicenseService] 成功解除卡密 ${clean} 与设备 [${oldDevice}] 的绑定`);
-    return { success: true, message: `已成功解绑设备 [${oldDevice}]，该卡密已重置为未使用状态！` };
+    return {
+      success: true,
+      message: `已成功解绑设备 [${oldDevice}]，该卡密已重置为未使用状态！`,
+      oldDeviceId: oldDevId
+    };
   }
 
   /**

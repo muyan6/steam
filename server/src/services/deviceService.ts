@@ -201,6 +201,67 @@ export class DeviceService {
     return removed;
   }
 
+  private licenseVerifier: ((deviceId: string) => { isActivated: boolean; code?: string; type?: string }) | null = null;
+
+  public setLicenseVerifier(verifier: (deviceId: string) => { isActivated: boolean; code?: string; type?: string }): void {
+    this.licenseVerifier = verifier;
+  }
+
+  /**
+   * 权威核验并同步指定设备记录的激活态与卡密信息
+   */
+  public syncActivationWithVerifier(d: DeviceRecord): void {
+    if (!this.licenseVerifier) return;
+    try {
+      const verified = this.licenseVerifier(d.deviceId);
+      if (verified) {
+        let changed = false;
+        if (d.isActivated !== verified.isActivated) {
+          d.isActivated = verified.isActivated;
+          changed = true;
+        }
+        if (verified.code && d.licenseCode !== verified.code) {
+          d.licenseCode = verified.code;
+          changed = true;
+        }
+        if (verified.type && d.licenseType !== verified.type) {
+          d.licenseType = verified.type;
+          changed = true;
+        }
+        if (changed) {
+          this.devicesDirty = true;
+        }
+      }
+    } catch {}
+  }
+
+  /**
+   * 客户端核销激活、换机迁移或管理员解绑时，主动即时同步设备档案
+   */
+  public updateDeviceActivation(
+    deviceId: string,
+    isActivated: boolean,
+    licenseCode?: string,
+    licenseType?: string
+  ): void {
+    const existing = this.devicesMap.get(deviceId);
+    if (existing) {
+      existing.isActivated = isActivated;
+      if (licenseCode !== undefined) existing.licenseCode = licenseCode;
+      if (licenseType !== undefined) existing.licenseType = licenseType;
+      existing.lastSeenAt = new Date().toISOString();
+      this.devicesDirty = true;
+      this.flushDevices();
+    } else {
+      this.recordHeartbeat({
+        deviceId,
+        isActivated,
+        licenseCode,
+        licenseType
+      });
+    }
+  }
+
   public getDeviceStats(): DeviceStats {
     const now = Date.now();
     const oneDayMs = 24 * 3600 * 1000;
@@ -212,11 +273,16 @@ export class DeviceService {
     let unactivated = 0;
 
     for (const d of this.devicesMap.values()) {
+      this.syncActivationWithVerifier(d);
       const lastMs = new Date(d.lastSeenAt).getTime();
       if (now - lastMs <= oneDayMs) todayActive++;
       if (now - lastMs <= sevenDaysMs) weeklyActive++;
       if (d.isActivated) activated++;
       else unactivated++;
+    }
+
+    if (this.devicesDirty) {
+      this.saveDevices();
     }
 
     return {
@@ -246,6 +312,12 @@ export class DeviceService {
     const status = params.status || 'all';
 
     let all = Array.from(this.devicesMap.values());
+    for (const d of all) {
+      this.syncActivationWithVerifier(d);
+    }
+    if (this.devicesDirty) {
+      this.saveDevices();
+    }
 
     // 搜索过滤
     if (search) {
