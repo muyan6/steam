@@ -1,5 +1,5 @@
-export type OnlineNetType = 'cloud_lobby' | 'steamworks' | 'thirdparty' | 'official_server' | 'api_only';
-export type OnlineRecommendScheme = 'scheme1' | 'scheme2' | 'unsupported';
+export type OnlineNetType = 'cloud_lobby' | 'steamworks' | 'thirdparty' | 'official_server' | 'api_only' | 'single_player' | 'tool';
+export type OnlineRecommendScheme = 'scheme1' | 'scheme2' | 'unsupported' | 'single_player';
 
 export interface OnlineRuleItem {
   appId: number;
@@ -11,11 +11,11 @@ export interface OnlineRuleItem {
   notes: string;
 }
 
-export const ONLINE_RULES_VERSION = '2026.09.08.1';
-export const ONLINE_RULES_UPDATED_AT = '2026-09-08T18:45:00.000Z';
+export const ONLINE_RULES_VERSION = '2026.09.08.2';
+export const ONLINE_RULES_UPDATED_AT = '2026-09-08T18:55:00.000Z';
 
 export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
-  // 1. 云端大厅强鉴权（未打补丁直启会报错 AccessDenied 或开不了房，必须用方案二安装补丁）
+  // ==================== 1. 云端大厅强鉴权（未打补丁直启会假启动/报错，必须用方案二） ====================
   {
     appId: 1966720,
     name: "Lethal Company",
@@ -52,8 +52,53 @@ export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
     signals: ["Rust·Facepunch官方网络与EAC鉴权"],
     notes: "Facepunch 官方网络鉴权与 EAC 反作弊，官服无法直入，社区自建破解服必须通过方案二打补丁"
   },
+  {
+    appId: 1943950,
+    name: "Escape the Backrooms",
+    nameZh: "逃离后室",
+    netType: "cloud_lobby",
+    recommend: "scheme2",
+    signals: ["逃离后室·官方大厅鉴权"],
+    notes: "采用官方云端大厅匹配服务，推荐方案二补丁"
+  },
+  {
+    appId: 1985790,
+    name: "Inside the Backrooms",
+    nameZh: "深入后室",
+    netType: "cloud_lobby",
+    recommend: "scheme2",
+    signals: ["深入后室·官方大厅鉴权"],
+    notes: "官方大厅鉴权，推荐方案二补丁"
+  },
+  {
+    appId: 1817130,
+    name: "The Backrooms 1998",
+    nameZh: "后室 1998",
+    netType: "cloud_lobby",
+    recommend: "scheme2",
+    signals: ["后室1998·官方网络鉴权"],
+    notes: "官方云端大厅鉴权，推荐方案二补丁"
+  },
+  {
+    appId: 1368820,
+    name: "DEVOUR",
+    nameZh: "吞噬",
+    netType: "cloud_lobby",
+    recommend: "scheme2",
+    signals: ["DEVOUR·官方云端大厅"],
+    notes: "官方大厅匹配机制，建议使用方案二联机补丁"
+  },
+  {
+    appId: 2097490,
+    name: "R.E.P.O.",
+    nameZh: "R.E.P.O.",
+    netType: "cloud_lobby",
+    recommend: "scheme2",
+    signals: ["REPO·云端大厅鉴权", "Photon Voice"],
+    notes: "官方云端大厅鉴权，建议使用方案二联机补丁"
+  },
 
-  // 2. 第三方网络 / 独立账号服务（不走 Steam P2P 大厅通道，需补丁或自建服）
+  // ==================== 2. 第三方网络 / 独立账号服务（不走 Steam P2P 大厅通道，需补丁） ====================
   {
     appId: 1260320,
     name: "Party Animals",
@@ -72,8 +117,17 @@ export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
     signals: ["幻兽帕鲁·社区服/自建网络", "Epic Online Services SDK"],
     notes: "采用 Epic Online Services (EOS) 与社区专用服，建议使用方案二联机补丁"
   },
+  {
+    appId: 1568590,
+    name: "Goose Goose Duck",
+    nameZh: "鹅鸭杀",
+    netType: "thirdparty",
+    recommend: "scheme2",
+    signals: ["鹅鸭杀·Gaggle官方自建网络"],
+    notes: "Gaggle 官方自建服务器与账号体系，Steam 免改通道无法接入"
+  },
 
-  // 3. 原生 Steamworks P2P 经典联机（免改任何游戏文件，推荐方案一直启）
+  // ==================== 3. 原生 Steamworks P2P 经典联机（免改任何游戏文件，推荐方案一直启） ====================
   {
     appId: 105600,
     name: "Terraria",
@@ -102,6 +156,15 @@ export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
     notes: "原生 Steamworks 房间匹配，推荐使用方案一免改直启"
   },
   {
+    appId: 4001890,
+    name: "How to Fish",
+    nameZh: "钓鱼模拟",
+    netType: "steamworks",
+    recommend: "scheme1",
+    signals: ["How to Fish·Steamworks联机"],
+    notes: "Steamworks 好友通道，推荐方案一免改直启"
+  },
+  {
     appId: 1426210,
     name: "It Takes Two",
     nameZh: "双人成行",
@@ -117,7 +180,7 @@ export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
     netType: "steamworks",
     recommend: "scheme1",
     signals: ["森林·原生Steamworks大厅"],
-    notes: "原生 Steam 大厅大厅建房，推荐使用方案一免改直启"
+    notes: "原生 Steam 大厅建房，推荐使用方案一免改直启"
   },
   {
     appId: 1326470,
@@ -182,8 +245,183 @@ export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
     signals: ["木筏求生·Steamworks好友联机"],
     notes: "原生 Steamworks P2P，推荐方案一免改直启"
   },
+  {
+    appId: 632360,
+    name: "Risk of Rain 2",
+    nameZh: "雨中冒险 2",
+    netType: "steamworks",
+    recommend: "scheme1",
+    signals: ["雨中冒险2·Steamworks大厅"],
+    notes: "原生 Steamworks 大厅建房，推荐方案一免改直启"
+  },
+  {
+    appId: 550,
+    name: "Left 4 Dead 2",
+    nameZh: "求生之路 2",
+    netType: "steamworks",
+    recommend: "scheme1",
+    signals: ["求生之路2·原生Steam大厅与局域网"],
+    notes: "原生大厅与自建局域网，推荐方案一免改直启"
+  },
+  {
+    appId: 211820,
+    name: "Starbound",
+    nameZh: "星界边境",
+    netType: "steamworks",
+    recommend: "scheme1",
+    signals: ["星界边境·Steam大厅好友加入"],
+    notes: "原生 Steam 好友大厅，推荐方案一免改直启"
+  },
+  {
+    appId: 251570,
+    name: "7 Days to Die",
+    nameZh: "七日杀",
+    netType: "steamworks",
+    recommend: "scheme1",
+    signals: ["七日杀·Steam P2P与自建服"],
+    notes: "支持 Steam 好友大厅与自建服直连，推荐方案一免改直启"
+  },
 
-  // 4. 官方竞技服务器（带官方专属服务器与严格 VAC/EAC 反作弊，不支持破解联机）
+  // ==================== 4. 纯单机游戏（无需任何联机，直接启动运行） ====================
+  {
+    appId: 3590,
+    name: "Plants vs. Zombies: Game of the Year",
+    nameZh: "植物大战僵尸：年度版",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["经典纯单机塔防游戏"],
+    notes: "纯单机经典游戏，无多人联机网络大厅，直接本地启动即可"
+  },
+  {
+    appId: 646570,
+    name: "Slay the Spire",
+    nameZh: "杀戮尖塔",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["纯单机卡牌构建肉鸽"],
+    notes: "纯单机卡牌构建游戏，无多人联机功能，直接本地启动即可"
+  },
+  {
+    appId: 2358720,
+    name: "Black Myth: Wukong",
+    nameZh: "黑神话：悟空",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["国产3A单机动作RPG"],
+    notes: "单机动作角色扮演游戏，无多人联机大厅，直接本地启动"
+  },
+  {
+    appId: 1091500,
+    name: "Cyberpunk 2077",
+    nameZh: "赛博朋克 2077",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机开放世界RPG"],
+    notes: "纯单机开放世界角色扮演游戏，直接本地启动"
+  },
+  {
+    appId: 292030,
+    name: "The Witcher 3: Wild Hunt",
+    nameZh: "巫师 3：狂猎",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机剧情角色扮演"],
+    notes: "纯单机史诗 RPG，无多人联机模式，直接本地启动"
+  },
+  {
+    appId: 814380,
+    name: "Sekiro: Shadows Die Twice",
+    nameZh: "只狼：影逝二度",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机硬核动作冒险"],
+    notes: "纯单机动作硬核游戏，无官方多人联机，直接本地启动"
+  },
+  {
+    appId: 367520,
+    name: "Hollow Knight",
+    nameZh: "空洞骑士",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机类银河恶魔城"],
+    notes: "纯单机横版探险游戏，无联机功能，直接本地启动"
+  },
+  {
+    appId: 1145360,
+    name: "Hades",
+    nameZh: "哈迪斯",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机动作Roguelike"],
+    notes: "纯单机动作肉鸽游戏，无多人模式，直接本地启动"
+  },
+  {
+    appId: 250900,
+    name: "The Binding of Isaac: Rebirth",
+    nameZh: "以撒的结合：重生",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机Roguelike/本地同屏"],
+    notes: "以单机/本地同屏双人为主，直接本地启动"
+  },
+  {
+    appId: 377160,
+    name: "Fallout 4",
+    nameZh: "辐射 4",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机后启示录RPG"],
+    notes: "纯单机角色扮演游戏，直接本地启动"
+  },
+  {
+    appId: 489830,
+    name: "The Elder Scrolls V: Skyrim Special Edition",
+    nameZh: "上古卷轴 5：天际特别版",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机奇幻开放世界"],
+    notes: "纯单机游戏，无官方联机功能，直接本地启动"
+  },
+  {
+    appId: 2050650,
+    name: "Resident Evil 4",
+    nameZh: "生化危机 4 重制版",
+    netType: "single_player",
+    recommend: "single_player",
+    signals: ["单机生存恐怖冒险"],
+    notes: "单机剧情冒险游戏，直接本地启动"
+  },
+
+  // ==================== 5. 辅助工具 / 实用软件（无需联机） ====================
+  {
+    appId: 1477830,
+    name: "HudSight - crosshair overlay",
+    nameZh: "HudSight 准星助手",
+    netType: "tool",
+    recommend: "single_player",
+    signals: ["桌面游戏准星覆盖工具"],
+    notes: "实用游戏辅助准星叠加工具，非游戏，无需联机"
+  },
+  {
+    appId: 431960,
+    name: "Wallpaper Engine",
+    nameZh: "壁纸引擎",
+    netType: "tool",
+    recommend: "single_player",
+    signals: ["动态壁纸桌面软件"],
+    notes: "桌面动态壁纸实用工具软件，无需多人联机"
+  },
+  {
+    appId: 396060,
+    name: "Soundpad",
+    nameZh: "语音音效软件",
+    netType: "tool",
+    recommend: "single_player",
+    signals: ["语音与音效实用软件"],
+    notes: "语音音效播放工具软件，无需联机"
+  },
+
+  // ==================== 6. 官方竞技服务器（官方专属服务器与 VAC/EAC，不支持破解联机） ====================
   {
     appId: 730,
     name: "Counter-Strike 2",

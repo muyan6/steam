@@ -128,7 +128,7 @@ export interface LocalInstalledGame {
   isPatched?: boolean;
   patchMode?: 'spacewar' | 'goldberg' | 'none';
   hasBackup?: boolean;
-  /** 联机架构预测: patched | cloud_lobby | steamworks | mixed | api_only | thirdparty | unknown */
+  /** 联机架构预测: patched | cloud_lobby | steamworks | mixed | api_only | thirdparty | official_server | single_player | tool | unknown */
   netType?: string;
   /** 命中的联机指纹文件名（提示详情用） */
   netSignals?: string[];

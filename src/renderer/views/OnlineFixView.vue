@@ -94,8 +94,8 @@
             <span class="text-slate-400">橙色：联机走 Photon/EOS 等独立服务，Steam 通道进不去，<strong class="text-amber-400">直接用方案二</strong></span>
           </div>
           <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-slate-950/80 text-slate-400 text-[11px] font-bold border border-white/10">联机未知</span>
-            <span class="text-slate-400">灰色：未发现已知联机指纹，<strong>可尝试方案一</strong>，失败则视作方案二适用</span>
+            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-slate-800/80 text-slate-400 text-[11px] font-bold border border-white/10">单机游戏</span>
+            <span class="text-slate-400">深灰：未检测到任何网络通讯库（如植物大战僵尸、杀戮尖塔），<strong class="text-slate-300">纯单机无需联机</strong>，直接启动</span>
           </div>
           <div class="flex gap-2 items-start">
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[11px] font-bold">已装联机补丁</span>
@@ -178,6 +178,15 @@
             title="本地游戏列表的扫描时间。列表优先使用缓存秒开，超过 24 小时会自动在后台静默更新；安装了新游戏可点「刷新列表」立即重扫。"
           >
             扫描于 {{ scanAgoText }}{{ isBgRefreshing ? ' · 后台更新中' : '' }}
+          </span>
+
+          <!-- 权威联机规则库状态 -->
+          <span
+            class="text-[11px] text-slate-400 font-mono bg-slate-900/80 px-3 py-2 rounded-xl border border-white/10 flex items-center gap-1.5 cursor-help"
+            title="权威联机规则库：收录常见热门联机游戏、单机游戏与官方竞技服的精确网络架构，支持云端动态热同步与本地持久化缓存"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>权威规则: {{ rulesCount ? `${rulesCount} 款已收录` : '已载入' }}</span>
           </span>
         </div>
 
@@ -522,7 +531,25 @@
                       <span class="truncate">原生 P2P · 推荐方案一（免改直启）</span>
                     </div>
 
-                    <!-- 默认 / 未知 / Steam API -->
+                    <!-- 纯单机游戏（无联机模块） -->
+                    <div
+                      v-else-if="game.netType === 'single_player' || game.netType === 'unknown'"
+                      class="p-2 rounded-xl bg-slate-900/60 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
+                    >
+                      <User class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span class="truncate" title="该游戏为纯单机游戏，无网络大厅，直接本地启动运行">单机游戏 · 无需联机大厅</span>
+                    </div>
+
+                    <!-- 辅助工具 / 实用软件 -->
+                    <div
+                      v-else-if="game.netType === 'tool'"
+                      class="p-2 rounded-xl bg-slate-900/60 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
+                    >
+                      <Sliders class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span class="truncate" title="该应用为辅助软件/桌面工具，无需联机">辅助工具 · 桌面软件无需联机</span>
+                    </div>
+
+                    <!-- 默认 / Steam API -->
                     <div
                       v-else
                       class="p-2 rounded-xl bg-slate-900/80 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
@@ -532,16 +559,16 @@
                     </div>
                   </div>
 
-                  <!-- 底部操作按钮条 (▶ 联机启动 + 🔧 修复报错) -->
+                  <!-- 底部操作按钮条 (▶ 联机启动/直接启动 + 🔧 修复报错) -->
                   <div class="grid grid-cols-2 gap-2 pt-3 border-t border-white/10">
-                    <!-- 联机启动按钮 -->
+                    <!-- 启动按钮（单机显示直接启动，多人显示联机启动） -->
                     <button
                       @click="handleLaunchGame(game)"
                       :disabled="pendingLaunches.has(game.appId)"
                       class="py-2 px-3 btn-soft-action hover:border-sky-400/40 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
                     >
                       <Play class="w-3.5 h-3.5 fill-current text-sky-400" />
-                      <span>{{ pendingLaunches.has(game.appId) ? '启动中...' : '联机启动' }}</span>
+                      <span>{{ pendingLaunches.has(game.appId) ? '启动中...' : (game.netType === 'single_player' || game.netType === 'unknown' || game.netType === 'tool' ? '直接启动' : '联机启动') }}</span>
                     </button>
 
                     <!-- 修复报错按钮 (橙色高亮，点击弹出脱壳解密确认) -->
@@ -1022,6 +1049,7 @@ import {
   CheckCircle2,
   HelpCircle,
   ShieldAlert,
+  User,
   X
 } from 'lucide-vue-next';
 import {
@@ -1049,6 +1077,7 @@ const localGames = ref<LocalInstalledGame[]>([]);
 const isScanning = ref(false);
 const searchQuery = ref('');
 const cardScale = ref<number>(100); // 80% ~ 130%
+const rulesCount = ref<number>(50); // 权威规则库收录数量
 
 // 标题折叠收起状态 (用户指定：可以点击标题把下面展示的本地游戏缩回去)
 const isLaunchGamesCollapsed = ref(false);
@@ -1120,7 +1149,10 @@ const handleRefreshLocalGames = async (force: boolean = false, silent: boolean =
   try {
     if (force) {
       // 强制刷新时同步拉取最新云端权威联机规则库
-      await window.electronAPI.fetchAndSyncOnlineRules().catch(() => {});
+      const syncRes = await window.electronAPI.fetchAndSyncOnlineRules().catch(() => null);
+      if (syncRes && syncRes.count) {
+        rulesCount.value = syncRes.count;
+      }
     }
     applyScanResult(await window.electronAPI.scanLocalGames(force));
     if (!silent) {
@@ -1209,11 +1241,18 @@ const netBadgeOf = (game: LocalInstalledGame): NetBadge | null => {
         cls: 'bg-slate-800/90 text-slate-300 border border-white/10',
         tip: '该游戏采用官方专属竞技服务器与 VAC/EAC 反作弊，无法通过自建通道或补丁破解联机。' + tipTail
       };
+    case 'single_player':
     case 'unknown':
       return {
-        label: '联机未知',
-        cls: 'bg-slate-950/80 text-slate-400 border border-white/10',
-        tip: '未发现已知联机指纹，可能为单机游戏或自研网络，可尝试 Open 内核。' + tipTail
+        label: '单机游戏',
+        cls: 'bg-slate-800/80 text-slate-400 border border-white/10',
+        tip: '该游戏为纯单机游戏，无需联机网络大厅，直接本地启动运行即可。' + tipTail
+      };
+    case 'tool':
+      return {
+        label: '辅助工具',
+        cls: 'bg-slate-800/80 text-slate-400 border border-white/10',
+        tip: '该应用为桌面实用辅助工具或软件，无需联机。' + tipTail
       };
     default:
       return null;
@@ -1465,7 +1504,11 @@ const handleCardImgError = (e: Event, appId: number) => {
 onMounted(async () => {
   await fetchSpacewarStatus(false);
   // 后台静默同步云端权威联机规则库（若云端更新则写入本地并动态生效）
-  window.electronAPI.fetchAndSyncOnlineRules().catch(() => {});
+  window.electronAPI.fetchAndSyncOnlineRules().then(res => {
+    if (res && res.count) {
+      rulesCount.value = res.count;
+    }
+  }).catch(() => {});
   // 秒开磁盘缓存列表；无缓存时现场扫描一次，缓存超过 24h 则后台静默重扫更新
   try {
     const cached = await window.electronAPI.scanLocalGames(false);
