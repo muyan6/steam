@@ -113,10 +113,15 @@ static RUNNING_CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std
 
 const RUNNING_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(8);
 
-/// 强制失效 is_steam_running 缓存：kill_steam / restart_steam 等轮询
+static ONLINEFIX_CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+
+/// 强制失效 is_steam_running 与 is_onlinefix_running 缓存：kill_steam / restart_steam 等轮询
 /// 进程状态的场景必须读取实时结果，否则轮询会被 8 秒旧值卡死
 pub fn clear_steam_running_cache() {
     if let Ok(mut guard) = RUNNING_CACHE.lock() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = ONLINEFIX_CACHE.lock() {
         *guard = None;
     }
 }
@@ -161,8 +166,7 @@ pub fn is_steamwebhelper_running() -> bool {
 pub fn is_onlinefix_running() -> bool {
     // 结果缓存 8 秒：PowerShell CIM 冷启动 0.5~2s，而本函数被 get_steam_info
     // 等高频路径调用，不缓存会导致明显的 UI 卡顿
-    static CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
-    if let Ok(guard) = CACHE.lock() {
+    if let Ok(guard) = ONLINEFIX_CACHE.lock() {
         if let Some((at, val)) = *guard {
             if at.elapsed() < std::time::Duration::from_secs(8) {
                 return val;
@@ -170,7 +174,7 @@ pub fn is_onlinefix_running() -> bool {
         }
     }
     let val = is_onlinefix_running_uncached();
-    if let Ok(mut guard) = CACHE.lock() {
+    if let Ok(mut guard) = ONLINEFIX_CACHE.lock() {
         *guard = Some((std::time::Instant::now(), val));
     }
     val
@@ -195,6 +199,27 @@ fn is_onlinefix_running_uncached() -> bool {
         false
     }
 }
+
+/// 检测当前 Steam 进程是否已完成网络登录与账号就绪（ActiveProcess 注册表中的 ActiveUser > 0）
+pub fn is_steam_logged_in() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::*;
+        use winreg::RegKey;
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        if let Ok(key) = hkcu.open_subkey("Software\\Valve\\Steam\\ActiveProcess") {
+            if let Ok(user) = key.get_value::<u32, _>("ActiveUser") {
+                return user > 0;
+            }
+        }
+        false
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        is_steam_running()
+    }
+}
+
 
 /// 检测宿主 Windows 是否为 64 位（与 Electron 版语义一致：
 /// steam.exe 引导文件历史沿用 x86，运行时能力取决于宿主系统架构）

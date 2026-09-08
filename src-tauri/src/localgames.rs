@@ -754,34 +754,55 @@ pub fn launch_game_online(
         // - 未运行：带参启动并等待就绪
         // - 已运行但不带参（如 -silent 普通会话）：重启到联机模式
         // - 已带参：直接唤起
+        let Some(sp) = steam::detect_steam_path() else {
+            return Err("未找到 Steam 安装路径，无法进入 Open 内核联机模式".to_string());
+        };
+
+        // 启动前确保 opensteamtool.toml 配置已优化（国内 jsdelivr 镜像加速与调试日志，杜绝 raw.github 5秒超时卡顿）
+        let _ = crate::ost::ensure_toml_optimized(&sp);
+
+        // Open 内核联机模式要求 Steam 会话以 -onlinefix 参数运行（OST 内核联机拦截生效）：
+        // - 未运行：带参启动并等待就绪
+        // - 已运行但不带参（如 -silent 普通会话）：重启到联机模式
+        // - 已带参：直接唤起
         let steam_running = steam::is_steam_running();
-        if !(steam_running && steam::is_onlinefix_running()) {
-            let Some(sp) = steam::detect_steam_path() else {
-                return Err("未找到 Steam 安装路径，无法进入 Open 内核联机模式".to_string());
-            };
+        let onlinefix_running = steam_running && steam::is_onlinefix_running();
+
+        if !onlinefix_running {
             if steam_running {
                 steam::kill_steam();
             }
             steam::restart_steam(&sp, &["-onlinefix".to_string()]);
             // 就绪检测前先失效运行状态缓存，否则 8 秒旧值会让前几轮轮询读到过期结果
             steam::clear_steam_running_cache();
-            // 关键：等待 steam.exe 与 steamwebhelper.exe 真正就绪
-            // 冷启动包括更新校验、网络登录与 OST 规则注入（需 6~15s+）
-            // 过早发送 -applaunch 会因凭据/规则尚未加载进内存而直接触发 Steam 弹窗「无许可」
-            let mut helper_ready = false;
-            for _ in 0..30 {
-                if steam::is_steamwebhelper_running() {
-                    helper_ready = true;
+
+            // 关键：等待 steam.exe 真正完成网络登录与账号就绪（ActiveUser > 0）
+            // 冷启动包括更新校验、网络登录与 OST 假许可规则注入（通常需 4~15 秒）
+            // 过早发送 -applaunch 会因凭据/假许可尚未注入进内存而直接触发 Steam 弹窗「无许可」
+            let mut logged_in = false;
+            for _ in 0..40 {
+                if steam::is_steam_logged_in() {
+                    logged_in = true;
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(1000));
             }
-            if !helper_ready && !steam::is_steam_running() {
+            if !logged_in && !steam::is_steam_running() {
                 return Err("Steam 未能以联机模式启动，请手动启动 Steam 后重试".to_string());
             }
-            // 额外留足 4 秒供 OST 内存钩子挂载与 config/lua 规则解析就绪
-            std::thread::sleep(std::time::Duration::from_millis(4000));
+            // 额外留足 3.5 秒供 OST 内存钩子挂载与 Package 0 假许可注入就绪
+            std::thread::sleep(std::time::Duration::from_millis(3500));
+        } else if !steam::is_steam_logged_in() {
+            // Steam 虽然带参启动但还在登录中，等待登录就绪
+            for _ in 0..20 {
+                if steam::is_steam_logged_in() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2500));
         }
+
         // 古韵盒子同款启动配方（内核日志逐包验证有效）：
         // steam.exe -applaunch <真实AppID> -onlinefix —— 关键在 -onlinefix 必须作为
         // -applaunch 的启动参数传给游戏会话，OST 内核才会对该会话做 presence 伪装：
