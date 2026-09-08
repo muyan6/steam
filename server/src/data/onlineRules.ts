@@ -281,6 +281,24 @@ export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
     signals: ["七日杀·Steam P2P与自建服"],
     notes: "支持 Steam 好友大厅与自建服直连，推荐方案一免改直启"
   },
+  {
+    appId: 1281930,
+    name: "tModLoader",
+    nameZh: "泰拉瑞亚 Mod 加载器",
+    netType: "steamworks",
+    recommend: "scheme1",
+    signals: ["tModLoader·原生P2P/直连联机", "Steamworks"],
+    notes: "泰拉瑞亚官方 Mod 加载器，支持 Steamworks P2P 与 IP 直连联机，推荐方案一免改直启"
+  },
+  {
+    appId: 250900,
+    name: "The Binding of Isaac: Rebirth",
+    nameZh: "以撒的结合：重生",
+    netType: "steamworks",
+    recommend: "scheme1",
+    signals: ["以撒的结合·官方联机Beta/同屏", "Steamworks"],
+    notes: "官方联机测试与同屏双人，推荐方案一免改直启"
+  },
 
   // ==================== 4. 纯单机游戏（无需任何联机，直接启动运行） ====================
   {
@@ -356,15 +374,6 @@ export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
     notes: "纯单机动作肉鸽游戏，无多人模式，直接本地启动"
   },
   {
-    appId: 250900,
-    name: "The Binding of Isaac: Rebirth",
-    nameZh: "以撒的结合：重生",
-    netType: "single_player",
-    recommend: "single_player",
-    signals: ["单机Roguelike/本地同屏"],
-    notes: "以单机/本地同屏双人为主，直接本地启动"
-  },
-  {
     appId: 377160,
     name: "Fallout 4",
     nameZh: "辐射 4",
@@ -415,6 +424,15 @@ export const AUTHORITATIVE_ONLINE_RULES: OnlineRuleItem[] = [
     appId: 396060,
     name: "Soundpad",
     nameZh: "语音音效软件",
+    netType: "tool",
+    recommend: "single_player",
+    signals: ["语音与音效实用软件"],
+    notes: "语音音效播放工具软件，无需联机"
+  },
+  {
+    appId: 632810,
+    name: "Soundpad Demo",
+    nameZh: "Soundpad 试用版",
     netType: "tool",
     recommend: "single_player",
     signals: ["语音与音效实用软件"],

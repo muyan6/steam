@@ -1,7 +1,7 @@
 {
   "version": "2026.09.08.charts",
   "updatedAt": "2026-09-08T11:06:07.190Z",
-  "count": 182,
+  "count": 183,
   "charts": {
     "mostPlayedCount": 100,
     "topSellersCount": 100,
@@ -255,13 +255,13 @@
       "appId": 250900,
       "name": "The Binding of Isaac: Rebirth",
       "nameZh": "以撒的结合：重生",
-      "netType": "single_player",
-      "recommend": "single_player",
+      "netType": "steamworks",
+      "recommend": "scheme1",
       "signals": [
-        "SteamDB热门榜 Top 10",
-        "单机Roguelike/本地同屏"
+        "以撒的结合·官方联机/同屏",
+        "Steamworks"
       ],
-      "notes": "以单机/本地同屏双人为主，直接本地启动",
+      "notes": "官方联机测试与同屏双人，推荐方案一免改直启",
       "source": "curated"
     },
     {
@@ -745,6 +745,18 @@
       "source": "curated"
     },
     {
+      "appId": 632810,
+      "name": "Soundpad Demo",
+      "nameZh": "Soundpad 试用版",
+      "netType": "tool",
+      "recommend": "single_player",
+      "signals": [
+        "语音与音效实用软件"
+      ],
+      "notes": "语音音效播放工具软件，无需联机",
+      "source": "curated"
+    },
+    {
       "appId": 646570,
       "name": "Slay the Spire",
       "nameZh": "杀戮尖塔",
@@ -1161,14 +1173,14 @@
       "appId": 1281930,
       "name": "tModLoader",
       "nameZh": "tModLoader",
-      "netType": "official_server",
-      "recommend": "unsupported",
+      "netType": "steamworks",
+      "recommend": "scheme1",
       "signals": [
-        "SteamDB热门榜 Top 52",
-        "官方大型多人在线竞技"
+        "tModLoader·原生P2P/直连联机",
+        "Steamworks"
       ],
-      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
-      "source": "steam_charts"
+      "notes": "泰拉瑞亚官方 Mod 加载器，支持 Steamworks P2P 与 IP 直连联机，推荐方案一免改直启",
+      "source": "curated"
     },
     {
       "appId": 1289670,

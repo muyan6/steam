@@ -160,6 +160,11 @@ export class OnlineRulesSyncService {
         }
       }
 
+      if (mostPlayedList.length === 0 && topSellersList.length === 0) {
+        console.warn('[OnlineRulesService] 未能拉取到 Steam 榜单数据，保留现有数据库');
+        return { success: false, count: this.rulesMap.size, message: '未能连接到 Steam 榜单接口，保留现有数据' };
+      }
+
       // 3. 去重合并双榜
       const mergedApps = new Map<number, { appId: number; name?: string; mostPlayedRank?: number; topSellerRank?: number }>();
       for (const mp of mostPlayedList) {

@@ -94,8 +94,8 @@
             <span class="text-slate-400">橙色：联机走 Photon/EOS 等独立服务，Steam 通道进不去，<strong class="text-amber-400">直接用方案二</strong></span>
           </div>
           <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-slate-800/80 text-slate-400 text-[11px] font-bold border border-white/10">单机游戏</span>
-            <span class="text-slate-400">深灰：未检测到任何网络通讯库（如植物大战僵尸、杀戮尖塔），<strong class="text-slate-300">纯单机无需联机</strong>，直接启动</span>
+            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-slate-800/80 text-slate-300 text-[11px] font-bold border border-white/10">单机/MOD</span>
+            <span class="text-slate-400">深灰：官方无联机服务或单机（如植物大战僵尸、黑神话），<strong class="text-slate-300">如需联机或自制MOD</strong>可尝试方案一直启</span>
           </div>
           <div class="flex gap-2 items-start">
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[11px] font-bold">已装联机补丁</span>
@@ -545,13 +545,13 @@
                       <span class="truncate">原生 P2P · 推荐方案一（免改直启）</span>
                     </div>
 
-                    <!-- 纯单机游戏（无联机模块） -->
+                    <!-- 纯单机 / 自制MOD -->
                     <div
-                      v-else-if="game.netType === 'single_player' || game.netType === 'unknown'"
+                      v-else-if="game.netType === 'single_player'"
                       class="p-2 rounded-xl bg-slate-900/60 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
                     >
                       <User class="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span class="truncate" title="该游戏为纯单机游戏，无网络大厅，直接本地启动运行">单机游戏 · 无需联机大厅</span>
+                      <span class="truncate" title="未检测到官方联机服务，如需与好友联机或加载自制MOD推荐使用方案一">单机/自制MOD · 推荐方案一直启</span>
                     </div>
 
                     <!-- 辅助工具 / 实用软件 -->
@@ -560,10 +560,10 @@
                       class="p-2 rounded-xl bg-slate-900/60 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
                     >
                       <Sliders class="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span class="truncate" title="该应用为辅助软件/桌面工具，无需联机">辅助工具 · 桌面软件无需联机</span>
+                      <span class="truncate" title="该应用为辅助软件/桌面工具，推荐使用方案一直启">辅助工具 · 推荐方案一直启</span>
                     </div>
 
-                    <!-- 默认 / Steam API -->
+                    <!-- 默认 / Steam API / 未知 -->
                     <div
                       v-else
                       class="p-2 rounded-xl bg-slate-900/80 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
@@ -573,16 +573,16 @@
                     </div>
                   </div>
 
-                  <!-- 底部操作按钮条 (▶ 联机启动/直接启动 + 🔧 修复报错) -->
+                  <!-- 底部操作按钮条 (▶ 联机启动 + 🔧 修复报错) -->
                   <div class="grid grid-cols-2 gap-2 pt-3 border-t border-white/10">
-                    <!-- 启动按钮（单机显示直接启动，多人显示联机启动） -->
+                    <!-- 联机启动按钮（统一使用选中的联机模式注入启动） -->
                     <button
                       @click="handleLaunchGame(game)"
                       :disabled="pendingLaunches.has(game.appId)"
                       class="py-2 px-3 btn-soft-action hover:border-sky-400/40 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
                     >
                       <Play class="w-3.5 h-3.5 fill-current text-sky-400" />
-                      <span>{{ pendingLaunches.has(game.appId) ? '启动中...' : (game.netType === 'single_player' || game.netType === 'unknown' || game.netType === 'tool' ? '直接启动' : '联机启动') }}</span>
+                      <span>{{ pendingLaunches.has(game.appId) ? '启动中...' : '联机启动' }}</span>
                     </button>
 
                     <!-- 修复报错按钮 (橙色高亮，点击弹出脱壳解密确认) -->
@@ -1275,17 +1275,22 @@ const netBadgeOf = (game: LocalInstalledGame): NetBadge | null => {
         tip: '该游戏采用官方专属竞技服务器与 VAC/EAC 反作弊，无法通过自建通道或补丁破解联机。' + tipTail
       };
     case 'single_player':
+      return {
+        label: '单机/MOD',
+        cls: 'bg-slate-800/80 text-slate-300 border border-white/10',
+        tip: '官方未设联机大厅，如需与好友联机或加载自制联机MOD，建议尝试方案一直启。' + tipTail
+      };
     case 'unknown':
       return {
-        label: '单机游戏',
-        cls: 'bg-slate-800/80 text-slate-400 border border-white/10',
-        tip: '该游戏为纯单机游戏，无需联机网络大厅，直接本地启动运行即可。' + tipTail
+        label: '未知联机',
+        cls: 'bg-slate-950/80 text-slate-400 border border-white/10',
+        tip: '未匹配到明确的联机指纹，建议优先尝试方案一免改直启。' + tipTail
       };
     case 'tool':
       return {
         label: '辅助工具',
         cls: 'bg-slate-800/80 text-slate-400 border border-white/10',
-        tip: '该应用为桌面实用辅助工具或软件，无需联机。' + tipTail
+        tip: '该应用为桌面实用辅助工具或软件，建议尝试方案一直启。' + tipTail
       };
     default:
       return null;
