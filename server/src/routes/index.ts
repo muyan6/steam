@@ -78,7 +78,7 @@ import { licenseService } from '../services/licenseService.js';
 import { freeQuotaService } from '../services/freeQuotaService.js';
 import { appLinksService } from '../services/appLinksService.js';
 import { authService } from '../services/authService.js';
-import { getSettingsAdmin, updateFreeQuotaLimitAdmin } from '../controllers/settingsController.js';
+import { getSettingsAdmin, updateFreeQuotaLimitAdmin, getDeviceQuotaStatus } from '../controllers/settingsController.js';
 
 const router = Router();
 
@@ -254,6 +254,9 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
 };
 
 router.get('/metadata/:appId', requireKeyAccess, getGameMetadata);
+
+// 客户端公开查询当前设备每日免费配额与最新云端上限
+router.get('/quota/status', getDeviceQuotaStatus);
 
 // 公开只读统计数据 (客户端数据库统计使用，不暴露管理能力)
 router.get('/stats', (req: Request, res: Response) => {

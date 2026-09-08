@@ -76,20 +76,30 @@ fn local_today() -> String {
     )
 }
 
-/// 读取今日已用次数；日期不匹配（跨天）视为 0
-fn read_used_today(path: Option<&PathBuf>) -> u32 {
-    let Some(p) = path else { return 0 };
-    let Ok(content) = fs::read_to_string(p) else { return 0 };
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else { return 0 };
+/// 读取今日已用次数与当前生效上限（日期不匹配视为跨天，used=0）
+fn read_quota_data(path: Option<&PathBuf>) -> (u32, u32) {
+    let Some(p) = path else { return (0, FREE_DAILY_LIMIT) };
+    let Ok(content) = fs::read_to_string(p) else { return (0, FREE_DAILY_LIMIT) };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else { return (0, FREE_DAILY_LIMIT) };
+    let limit = v
+        .get("limit")
+        .and_then(|l| l.as_u64())
+        .map(|n| n.min(999) as u32)
+        .unwrap_or(FREE_DAILY_LIMIT);
     if v.get("date").and_then(|d| d.as_str()) != Some(local_today().as_str()) {
-        return 0;
+        return (0, limit);
     }
-    v.get("used").and_then(|u| u.as_u64()).unwrap_or(0).min(u32::MAX as u64) as u32
+    let used = v.get("used").and_then(|u| u.as_u64()).unwrap_or(0).min(u32::MAX as u64) as u32;
+    (used, limit)
 }
 
-fn write_used(path: Option<&PathBuf>, used: u32) {
+fn write_quota_data(path: Option<&PathBuf>, used: u32, limit: u32) {
     if let Some(p) = path {
-        let data = serde_json::json!({ "date": local_today(), "used": used });
+        let data = serde_json::json!({
+            "date": local_today(),
+            "used": used,
+            "limit": limit
+        });
         // 先写临时文件再原子 rename：进程中途被杀时不会留下写了一半的 JSON
         //（半截文件解析失败会被当成 used=0，导致额度被重置）
         let tmp = p.with_extension("json.tmp");
@@ -99,38 +109,49 @@ fn write_used(path: Option<&PathBuf>, used: u32) {
     }
 }
 
-fn build_status(is_activated: bool, used: u32, consumed: bool) -> QuotaStatus {
-    let remaining = FREE_DAILY_LIMIT.saturating_sub(used);
+fn build_status(is_activated: bool, used: u32, limit: u32, consumed: bool) -> QuotaStatus {
+    let remaining = limit.saturating_sub(used);
     QuotaStatus {
         is_activated,
         used,
-        limit: FREE_DAILY_LIMIT,
+        limit,
         remaining,
         allowed: is_activated || remaining > 0,
         consumed,
     }
 }
 
+/// 同步云端最新的每日免费额度上限（后台调整即时生效）
+pub fn update_quota_limit(new_limit: u32) {
+    let _guard = QUOTA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let path = quota_file();
+    let (used, _) = read_quota_data(path.as_ref());
+    write_quota_data(path.as_ref(), used, new_limit.min(999));
+}
+
 /// 查询当前免费额度（不扣减）。已激活设备不受限制。
 pub fn get_free_quota(is_activated: bool) -> QuotaStatus {
-    let used = if is_activated { 0 } else { read_used_today(quota_file().as_ref()) };
-    build_status(is_activated, used, false)
+    if is_activated {
+        return build_status(true, 0, FREE_DAILY_LIMIT, false);
+    }
+    let (used, limit) = read_quota_data(quota_file().as_ref());
+    build_status(is_activated, used, limit, false)
 }
 
 /// 扣减一次免费额度。已激活设备直接放行不扣减；额度耗尽时返回 allowed=false。
 pub fn consume_free_quota(is_activated: bool) -> QuotaStatus {
     if is_activated {
-        return build_status(true, 0, false);
+        return build_status(true, 0, FREE_DAILY_LIMIT, false);
     }
     let _guard = QUOTA_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = quota_file();
-    let used = read_used_today(path.as_ref());
-    if used >= FREE_DAILY_LIMIT {
-        return build_status(false, used, false);
+    let (used, limit) = read_quota_data(path.as_ref());
+    if used >= limit {
+        return build_status(false, used, limit, false);
     }
     let new_used = used + 1;
-    write_used(path.as_ref(), new_used);
-    build_status(false, new_used, true)
+    write_quota_data(path.as_ref(), new_used, limit);
+    build_status(false, new_used, limit, true)
 }
 
 fn license_cache_file() -> Option<PathBuf> {

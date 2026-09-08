@@ -653,11 +653,34 @@ export const createTauriBridge = () => {
       return { success: true, message: '已清除本地赞助码与授权缓存' };
     },
 
-    // 未激活设备每日免费入库额度（默认 2 次/天，按本地日期刷新）
-    getFreeUnlockQuota: async (isActivated: boolean): Promise<any> =>
-      invoke('get_free_unlock_quota', { isActivated }),
+    // 未激活设备每日免费入库额度（动态上限支持后台随时调整，按本地日期刷新）
+    getFreeUnlockQuota: async (isActivated: boolean): Promise<any> => {
+      if (isActivated) {
+        return invoke('get_free_unlock_quota', { isActivated });
+      }
+      try {
+        const deviceId = await invoke<string>('get_device_id');
+        const res = await getJson<any>(`${API}/api/quota/status?deviceId=${encodeURIComponent(deviceId)}`);
+        if (res && res.success && res.data) {
+          if (typeof res.data.limit === 'number') {
+            await invoke('sync_free_quota_limit', { limit: res.data.limit });
+          }
+          return {
+            isActivated: false,
+            limit: res.data.limit,
+            used: res.data.used,
+            remaining: res.data.remaining,
+            allowed: res.data.remaining > 0,
+            consumed: false
+          };
+        }
+      } catch {}
+      return invoke('get_free_unlock_quota', { isActivated });
+    },
     consumeFreeUnlockQuota: async (isActivated: boolean): Promise<any> =>
       invoke('consume_free_unlock_quota', { isActivated }),
+    syncFreeQuotaLimit: async (limit: number): Promise<void> =>
+      invoke('sync_free_quota_limit', { limit }),
 
     // 工具箱
     toolboxClearCache: async (): Promise<ToolboxActionResult> => invoke('toolbox_clear_cache'),

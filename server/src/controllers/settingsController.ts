@@ -2,9 +2,49 @@ import { Request, Response } from 'express';
 import { appSettingsService } from '../services/appSettingsService.js';
 import { appLinksService } from '../services/appLinksService.js';
 import { authService } from '../services/authService.js';
+import { licenseService } from '../services/licenseService.js';
+import { freeQuotaService } from '../services/freeQuotaService.js';
 
 const getClientIp = (req: Request): string => {
   return req.socket.remoteAddress || '127.0.0.1';
+};
+
+/**
+ * 客户端公开查询当前设备每日免费配额与云端最新上限（免登录）
+ */
+export const getDeviceQuotaStatus = (req: Request, res: Response) => {
+  try {
+    const rawDeviceId = (req.headers['x-device-id'] as string) || (req.query.deviceId as string) || '';
+    const deviceId = rawDeviceId.trim();
+    if (!deviceId) {
+      return res.status(400).json({ success: false, message: '缺少 deviceId' });
+    }
+    const info = licenseService.verify(deviceId);
+    if (info.isActivated) {
+      return res.json({
+        success: true,
+        data: {
+          isActivated: true,
+          limit: appSettingsService.getFreeDailyLimit(),
+          used: 0,
+          remaining: 999999
+        }
+      });
+    }
+    const st = freeQuotaService.status(deviceId);
+    return res.json({
+      success: true,
+      data: {
+        isActivated: false,
+        limit: st.limit,
+        used: st.used,
+        remaining: st.remaining
+      }
+    });
+  } catch (e) {
+    console.error('[Settings] 查询设备配额异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
 };
 
 /**
@@ -57,3 +97,4 @@ export const updateFreeQuotaLimitAdmin = (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: '服务器内部错误' });
     }
 };
+

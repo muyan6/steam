@@ -1043,6 +1043,12 @@ fn consume_free_unlock_quota(is_activated: Option<bool>) -> serde_json::Value {
     quota::consume_free_quota(is_activated.unwrap_or(false)).to_json()
 }
 
+/// 同步未激活设备的今日免费入库上限（由云端返回最新配置时刷新）
+#[tauri::command]
+fn sync_free_quota_limit(limit: u32) {
+    quota::update_quota_limit(limit);
+}
+
 #[tauri::command]
 fn save_license_cache(data: String) -> bool {
     quota::save_license_cache_str(&data)
@@ -1622,6 +1628,7 @@ pub fn run() {
             scan_local_games,
             get_free_unlock_quota,
             consume_free_unlock_quota,
+            sync_free_quota_limit,
             save_license_cache,
             load_license_cache,
             clear_license_cache,
