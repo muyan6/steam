@@ -1,5 +1,25 @@
 [
   {
+    "version": "2.5.0",
+    "channel": "stable",
+    "releaseDate": "2026-09-08",
+    "title": "春风渡 v2.5.0 正式发布",
+    "changelog": [
+      "🌐 接入 SteamDB 热门在线与全球热销双榜实时同步引擎，全库收录扩容至 180+ 款热门游戏与工具",
+      "🎮 启动交互统一化：联机中心启动按钮全面统一为「联机启动」，杜绝误判单机剥夺联机注入环境",
+      "⚡ 社区 MOD 与无缝联机支持：优化单机与自制 MOD 方案一推荐体系，修正 tModLoader 与以撒的结合原生联机判定",
+      "🔄 客户端一键同步双榜：操作栏新增动态双榜收录指示器与「同步双榜」实时热更新功能",
+      "📦 本地离线持久化加速：云端规则全自动缓存到本地磁盘，断网离线零延迟秒开"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.5.0/ChunFengDu_2.5.0_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-08T00:00:00.000Z",
+    "updatedAt": "2026-09-08T00:00:00.000Z"
+  },
+  {
     "version": "2.4.2",
     "channel": "stable",
     "releaseDate": "2026-09-07",
