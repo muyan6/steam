@@ -195,6 +195,109 @@ fn collect_net_fingerprints(dir_path: &Path) -> NetFingerprints {
     out
 }
 
+use std::collections::HashMap;
+
+/// 动态联机规则条目（支持服务端热下发与本地缓存持久化）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicOnlineRule {
+    pub app_id: u32,
+    #[serde(default)]
+    pub name: String,
+    pub net_type: String,
+    #[serde(default)]
+    pub recommend: Option<String>,
+    #[serde(default)]
+    pub signals: Vec<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+static DYNAMIC_ONLINE_RULES: Mutex<Option<HashMap<u32, (String, Vec<String>)>>> = Mutex::new(None);
+
+/// 初始化与加载权威联机规则（优先动态同步规则，其次内置静态库兜底）
+fn get_authoritative_rule(app_id: u32) -> Option<(String, Vec<String>)> {
+    if let Ok(guard) = DYNAMIC_ONLINE_RULES.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(val) = map.get(&app_id) {
+                return Some(val.clone());
+            }
+        }
+    }
+
+    // 内置保底权威库（确保断网或无网络环境下仍然 100% 精确裁决重点热门游戏）
+    let fallback = match app_id {
+        1966720 => Some(("cloud_lobby", vec!["致命公司·Valve官方云端大厅强鉴权"])),
+        739630 => Some(("cloud_lobby", vec!["恐鬼症·官方云端大厅强鉴权"])),
+        2881650 => Some(("cloud_lobby", vec!["内容警告·官方云端大厅强鉴权"])),
+        252490 => Some(("cloud_lobby", vec!["腐蚀·Facepunch官方网络与EAC鉴权"])),
+        1260320 => Some(("thirdparty", vec!["猛兽派对·自建官方网络账号服务"])),
+        1623730 => Some(("thirdparty", vec!["幻兽帕鲁·社区服/自建网络"])),
+        105600 => Some(("steamworks", vec!["泰拉瑞亚·原生P2P/直连"])),
+        204360 => Some(("steamworks", vec!["城堡毁灭者·P2P对战"])),
+        880940 => Some(("steamworks", vec!["Pummel Party·原生P2P"])),
+        1426210 => Some(("steamworks", vec!["双人成行·Steam好友联机通道"])),
+        242760 => Some(("steamworks", vec!["森林·原生Steamworks大厅"])),
+        1326470 => Some(("steamworks", vec!["森林之子·Steamworks大厅"])),
+        477160 => Some(("steamworks", vec!["人类一败涂地·原生Steam大厅"])),
+        322330 => Some(("steamworks", vec!["饥荒联机版·Steamworks专用大厅"])),
+        892970 => Some(("steamworks", vec!["英灵神殿·Steam跨平台网络"])),
+        1144200 => Some(("steamworks", vec!["严阵以待·Steamworks战术大厅"])),
+        448510 => Some(("steamworks", vec!["胡闹厨房2·Steamworks联机"])),
+        648800 => Some(("steamworks", vec!["木筏求生·Steamworks好友联机"])),
+        730 => Some(("official_server", vec!["CS2·Valve官方竞技服务器", "Valve Anti-Cheat (VAC)"])),
+        1172470 => Some(("official_server", vec!["Apex·Respawn官方专用服务器", "Easy Anti-Cheat (EAC)"])),
+        570 => Some(("official_server", vec!["Dota 2·Valve官方竞技服务器", "Game Coordinator"])),
+        578080 => Some(("official_server", vec!["PUBG·Krafton官方竞技服务器", "BattlEye/Zakynthos"])),
+        440 => Some(("official_server", vec!["TF2·Valve官方服务器与VAC"])),
+        381210 => Some(("official_server", vec!["DBD·Behaviour官方云端服务器", "EAC"])),
+        _ => None,
+    };
+
+    fallback.map(|(t, sigs)| (t.to_string(), sigs.into_iter().map(|s| s.to_string()).collect()))
+}
+
+/// 同步/更新联机规则库到内存全局缓存及本地磁盘
+pub fn update_dynamic_rules(rules: Vec<DynamicOnlineRule>, cache_path: Option<&Path>) -> usize {
+    let mut map = HashMap::new();
+    for r in &rules {
+        let mut sigs = r.signals.clone();
+        if let Some(ref note) = r.notes {
+            if !sigs.iter().any(|s| s == note) {
+                sigs.push(note.clone());
+            }
+        }
+        map.insert(r.app_id, (r.net_type.clone(), sigs));
+    }
+    let count = map.len();
+
+    if let Ok(mut guard) = DYNAMIC_ONLINE_RULES.lock() {
+        *guard = Some(map);
+    }
+
+    if let Some(path) = cache_path {
+        if let Ok(json_str) = serde_json::to_string_pretty(&rules) {
+            let _ = fs::write(path, json_str);
+        }
+    }
+
+    count
+}
+
+/// 从本地缓存文件加载联机规则
+pub fn load_dynamic_rules_from_cache(cache_path: &Path) -> bool {
+    if !cache_path.exists() {
+        return false;
+    }
+    if let Ok(content) = fs::read_to_string(cache_path) {
+        if let Ok(rules) = serde_json::from_str::<Vec<DynamicOnlineRule>>(&content) {
+            update_dynamic_rules(rules, None);
+            return true;
+        }
+    }
+    false
+}
+
 /// 基于本地文件指纹与权威游戏规则库的联机架构预测。
 /// patched 优先：已部署 OnlineFix/Goldberg 的游戏预测无意义，直接标注。
 pub fn detect_net_mode(dir_path: &Path, is_patched: bool, app_id: u32) -> (String, Vec<String>) {
@@ -202,17 +305,9 @@ pub fn detect_net_mode(dir_path: &Path, is_patched: bool, app_id: u32) -> (Strin
         return ("patched".to_string(), Vec::new());
     }
 
-    // 1. 权威热门游戏精确规则库（杜绝启发式误判，抹平用户试错成本）
-    match app_id {
-        1966720 => return ("cloud_lobby".to_string(), vec!["致命公司·Valve官方云端大厅强鉴权".to_string()]),
-        739630 => return ("cloud_lobby".to_string(), vec!["恐鬼症·官方云端大厅强鉴权".to_string()]),
-        2881650 => return ("cloud_lobby".to_string(), vec!["内容警告·官方云端大厅强鉴权".to_string()]),
-        1260320 => return ("thirdparty".to_string(), vec!["猛兽派对·自建官方网络账号服务".to_string()]),
-        1623730 => return ("thirdparty".to_string(), vec!["幻兽帕鲁·社区服/自建网络".to_string()]),
-        105600 => return ("steamworks".to_string(), vec!["泰拉瑞亚·原生P2P/直连".to_string()]),
-        204360 => return ("steamworks".to_string(), vec!["城堡毁灭者·P2P对战".to_string()]),
-        880940 => return ("steamworks".to_string(), vec!["Pummel Party·原生P2P".to_string()]),
-        _ => {}
+    // 1. 权威热门游戏精确规则库优先裁决（支持云端热更新 + 本地持久化，抹平试错成本）
+    if let Some(rule) = get_authoritative_rule(app_id) {
+        return rule;
     }
 
     if !dir_path.exists() {

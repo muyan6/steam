@@ -1006,6 +1006,12 @@ async fn is_spacewar_installed() -> serde_json::Value {
 async fn scan_local_games(app: AppHandle, force: Option<bool>) -> serde_json::Value {
     let force = force.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
+        // 载入本地持久化的权威联机规则库（若存在）
+        if let Ok(data_dir) = app.path().app_local_data_dir() {
+            let rules_cache = data_dir.join("online_rules.json");
+            localgames::load_dynamic_rules_from_cache(&rules_cache);
+        }
+
         // 磁盘缓存落在应用本地数据目录，跨重启可秒开列表
         let cache_file = app
             .path()
@@ -1029,7 +1035,29 @@ async fn scan_local_games(app: AppHandle, force: Option<bool>) -> serde_json::Va
     })
     .await
     .unwrap_or_else(|_e| json!({ "games": [], "scannedAt": 0, "fromCache": false, "stale": true }))
-    }
+}
+
+/// 同步并持久化云端下发的权威联机规则库
+#[tauri::command]
+async fn sync_online_rules(app: AppHandle, rules_json: String) -> serde_json::Value {
+    let cache_file = app
+        .path()
+        .app_local_data_dir()
+        .ok()
+        .map(|d| d.join("online_rules.json"));
+
+    tauri::async_runtime::spawn_blocking(move || {
+        match serde_json::from_str::<Vec<localgames::DynamicOnlineRule>>(&rules_json) {
+            Ok(rules) => {
+                let count = localgames::update_dynamic_rules(rules, cache_file.as_deref());
+                json!({ "success": true, "count": count, "message": format!("成功更新 {} 条联机规则", count) })
+            }
+            Err(e) => json!({ "success": false, "count": 0, "message": format!("解析规则失败: {}", e) }),
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "count": 0, "message": format!("任务执行失败: {}", e) }))
+}
 
 /// 查询未激活设备的今日免费入库额度（不扣减）
 #[tauri::command]
@@ -1626,6 +1654,7 @@ pub fn run() {
             download_manifests,
             is_spacewar_installed,
             scan_local_games,
+            sync_online_rules,
             get_free_unlock_quota,
             consume_free_unlock_quota,
             sync_free_quota_limit,

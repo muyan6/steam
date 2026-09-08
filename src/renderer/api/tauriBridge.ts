@@ -358,6 +358,20 @@ export const createTauriBridge = () => {
       await invoke('open_url', { url: 'steam://install/480' });
       return true;
     },
+    syncOnlineRules: async (rulesJson: string): Promise<any> =>
+      invoke('sync_online_rules', { rulesJson }),
+    fetchAndSyncOnlineRules: async (): Promise<{ success: boolean; count: number; message: string }> => {
+      try {
+        const resp = await getJson<{ success: boolean; data: any[]; count: number }>(`${API}/api/online-rules`, 5000);
+        if (resp && resp.success && Array.isArray(resp.data)) {
+          const res = await invoke<any>('sync_online_rules', { rulesJson: JSON.stringify(resp.data) });
+          return { success: true, count: res.count || resp.data.length, message: res.message || '联机规则库已是最新' };
+        }
+        return { success: false, count: 0, message: '未能连接到云端规则库，已使用本地缓存' };
+      } catch (e: any) {
+        return { success: false, count: 0, message: `同步规则库异常: ${formatIpcError(e)}` };
+      }
+    },
     // force=true 强制重扫本地库；默认优先内存(60s)/磁盘(跨重启)缓存秒开，
     // 返回值带 scannedAt/stale，前端对超过 24h 的陈旧缓存做后台静默重刷
     scanLocalGames: async (force: boolean = false): Promise<LocalGamesScanResult> =>

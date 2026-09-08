@@ -101,6 +101,10 @@
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[11px] font-bold">已装联机补丁</span>
             <span class="text-slate-400">绿色：已通过方案二部署过补丁，直接联机启动即可</span>
           </div>
+          <div class="flex gap-2 items-start">
+            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-slate-800/90 text-slate-300 text-[11px] font-bold border border-white/10">官方竞技服</span>
+            <span class="text-slate-400">深灰：官方专属竞技服务器与反作弊（如 CS2、Apex、PUBG），<strong class="text-slate-300">不支持破解联机</strong>，需官方正版</span>
+          </div>
         </div>
       </div>
 
@@ -500,13 +504,22 @@
                       <span class="truncate">已装联机补丁 · 可直接启动</span>
                     </div>
 
+                    <!-- 官方竞技专用服务器（如 CS2、Apex、PUBG） -->
+                    <div
+                      v-else-if="game.netType === 'official_server'"
+                      class="p-2 rounded-xl bg-slate-900/90 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
+                    >
+                      <ShieldAlert class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span class="truncate" title="官方竞技专用服务器与反作弊鉴权，无法通过自建大厅或补丁联机">官方竞技服 · 需正版/防作弊验证</span>
+                    </div>
+
                     <!-- 原生 Steamworks / 混合架构 -->
                     <div
                       v-else-if="game.netType === 'steamworks' || game.netType === 'mixed'"
                       class="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5 font-medium"
                     >
                       <Sparkles class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span class="truncate">原生 P2P · 推荐方案一直启</span>
+                      <span class="truncate">原生 P2P · 推荐方案一（免改直启）</span>
                     </div>
 
                     <!-- 默认 / 未知 / Steam API -->
@@ -515,7 +528,7 @@
                       class="p-2 rounded-xl bg-slate-900/80 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
                     >
                       <HelpCircle class="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                      <span class="truncate">建议先试方案一直启</span>
+                      <span class="truncate">建议优先尝试方案一</span>
                     </div>
                   </div>
 
@@ -1008,6 +1021,7 @@ import {
   Sparkles,
   CheckCircle2,
   HelpCircle,
+  ShieldAlert,
   X
 } from 'lucide-vue-next';
 import {
@@ -1104,6 +1118,10 @@ const applyScanResult = (res: LocalGamesScanResult) => {
 const handleRefreshLocalGames = async (force: boolean = false, silent: boolean = false) => {
   isScanning.value = true;
   try {
+    if (force) {
+      // 强制刷新时同步拉取最新云端权威联机规则库
+      await window.electronAPI.fetchAndSyncOnlineRules().catch(() => {});
+    }
     applyScanResult(await window.electronAPI.scanLocalGames(force));
     if (!silent) {
       emit('notify', `成功扫描到 ${localGames.value.length} 款本地已安装 Steam 游戏！`, 'success');
@@ -1185,6 +1203,12 @@ const netBadgeOf = (game: LocalInstalledGame): NetBadge | null => {
         cls: 'bg-amber-500/90 text-slate-950',
         tip: '检测到 Photon/EOS/PlayFab 等第三方网络组件且无 Steamworks 联机封装，Open 内核大概率无效，建议直接使用「联机补丁模式」。' + tipTail
       };
+    case 'official_server':
+      return {
+        label: '官方竞技服',
+        cls: 'bg-slate-800/90 text-slate-300 border border-white/10',
+        tip: '该游戏采用官方专属竞技服务器与 VAC/EAC 反作弊，无法通过自建通道或补丁破解联机。' + tipTail
+      };
     case 'unknown':
       return {
         label: '联机未知',
@@ -1214,6 +1238,12 @@ const confirmForceLaunch = () => {
 
 // 启动游戏 (bypassWarning=true 允许强制直启)
 const handleLaunchGame = async (game: LocalInstalledGame, bypassWarning: boolean = false) => {
+  // 官方竞技服务器（如 CS2、Apex、PUBG）直接提醒，不支持免改联机
+  if (game.netType === 'official_server') {
+    emit('notify', `《${game.name}》属于官方专属竞技服务器游戏（采用 VAC/EAC 反作弊与官方大厅验证），不支持自建通道或补丁破解联机，请通过 Steam 官方直接启动游玩。`, 'warning');
+    return;
+  }
+
   // 如果是官方云端大厅强鉴权架构且未安装补丁，弹出强提醒引导切换方案二，避免假启动和 AccessDenied 试错
   if (!bypassWarning && game.netType === 'cloud_lobby' && !game.isPatched) {
     targetCloudGame.value = game;
@@ -1434,6 +1464,8 @@ const handleCardImgError = (e: Event, appId: number) => {
 
 onMounted(async () => {
   await fetchSpacewarStatus(false);
+  // 后台静默同步云端权威联机规则库（若云端更新则写入本地并动态生效）
+  window.electronAPI.fetchAndSyncOnlineRules().catch(() => {});
   // 秒开磁盘缓存列表；无缓存时现场扫描一次，缓存超过 24h 则后台静默重扫更新
   try {
     const cached = await window.electronAPI.scanLocalGames(false);

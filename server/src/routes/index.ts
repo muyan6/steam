@@ -33,6 +33,7 @@ import {
 } from '../controllers/versionController.js';
 import { getSourcesList, triggerSyncFromSources } from '../controllers/sourceController.js';
 import { getAppLinks, updateAppLinks } from '../controllers/linksController.js';
+import { getOnlineRules } from '../controllers/onlineRulesController.js';
 import {
   login,
   getProfile,
@@ -96,6 +97,9 @@ deviceService.setLicenseVerifier((deviceId: string) => {
 
 // 健康与统计
 router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+
+// 权威联机规则库（公开接口，供客户端热同步）
+router.get('/online-rules', getOnlineRules);
 
 // 客户端设备心跳与活跃度上报 (公开接口，限流防刷)
 const heartbeatLimiter = rateLimit({
