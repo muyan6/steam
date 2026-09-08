@@ -193,87 +193,110 @@ async fn activate_injection(
     custom_api_url: Option<String>,
     restart_steam: Option<bool>,
 ) -> serde_json::Value {
-        tauri::async_runtime::spawn_blocking(move || { let server = match resolve_manifest_server(manifest_api, custom_api_url) {
-        Ok(s) => s,
-        Err(e) => return json!({ "success": false, "message": e }),
-    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let server = match resolve_manifest_server(manifest_api, custom_api_url) {
+            Ok(s) => s,
+            Err(e) => return json!({ "success": false, "message": e }),
+        };
 
-    if let Some(steam_path) = steam::detect_steam_path() {
-        let _ = ost::generate_toml_config(&steam_path, &server);
-        let _ = ost::ensure_lua_dir(&steam_path);
-        if let Err(e) = ost::deploy_core_binaries(&steam_path) {
-            return json!({ "success": false, "message": e });
+        if let Some(steam_path) = steam::detect_steam_path() {
+            let should_restart = restart_steam.unwrap_or(true);
+            // 关键时序修复：若需要重启且 Steam 正在运行，必须先安全关闭 Steam 进程，
+            // 释放被 Steam 进程锁定的核心 DLL（dwmapi.dll / OpenSteamTool.dll / xinput1_4.dll），
+            // 杜绝 deploy_core_binaries 因进程占用而报错
+            if should_restart && steam::is_steam_running() {
+                steam::kill_steam();
+                steam::clear_steam_running_cache();
+                for _ in 0..20 {
+                    if !steam::is_steam_running() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    steam::clear_steam_running_cache();
+                }
+            }
+
+            let _ = ost::generate_toml_config(&steam_path, &server);
+            let _ = ost::ensure_lua_dir(&steam_path);
+            if let Err(e) = ost::deploy_core_binaries(&steam_path) {
+                return json!({ "success": false, "message": e });
+            }
+
+            let mut restarted = false;
+            if should_restart {
+                // DLL 部署完毕后在 Steam 根目录拉起 Steam
+                restarted = steam::launch_steam(&steam_path, &[]);
+                if restarted {
+                    std::thread::sleep(std::time::Duration::from_millis(600));
+                    steam::clear_steam_running_cache();
+                }
+            }
+
+            json!({
+                "success": true,
+                "message": "OpenSteamTool 内核注入成功！",
+                "steamPath": steam_path.to_string_lossy(),
+                "steamRestarted": restarted
+            })
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 安装路径" })
         }
-
-        let mut restarted = false;
-        if restart_steam.unwrap_or(true) {
-            restarted = steam::restart_steam(&steam_path, &[]);
-        }
-
-        json!({
-            "success": true,
-            "message": "OpenSteamTool 内核注入成功！",
-            "steamPath": steam_path.to_string_lossy(),
-            "steamRestarted": restarted
-        })
-    } else {
-        json!({ "success": false, "message": "未找到 Steam 安装路径" })
-    } })
-        .await
-        .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
-    }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
+}
 
 /// 入库执行体：写入 Lua 规则并尽力预缓存清单。
 /// 供「一键入库」(unlock_game) 与「更新到最新版」(update_game_rules) 两条命令复用。
 /// 必须在 spawn_blocking 线程调用（save_lua_rule / precache 内部有阻塞 IO）。
 fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -> serde_json::Value {
     match ost::save_lua_rule(steam_path, &payload) {
-                Ok(res) => {
-                    // 与 Electron 版一致：入库成功后立即预缓存清单到 depotcache（入库即就绪）。
-                    // 预缓存是尽力而为的附加步骤：此时 Lua 规则已写入，无论这里发生什么
-                    // （包括 panic）都不能把入库结果翻转为失败
-                    let mut precache_text = String::new();
-                    if let Some(meta) = &res.metadata {
-                        let pc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            manifests::precache_manifests(steam_path, meta)
-                        }));
-                        match pc {
-                            Ok(pc) => {
-                                if pc.total > 0 {
-                                    precache_text = format!("，清单预缓存 {}/{} 已就绪", pc.ok_count, pc.total);
-                                }
-                            }
-                            Err(panic) => {
-                                let msg = manifests::panic_message(&panic);
-                                manifests::log_diag(&format!("precache 整体 panic: {}", msg));
-                                precache_text = "，清单预缓存异常（可在库中重试预缓存）".to_string();
-                            }
+        Ok(res) => {
+            // 与 Electron 版一致：入库成功后立即预缓存清单到 depotcache（入库即就绪）。
+            // 预缓存是尽力而为的附加步骤：此时 Lua 规则已写入，无论这里发生什么
+            // （包括 panic）都不能把入库结果翻转为失败
+            let mut precache_text = String::new();
+            if let Some(meta) = &res.metadata {
+                let pc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    manifests::precache_manifests(steam_path, meta)
+                }));
+                match pc {
+                    Ok(pc) => {
+                        if pc.total > 0 {
+                            precache_text = format!("，清单预缓存 {}/{} 已就绪", pc.ok_count, pc.total);
                         }
                     }
-                    let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
-                    // 只有真正注入了分包密钥才提示"可直接下载"；
-                    // 仅有清单 GID（如 SteamCMD 降级数据）时如实警告下载可能 0 字节
-                    let message = if res.metadata_ok && res.key_count > 0 {
-                        let version_text = if res.manifest_count > 0 {
-                            format!("已锁定 {} 条清单 GID", res.manifest_count)
-                        } else {
-                            "版本跟随官方最新".to_string()
-                        };
-                        format!(
-                            "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！已自动热生效，直接在库中搜索即可下载！",
-                            name, res.key_count, version_text, res.dlc_count, precache_text
-                        )
-                    } else if res.metadata_ok && res.manifest_count > 0 {
-                        format!(
-                            "成功为「{}」写入入库规则（已固定 {} 条清单 GID，但服务端暂无可用分包密钥{}），直接下载可能为 0 字节！建议稍后重新入库以补齐密钥。",
-                            name, res.manifest_count, precache_text
-                        )
-                    } else if res.metadata_ok {
-                        format!(
-                            "成功为「{}」写入入库授权（服务器暂无该游戏的密钥/清单数据，共 {} 个分包{}）！已自动热生效，可尝试下载或稍后重试入库。",
-                            name, res.depot_count, precache_text
-                        )
-                    } else {
+                    Err(panic) => {
+                        let msg = manifests::panic_message(&panic);
+                        manifests::log_diag(&format!("precache 整体 panic: {}", msg));
+                        precache_text = "，清单预缓存异常（可在库中重试预缓存）".to_string();
+                    }
+                }
+            }
+            let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
+            // 只有真正注入了分包密钥才提示"可直接下载"；
+            // 仅有清单 GID（如 SteamCMD 降级数据）时如实警告下载可能 0 字节
+            let message = if res.metadata_ok && res.key_count > 0 {
+                let version_text = if res.manifest_count > 0 {
+                    format!("已锁定 {} 条清单 GID", res.manifest_count)
+                } else {
+                    "版本跟随官方最新".to_string()
+                };
+                format!(
+                    "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！若 Steam 下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
+                    name, res.key_count, version_text, res.dlc_count, precache_text
+                )
+            } else if res.metadata_ok && res.manifest_count > 0 {
+                format!(
+                    "成功为「{}」写入入库规则（已固定 {} 条清单 GID，但服务端暂无可用分包密钥{}），直接下载可能为 0 字节！建议稍后重新入库以补齐密钥。",
+                    name, res.manifest_count, precache_text
+                )
+            } else if res.metadata_ok {
+                format!(
+                    "成功为「{}」写入入库授权（服务器暂无该游戏的密钥/清单数据，共 {} 个分包{}）！若下载提示加密，请重启 Steam 或稍后重试入库。",
+                    name, res.depot_count, precache_text
+                )
+            } else {
                         format!(
                             "已为「{}」写入入库授权，但未能获取分包密钥与清单，下载可能为 0 字节！{}请检查网络后重新入库，或在库中对该游戏执行「预缓存」。",
                             name,

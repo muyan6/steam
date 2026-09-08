@@ -254,6 +254,10 @@
           <p class="text-xs text-slate-300 mt-2 max-w-md mx-auto leading-relaxed">
             已成功为您的 64 位 Steam 挂载 OpenSteamTool 核心。您可以开始搜索收录的 18 万+ 游戏，一键生成解锁规则与分包密钥。
           </p>
+          <div class="mt-3 bg-sky-950/50 border border-sky-500/40 rounded-xl p-3 text-[11px] text-sky-200 text-left max-w-md mx-auto flex items-start gap-2">
+            <span class="text-sky-400 font-bold shrink-0">💡 提示：</span>
+            <span>初次入库游戏后，若在 Steam 中点击下载提示<strong>“内容仍然处于加密状态”</strong>，只需在软件界面左下角点击<strong>【重启 Steam】</strong>即可使解密密钥深度生效！</span>
+          </div>
         </div>
 
         <div class="bg-slate-950/40 border border-white/10 rounded-xl p-3 text-xs text-slate-400 font-mono inline-block">

@@ -354,6 +354,7 @@ pub fn launch_steam(steam_path: &Path, extra_args: &[String]) -> bool {
     }
 
     let mut cmd = Command::new(&exe);
+    cmd.current_dir(steam_path);
     for arg in extra_args {
         cmd.arg(arg);
     }
@@ -376,5 +377,10 @@ pub fn restart_steam(steam_path: &Path, extra_args: &[String]) -> bool {
         std::thread::sleep(std::time::Duration::from_millis(250));
         clear_steam_running_cache();
     }
-    launch_steam(steam_path, extra_args)
+    let ok = launch_steam(steam_path, extra_args);
+    if ok {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        clear_steam_running_cache();
+    }
+    ok
 }
