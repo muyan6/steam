@@ -180,14 +180,28 @@
             扫描于 {{ scanAgoText }}{{ isBgRefreshing ? ' · 后台更新中' : '' }}
           </span>
 
-          <!-- 权威联机规则库状态 -->
-          <span
-            class="text-[11px] text-slate-400 font-mono bg-slate-900/80 px-3 py-2 rounded-xl border border-white/10 flex items-center gap-1.5 cursor-help"
-            title="权威联机规则库：收录常见热门联机游戏、单机游戏与官方竞技服的精确网络架构，支持云端动态热同步与本地持久化缓存"
+          <!-- SteamDB / Steam 双榜联机规则库状态 -->
+          <div
+            class="text-[11px] text-slate-300 font-mono bg-slate-900/90 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 shrink-0 shadow-sm"
+            title="权威规则库：基于 SteamDB 实时热门榜 (Top 100) 与 Steam 全球热销榜 (Top 100) 自动同步，涵盖热门多人联机、官方竞技、单机与桌面软件。"
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            <span>权威规则: {{ rulesCount ? `${rulesCount} 款已收录` : '已载入' }}</span>
-          </span>
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span class="font-medium text-slate-300">
+              SteamDB双榜: <strong class="text-emerald-400 font-bold">{{ rulesCount ? `${rulesCount} 款` : '同步中...' }}</strong>
+            </span>
+            <button
+              @click="handleManualSyncCharts"
+              :disabled="isSyncingCharts"
+              class="ml-1 text-[10px] text-sky-400 hover:text-sky-300 transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              title="点击立即向云端发起 Steam 热门与热销双榜重新检测并增量同步"
+            >
+              <RotateCw :class="['w-3 h-3', isSyncingCharts ? 'animate-spin' : '']" />
+              <span>{{ isSyncingCharts ? '同步中' : '同步双榜' }}</span>
+            </button>
+          </div>
         </div>
 
         <div class="flex items-center gap-3.5 flex-1 max-w-lg justify-end">
@@ -1077,7 +1091,8 @@ const localGames = ref<LocalInstalledGame[]>([]);
 const isScanning = ref(false);
 const searchQuery = ref('');
 const cardScale = ref<number>(100); // 80% ~ 130%
-const rulesCount = ref<number>(50); // 权威规则库收录数量
+const rulesCount = ref<number>(182); // SteamDB / Steam 双榜收录规则总数
+const isSyncingCharts = ref(false);
 
 // 标题折叠收起状态 (用户指定：可以点击标题把下面展示的本地游戏缩回去)
 const isLaunchGamesCollapsed = ref(false);
@@ -1162,6 +1177,24 @@ const handleRefreshLocalGames = async (force: boolean = false, silent: boolean =
     emit('notify', `扫描本地游戏失败: ${formatIpcError(err)}`, 'error');
   } finally {
     isScanning.value = false;
+  }
+};
+
+const handleManualSyncCharts = async () => {
+  if (isSyncingCharts.value) return;
+  isSyncingCharts.value = true;
+  emit('notify', '正在向云端发起 SteamDB 热门榜与全球热销榜双榜实时同步...', 'info');
+  try {
+    const res = await window.electronAPI.fetchAndSyncOnlineRules(true);
+    if (res && res.count) {
+      rulesCount.value = res.count;
+    }
+    applyScanResult(await window.electronAPI.scanLocalGames(true));
+    emit('notify', `Steam 双榜规则同步完成！当前全库已收录 ${rulesCount.value} 款热门游戏与工具`, 'success');
+  } catch (e: any) {
+    emit('notify', `双榜同步失败: ${formatIpcError(e)}`, 'error');
+  } finally {
+    isSyncingCharts.value = false;
   }
 };
 

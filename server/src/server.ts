@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { CONFIG } from './config/index.js';
 import apiRouter from './routes/index.js';
 import { syncService } from './services/syncService.js';
+import { onlineRulesSyncService } from './services/onlineRulesSyncService.js';
 import { depotService } from './services/depotService.js';
 import { gameService } from './services/gameService.js';
 import { sourceRegistryService } from './services/sourceRegistryService.js';
@@ -1260,6 +1261,8 @@ const server = app.listen(CONFIG.PORT, CONFIG.HOST, () => {
 
   // 启动定时自动同步引擎（Token 数据库已由 tokenService 构造函数加载，无需重复加载）
   syncService.startScheduledDailySync();
+  // 启动 SteamDB / Steam 双榜热门游戏联机规则同步引擎
+  onlineRulesSyncService.startScheduledSync();
 });
 
 // 端口占用等启动错误给出友好提示

@@ -360,9 +360,12 @@ export const createTauriBridge = () => {
     },
     syncOnlineRules: async (rulesJson: string): Promise<any> =>
       invoke('sync_online_rules', { rulesJson }),
-    fetchAndSyncOnlineRules: async (): Promise<{ success: boolean; count: number; message: string }> => {
+    fetchAndSyncOnlineRules: async (forceChartSync: boolean = false): Promise<{ success: boolean; count: number; message: string }> => {
       try {
-        const resp = await getJson<{ success: boolean; data: any[]; count: number }>(`${API}/api/online-rules`, 5000);
+        if (forceChartSync) {
+          await httpFetch(`${API}/api/online-rules/sync-charts`, { method: 'POST' }).catch(() => {});
+        }
+        const resp = await getJson<{ success: boolean; data: any[]; count: number }>(`${API}/api/online-rules`, 8000);
         if (resp && resp.success && Array.isArray(resp.data)) {
           const res = await invoke<any>('sync_online_rules', { rulesJson: JSON.stringify(resp.data) });
           return { success: true, count: res.count || resp.data.length, message: res.message || '联机规则库已是最新' };

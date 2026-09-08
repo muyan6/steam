@@ -33,7 +33,7 @@ import {
 } from '../controllers/versionController.js';
 import { getSourcesList, triggerSyncFromSources } from '../controllers/sourceController.js';
 import { getAppLinks, updateAppLinks } from '../controllers/linksController.js';
-import { getOnlineRules } from '../controllers/onlineRulesController.js';
+import { getOnlineRules, syncOnlineRulesFromCharts } from '../controllers/onlineRulesController.js';
 import {
   login,
   getProfile,
@@ -100,6 +100,8 @@ router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().to
 
 // 权威联机规则库（公开接口，供客户端热同步）
 router.get('/online-rules', getOnlineRules);
+// 触发从 SteamDB / Steam 双榜更新规则库 (支持热更新)
+router.post('/online-rules/sync-charts', syncOnlineRulesFromCharts);
 
 // 客户端设备心跳与活跃度上报 (公开接口，限流防刷)
 const heartbeatLimiter = rateLimit({

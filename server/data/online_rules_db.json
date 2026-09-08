@@ -1,0 +1,2451 @@
+{
+  "version": "2026.09.08.charts",
+  "updatedAt": "2026-09-08T11:06:07.190Z",
+  "count": 182,
+  "charts": {
+    "mostPlayedCount": 100,
+    "topSellersCount": 100,
+    "mergedUnique": 159
+  },
+  "data": [
+    {
+      "appId": 440,
+      "name": "Team Fortress 2",
+      "nameZh": "军团要塞 2",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 34",
+        "TF2·Valve官方服务器与VAC"
+      ],
+      "notes": "Valve 官方服务器与社区服务器，社区服可直连，官方匹配大厅需正版",
+      "source": "curated"
+    },
+    {
+      "appId": 550,
+      "name": "Left 4 Dead 2",
+      "nameZh": "求生之路 2",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 38",
+        "求生之路2·原生Steam大厅与局域网"
+      ],
+      "notes": "原生大厅与自建局域网，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 570,
+      "name": "Dota 2",
+      "nameZh": "刀塔 2",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 21",
+        "SteamDB热门榜 Top 2",
+        "Dota 2·Valve官方竞技服务器",
+        "Game Coordinator"
+      ],
+      "notes": "Valve 官方 GC 服务器权威匹配，不支持破解联机",
+      "source": "curated"
+    },
+    {
+      "appId": 730,
+      "name": "Counter-Strike 2",
+      "nameZh": "反恐精英 2",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 8",
+        "SteamDB热门榜 Top 1",
+        "CS2·Valve官方竞技服务器",
+        "Valve Anti-Cheat (VAC)"
+      ],
+      "notes": "Valve 官方竞技专用服务器，严格验证账号 VAC 凭证，无法自建大厅，不支持破解联机",
+      "source": "curated"
+    },
+    {
+      "appId": 3590,
+      "name": "Plants vs. Zombies: Game of the Year",
+      "nameZh": "植物大战僵尸：年度版",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "经典纯单机塔防游戏"
+      ],
+      "notes": "纯单机经典游戏，无多人联机网络大厅，直接本地启动即可",
+      "source": "curated"
+    },
+    {
+      "appId": 4000,
+      "name": "Garry's Mod",
+      "nameZh": "Garry's Mod",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 55",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 105600,
+      "name": "Terraria",
+      "nameZh": "泰拉瑞亚",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 54",
+        "SteamDB热门榜 Top 17",
+        "泰拉瑞亚·原生P2P/直连"
+      ],
+      "notes": "原生 Steamworks P2P 与 IP 直连双通道，推荐使用方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 107410,
+      "name": "武装突袭3",
+      "nameZh": "武装突袭3",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 79",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 108600,
+      "name": "Project Zomboid",
+      "nameZh": "Project Zomboid",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 24",
+        "Steam热销榜 Top 76",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 204360,
+      "name": "Castle Crashers",
+      "nameZh": "城堡毁灭者",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "城堡毁灭者·P2P对战"
+      ],
+      "notes": "原生 Steamworks P2P 联机对战，推荐使用方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 211820,
+      "name": "Starbound",
+      "nameZh": "星界边境",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "星界边境·Steam大厅好友加入"
+      ],
+      "notes": "原生 Steam 好友大厅，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 219990,
+      "name": "Grim Dawn",
+      "nameZh": "Grim Dawn",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 99",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 221100,
+      "name": "DayZ",
+      "nameZh": "DayZ",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 64",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 227300,
+      "name": "Euro Truck Simulator 2",
+      "nameZh": "Euro Truck Simulator 2",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 39",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 230410,
+      "name": "Warframe 星际战甲",
+      "nameZh": "Warframe 星际战甲",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 26",
+        "Steam热销榜 Top 17",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 236390,
+      "name": "War Thunder",
+      "nameZh": "War Thunder",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 16",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 242760,
+      "name": "The Forest",
+      "nameZh": "森林",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "森林·原生Steamworks大厅"
+      ],
+      "notes": "原生 Steam 大厅建房，推荐使用方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 244210,
+      "name": "神力科莎 Assetto Corsa",
+      "nameZh": "神力科莎 Assetto Corsa",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 80",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 250900,
+      "name": "The Binding of Isaac: Rebirth",
+      "nameZh": "以撒的结合：重生",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 10",
+        "单机Roguelike/本地同屏"
+      ],
+      "notes": "以单机/本地同屏双人为主，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 251570,
+      "name": "7 Days to Die",
+      "nameZh": "七日杀",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 66",
+        "七日杀·Steam P2P与自建服"
+      ],
+      "notes": "支持 Steam 好友大厅与自建服直连，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 252490,
+      "name": "Rust",
+      "nameZh": "腐蚀",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "SteamDB热门榜 Top 27",
+        "Rust·Facepunch官方网络与EAC鉴权"
+      ],
+      "notes": "Facepunch 官方网络鉴权与 EAC 反作弊，官服无法直入，社区自建破解服必须通过方案二打补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 252950,
+      "name": "Steam App 252950",
+      "nameZh": "Steam App 252950",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 50",
+        "Steamworks联机"
+      ],
+      "notes": "Steam 热门榜单应用，推荐优先尝试方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 261550,
+      "name": "Mount & Blade II: Bannerlord",
+      "nameZh": "Mount & Blade II: Bannerlord",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 67",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 271590,
+      "name": "Grand Theft Auto V 传承版",
+      "nameZh": "Grand Theft Auto V 传承版",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "SteamDB热门榜 Top 6",
+        "Rockstar Games 账号体系"
+      ],
+      "notes": "Rockstar Games 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 275850,
+      "name": "No Man's Sky 无人深空",
+      "nameZh": "No Man's Sky 无人深空",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 62",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 284160,
+      "name": "BeamNG.drive",
+      "nameZh": "BeamNG.drive",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 49",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 289070,
+      "name": "Sid Meier’s Civilization® VI",
+      "nameZh": "Sid Meier’s Civilization® VI",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "SteamDB热门榜 Top 61",
+        "Steam热销榜 Top 46",
+        "2K 账号体系"
+      ],
+      "notes": "2K 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 291550,
+      "name": "Brawlhalla",
+      "nameZh": "Brawlhalla",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 68",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 292030,
+      "name": "The Witcher 3: Wild Hunt",
+      "nameZh": "巫师 3：狂猎",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 87",
+        "单机剧情角色扮演"
+      ],
+      "notes": "纯单机史诗 RPG，无多人联机模式，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 292730,
+      "name": "Call of Duty®: Infinite Warfare",
+      "nameZh": "Call of Duty®: Infinite Warfare",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 75",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 294100,
+      "name": "边缘世界 RimWorld",
+      "nameZh": "边缘世界 RimWorld",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 89",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 322170,
+      "name": "Geometry Dash",
+      "nameZh": "Geometry Dash",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 21",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 322330,
+      "name": "Don't Starve Together",
+      "nameZh": "饥荒联机版",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 52",
+        "SteamDB热门榜 Top 41",
+        "饥荒联机版·Steamworks专用大厅"
+      ],
+      "notes": "支持局域网直连或 Steamworks 专用大厅，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 359550,
+      "name": "彩虹六号：围攻",
+      "nameZh": "彩虹六号：围攻",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 7",
+        "Steam热销榜 Top 89",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 367520,
+      "name": "Hollow Knight",
+      "nameZh": "空洞骑士",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "单机类银河恶魔城"
+      ],
+      "notes": "纯单机横版探险游戏，无联机功能，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 377160,
+      "name": "Fallout 4",
+      "nameZh": "辐射 4",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "单机后启示录RPG"
+      ],
+      "notes": "纯单机角色扮演游戏，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 381210,
+      "name": "Dead by Daylight",
+      "nameZh": "黎明杀机",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 59",
+        "SteamDB热门榜 Top 19",
+        "DBD·Behaviour官方云端服务器",
+        "EAC"
+      ],
+      "notes": "官方云端专用服务器与 EAC 反作弊，官方匹配不支持破解联机",
+      "source": "curated"
+    },
+    {
+      "appId": 394360,
+      "name": "Steam App 394360",
+      "nameZh": "Steam App 394360",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 47",
+        "Steamworks联机"
+      ],
+      "notes": "Steam 热门榜单应用，推荐优先尝试方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 396060,
+      "name": "Soundpad",
+      "nameZh": "语音音效软件",
+      "netType": "tool",
+      "recommend": "single_player",
+      "signals": [
+        "语音与音效实用软件"
+      ],
+      "notes": "语音音效播放工具软件，无需联机",
+      "source": "curated"
+    },
+    {
+      "appId": 413150,
+      "name": "Stardew Valley",
+      "nameZh": "Stardew Valley",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 25",
+        "Steam热销榜 Top 45",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 418370,
+      "name": "Resident Evil 7 Biohazard",
+      "nameZh": "Resident Evil 7 Biohazard",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 66",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 431960,
+      "name": "Wallpaper Engine",
+      "nameZh": "壁纸引擎",
+      "netType": "tool",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 19",
+        "SteamDB热门榜 Top 4",
+        "动态壁纸桌面软件"
+      ],
+      "notes": "桌面动态壁纸实用工具软件，无需多人联机",
+      "source": "curated"
+    },
+    {
+      "appId": 438100,
+      "name": "VRChat",
+      "nameZh": "VRChat",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 36",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 448510,
+      "name": "Overcooked! 2",
+      "nameZh": "胡闹厨房2",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "胡闹厨房2·Steamworks联机"
+      ],
+      "notes": "Steamworks 好友大厅，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 476600,
+      "name": "Call of Duty®: WWII",
+      "nameZh": "Call of Duty®: WWII",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 96",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 477160,
+      "name": "Human: Fall Flat",
+      "nameZh": "人类一败涂地",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "人类一败涂地·原生Steam大厅"
+      ],
+      "notes": "原生 Steamworks 大厅，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 489830,
+      "name": "The Elder Scrolls V: Skyrim Special Edition",
+      "nameZh": "上古卷轴 5：天际特别版",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 56",
+        "单机奇幻开放世界"
+      ],
+      "notes": "纯单机游戏，无官方联机功能，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 518790,
+      "name": "《猎人：荒野的召唤™》",
+      "nameZh": "《猎人：荒野的召唤™》",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 61",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 529340,
+      "name": "Victoria 3",
+      "nameZh": "Victoria 3",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 98",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 553850,
+      "name": "HELLDIVERS™ 绝地潜兵2",
+      "nameZh": "HELLDIVERS™ 绝地潜兵2",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 13",
+        "Steam热销榜 Top 87",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 578080,
+      "name": "PUBG: BATTLEGROUNDS",
+      "nameZh": "绝地求生",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 7",
+        "SteamDB热门榜 Top 3",
+        "PUBG·Krafton官方竞技服务器",
+        "BattlEye/Zakynthos"
+      ],
+      "notes": "Krafton 官方竞技服务器与多重内核反作弊，不支持破解联机",
+      "source": "curated"
+    },
+    {
+      "appId": 582010,
+      "name": "Monster Hunter: World",
+      "nameZh": "Monster Hunter: World",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 37",
+        "合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 588650,
+      "name": "Dead Cells",
+      "nameZh": "Dead Cells",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 39",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 594650,
+      "name": "猎杀：对决 1896",
+      "nameZh": "猎杀：对决 1896",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 90",
+        "Steam热销榜 Top 34",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 632360,
+      "name": "Risk of Rain 2",
+      "nameZh": "雨中冒险 2",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "雨中冒险2·Steamworks大厅"
+      ],
+      "notes": "原生 Steamworks 大厅建房，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 646570,
+      "name": "Slay the Spire",
+      "nameZh": "杀戮尖塔",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 74",
+        "纯单机卡牌构建肉鸽"
+      ],
+      "notes": "纯单机卡牌构建游戏，无多人联机功能，直接本地启动即可",
+      "source": "curated"
+    },
+    {
+      "appId": 648800,
+      "name": "Raft",
+      "nameZh": "木筏求生",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 42",
+        "木筏求生·Steamworks好友联机"
+      ],
+      "notes": "原生 Steamworks P2P，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 668580,
+      "name": "原子之心",
+      "nameZh": "原子之心",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 57",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 714010,
+      "name": "Aimlabs",
+      "nameZh": "Aimlabs",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 88",
+        "合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 739630,
+      "name": "Phasmophobia",
+      "nameZh": "恐鬼症",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 94",
+        "SteamDB热门榜 Top 82",
+        "恐鬼症·官方云端大厅强鉴权",
+        "Photon Voice"
+      ],
+      "notes": "官方云端大厅验票，必须使用方案二联机补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 813780,
+      "name": "Age of Empires II: Definitive Edition",
+      "nameZh": "Age of Empires II: Definitive Edition",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 85",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 814380,
+      "name": "Sekiro: Shadows Die Twice",
+      "nameZh": "只狼：影逝二度",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "单机硬核动作冒险"
+      ],
+      "notes": "纯单机动作硬核游戏，无官方多人联机，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 815370,
+      "name": "绿色地狱",
+      "nameZh": "绿色地狱",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 82",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 872410,
+      "name": "三国志14",
+      "nameZh": "三国志14",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 60",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 880940,
+      "name": "Pummel Party",
+      "nameZh": "混战派对",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Pummel Party·原生P2P"
+      ],
+      "notes": "原生 Steamworks 房间匹配，推荐使用方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 883710,
+      "name": "Resident Evil 2",
+      "nameZh": "Resident Evil 2",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 84",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 892970,
+      "name": "Valheim",
+      "nameZh": "英灵神殿",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 78",
+        "英灵神殿·Steam跨平台网络"
+      ],
+      "notes": "原生 SteamNetworkingSockets，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 945360,
+      "name": "Among Us",
+      "nameZh": "Among Us",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 77",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 960090,
+      "name": "Bloons TD 6",
+      "nameZh": "Bloons TD 6",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 86",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1041320,
+      "name": "王国纪元 (Lords Mobile)",
+      "nameZh": "王国纪元 (Lords Mobile)",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 26",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1066780,
+      "name": "Transport Fever 2",
+      "nameZh": "Transport Fever 2",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 55",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1085660,
+      "name": "命运2",
+      "nameZh": "命运2",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 91",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1086940,
+      "name": "博德之门3",
+      "nameZh": "博德之门3",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 35",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1091500,
+      "name": "Cyberpunk 2077",
+      "nameZh": "赛博朋克 2077",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 37",
+        "单机开放世界RPG"
+      ],
+      "notes": "纯单机开放世界角色扮演游戏，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 1118010,
+      "name": "Monster Hunter World: Iceborne",
+      "nameZh": "Monster Hunter World: Iceborne",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 95",
+        "合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1142710,
+      "name": "全面战争：战锤3",
+      "nameZh": "全面战争：战锤3",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 62",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1144200,
+      "name": "Ready or Not",
+      "nameZh": "严阵以待",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 92",
+        "严阵以待·Steamworks战术大厅"
+      ],
+      "notes": "Steamworks 好友战术大厅，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 1145360,
+      "name": "Hades",
+      "nameZh": "哈迪斯",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "单机动作Roguelike"
+      ],
+      "notes": "纯单机动作肉鸽游戏，无多人模式，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 1158310,
+      "name": "Crusader Kings III",
+      "nameZh": "Crusader Kings III",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 99",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1172470,
+      "name": "Apex Legends",
+      "nameZh": "Apex 英雄",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 1",
+        "SteamDB热门榜 Top 5",
+        "Apex·Respawn官方专用服务器",
+        "Easy Anti-Cheat (EAC)"
+      ],
+      "notes": "EA/Respawn 官方大型竞技服务器与 EAC 强反作弊，不支持破解联机",
+      "source": "curated"
+    },
+    {
+      "appId": 1174180,
+      "name": "Red Dead Redemption 2",
+      "nameZh": "Red Dead Redemption 2",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "SteamDB热门榜 Top 32",
+        "Steam热销榜 Top 11",
+        "Rockstar Games 账号体系"
+      ],
+      "notes": "Rockstar Games 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1196590,
+      "name": "Resident Evil Village",
+      "nameZh": "Resident Evil Village",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 100",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1203220,
+      "name": "永劫无间",
+      "nameZh": "永劫无间",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 44",
+        "Steam热销榜 Top 27",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1222670,
+      "name": "The Sims™ 4",
+      "nameZh": "The Sims™ 4",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 58",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1245620,
+      "name": "艾尔登法环",
+      "nameZh": "艾尔登法环",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 40",
+        "Steam热销榜 Top 50",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1260320,
+      "name": "Party Animals",
+      "nameZh": "猛兽派对",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "猛兽派对·自建官方网络账号服务"
+      ],
+      "notes": "自建官方网络账号体系，无法通过 Steam 通道免改联机，建议使用方案二补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 1281930,
+      "name": "tModLoader",
+      "nameZh": "tModLoader",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 52",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1289670,
+      "name": "EA Play",
+      "nameZh": "EA Play",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 78",
+        "Electronic Arts 账号体系"
+      ],
+      "notes": "Electronic Arts 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1295660,
+      "name": "席德·梅尔的文明VII",
+      "nameZh": "席德·梅尔的文明VII",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 81",
+        "2K 账号体系"
+      ],
+      "notes": "2K 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1326470,
+      "name": "Sons Of The Forest",
+      "nameZh": "森林之子",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 38",
+        "SteamDB热门榜 Top 79",
+        "森林之子·Steamworks大厅"
+      ],
+      "notes": "原生 Steamworks 大厅联机，推荐使用方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 1329410,
+      "name": "雀魂麻将",
+      "nameZh": "雀魂麻将",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 18",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1361210,
+      "name": "战锤40K：暗潮",
+      "nameZh": "战锤40K：暗潮",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 93",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1364780,
+      "name": "Street Fighter 6",
+      "nameZh": "Street Fighter 6",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 57",
+        "Steam热销榜 Top 20",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1366800,
+      "name": "Crosshair X",
+      "nameZh": "Crosshair X",
+      "netType": "tool",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 72",
+        "桌面工具应用"
+      ],
+      "notes": "实用软件/辅助工具，无需联机",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1368820,
+      "name": "DEVOUR",
+      "nameZh": "吞噬",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "DEVOUR·官方云端大厅"
+      ],
+      "notes": "官方大厅匹配机制，建议使用方案二联机补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 1422450,
+      "name": "Deadlock",
+      "nameZh": "Deadlock",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 22",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1426210,
+      "name": "It Takes Two",
+      "nameZh": "双人成行",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "双人成行·Steam好友联机通道"
+      ],
+      "notes": "通过 Steamworks 好友邀请或官方好友通行证，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 1446780,
+      "name": "MONSTER HUNTER RISE",
+      "nameZh": "MONSTER HUNTER RISE",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 51",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1449850,
+      "name": "Yu-Gi-Oh! Master Duel",
+      "nameZh": "Yu-Gi-Oh! Master Duel",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 46",
+        "Steam热销榜 Top 36",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1462040,
+      "name": "FINAL FANTASY VII REMAKE INTERGRADE",
+      "nameZh": "FINAL FANTASY VII REMAKE INTERGRADE",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 40",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1477830,
+      "name": "HudSight - crosshair overlay",
+      "nameZh": "HudSight 准星助手",
+      "netType": "tool",
+      "recommend": "single_player",
+      "signals": [
+        "桌面游戏准星覆盖工具"
+      ],
+      "notes": "实用游戏辅助准星叠加工具，非游戏，无需联机",
+      "source": "curated"
+    },
+    {
+      "appId": 1478500,
+      "name": "Big Walk",
+      "nameZh": "Big Walk",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 43",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1568590,
+      "name": "Goose Goose Duck",
+      "nameZh": "鹅鸭杀",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "鹅鸭杀·Gaggle官方自建网络"
+      ],
+      "notes": "Gaggle 官方自建服务器与账号体系，Steam 免改通道无法接入",
+      "source": "curated"
+    },
+    {
+      "appId": 1623730,
+      "name": "Palworld",
+      "nameZh": "幻兽帕鲁",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 25",
+        "SteamDB热门榜 Top 14",
+        "幻兽帕鲁·社区服/自建网络",
+        "Epic Online Services SDK"
+      ],
+      "notes": "采用 Epic Online Services (EOS) 与社区专用服，建议使用方案二联机补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 1665460,
+      "name": "Steam App 1665460",
+      "nameZh": "Steam App 1665460",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 54",
+        "Steamworks联机"
+      ],
+      "notes": "Steam 热门榜单应用，推荐优先尝试方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1808500,
+      "name": "Steam App 1808500",
+      "nameZh": "Steam App 1808500",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 63",
+        "Steamworks联机"
+      ],
+      "notes": "Steam 热门榜单应用，推荐优先尝试方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1817130,
+      "name": "The Backrooms 1998",
+      "nameZh": "后室 1998",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "后室1998·官方网络鉴权"
+      ],
+      "notes": "官方云端大厅鉴权，推荐方案二补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 1867240,
+      "name": "WARDOGS",
+      "nameZh": "WARDOGS",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 10",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1905180,
+      "name": "OBS Studio",
+      "nameZh": "OBS Studio",
+      "netType": "tool",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 71",
+        "桌面工具应用"
+      ],
+      "notes": "实用软件/辅助工具，无需联机",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1938090,
+      "name": "使命召唤®",
+      "nameZh": "使命召唤®",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 43",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1943950,
+      "name": "Escape the Backrooms",
+      "nameZh": "逃离后室",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 86",
+        "逃离后室·官方大厅鉴权"
+      ],
+      "notes": "采用官方云端大厅匹配服务，推荐方案二补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 1966720,
+      "name": "Lethal Company",
+      "nameZh": "致命公司",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "致命公司·Valve官方云端大厅强鉴权",
+        "Facepunch.Steamworks"
+      ],
+      "notes": "采用 Facepunch.Steamworks 强鉴权，未购账号方案一直启会被 Valve 拒绝创建大厅，必须使用方案二联机补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 1973530,
+      "name": "Limbus Company",
+      "nameZh": "Limbus Company",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 30",
+        "Steam热销榜 Top 69",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 1985790,
+      "name": "Inside the Backrooms",
+      "nameZh": "深入后室",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "深入后室·官方大厅鉴权"
+      ],
+      "notes": "官方大厅鉴权，推荐方案二补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 1985810,
+      "name": "Call of Duty®: Black Ops Cold War",
+      "nameZh": "Call of Duty®: Black Ops Cold War",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 48",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2000950,
+      "name": "Call of Duty®: Modern Warfare®",
+      "nameZh": "Call of Duty®: Modern Warfare®",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 91",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2001120,
+      "name": "双影奇境",
+      "nameZh": "双影奇境",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 97",
+        "Electronic Arts 账号体系"
+      ],
+      "notes": "Electronic Arts 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2050650,
+      "name": "Resident Evil 4",
+      "nameZh": "生化危机 4 重制版",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 24",
+        "单机生存恐怖冒险"
+      ],
+      "notes": "单机剧情冒险游戏，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 2073620,
+      "name": "暗区突围：无限",
+      "nameZh": "暗区突围：无限",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 75",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2073850,
+      "name": "Steam App 2073850",
+      "nameZh": "Steam App 2073850",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 93",
+        "Steamworks联机"
+      ],
+      "notes": "Steam 热门榜单应用，推荐优先尝试方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2075800,
+      "name": "星球大战 零号连队™",
+      "nameZh": "星球大战 零号连队™",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 74",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2097490,
+      "name": "R.E.P.O.",
+      "nameZh": "R.E.P.O.",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "REPO·云端大厅鉴权",
+        "Photon Voice"
+      ],
+      "notes": "官方云端大厅鉴权，建议使用方案二联机补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 2139460,
+      "name": "七日世界",
+      "nameZh": "七日世界",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 76",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2183900,
+      "name": "Warhammer 40,000: 星际战士2",
+      "nameZh": "Warhammer 40,000: 星际战士2",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 73",
+        "Steam热销榜 Top 22",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2246340,
+      "name": "Monster Hunter Wilds",
+      "nameZh": "Monster Hunter Wilds",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 60",
+        "Steam热销榜 Top 31",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2288340,
+      "name": "空战奇兵8 希孚之翼 (ACE COMBAT 8: WINGS OF THEVE)",
+      "nameZh": "空战奇兵8 希孚之翼 (ACE COMBAT 8: WINGS OF THEVE)",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 70",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2300320,
+      "name": "Farming Simulator 25",
+      "nameZh": "Farming Simulator 25",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 69",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2357570,
+      "name": "《守望先锋®》",
+      "nameZh": "《守望先锋®》",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 15",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2358720,
+      "name": "Black Myth: Wukong",
+      "nameZh": "黑神话：悟空",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 67",
+        "SteamDB热门榜 Top 83",
+        "国产3A单机动作RPG"
+      ],
+      "notes": "单机动作角色扮演游戏，无多人联机大厅，直接本地启动",
+      "source": "curated"
+    },
+    {
+      "appId": 2399830,
+      "name": "方舟: 生存飞升",
+      "nameZh": "方舟: 生存飞升",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 94",
+        "Steam热销榜 Top 92",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2406770,
+      "name": "Bodycam",
+      "nameZh": "Bodycam",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 33",
+        "Steam热销榜 Top 23",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2483190,
+      "name": "极限竞速：地平线 6",
+      "nameZh": "极限竞速：地平线 6",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 53",
+        "Steam热销榜 Top 33",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2507950,
+      "name": "三角洲行动 ",
+      "nameZh": "三角洲行动 ",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 28",
+        "Steam热销榜 Top 6",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2567870,
+      "name": "Chained Together",
+      "nameZh": "Chained Together",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 65",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2622000,
+      "name": "吉星派对",
+      "nameZh": "吉星派对",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 56",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2622380,
+      "name": "艾尔登法环 黑夜君临",
+      "nameZh": "艾尔登法环 黑夜君临",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 96",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2638890,
+      "name": "鬼武者 Way of the Sword",
+      "nameZh": "鬼武者 Way of the Sword",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 42",
+        "Steam热销榜 Top 2",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2676230,
+      "name": "FiveM",
+      "nameZh": "FiveM",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 9",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2694490,
+      "name": "Steam App 2694490",
+      "nameZh": "Steam App 2694490",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 31",
+        "Steamworks联机"
+      ],
+      "notes": "Steam 热门榜单应用，推荐优先尝试方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2767030,
+      "name": "漫威争锋",
+      "nameZh": "漫威争锋",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 12",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2807960,
+      "name": "战地风云™ 6",
+      "nameZh": "战地风云™ 6",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "SteamDB热门榜 Top 23",
+        "Steam热销榜 Top 13",
+        "Electronic Arts 账号体系"
+      ],
+      "notes": "Electronic Arts 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2852190,
+      "name": "Monster Hunter Stories 3: 命运双龙",
+      "nameZh": "Monster Hunter Stories 3: 命运双龙",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 88",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2868840,
+      "name": "Slay the Spire 2",
+      "nameZh": "Slay the Spire 2",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 8",
+        "Steam热销榜 Top 44",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 2881650,
+      "name": "Content Warning",
+      "nameZh": "内容警告",
+      "netType": "cloud_lobby",
+      "recommend": "scheme2",
+      "signals": [
+        "内容警告·官方云端大厅强鉴权",
+        "Photon Realtime"
+      ],
+      "notes": "官方云端大厅强鉴权，必须使用方案二联机补丁",
+      "source": "curated"
+    },
+    {
+      "appId": 2909400,
+      "name": "FINAL FANTASY VII REBIRTH",
+      "nameZh": "FINAL FANTASY VII REBIRTH",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 32",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3059520,
+      "name": "F1® 25",
+      "nameZh": "F1® 25",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 72",
+        "Electronic Arts 账号体系"
+      ],
+      "notes": "Electronic Arts 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3219630,
+      "name": "Halloween: The Game",
+      "nameZh": "Halloween: The Game",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 68",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3240220,
+      "name": "Grand Theft Auto V 增强版",
+      "nameZh": "Grand Theft Auto V 增强版",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "SteamDB热门榜 Top 20",
+        "Steam热销榜 Top 5",
+        "Rockstar Games 账号体系"
+      ],
+      "notes": "Rockstar Games 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3241660,
+      "name": "R.E.P.O.",
+      "nameZh": "R.E.P.O.",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 45",
+        "Steam热销榜 Top 47",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3321460,
+      "name": "红色沙漠：增强版",
+      "nameZh": "红色沙漠：增强版",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 59",
+        "Steam热销榜 Top 14",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3357650,
+      "name": "PRAGMATA",
+      "nameZh": "PRAGMATA",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 30",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3405690,
+      "name": "EA SPORTS FC™ 26",
+      "nameZh": "EA SPORTS FC™ 26",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "SteamDB热门榜 Top 18",
+        "Electronic Arts 账号体系"
+      ],
+      "notes": "Electronic Arts 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3419430,
+      "name": "Bongo Cat",
+      "nameZh": "Bongo Cat",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "SteamDB热门榜 Top 70",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3472040,
+      "name": "NBA 2K26",
+      "nameZh": "NBA 2K26",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "SteamDB热门榜 Top 98",
+        "2K 账号体系"
+      ],
+      "notes": "2K 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3513350,
+      "name": "Steam App 3513350",
+      "nameZh": "Steam App 3513350",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 65",
+        "Steamworks联机"
+      ],
+      "notes": "Steam 热门榜单应用，推荐优先尝试方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3527290,
+      "name": "PEAK",
+      "nameZh": "PEAK",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 29",
+        "Steam热销榜 Top 77",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3551340,
+      "name": "足球经理26",
+      "nameZh": "足球经理26",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 81",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3595230,
+      "name": "《使命召唤®：现代战争® II 2022》",
+      "nameZh": "《使命召唤®：现代战争® II 2022》",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 85",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3595270,
+      "name": "《使命召唤®：现代战争® III 2023》",
+      "nameZh": "《使命召唤®：现代战争® III 2023》",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 64",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3606480,
+      "name": "Call of Duty®: Black Ops 7",
+      "nameZh": "Call of Duty®: Black Ops 7",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 49",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3678970,
+      "name": "TBH: 塔斯克巴·英雄",
+      "nameZh": "TBH: 塔斯克巴·英雄",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 51",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3722330,
+      "name": "午夜轮班",
+      "nameZh": "午夜轮班",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 29",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3751260,
+      "name": "The Blood of Dawnwalker 黎明行者之血",
+      "nameZh": "The Blood of Dawnwalker 黎明行者之血",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 48",
+        "Steam热销榜 Top 28",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3764200,
+      "name": "Resident Evil Requiem",
+      "nameZh": "Resident Evil Requiem",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 16",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3768760,
+      "name": "007 初露锋芒",
+      "nameZh": "007 初露锋芒",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 71",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3892270,
+      "name": "朋友，梭哈吧",
+      "nameZh": "朋友，梭哈吧",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 12",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 3932890,
+      "name": "Escape from Tarkov",
+      "nameZh": "Escape from Tarkov",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 63",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4001890,
+      "name": "How to Fish",
+      "nameZh": "钓鱼模拟",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 3",
+        "SteamDB热门榜 Top 11",
+        "How to Fish·Steamworks联机"
+      ],
+      "notes": "Steamworks 好友通道，推荐方案一免改直启",
+      "source": "curated"
+    },
+    {
+      "appId": 4080220,
+      "name": "EA SPORTS FC™ 27",
+      "nameZh": "EA SPORTS FC™ 27",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 35",
+        "Electronic Arts 账号体系"
+      ],
+      "notes": "Electronic Arts 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4108000,
+      "name": "机械狂欢",
+      "nameZh": "机械狂欢",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 41",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4115450,
+      "name": "影之刃零",
+      "nameZh": "影之刃零",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 9",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4128580,
+      "name": "竞拍之王",
+      "nameZh": "竞拍之王",
+      "netType": "official_server",
+      "recommend": "unsupported",
+      "signals": [
+        "Steam热销榜 Top 83",
+        "官方大型多人在线竞技"
+      ],
+      "notes": "官方专属竞技/MMO服务器与反作弊鉴权，无法自建大厅",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4162040,
+      "name": "Steam App 4162040",
+      "nameZh": "Steam App 4162040",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 97",
+        "Steamworks联机"
+      ],
+      "notes": "Steam 热门榜单应用，推荐优先尝试方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4164790,
+      "name": "生存日志",
+      "nameZh": "生存日志",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 80",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4354570,
+      "name": "FINAL FANTASY VII REVELATION",
+      "nameZh": "FINAL FANTASY VII REVELATION",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 53",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4356430,
+      "name": "《NBA 2K27》",
+      "nameZh": "《NBA 2K27》",
+      "netType": "thirdparty",
+      "recommend": "scheme2",
+      "signals": [
+        "Steam热销榜 Top 4",
+        "2K 账号体系"
+      ],
+      "notes": "2K 官方专属网络体系，推荐方案二联机补丁",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4384550,
+      "name": "使命召唤®：黑色行动 6",
+      "nameZh": "使命召唤®：黑色行动 6",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 58",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4656000,
+      "name": "BOMBANANA!",
+      "nameZh": "BOMBANANA!",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 95",
+        "Steam热销榜 Top 15",
+        "合作",
+        "Steam 在线合作"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4704690,
+      "name": "MECCHA CHAMELEON",
+      "nameZh": "MECCHA CHAMELEON",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "SteamDB热门榜 Top 84",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 4809930,
+      "name": "WARDOGS Playtest",
+      "nameZh": "WARDOGS Playtest",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "SteamDB热门榜 Top 100",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 5001840,
+      "name": "红色沙漠：增强版 - 未知征途",
+      "nameZh": "红色沙漠：增强版 - 未知征途",
+      "netType": "single_player",
+      "recommend": "single_player",
+      "signals": [
+        "Steam热销榜 Top 90",
+        "单人游戏模式"
+      ],
+      "notes": "纯单机游戏，无需联机大厅通道",
+      "source": "steam_charts"
+    },
+    {
+      "appId": 5053820,
+      "name": "Mimic Party",
+      "nameZh": "Mimic Party",
+      "netType": "steamworks",
+      "recommend": "scheme1",
+      "signals": [
+        "Steam热销榜 Top 73",
+        "多人联机"
+      ],
+      "notes": "Steam 热门榜单收录，推荐方案一免改直启",
+      "source": "steam_charts"
+    }
+  ]
+}
