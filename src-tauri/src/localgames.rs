@@ -903,24 +903,16 @@ pub fn launch_game_online(
         // 启动前确保 opensteamtool.toml 配置已优化（国内 jsdelivr 镜像加速与调试日志，杜绝 raw.github 5秒超时卡顿）
         let _ = crate::ost::ensure_toml_optimized(&sp);
 
-        // Open 内核联机模式要求 Steam 会话以 -onlinefix 参数运行（OST 内核联机拦截生效）：
-        // - 未运行：带参启动并等待就绪
-        // - 已运行但不带参（如 -silent 普通会话）：重启到联机模式
-        // - 已带参：直接唤起
+        // 检查 Steam 运行与登录状态：
+        // - Steam 未运行：启动 Steam 并等待登录就绪
+        // - Steam 已在运行且已登录：无需重启，直接唤起游戏（无感极速秒开）
+        // - Steam 运行中但在登录中：短暂等待账号就绪
         let steam_running = steam::is_steam_running();
-        let onlinefix_running = steam_running && steam::is_onlinefix_running();
 
-        if !onlinefix_running {
-            if steam_running {
-                steam::kill_steam();
-            }
-            steam::restart_steam(&sp, &["-onlinefix".to_string()]);
-            // 就绪检测前先失效运行状态缓存，否则 8 秒旧值会让前几轮轮询读到过期结果
+        if !steam_running {
+            steam::restart_steam(&sp, &[]);
             steam::clear_steam_running_cache();
 
-            // 关键：等待 steam.exe 真正完成网络登录与账号就绪（ActiveUser > 0）
-            // 冷启动包括更新校验、网络登录与 OST 假许可规则注入（通常需 4~15 秒）
-            // 过早发送 -applaunch 会因凭据/假许可尚未注入进内存而直接触发 Steam 弹窗「无许可」
             let mut logged_in = false;
             for _ in 0..40 {
                 if steam::is_steam_logged_in() {
@@ -930,19 +922,19 @@ pub fn launch_game_online(
                 std::thread::sleep(std::time::Duration::from_millis(1000));
             }
             if !logged_in && !steam::is_steam_running() {
-                return Err("Steam 未能以联机模式启动，请手动启动 Steam 后重试".to_string());
+                return Err("Steam 未能启动，请先手动启动 Steam 后重试".to_string());
             }
-            // 额外留足 3.5 秒供 OST 内存钩子挂载与 Package 0 假许可注入就绪
-            std::thread::sleep(std::time::Duration::from_millis(3500));
+            // 首次冷启动留足 3 秒供 OST 内存钩子挂载与 Package 0 假许可注入就绪
+            std::thread::sleep(std::time::Duration::from_millis(3000));
         } else if !steam::is_steam_logged_in() {
-            // Steam 虽然带参启动但还在登录中，等待登录就绪
+            // Steam 虽然在运行但还在登录中，等待登录就绪
             for _ in 0..20 {
                 if steam::is_steam_logged_in() {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(1000));
             }
-            std::thread::sleep(std::time::Duration::from_millis(2500));
+            std::thread::sleep(std::time::Duration::from_millis(1500));
         }
 
         // 古韵盒子同款启动配方（内核日志逐包验证有效）：
