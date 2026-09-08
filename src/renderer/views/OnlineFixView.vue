@@ -53,9 +53,9 @@
       </div>
       <div class="leading-relaxed flex-1">
         <strong class="text-sky-300 font-semibold">联机只有两大方案：</strong>
-        <strong class="text-emerald-400 font-bold">方案一 · Steam 通道联机</strong>（免改文件，含 Open 内核 / Spacewar / BAT 三种启动方式，本质相同）；
-        <strong class="text-amber-400 font-bold">方案二 · 联机补丁注入</strong>（改游戏文件，方案一无效时的精准修复）。
-        先看游戏卡片左上角的<strong class="text-sky-300">联机徽章颜色</strong>选方案：绿色用方案一，橙色直接方案二。
+        <strong class="text-emerald-400 font-bold">方案一 · Steam 通道联机</strong>（免改文件直启，推荐原生 P2P 联机游戏）；
+        <strong class="text-amber-400 font-bold">方案二 · 联机补丁注入</strong>（精准替换 DLL 补丁，云端大厅强鉴权与三方网络游戏的必选方案）。
+        先看游戏卡片左上角<strong class="text-sky-300">徽章颜色</strong>：绿色优先方案一，琥珀色/橙色必须切换到方案二安装补丁，卡片亦有智能方案指引。
       </div>
       <button
         @click="showGuide = !showGuide"
@@ -75,11 +75,15 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 leading-relaxed">
           <div class="flex gap-2 items-start">
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[11px] font-bold">Steamworks 联机</span>
-            <span class="text-slate-400">绿色：游戏联机走 Steam 官方接口，<strong class="text-emerald-400">直接用方案一</strong>，Open 内核即可</span>
+            <span class="text-slate-400">绿色：原生 Steam P2P 大厅接口，<strong class="text-emerald-400">直接用方案一</strong>，免改文件即可</span>
           </div>
           <div class="flex gap-2 items-start">
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/85 text-slate-950 text-[11px] font-bold">Steamworks+三方</span>
-            <span class="text-slate-400">绿色：核心联机走 Steam，语音等附属功能走第三方（如 Photon），<strong class="text-emerald-400">仍用方案一</strong></span>
+            <span class="text-slate-400">绿色：核心联机走 Steam，语音等附属走三方，<strong class="text-emerald-400">仍用方案一</strong></span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500/90 text-slate-950 text-[11px] font-bold">云端大厅·需补丁</span>
+            <span class="text-slate-400">琥珀色：官方云端大厅强鉴权（如《致命公司》《恐鬼症》），免改直启会被拒绝建房，<strong class="text-amber-400">必须用方案二安装补丁</strong></span>
           </div>
           <div class="flex gap-2 items-start">
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-sky-500/85 text-slate-950 text-[11px] font-bold">Steam API</span>
@@ -87,11 +91,11 @@
           </div>
           <div class="flex gap-2 items-start">
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500/90 text-slate-950 text-[11px] font-bold">第三方网络</span>
-            <span class="text-slate-400">橙色：联机走 Photon/EOS 等第三方服务，Steam 通道进不去，<strong class="text-amber-400">直接用方案二</strong></span>
+            <span class="text-slate-400">橙色：联机走 Photon/EOS 等独立服务，Steam 通道进不去，<strong class="text-amber-400">直接用方案二</strong></span>
           </div>
           <div class="flex gap-2 items-start">
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-slate-950/80 text-slate-400 text-[11px] font-bold border border-white/10">联机未知</span>
-            <span class="text-slate-400">灰色：没发现已知联机指纹（可能单机或自研网络），<strong>可尝试方案一</strong>，失败则视作方案二适用</span>
+            <span class="text-slate-400">灰色：未发现已知联机指纹，<strong>可尝试方案一</strong>，失败则视作方案二适用</span>
           </div>
           <div class="flex gap-2 items-start">
             <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[11px] font-bold">已装联机补丁</span>
@@ -447,6 +451,74 @@
                     </div>
                   </div>
 
+                  <!-- 智能联机推荐指引 (抹平试错成本，清晰指引方案一/方案二) -->
+                  <div class="pt-1">
+                    <!-- 云端大厅强鉴权（如致命公司/恐鬼症） -->
+                    <div
+                      v-if="game.netType === 'cloud_lobby' && !game.isPatched"
+                      class="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2"
+                    >
+                      <span class="flex items-center gap-1.5 font-medium truncate" title="官方云端大厅强鉴权，未打补丁直启会假启动或拒绝建房">
+                        <AlertTriangle class="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span class="truncate font-bold">官方大厅鉴权·需补丁</span>
+                      </span>
+                      <button
+                        @click.stop="switchToPatchForGame(game)"
+                        class="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-sm"
+                        title="切换到方案二并自动定位本游戏，一键安装联机补丁"
+                      >
+                        <span>去打补丁</span>
+                        <ArrowRight class="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <!-- 第三方网络（自建网络） -->
+                    <div
+                      v-else-if="game.netType === 'thirdparty' && !game.isPatched"
+                      class="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2"
+                    >
+                      <span class="flex items-center gap-1.5 font-medium truncate" title="检测到第三方独立网络组件，Steam 通道大概率无效">
+                        <AlertTriangle class="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span class="truncate font-bold">三方网络·建议补丁</span>
+                      </span>
+                      <button
+                        @click.stop="switchToPatchForGame(game)"
+                        class="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-sm"
+                        title="切换到方案二并自动定位本游戏，一键安装联机补丁"
+                      >
+                        <span>去打补丁</span>
+                        <ArrowRight class="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <!-- 已打补丁 -->
+                    <div
+                      v-else-if="game.isPatched"
+                      class="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5 font-medium"
+                    >
+                      <CheckCircle2 class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span class="truncate">已装联机补丁 · 可直接启动</span>
+                    </div>
+
+                    <!-- 原生 Steamworks / 混合架构 -->
+                    <div
+                      v-else-if="game.netType === 'steamworks' || game.netType === 'mixed'"
+                      class="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-1.5 font-medium"
+                    >
+                      <Sparkles class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span class="truncate">原生 P2P · 推荐方案一直启</span>
+                    </div>
+
+                    <!-- 默认 / 未知 / Steam API -->
+                    <div
+                      v-else
+                      class="p-2 rounded-xl bg-slate-900/80 border border-white/10 text-slate-400 text-xs flex items-center gap-1.5 font-medium"
+                    >
+                      <HelpCircle class="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span class="truncate">建议先试方案一直启</span>
+                    </div>
+                  </div>
+
                   <!-- 底部操作按钮条 (▶ 联机启动 + 🔧 修复报错) -->
                   <div class="grid grid-cols-2 gap-2 pt-3 border-t border-white/10">
                     <!-- 联机启动按钮 -->
@@ -668,20 +740,30 @@
                   />
                   <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent pointer-events-none"></div>
 
-                  <!-- 补丁状态标签 -->
-                  <div class="absolute top-2.5 left-2.5">
+                  <!-- 补丁状态与联机架构标签 -->
+                  <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5 max-w-[70%]">
                     <span
                       v-if="game.isPatched"
-                      class="px-2.5 py-0.5 rounded-lg bg-emerald-500/90 backdrop-blur-md text-slate-950 text-[11px] font-bold flex items-center gap-1 shadow-sm"
+                      class="px-2 py-0.5 rounded-lg bg-emerald-500/90 backdrop-blur-md text-slate-950 text-[11px] font-bold flex items-center gap-1 shadow-sm shrink-0"
                     >
                       <Check class="w-3 h-3" />
-                      <span>已安装补丁</span>
+                      <span>已打补丁</span>
                     </span>
                     <span
                       v-else
-                      class="px-2.5 py-0.5 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 text-slate-400 text-[11px] font-medium"
+                      class="px-2 py-0.5 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 text-slate-400 text-[11px] font-medium shrink-0"
                     >
                       未打补丁
+                    </span>
+
+                    <!-- 联机架构徽章 (同主启动页) -->
+                    <span
+                      v-if="netBadgeOf(game)"
+                      :class="netBadgeOf(game)!.cls"
+                      :title="netBadgeOf(game)!.tip"
+                      class="px-2 py-0.5 rounded-lg backdrop-blur-md text-[11px] font-bold shadow-sm truncate block cursor-help"
+                    >
+                      {{ netBadgeOf(game)!.label }}
                     </span>
                   </div>
 
@@ -800,6 +882,63 @@
     </div>
 
     <!-- ============================================== -->
+    <!-- 弹窗 2: 云端大厅强鉴权直启拦截提醒弹窗 (杜绝试错成本) -->
+    <!-- ============================================== -->
+    <div
+      v-if="showCloudWarningModal && targetCloudGame"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200"
+      @click.self="showCloudWarningModal = false"
+    >
+      <div class="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-3xl p-7 shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
+        <!-- 黄色感叹号警告圆环图标 -->
+        <div class="w-16 h-16 rounded-full bg-amber-500/15 border-2 border-amber-500/40 flex items-center justify-center mb-4 shadow-lg shadow-amber-500/10">
+          <AlertTriangle class="w-8 h-8 text-amber-400" />
+        </div>
+
+        <h3 class="text-xl font-bold text-slate-100 mb-2 tracking-tight">
+          该游戏必须使用【方案二】打补丁
+        </h3>
+
+        <p class="text-xs text-slate-300 leading-relaxed mb-3">
+          《{{ targetCloudGame.name }}》接入了 Valve 官方云端大厅强鉴权机制（如 Facepunch.Steamworks）。<br />
+          若使用方案一（免改文件直启），官方大厅服务器会因账号无官方购买凭证而<strong class="text-rose-400">拒绝建房（报错 AccessDenied 或出现假启动）</strong>。
+        </p>
+        <p class="text-[11px] text-amber-300/90 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20 mb-6 text-left leading-relaxed">
+          <span class="text-amber-400 font-bold">💡 最佳解决方案：</span><br />
+          点击下方「前往方案二安装补丁」，系统将自动定位该游戏并一键安装 Online-Fix 补丁（替换 DLL 绕过 Valve 官方验票），即可顺利创建大厅与好友联机。
+        </p>
+
+        <div class="flex flex-col gap-2.5 w-full">
+          <button
+            @click="switchToPatchForGame(targetCloudGame)"
+            class="w-full py-3 px-4 theme-btn-primary font-bold text-xs rounded-2xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Download class="w-4 h-4" />
+            <span>前往方案二安装补丁 (推荐)</span>
+          </button>
+
+          <div class="flex items-center gap-2 w-full">
+            <button
+              @click="confirmForceLaunch"
+              class="flex-1 py-2.5 px-3 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-slate-100 font-bold text-xs rounded-xl border border-white/10 transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play class="w-3.5 h-3.5 text-slate-400" />
+              <span>仍强制直启</span>
+            </button>
+
+            <button
+              @click="showCloudWarningModal = false"
+              class="flex-1 py-2.5 px-3 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs rounded-xl border border-white/10 transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <X class="w-3.5 h-3.5" />
+              <span>取消</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================== -->
     <!-- 弹窗 3: Spacewar 未安装提示弹窗 -->
     <!-- ============================================== -->
     <div
@@ -860,11 +999,15 @@ import {
   Play,
   Wrench,
   ArrowLeftRight,
+  ArrowRight,
   Terminal,
   AlertTriangle,
   Download,
   ChevronDown,
   ChevronUp,
+  Sparkles,
+  CheckCircle2,
+  HelpCircle,
   X
 } from 'lucide-vue-next';
 import {
@@ -918,6 +1061,10 @@ const removePending = (set: Ref<Set<number>>, id: number) => {
 const showRepairModal = ref(false);
 const targetRepairGame = ref<LocalInstalledGame | null>(null);
 const repairExecuting = ref(false);
+
+// 云端大厅强鉴权直启拦截 Modal
+const showCloudWarningModal = ref(false);
+const targetCloudGame = ref<LocalInstalledGame | null>(null);
 
 // 顶部功能说明折叠面板（徽章图例 + 两大方案说明，替代原使用教程弹窗）
 const showGuide = ref(false);
@@ -1007,12 +1154,19 @@ const netBadgeOf = (game: LocalInstalledGame): NetBadge | null => {
         cls: 'bg-emerald-500/90 text-slate-950',
         tip: '已通过联机补丁模式部署 OnlineFix/Goldberg，直接联机启动即可。' + tipTail
       };
+    case 'cloud_lobby':
+      return {
+        label: '云端大厅·需补丁',
+        cls: 'bg-amber-500/90 text-slate-950 font-bold',
+        tip: '检测到 Facepunch/Valve 官方云端大厅强鉴权架构（如《致命公司》），未购买账号在方案一下会被 Valve 官方服务器拒绝建房，必须在上方切换到「方案二 · 联机补丁注入」安装补丁！' + tipTail
+      };
     case 'steamworks':
       return {
         label: 'Steamworks 联机',
         cls: 'bg-emerald-500/90 text-slate-950',
-        tip: '检测到 Steamworks SDK 封装，联机走 Steam 官方接口，推荐使用 Open 内核联机模式。' + tipTail
+        tip: '检测到原生 Steamworks SDK 封装，联机走 Steam 官方接口，推荐使用 Open 内核联机模式。' + tipTail
       };
+
     case 'mixed':
       return {
         label: 'Steamworks+三方',
@@ -1042,8 +1196,31 @@ const netBadgeOf = (game: LocalInstalledGame): NetBadge | null => {
   }
 };
 
-// 启动游戏
-const handleLaunchGame = async (game: LocalInstalledGame) => {
+// 快捷跳转至方案二联机补丁模式并自动定位该游戏
+const switchToPatchForGame = (game: LocalInstalledGame) => {
+  activeMainTab.value = 'patch';
+  searchQuery.value = game.name;
+  showCloudWarningModal.value = false;
+  emit('notify', `已为您定位至《${game.name}》，请在下方点击「安装联机补丁」完成精准修复`, 'info');
+};
+
+// 在云端大厅强鉴权直启警告弹窗中坚持强制启动
+const confirmForceLaunch = () => {
+  if (!targetCloudGame.value) return;
+  const g = targetCloudGame.value;
+  showCloudWarningModal.value = false;
+  handleLaunchGame(g, true);
+};
+
+// 启动游戏 (bypassWarning=true 允许强制直启)
+const handleLaunchGame = async (game: LocalInstalledGame, bypassWarning: boolean = false) => {
+  // 如果是官方云端大厅强鉴权架构且未安装补丁，弹出强提醒引导切换方案二，避免假启动和 AccessDenied 试错
+  if (!bypassWarning && game.netType === 'cloud_lobby' && !game.isPatched) {
+    targetCloudGame.value = game;
+    showCloudWarningModal.value = true;
+    return;
+  }
+
   addPending(pendingLaunches, game.appId);
   try {
     emit('notify', `正在以【${selectedLaunchMode.value}】模式启动《${game.name}》...`, 'info');

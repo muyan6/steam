@@ -122,6 +122,7 @@ pub fn find_executable_files(dir_path: &Path, max_depth: usize) -> Vec<String> {
 
 /// 联机架构指纹检测结果：托管封装 / 原生 API / 第三方网络 SDK 各自命中的文件名
 struct NetFingerprints {
+    cloud_lobby: Vec<String>,
     managed_wrappers: Vec<String>,
     native_api: Vec<String>,
     thirdparty: Vec<String>,
@@ -131,7 +132,12 @@ struct NetFingerprints {
 /// Unity/Mono 的网络库在 <游戏>_Data/Managed（深度2），UE 在 Binaries/Win64（深度2），
 /// 原生 C++ 游戏的 steam_api64.dll 在根目录（深度0），深度3 兜底嵌套更深的少数引擎结构。
 fn collect_net_fingerprints(dir_path: &Path) -> NetFingerprints {
-    let mut out = NetFingerprints { managed_wrappers: Vec::new(), native_api: Vec::new(), thirdparty: Vec::new() };
+    let mut out = NetFingerprints {
+        cloud_lobby: Vec::new(),
+        managed_wrappers: Vec::new(),
+        native_api: Vec::new(),
+        thirdparty: Vec::new(),
+    };
     if !dir_path.exists() {
         return out;
     }
@@ -162,8 +168,11 @@ fn collect_net_fingerprints(dir_path: &Path) -> NetFingerprints {
             if name.is_empty() {
                 continue;
             }
-            // 托管 Steamworks 封装（游戏代码显式调用 Steamworks 联机接口的最强信号）
-            if name.contains("steamworks") || name.starts_with("facepunch.steamworks") {
+            // Facepunch.Steamworks 等强鉴权云端大厅封装（硬编码 AppID，无法通过免改文件绕过 Valve 官方验票）
+            if name.starts_with("facepunch.steamworks") {
+                push_once(&mut out.cloud_lobby, &name);
+            } else if name.contains("steamworks") {
+                // 一般托管 Steamworks 封装（Steamworks.NET 等）
                 push_once(&mut out.managed_wrappers, &name);
             }
             // 原生 Steam API（接入 Steam 但联机方式不确定：可能是 P2P 也可能是专用服务器）
@@ -186,20 +195,38 @@ fn collect_net_fingerprints(dir_path: &Path) -> NetFingerprints {
     out
 }
 
-/// 基于本地文件指纹的联机架构预测。
+/// 基于本地文件指纹与权威游戏规则库的联机架构预测。
 /// patched 优先：已部署 OnlineFix/Goldberg 的游戏预测无意义，直接标注。
-pub fn detect_net_mode(dir_path: &Path, is_patched: bool) -> (String, Vec<String>) {
+pub fn detect_net_mode(dir_path: &Path, is_patched: bool, app_id: u32) -> (String, Vec<String>) {
     if is_patched {
         return ("patched".to_string(), Vec::new());
     }
+
+    // 1. 权威热门游戏精确规则库（杜绝启发式误判，抹平用户试错成本）
+    match app_id {
+        1966720 => return ("cloud_lobby".to_string(), vec!["致命公司·Valve官方云端大厅强鉴权".to_string()]),
+        739630 => return ("cloud_lobby".to_string(), vec!["恐鬼症·官方云端大厅强鉴权".to_string()]),
+        2881650 => return ("cloud_lobby".to_string(), vec!["内容警告·官方云端大厅强鉴权".to_string()]),
+        1260320 => return ("thirdparty".to_string(), vec!["猛兽派对·自建官方网络账号服务".to_string()]),
+        1623730 => return ("thirdparty".to_string(), vec!["幻兽帕鲁·社区服/自建网络".to_string()]),
+        105600 => return ("steamworks".to_string(), vec!["泰拉瑞亚·原生P2P/直连".to_string()]),
+        204360 => return ("steamworks".to_string(), vec!["城堡毁灭者·P2P对战".to_string()]),
+        880940 => return ("steamworks".to_string(), vec!["Pummel Party·原生P2P".to_string()]),
+        _ => {}
+    }
+
     if !dir_path.exists() {
         return ("unknown".to_string(), Vec::new());
     }
     let fp = collect_net_fingerprints(dir_path);
+    let has_cloud = !fp.cloud_lobby.is_empty();
     let has_managed = !fp.managed_wrappers.is_empty();
     let has_third = !fp.thirdparty.is_empty();
-    let net_type = if has_managed && has_third {
-        // 混合架构（如 REPO：Steamworks 核心联机 + Photon 语音），核心联机大概率可用 Open 内核
+
+    let net_type = if has_cloud {
+        "cloud_lobby".to_string()
+    } else if has_managed && has_third {
+        // 混合架构（如 REPO：Steamworks 核心联机 + Photon 语音）
         "mixed".to_string()
     } else if has_managed {
         "steamworks".to_string()
@@ -212,11 +239,13 @@ pub fn detect_net_mode(dir_path: &Path, is_patched: bool) -> (String, Vec<String
         "unknown".to_string()
     };
     let mut signals = Vec::new();
+    signals.extend(fp.cloud_lobby.iter().cloned());
     signals.extend(fp.managed_wrappers.iter().cloned());
     signals.extend(fp.thirdparty.iter().cloned());
     signals.extend(fp.native_api.iter().cloned());
     (net_type, signals)
 }
+
 
 /// 检测游戏目录补丁状态（OnlineFix / Goldberg）
 pub fn check_game_directory(dir_path: &Path) -> (bool, String, Option<u32>) {
@@ -554,7 +583,7 @@ fn scan_single_manifest(lib: &Path, acf_path: &Path, app_id: u32) -> Option<Loca
     }
 
     let (is_patched, patch_mode, _) = check_game_directory(&full_path);
-    let (net_type, net_signals) = detect_net_mode(&full_path, is_patched);
+    let (net_type, net_signals) = detect_net_mode(&full_path, is_patched, app_id);
     Some(LocalInstalledGame {
         app_id,
         name: game_name,
