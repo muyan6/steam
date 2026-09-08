@@ -675,6 +675,69 @@ pub fn write_steam_appid_txt_all_locations(game_path: &Path, app_id: u32) {
     }
 }
 
+/// 清理游戏目录下所有残留的 steam_appid.txt（若有备份则还原，无备份则删除）
+/// Open 内核联机模式必须以游戏真实身份运行，严禁残留 480 的 steam_appid.txt，
+/// 否则游戏底层与 Steam 会话 AppID 不一致会导致创建大厅/对战失败（如《城堡毁灭者》报“不能作成对战”）
+fn clean_steam_appid_txt_all_locations(game_path: &Path) {
+    fn collect_dirs(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+        if depth > 3 {
+            return;
+        }
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        let mut has_target_file = false;
+        let mut subdirs = Vec::new();
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            if p.is_dir() {
+                let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+                if !["_redist", "directx", "support", "redist", ".git", "node_modules"].contains(&name.as_str()) {
+                    subdirs.push(p);
+                }
+            } else if p.is_file() {
+                let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+                if name.ends_with(".exe") || name.starts_with("steam_api") || name == "steam_appid.txt" {
+                    has_target_file = true;
+                }
+            }
+        }
+        if has_target_file && !out.contains(&dir.to_path_buf()) {
+            out.push(dir.to_path_buf());
+        }
+        for sub in subdirs {
+            collect_dirs(&sub, depth + 1, out);
+        }
+    }
+
+    let mut dirs = Vec::new();
+    collect_dirs(game_path, 0, &mut dirs);
+    for d in dirs {
+        let appid_file = d.join("steam_appid.txt");
+        let bak = d.join("steam_appid.txt.cfd_bak");
+        if bak.exists() {
+            let _ = fs::copy(&bak, &appid_file);
+            let _ = fs::remove_file(&bak);
+        } else if appid_file.exists() {
+            let _ = fs::remove_file(&appid_file);
+        }
+    }
+}
+
+/// 确保 HKCU\Software\Valve\Steam\Apps\<AppID> 注册表项具有 Installed 标记（古韵同款机制）
+#[cfg(target_os = "windows")]
+fn ensure_steam_app_registry(app_id: u32) {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok((key, _)) = hkcu.create_subkey(format!("Software\\Valve\\Steam\\Apps\\{}", app_id)) {
+        let _ = key.set_value("Installed", &1u32);
+        let _ = key.set_value("Updating", &0u32);
+        let _ = key.set_value("Running", &0u32);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ensure_steam_app_registry(_app_id: u32) {}
+
 /// 启动联机模式：open(Open内核) / spacewar(环境变量直启) / bat(批处理)
 pub fn launch_game_online(
     app_id: u32,
@@ -684,6 +747,9 @@ pub fn launch_game_online(
     online_app_id: u32,
 ) -> Result<String, String> {
     if mode == "open" {
+        // 注册表写入 App 安装状态（与古韵机制对齐，确保 Steam 识别为已安装并允许 applaunch）
+        ensure_steam_app_registry(app_id);
+
         // Open 内核联机模式要求 Steam 会话以 -onlinefix 参数运行（OST 内核联机拦截生效）：
         // - 未运行：带参启动并等待就绪
         // - 已运行但不带参（如 -silent 普通会话）：重启到联机模式
@@ -722,7 +788,10 @@ pub fn launch_game_online(
         // 广播改写为 Spacewar (480) 并映射真实游戏名，Steam 弹出原生邀请对话框。
         let gp_open = PathBuf::from(game_path);
         if gp_open.exists() {
-            write_steam_appid_txt_all_locations(&gp_open, online_app_id);
+            // 关键：Open 内核模式绝对不能留 steam_appid.txt=480！
+            // 会话已是真实 AppID，内核在内部自动做 Spacewar 映射；
+            // 目录里残留 480 文件会导致游戏内的 Matchmaking/Lobby 校验 AppID 失败（如《城堡毁灭者》报“不能作成对战”）
+            clean_steam_appid_txt_all_locations(&gp_open);
         }
         let sp_launch = steam::detect_steam_path()
             .ok_or("未找到 Steam 安装路径，无法使用 Open 内核联机模式启动游戏")?;
