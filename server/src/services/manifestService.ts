@@ -145,6 +145,7 @@ export class ManifestService {
    */
   private async fetchFromGMRC(appId: number): Promise<DepotManifestInfo[]> {
     const urls = [
+      `https://gmrc.guyunsq.com/${appId}`,
       `http://gmrc.wudrm.com/manifest/${appId}`,
       `https://manifest.steam.run/manifest/${appId}`
     ];
@@ -261,6 +262,38 @@ export class ManifestService {
       console.error('[ManifestService] 保存清单文件失败:', e);
       return false;
     }
+  }
+
+  /**
+   * 获取指定 GID 的清单请求代码（Manifest Request Code）
+   * 优先古韵国内专线镜像 -> steamrun 亚太源兜底
+   */
+  public async getManifestCode(gid: string): Promise<string | null> {
+    if (!gid || !/^\d+$/.test(gid)) return null;
+
+    // 1. 古韵国内镜像源
+    try {
+      const resp = await axios.get(`https://gmrc.guyunsq.com/${gid}`, { timeout: 3000, responseType: 'text' });
+      if (resp.status === 200 && typeof resp.data === 'string') {
+        const text = resp.data.trim();
+        if (/^\d+$/.test(text)) {
+          return text;
+        }
+      }
+    } catch {}
+
+    // 2. steamrun 官方镜像源
+    try {
+      const resp = await axios.get(`https://manifest.steam.run/api/manifest/${gid}`, { timeout: 3000 });
+      if (resp.status === 200 && resp.data) {
+        const code = typeof resp.data === 'string' ? resp.data.match(/"content":"(\d+)"/)?.[1] : (resp.data as any).content;
+        if (code && /^\d+$/.test(String(code))) {
+          return String(code);
+        }
+      }
+    } catch {}
+
+    return null;
   }
 }
 

@@ -10,6 +10,15 @@ export class ToolboxService {
 
   private defaultNodes: ManifestServerNode[] = [
     {
+      id: 'guyunsq',
+      name: '古韵高速镜像专线',
+      endpoint: 'gmrc.guyunsq.com',
+      region: '国内高速 BGP 直连',
+      isRecommended: true,
+      status: 'online',
+      latencyMs: 15
+    },
+    {
       id: 'steamrun',
       name: 'SteamRun 官方镜像源',
       endpoint: 'manifest.steam.run',

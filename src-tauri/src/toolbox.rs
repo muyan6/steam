@@ -62,11 +62,13 @@ pub fn clear_steam_cache(steam_path: &Path) -> ToolboxActionResult {
         }
     }
 
-    // 重建 config/lua 与 depotcache 骨架
+    // 重建 config/lua 与 depotcache 骨架并注入高可用清单调度
     let _ = fs::create_dir_all(steam_path.join("config").join("lua"));
     let _ = fs::create_dir_all(steam_path.join("depotcache"));
+    let _ = crate::ost::generate_toml_config(steam_path, "wudrm");
+    let _ = crate::ost::deploy_manifest_lua(steam_path);
 
-    steps.push(format!("✓ 已清理 {} 项内核残留与临时缓存", cleaned));
+    steps.push(format!("✓ 已清理 {} 项内核残留与临时缓存，并重建高可用清单网络", cleaned));
 
     // 步骤 3: 重新拉起 Steam
     steps.push("正在重新启动 Steam 客户端...".to_string());

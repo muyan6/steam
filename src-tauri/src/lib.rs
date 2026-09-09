@@ -722,7 +722,7 @@ fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
             let value = value.trim().trim_matches('"').trim();
             if key == "auto_switch" {
                 auto_switch = value.eq_ignore_ascii_case("true");
-            } else if key == "server" && !value.is_empty() {
+            } else if (key == "url" || key == "server") && !value.is_empty() {
                 server = value.to_string();
             }
         }
@@ -730,31 +730,31 @@ fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
     (auto_switch, server)
 }
 
-// 存量配置迁移：opensteamtool.toml 缺失 auto_switch 字段时补齐为默认开启
-// （多节点清单高可用为纯增益配置，历史版本生成的配置不含该字段；已含该字段则尊重现状）
+// 存量配置迁移：opensteamtool.toml 规范化与 manifest.lua 部署
 fn ensure_auto_switch_default(steam_path: &std::path::Path) {
     let toml_path = steam_path.join("opensteamtool.toml");
     if !toml_path.exists() {
+        let _ = ost::generate_toml_config(steam_path, "wudrm");
         return;
     }
     // 读-判-写必须与字段级更新互斥（后台迁移线程 vs 工具箱命令并发），
     // 在锁内完成整个序列；update_toml_manifest_fields_locked 不再加锁
     let _guard = ost::TOML_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let has_field = std::fs::read_to_string(&toml_path)
-        .map(|c| c.contains("auto_switch"))
-        .unwrap_or(true);
-    if has_field {
-        return;
+    let content = std::fs::read_to_string(&toml_path).unwrap_or_default();
+    if !content.contains("url =") {
+        let _ = update_toml_manifest_fields_locked(
+            steam_path,
+            &[
+                ("url", "\"wudrm\""),
+                ("server", "\"wudrm\""),
+                ("timeout_resolve_ms", "3000"),
+                ("timeout_connect_ms", "3000"),
+                ("timeout_send_ms", "5000"),
+                ("timeout_recv_ms", "5000"),
+            ],
+        );
     }
-    let _ = update_toml_manifest_fields_locked(
-        steam_path,
-        &[
-            ("auto_switch", "true"),
-            ("fallback_servers", "[\"gmrc.wudrm.com\", \"manifest.steam.run\", \"opensteamtool.com\"]"),
-            ("timeout_ms", "4000"),
-            ("retry_count", "3"),
-        ],
-    );
+    let _ = ost::deploy_manifest_lua(steam_path);
 }
 
 // 工具箱状态（对应 Electron 版 toolboxGetStatus / ToolboxStatusInfo）
@@ -880,19 +880,21 @@ async fn auto_switch_manifest() -> ToolboxActionResult {
     }
     steps.push("✓ Steam 进程已安全退出".to_string());
 
-    steps.push("2. 正在写入多节点高可用清单自动切换配置（字段级更新，保留其他自定义项）...".to_string());
-    let updates: [(&str, &str); 5] = [
-        ("server", "\"steamrun\""),
-        ("auto_switch", "true"),
-        ("fallback_servers", "[\"gmrc.wudrm.com\", \"manifest.steam.run\", \"opensteamtool.com\"]"),
-        ("timeout_ms", "4000"),
-        ("retry_count", "3"),
+    steps.push("2. 正在写入多节点高可用清单自动切换配置与调度脚本...".to_string());
+    let updates: [(&str, &str); 6] = [
+        ("url", "\"wudrm\""),
+        ("server", "\"wudrm\""),
+        ("timeout_resolve_ms", "3000"),
+        ("timeout_connect_ms", "3000"),
+        ("timeout_send_ms", "5000"),
+        ("timeout_recv_ms", "5000"),
     ];
     if let Err(e) = update_toml_manifest_fields(&steam_path, &updates) {
         steps.push(format!("[错误] 写入配置失败: {}", e));
         return toolbox_action(false, format!("开启清单服务器自动切换失败: {}", e), steps);
     }
-    steps.push("✓ 已配置 SteamRun、WUDRM 与社区多节点自动故障转移策略".to_string());
+    let _ = ost::deploy_manifest_lua(&steam_path);
+    steps.push("✓ 已同步部署古韵国内直连专线与官方多节点调度策略 (manifest.lua)".to_string());
 
     steps.push("3. 正在重新启动 Steam 客户端...".to_string());
     let restarted = steam::launch_steam(&steam_path, &[]);

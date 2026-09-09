@@ -67,6 +67,54 @@ pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
         })?;
     }
 
+    // 同步部署清单多节点调度脚本
+    let _ = deploy_manifest_lua(steam_path);
+
+    Ok(())
+}
+
+/// 部署官方与国内高速专线清单代码调度器 (manifest.lua)
+/// 彻底根除因上游默认源超时、阻断或 403 导致的 Steam 报错“无互联网连接”
+pub fn deploy_manifest_lua(steam_path: &Path) -> Result<(), String> {
+    let lua_content = r#"function fetch_manifest_code(gid)
+    -- 第一优先级：古韵高速镜像源 (国内直连专线，毫秒级响应)
+    local body, status = http_get("https://gmrc.guyunsq.com/" .. gid)
+    if status == 200 and body and body:match("^%d+$") then
+        return body
+    end
+
+    -- 第二优先级：春风渡云端官方备用代理
+    body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
+    if status == 200 and body and body:match("^%d+$") then
+        return body
+    end
+
+    -- 第三优先级：steamrun 亚太源
+    body, status = http_get("https://manifest.steam.run/api/manifest/" .. gid)
+    if status == 200 and body then
+        local code = body:match('"content":"(%d+)"')
+        if code then return code end
+    end
+
+    return nil
+end
+
+function fetch_manifest_code_ex(app_id, depot_id, gid)
+    return fetch_manifest_code(gid)
+end
+"#;
+
+    let targets = [
+        steam_path.join("config").join("lua").join("manifest.lua"),
+        steam_path.join("config").join("stplug-in").join("manifest.lua"),
+    ];
+
+    for target in targets {
+        if let Some(parent) = target.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(target, lua_content);
+    }
     Ok(())
 }
 
@@ -78,14 +126,13 @@ pub static TOML_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub fn generate_toml_config(steam_path: &Path, manifest_server: &str) -> Result<(), String> {
     // 防注入校验：manifest_server 会被原样拼进 TOML 的双引号字符串，
-    // 引号/换行/#/空格等字符可注入或破坏其他配置字段。
     // 仅放行 URL 安全字符集 [A-Za-z0-9:./_-]，其余一律回退默认节点
     let server = manifest_server.trim();
     let server_is_safe = !server.is_empty()
         && server
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '.' | '/' | '_' | '-'));
-    let server = if server_is_safe { server } else { "steamrun" };
+    let server = if server_is_safe { server } else { "wudrm" };
 
     let toml_path = steam_path.join("opensteamtool.toml");
     let content = format!(
@@ -97,23 +144,26 @@ pub fn generate_toml_config(steam_path: &Path, manifest_server: &str) -> Result<
         [remote]\n\
         url_template = \"https://cdn.jsdelivr.net/gh/OpenSteam001/steam-monitor@{{channel}}/{{component}}/{{sha256}}.toml\"\n\n\
         [manifest]\n\
+        url = \"{}\"\n\
         server = \"{}\"\n\
-        auto_switch = true\n\
-        fallback_servers = [\"gmrc.wudrm.com\", \"manifest.steam.run\", \"opensteamtool.com\"]\n\
-        timeout_ms = 4000\n\
-        retry_count = 3\n",
-        server
+        timeout_resolve_ms = 3000\n\
+        timeout_connect_ms = 3000\n\
+        timeout_send_ms = 5000\n\
+        timeout_recv_ms = 5000\n",
+        server, server
     );
     // 整文件覆写同样必须持锁，避免与字段级更新交错丢字段
     let _guard = TOML_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    fs::write(toml_path, content).map_err(|e| format!("写入 opensteamtool.toml 失败: {}", e))
+    fs::write(toml_path, content).map_err(|e| format!("写入 opensteamtool.toml 失败: {}", e))?;
+    let _ = deploy_manifest_lua(steam_path);
+    Ok(())
 }
 
-/// 确保 opensteamtool.toml 具备国内 jsdelivr 镜像加速与日志配置（杜绝 raw.github 5秒超时卡顿）
+/// 确保 opensteamtool.toml 具备国内 jsdelivr 镜像加速与官方规范配置（杜绝 raw.github 5秒超时卡顿）
 pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
     let toml_path = steam_path.join("opensteamtool.toml");
     if !toml_path.exists() {
-        return generate_toml_config(steam_path, "steamrun");
+        return generate_toml_config(steam_path, "wudrm");
     }
     let _guard = TOML_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let content = fs::read_to_string(&toml_path).unwrap_or_default();
@@ -130,10 +180,21 @@ pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
         lines.push("level = \"debug\"".to_string());
         updated = true;
     }
+    if !content.contains("url =") {
+        lines.push("\n[manifest]".to_string());
+        lines.push("url = \"wudrm\"".to_string());
+        lines.push("server = \"wudrm\"".to_string());
+        lines.push("timeout_resolve_ms = 3000".to_string());
+        lines.push("timeout_connect_ms = 3000".to_string());
+        lines.push("timeout_send_ms = 5000".to_string());
+        lines.push("timeout_recv_ms = 5000".to_string());
+        updated = true;
+    }
 
     if updated {
         let _ = fs::write(&toml_path, lines.join("\n") + "\n");
     }
+    let _ = deploy_manifest_lua(steam_path);
     Ok(())
 }
 

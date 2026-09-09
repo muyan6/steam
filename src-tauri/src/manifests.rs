@@ -598,7 +598,13 @@ fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
     })
 }
 
-const FALLBACK_CDN_HOSTS: [&str; 12] = [
+const FALLBACK_CDN_HOSTS: [&str; 18] = [
+    "dl.steam.clngaa.com",
+    "st.dl.eccdnx.com",
+    "xz.pphimalayanrt.com",
+    "al.dl.eccdnx.com",
+    "client-download.steampowered.com.edgesuite.net",
+    "cdn.mileweb.cs.steampowered.com.8686c.com",
     "cache1-steamcontent.com",
     "cache2-steamcontent.com",
     "cache3-steamcontent.com",

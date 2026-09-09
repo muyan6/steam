@@ -7,7 +7,7 @@ import { getDepotsForGame, getSingleDepotKey } from '../controllers/depotControl
 import { licenseSignService } from '../services/licenseSignService.js';
 import { getGameMetadata } from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
-import { getManifestsForApp, downloadManifestFile } from '../controllers/manifestController.js';
+import { getManifestsForApp, downloadManifestFile, getManifestCode } from '../controllers/manifestController.js';
 import { getLatestOstRelease, downloadOstAsset } from '../controllers/ostController.js';
 import {
   getLatestNotice,
@@ -291,6 +291,8 @@ router.get('/tokens/:appId', requireKeyAccess, getTokenForApp);
 // Manifest 清单检索与下载（与密钥接口同一设备授权：绕过激活不得直接拉取清单）
 router.get('/manifests/:appId', requireKeyAccess, getManifestsForApp);
 router.get('/manifests/download/:depotId/:manifestId', requireKeyAccess, downloadManifestFile);
+// 清单请求代码（Manifest Request Code）高速代理（公开只读，供客户端 Lua 内核秒级直连）
+router.get('/manifests/code/:gid', getManifestCode);
 
 // OST 内核中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）
 router.get('/ost/latest', requireKeyAccess, getLatestOstRelease);

@@ -57,3 +57,27 @@ export const downloadManifestFile = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
+
+export const getManifestCode = async (req: Request, res: Response) => {
+  try {
+    const rawGid = Array.isArray(req.params.gid) ? req.params.gid[0] : req.params.gid;
+    const gid = String(rawGid || '').trim();
+    if (!gid || !/^\d+$/.test(gid)) {
+      return res.status(400).json({ success: false, message: '无效的 GID' });
+    }
+
+    const code = await manifestService.getManifestCode(gid);
+    if (!code) {
+      return res.status(404).json({ success: false, message: '未找到清单请求代码' });
+    }
+
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.json({ success: true, gid, code });
+    }
+    return res.type('text/plain').send(code);
+  } catch (e) {
+    console.error('[ManifestController] 获取清单代码异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+};
+
