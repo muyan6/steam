@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "sync:manifests": "node scripts/syncManifests.mjs",
+    "sync:manifests:full": "node scripts/syncManifests.mjs --full"
   },
   "keywords": [
     "steammaster",
