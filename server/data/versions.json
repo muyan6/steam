@@ -1,5 +1,24 @@
 [
   {
+    "version": "2.5.5",
+    "channel": "stable",
+    "releaseDate": "2026-09-09",
+    "title": "春风渡 v2.5.5 清单极速匹配与CDN短路优化版",
+    "changelog": [
+      "⚡ 优化清单预缓存网络短路机制：遇到 401/403/404 鉴权或无资源状态立即短路，不再无效遍历海外被墙 CDN 节点",
+      "🌐 优化国内 CDN 镜像池：剔除海外高延迟节点，锁定国内极速边缘 CDN 镜像，超时减半快速失败",
+      "🚀 引入 CDN 节点池单例缓存机制（OnceLock），运行期间 0 延迟秒级响应，消除重复网络探活阻塞",
+      "🎯 彻底消除入库漫长转圈：Steam 库即时显示后，分包清单与密钥匹配时间从 30 秒暴降至 1 秒以内"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.5.5/ChunFengDu_2.5.5_x64-setup.exe",
+    "forceUpdate": true,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-09T00:00:00.000Z",
+    "updatedAt": "2026-09-09T00:00:00.000Z"
+  },
+  {
     "version": "2.5.2",
     "channel": "stable",
     "releaseDate": "2026-09-08",
