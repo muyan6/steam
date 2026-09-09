@@ -142,7 +142,7 @@
               :src="`https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${game.appId}/capsule_184x69.jpg`"
               class="w-20 h-10 object-cover rounded-xl bg-slate-900 shadow-sm shrink-0 border border-white/10 group-hover:scale-105 transition-transform duration-300"
               loading="lazy"
-              @error="handleImgError"
+              @error="handleImgError($event, game.appId)"
             />
             <div class="min-w-0 flex-1">
               <div class="font-bold text-sm text-slate-100 truncate group-hover:theme-text-accent transition-colors" :title="game.name">
@@ -317,7 +317,7 @@ import {
 } from 'lucide-vue-next';
 import { AppManifestStatus, GameUpdateStatus, LuaGameInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
-import { applyImageFallback } from '../utils/imageFallback';
+import { applyImageFallback, smartMultiCdnImageFallback } from '../utils/imageFallback';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -489,8 +489,8 @@ const handleRestartSteam = async () => {
   }
 };
 
-const handleImgError = (e: Event) => {
-  applyImageFallback(e);
+const handleImgError = (e: Event, appId: number) => {
+  smartMultiCdnImageFallback(e, appId, 'capsule_184x69.jpg');
 };
 
 onMounted(async () => {

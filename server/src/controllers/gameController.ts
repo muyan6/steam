@@ -57,14 +57,16 @@ export const getGameHeaderImage = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '无效的 AppID' });
     }
     const headerUrl = await gameService.fetchRealSteamHeader(appId);
-    if (headerUrl) {
-      return res.json({ success: true, headerUrl });
-    }
-    res.status(404).json({ success: false, message: '该应用暂无官方封面图' });
+    const cdnCandidates = gameService.getSteamImageCdns(appId);
+    return res.json({
+      success: true,
+      headerUrl: headerUrl || cdnCandidates[0],
+      cdnCandidates
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ success: false, message: '服务器内部错误' });
-    }
+  }
 };
 
 /**

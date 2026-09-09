@@ -152,6 +152,19 @@ export class GameService {
     return null;
   }
 
+  /**
+   * 返回多路 Steam 官方图片 CDN 候选列表 (用于客户端或中继多节点智能保底)
+   */
+  public getSteamImageCdns(appId: number, asset: string = 'header.jpg'): string[] {
+    return [
+      `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appId}/${asset}`,
+      `https://cdn.akamai.steamstatic.com/steam/apps/${appId}/${asset}`,
+      `https://steamcdn-a.akamaihd.net/steam/apps/${appId}/${asset}`,
+      `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/${asset}`,
+      `https://cdn.steamstatic.com/steam/apps/${appId}/${asset}`
+    ];
+  }
+
   public async getGameByAppId(appId: number): Promise<SteamGame | null> {
     // 1. 优先在精修热门库查找
     const pop = this.popularGames.find((g) => g.appId === appId);

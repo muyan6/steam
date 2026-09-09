@@ -371,6 +371,7 @@ import {
 } from 'lucide-vue-next';
 import { SteamGame, SearchSourceId, SearchSourceConfig } from '../../types';
 import { formatIpcError, getJson } from '../api/tauriBridge';
+import { STEAM_IMAGE_CDNS, getSteamCdnImageUrl } from '../utils/imageFallback';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -431,20 +432,12 @@ const handleListScroll = () => {
   listAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 12;
 };
 
-// 图片多 CDN 智能镜像加速与容错系统
+// 图片多 CDN 智能镜像加速与容错系统 (5 大官方节点全链路保底)
 const failedImgs = reactive(new Set<number>());
 const imgCdnIndices = reactive(new Map<number, number>());
 
-const CDN_TEMPLATES = [
-  (id: number) => `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${id}/header.jpg`,
-  (id: number) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/header.jpg`,
-  (id: number) => `https://steamcdn-a.akamaihd.net/steam/apps/${id}/header.jpg`,
-  (id: number) => `https://cdn.steamstatic.com/steam/apps/${id}/header.jpg`
-];
-
 const getGameCdnUrl = (appId: number, cdnIndex = 0): string => {
-  const idx = cdnIndex % CDN_TEMPLATES.length;
-  return CDN_TEMPLATES[idx](appId);
+  return getSteamCdnImageUrl(appId, 'header.jpg', cdnIndex);
 };
 
 const handleImgError = async (game: SteamGame) => {
@@ -452,20 +445,19 @@ const handleImgError = async (game: SteamGame) => {
   if (failedImgs.has(game.appId)) return;
 
   const currentIdx = imgCdnIndices.get(game.appId) || 0;
-  if (currentIdx + 1 < CDN_TEMPLATES.length) {
+  if (currentIdx + 1 < STEAM_IMAGE_CDNS.length) {
     const nextIdx = currentIdx + 1;
     imgCdnIndices.set(game.appId, nextIdx);
     game.headerUrl = getGameCdnUrl(game.appId, nextIdx);
     return;
   }
 
-  // 所有 CDN 均失败：尝试一次 Steam 官方 API 动态获取（每 appId 仅一次，超过 CDN
-  // 模板数的索引表示 API 已尝试过，直接判定失败并标记占位图）
-  if (currentIdx > CDN_TEMPLATES.length) {
+  // 所有 5 个 CDN 均失败：尝试一次 Steam 官方 API 动态获取（每 appId 仅一次）
+  if (currentIdx > STEAM_IMAGE_CDNS.length) {
     failedImgs.add(game.appId);
     return;
   }
-  imgCdnIndices.set(game.appId, CDN_TEMPLATES.length + 1);
+  imgCdnIndices.set(game.appId, STEAM_IMAGE_CDNS.length + 1);
   try {
     const url = `https://store.steampowered.com/api/appdetails?appids=${game.appId}&l=schinese`;
     // 走 Tauri Rust 通道（无 CORS）；浏览器 axios 请求该接口会被 CORS 拦截，
