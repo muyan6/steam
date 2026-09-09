@@ -244,6 +244,11 @@ export const getGameMetadata = async (req: Request, res: Response) => {
               }
             }
 
+            // 过滤非内容分包：共享再发行组件（DirectX / VC++ 等）、0 字节虚拟占位分包
+            if ((info as any).sharedinstall === '1' || (info as any).depotfromapp) continue;
+            const pubManifest = (info as any).manifests?.public;
+            if (pubManifest && pubManifest.download === '0' && pubManifest.size === '0') continue;
+
             const name = ((info as any).name || '').toString().toLowerCase();
             if (skipPatterns.some((p) => name.includes(p))) continue;
 
@@ -344,6 +349,11 @@ export const getGameMetadata = async (req: Request, res: Response) => {
           knownDepots.add(dId);
         }
       }
+    }
+
+    // 若存在有效密钥分包，则剔除无有效密钥的残余分包（防止 Steam 尝试解密无密钥分包报“内容仍然处于加密状态”）
+    if (depots.some((d) => isValidKey(d.depotKey))) {
+      depots = depots.filter((d) => isValidKey(d.depotKey));
     }
 
     // 5. 获取 PICS Access Token

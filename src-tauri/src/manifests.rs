@@ -421,6 +421,19 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
             if !d_id.chars().all(|c| c.is_ascii_digit()) {
                 continue;
             }
+            // 过滤非内容分包：共享再发行组件（DirectX / VC++ 等）、0 字节虚拟占位分包
+            let is_shared = info.get("sharedinstall").and_then(|v| v.as_str()) == Some("1")
+                || info.get("depotfromapp").is_some();
+            if is_shared {
+                continue;
+            }
+            if let Some(pub_m) = info.pointer("/manifests/public") {
+                let download_0 = pub_m.get("download").and_then(|v| v.as_str()) == Some("0");
+                let size_0 = pub_m.get("size").and_then(|v| v.as_str()) == Some("0");
+                if download_0 && size_0 {
+                    continue;
+                }
+            }
             if let Some(dlc_app_id) = info
                 .get("dlcappid")
                 .and_then(|v| v.as_str().and_then(|s| s.parse::<u32>().ok()).or_else(|| v.as_u64().map(|n| n as u32)))
@@ -779,10 +792,19 @@ pub fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
 /// 单个清单下载的任何失败/panic 只损失该清单，绝不向调用方传播——
 /// 入库主流程（Lua 规则写入）在此步之前就已完成。
 pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResult {
+    let any_has_key = meta.depots.iter().any(|d| d.depot_key.as_deref().map(|k| is_valid_key(k)).unwrap_or(false));
     let valid: Vec<&DepotMeta> = meta
         .depots
         .iter()
-        .filter(|d| d.manifest_gid.as_deref().map(|g| !g.is_empty() && g != "0").unwrap_or(false))
+        .filter(|d| {
+            let has_gid = d.manifest_gid.as_deref().map(|g| !g.is_empty() && g != "0").unwrap_or(false);
+            if any_has_key {
+                let has_key = d.depot_key.as_deref().map(|k| is_valid_key(k)).unwrap_or(false);
+                has_gid && has_key
+            } else {
+                has_gid
+            }
+        })
         .collect();
     let total = valid.len();
 

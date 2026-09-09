@@ -250,6 +250,13 @@ async fn activate_injection(
 /// 供「一键入库」(unlock_game) 与「更新到最新版」(update_game_rules) 两条命令复用。
 /// 必须在 spawn_blocking 线程调用（save_lua_rule / precache 内部有阻塞 IO）。
 fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -> serde_json::Value {
+    // 关键自愈：确保 Steam 目录中的核心注入 DLL（dwmapi.dll / OpenSteamTool.dll）与 toml 配置文件就绪。
+    // 若 Steam 自动更新或杀软误删导致 DLL 缺失，入库后 Steam 将无注入环境运行并报“内容仍然处于加密状态”
+    if !steam_path.join("dwmapi.dll").exists() || !steam_path.join("OpenSteamTool.dll").exists() {
+        let _ = ost::deploy_core_binaries(steam_path);
+    }
+    let _ = ost::ensure_toml_optimized(steam_path);
+
     match ost::save_lua_rule(steam_path, &payload) {
         Ok(res) => {
             // 与 Electron 版一致：入库成功后立即预缓存清单到 depotcache（入库即就绪）。

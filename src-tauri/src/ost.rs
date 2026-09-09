@@ -189,20 +189,23 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
         _ => lines.push(format!("addappid({}, 1)", app_id)),
     }
 
-    // 2. 分包挂载与 Depot 密钥（跳过与本体重复的 depotId）
+    // 2. 分包挂载与 Depot 密钥（仅挂载具备有效解密密钥的分包，跳过与本体重复的 depotId）
+    // 铁律：绝不挂载无解密密钥的内容分包，无密钥分包挂载会导致 Steam 解密失败报错“内容仍然处于加密状态”
     let mut seen: Vec<u32> = vec![app_id];
     if let Some(depots) = &payload.depots {
         for depot in depots {
             if seen.contains(&depot.depot_id) {
                 continue;
             }
-            seen.push(depot.depot_id);
             match depot.depot_key.as_deref() {
                 Some(k) if is_valid_key(k.trim()) => {
+                    seen.push(depot.depot_id);
                     lines.push(format!("addappid({}, 1, \"{}\")", depot.depot_id, k.trim()));
                     lines.push(format!("setDepotKey({}, \"{}\")", depot.depot_id, k.trim()));
                 }
-                _ => lines.push(format!("addappid({})", depot.depot_id)),
+                _ => {
+                    // 无有效密钥的分包绝不写入 addappid，防止触发 Steam 无法解密的加密状态假死
+                }
             }
         }
     }
