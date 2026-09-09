@@ -324,31 +324,31 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 4.5 ManifestHub3 社区清单库兜底（steamtools-games/ManifestHub3，约 6.2 万 AppID）：
-    // 本地密钥库/GID 缺失时拉取该 AppID 分支的 Lua 解析补全。
-    // 铁律：只补缺，绝不覆盖已有有效数据——其 GID 可能与 SteamCMD public 不一致
-    let hub3Data: ManifestHub3Data | null = null;
-    if (depots.some((d) => !isValidKey(d.depotKey) || !d.manifestGid)) {
-      hub3Data = await fetchManifestHub3(appId);
-      if (hub3Data) {
-        if (Array.isArray(hub3Data.dlcIds) && hub3Data.dlcIds.length > 0) {
-          dlcIds = Array.from(new Set([...dlcIds, ...hub3Data.dlcIds]));
+    // 4.5 ManifestHub3 社区实体清单库优先对齐（steamtools-games/ManifestHub3）：
+    // 关键原理：SteamCMD 返回的是 Valve 云端实时构建号，但 Valve CM 接口已严厉封禁非拥有者索码；
+    // 若使用 SteamCMD 的虚假最新 GID，会导致客户端与服务端均无法找到 .manifest 实体文件（404），
+    // 进而迫使 Steam 向官方索码触发 403 Access Denied（无互联网连接）；
+    // 只有 ManifestHub3 实际归档并提供实体下载的 GID，才能保证 100% 成功下载与解密！
+    let hub3Data: ManifestHub3Data | null = await fetchManifestHub3(appId);
+    if (hub3Data) {
+      if (Array.isArray(hub3Data.dlcIds) && hub3Data.dlcIds.length > 0) {
+        dlcIds = Array.from(new Set([...dlcIds, ...hub3Data.dlcIds]));
+      }
+      const knownDepots = new Set(depots.map((d) => d.depotId));
+      for (const d of depots) {
+        if (!isValidKey(d.depotKey) && hub3Data.depotKeys.has(d.depotId)) {
+          d.depotKey = hub3Data.depotKeys.get(d.depotId);
         }
-        const knownDepots = new Set(depots.map((d) => d.depotId));
-        for (const d of depots) {
-          if (!isValidKey(d.depotKey) && hub3Data.depotKeys.has(d.depotId)) {
-            d.depotKey = hub3Data.depotKeys.get(d.depotId);
-          }
-          if (!d.manifestGid && hub3Data.manifestGids.has(d.depotId)) {
-            d.manifestGid = hub3Data.manifestGids.get(d.depotId);
-          }
+        // 核心对齐：优先使用 ManifestHub3 具备实体文件的清单 GID
+        if (hub3Data.manifestGids.has(d.depotId)) {
+          d.manifestGid = hub3Data.manifestGids.get(d.depotId);
         }
-        // 本地数据完全没有的分包（新 DLC / 新增 depot）一并补入
-        for (const [dId, key] of hub3Data.depotKeys) {
-          if (knownDepots.has(dId)) continue;
-          depots.push({ depotId: dId, depotKey: key, manifestGid: hub3Data.manifestGids.get(dId) });
-          knownDepots.add(dId);
-        }
+      }
+      // 本地数据完全没有的分包（新 DLC / 新增 depot）一并补入
+      for (const [dId, key] of hub3Data.depotKeys) {
+        if (knownDepots.has(dId)) continue;
+        depots.push({ depotId: dId, depotKey: key, manifestGid: hub3Data.manifestGids.get(dId) });
+        knownDepots.add(dId);
       }
     }
 

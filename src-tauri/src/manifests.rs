@@ -181,7 +181,12 @@ pub struct AppMetadata {
 
 pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
     match parse_metadata_from_server(app_id) {
-        Ok(m) if !m.depots.is_empty() => Ok(m),
+        Ok(mut m) if !m.depots.is_empty() => {
+            // 双端防御：即使服务端尚未重启部署或混入了 SteamCMD 虚假无实体 GID，
+            // 客户端自动与 ManifestHub3 对齐真实存在的清单实体 GID，确保 100% 可下载
+            align_manifest_gids_with_hub3(&mut m, app_id);
+            Ok(m)
+        }
         // 授权被拒（未激活/免费额度耗尽）属于权限问题而非数据问题：
         // 直接透传服务端原因并终止，不再降级（降级也拿不到密钥）
         Err(e) if e.contains("云端密钥服务拒绝") => Err(e),
@@ -206,6 +211,42 @@ pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
             }
             Err(_) => parse_metadata_from_steamcmd(app_id),
         },
+    }
+}
+
+/// 检查 ManifestHub3 是否拥有此 AppID 的真实清单实体 GID，如有则优先对齐
+fn align_manifest_gids_with_hub3(meta: &mut AppMetadata, app_id: u32) {
+    let urls = [
+        format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+    ];
+
+    for url in &urls {
+        if let Ok(resp) = block_on(http_client().get(url).timeout(Duration::from_secs(3)).send()) {
+            if resp.status().is_success() {
+                if let Ok(text) = block_on(resp.text()) {
+                    if text.contains("setManifestid") {
+                        let hub_meta = parse_lua_metadata(&text, app_id);
+                        for d in &mut meta.depots {
+                            if let Some(hub_d) = hub_meta.depots.iter().find(|hd| hd.depot_id == d.depot_id) {
+                                if let Some(real_gid) = &hub_d.manifest_gid {
+                                    if !real_gid.is_empty() && real_gid != "0" {
+                                        d.manifest_gid = Some(real_gid.clone());
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
