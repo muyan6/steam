@@ -405,10 +405,29 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
     let s_app_id = app_id.to_string();
     // 与服务端 metadataController 一致：跳过 config/sharedinstall/shareddepot/redist 等非内容分包
     const SKIP_PATTERNS: [&str; 4] = ["config", "sharedinstall", "shareddepot", "redist"];
+    let mut dlc_ids = Vec::new();
+    if let Some(listofdlc) = json.pointer(&format!("/data/{}/extended/listofdlc", s_app_id)).and_then(|v| v.as_str()) {
+        for part in listofdlc.split(',') {
+            if let Ok(id) = part.trim().parse::<u32>() {
+                if id > 0 && id != app_id && !dlc_ids.contains(&id) {
+                    dlc_ids.push(id);
+                }
+            }
+        }
+    }
+
     if let Some(depots_data) = json.pointer(&format!("/data/{}/depots", s_app_id)).and_then(|v| v.as_object()) {
         for (d_id, info) in depots_data {
             if !d_id.chars().all(|c| c.is_ascii_digit()) {
                 continue;
+            }
+            if let Some(dlc_app_id) = info
+                .get("dlcappid")
+                .and_then(|v| v.as_str().and_then(|s| s.parse::<u32>().ok()).or_else(|| v.as_u64().map(|n| n as u32)))
+            {
+                if dlc_app_id > 0 && dlc_app_id != app_id && !dlc_ids.contains(&dlc_app_id) {
+                    dlc_ids.push(dlc_app_id);
+                }
             }
             let name = info.get("name").and_then(|n| n.as_str()).unwrap_or("").to_lowercase();
             if SKIP_PATTERNS.iter().any(|p| name.contains(p)) {
@@ -438,7 +457,7 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
     Ok(AppMetadata {
         depots,
         depot_keys,
-        dlc_ids: Vec::new(),
+        dlc_ids,
         app_level_key: None,
         access_token: None,
     })

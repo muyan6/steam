@@ -19,6 +19,7 @@ interface ManifestHub3Data {
   depotKeys: Map<string, string>;
   manifestGids: Map<string, string>;
   accessToken?: string;
+  dlcIds: string[];
 }
 
 const manifestHub3Cache = new Map<number, { data: ManifestHub3Data | null; fetchedAt: number }>();
@@ -28,9 +29,11 @@ const manifestHub3InFlight = new Map<number, Promise<ManifestHub3Data | null>>()
 // 缓存条目硬上限，超限时先清过期再淘汰最旧，防止被脚本灌海量 AppID 撑爆内存
 const MANIFEST_HUB3_CACHE_MAX = 500;
 
-function parseManifestHub3Lua(lua: string): ManifestHub3Data {
+function parseManifestHub3Lua(lua: string, targetAppId?: number): ManifestHub3Data {
   const depotKeys = new Map<string, string>();
   const manifestGids = new Map<string, string>();
+  const dlcIds: string[] = [];
+  const sTarget = targetAppId ? targetAppId.toString() : '';
   let accessToken: string | undefined;
 
   for (const rawLine of lua.split('\n')) {
@@ -48,6 +51,16 @@ function parseManifestHub3Lua(lua: string): ManifestHub3Data {
       continue;
     }
 
+    // addappid(<id>) 纯挂载行（通常为 DLC 挂载）
+    const simpleAddMatch = line.match(/^addappid\((\d+)\s*(?:,\s*\d+)?\s*\)/);
+    if (simpleAddMatch) {
+      const id = simpleAddMatch[1];
+      if (id !== sTarget && !dlcIds.includes(id)) {
+        dlcIds.push(id);
+      }
+      continue;
+    }
+
     // setManifestid(<depot>, "<gid>"[, 0])
     const gidMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d{5,})"/);
     if (gidMatch && gidMatch[2] !== '0') {
@@ -62,7 +75,7 @@ function parseManifestHub3Lua(lua: string): ManifestHub3Data {
     }
   }
 
-  return { depotKeys, manifestGids, accessToken };
+  return { depotKeys, manifestGids, accessToken, dlcIds };
 }
 
 async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null> {
@@ -92,7 +105,7 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
         const resp = await axios.get(u, { httpsAgent, timeout: 6000 });
         const lua = typeof resp.data === 'string' ? resp.data : '';
         if (lua.includes('addappid') || lua.includes('setManifestid')) {
-          data = parseManifestHub3Lua(lua);
+          data = parseManifestHub3Lua(lua, appId);
           break;
         }
       } catch {}
@@ -194,45 +207,73 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       } catch {}
     }
 
-    // 处理 SteamCMD 结果：补全精确的分包与 Manifest GID
+    // 处理 SteamCMD 结果：补全精确的分包与 Manifest GID，并强力兜底游戏名称与 DLC 列表
     if (cmdSettled.status === 'fulfilled') {
       try {
         const cmdResp = cmdSettled.value;
-        const depotsData = cmdResp.data?.data?.[sAppId]?.depots;
-        if (depotsData && typeof depotsData === 'object') {
-        const skipPatterns = ['config', 'sharedinstall', 'shareddepot', 'redist'];
-        for (const [dId, info] of Object.entries(depotsData)) {
-          if (!info || typeof info !== 'object') continue;
-          const name = ((info as any).name || '').toString().toLowerCase();
-          if (skipPatterns.some((p) => name.includes(p))) continue;
+        const appRaw = cmdResp.data?.data?.[sAppId];
 
-          let manifestGid = '';
-          if ((info as any).manifests && typeof (info as any).manifests === 'object') {
-            // SteamCMD 返回的分支顺序不固定（previous 可能排在 public 之前），
-            // 取第一个分支会拿到旧版清单，必须优先取 public 分支
-            const branchEntries = Object.entries((info as any).manifests) as Array<[string, any]>;
-            const chosen = branchEntries.find(([b, v]) => b === 'public' && v && v.gid) || branchEntries.find(([, v]) => v && v.gid);
-            if (chosen) {
-              manifestGid = chosen[1].gid.toString();
-            }
-          }
-
-          let depotKey = '';
-          for (const k of ['decryption_key', 'depot_key', 'depotkey', 'key']) {
-            if ((info as any)[k] && typeof (info as any)[k] === 'string' && isValidKey((info as any)[k])) {
-              depotKey = (info as any)[k];
-              break;
-            }
-          }
-
-          const existing = depots.find((d) => d.depotId === dId);
-          if (existing) {
-            if (manifestGid && !existing.manifestGid) existing.manifestGid = manifestGid;
-            if (depotKey && (!existing.depotKey || !isValidKey(existing.depotKey))) existing.depotKey = depotKey;
-          } else {
-            depots.push({ depotId: dId, manifestGid, depotKey: depotKey || undefined });
-          }
+        // 补全游戏名称（Store API 超时或网络失败时由 SteamCMD 兜底）
+        if (!gameName && appRaw?.common?.name) {
+          gameName = appRaw.common.name;
         }
+
+        // 从 SteamCMD extended.listofdlc 提取官方全部 DLC 列表（彻底解决商店 API 超时导致的 DLC 漏发）
+        const listofdlc = appRaw?.extended?.listofdlc;
+        if (typeof listofdlc === 'string' && listofdlc.trim()) {
+          const parts = listofdlc
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter((s: string) => /^\d+$/.test(s) && s !== sAppId);
+          dlcIds = Array.from(new Set([...dlcIds, ...parts]));
+        }
+
+        const depotsData = appRaw?.depots;
+        if (depotsData && typeof depotsData === 'object') {
+          const skipPatterns = ['config', 'sharedinstall', 'shareddepot', 'redist'];
+          for (const [dId, info] of Object.entries(depotsData)) {
+            if (!info || typeof info !== 'object') continue;
+            // 严格校验分包 ID 必须为纯数字，过滤 branches/workshopdepot 等非分包元字段
+            if (!/^\d+$/.test(dId)) continue;
+
+            // 从分包元数据中的 dlcappid 提取关联 DLC
+            if ((info as any).dlcappid && /^\d+$/.test(String((info as any).dlcappid))) {
+              const dlcAppId = String((info as any).dlcappid);
+              if (dlcAppId !== sAppId && !dlcIds.includes(dlcAppId)) {
+                dlcIds.push(dlcAppId);
+              }
+            }
+
+            const name = ((info as any).name || '').toString().toLowerCase();
+            if (skipPatterns.some((p) => name.includes(p))) continue;
+
+            let manifestGid = '';
+            if ((info as any).manifests && typeof (info as any).manifests === 'object') {
+              // SteamCMD 返回的分支顺序不固定（previous 可能排在 public 之前），
+              // 取第一个分支会拿到旧版清单，必须优先取 public 分支
+              const branchEntries = Object.entries((info as any).manifests) as Array<[string, any]>;
+              const chosen = branchEntries.find(([b, v]) => b === 'public' && v && v.gid) || branchEntries.find(([, v]) => v && v.gid);
+              if (chosen) {
+                manifestGid = chosen[1].gid.toString();
+              }
+            }
+
+            let depotKey = '';
+            for (const k of ['decryption_key', 'depot_key', 'depotkey', 'key']) {
+              if ((info as any)[k] && typeof (info as any)[k] === 'string' && isValidKey((info as any)[k])) {
+                depotKey = (info as any)[k];
+                break;
+              }
+            }
+
+            const existing = depots.find((d) => d.depotId === dId);
+            if (existing) {
+              if (manifestGid && !existing.manifestGid) existing.manifestGid = manifestGid;
+              if (depotKey && (!existing.depotKey || !isValidKey(existing.depotKey))) existing.depotKey = depotKey;
+            } else {
+              depots.push({ depotId: dId, manifestGid, depotKey: depotKey || undefined });
+            }
+          }
         }
       } catch {}
     }
@@ -284,6 +325,9 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     if (depots.some((d) => !isValidKey(d.depotKey) || !d.manifestGid)) {
       hub3Data = await fetchManifestHub3(appId);
       if (hub3Data) {
+        if (Array.isArray(hub3Data.dlcIds) && hub3Data.dlcIds.length > 0) {
+          dlcIds = Array.from(new Set([...dlcIds, ...hub3Data.dlcIds]));
+        }
         const knownDepots = new Set(depots.map((d) => d.depotId));
         for (const d of depots) {
           if (!isValidKey(d.depotKey) && hub3Data.depotKeys.has(d.depotId)) {

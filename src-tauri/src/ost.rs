@@ -215,9 +215,9 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
         }
     }
 
-    // 4. DLC 挂载（升序去重，排除本体）
+    // 4. DLC 挂载（升序去重，排除本体与分包中已挂载过的 AppID，避免覆盖已注入的密钥参数）
     let mut dlcs: Vec<u32> = payload.dlcs.clone().unwrap_or_default();
-    dlcs.retain(|d| *d != app_id);
+    dlcs.retain(|d| *d != app_id && !seen.contains(d));
     dlcs.sort_unstable();
     dlcs.dedup();
     for dlc_id in &dlcs {
