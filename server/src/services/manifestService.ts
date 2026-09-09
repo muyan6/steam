@@ -66,7 +66,7 @@ export class ManifestService {
           source: 'manifesthub',
           depots: mhResult,
           keys,
-          message: `从 ManifestHub 镜像库检索到 ${mhResult.length} 个分包清单！`
+          message: `从云端清单库检索到 ${mhResult.length} 个分包清单！`
         };
       }
     } catch (err: any) {
@@ -74,14 +74,14 @@ export class ManifestService {
     }
 
     // 3. [已封存] GMRC 与向 Steam 请求清单的其它失效源均已封存
-    // 若本地缓存与 ManifestHub3 均未找到清单文件，直接返回未收录提示
+    // 若本地缓存与云端均未找到清单文件，直接返回未收录提示
     return {
       success: false,
       appId,
       source: 'none',
       depots: [],
       keys,
-      message: '暂时没有这款游戏（云端与 ManifestHub3 暂未收录该游戏的清单文件）'
+      message: '暂时没有这款游戏（云端暂未收录该游戏的清单文件）'
     };
   }
 

@@ -361,11 +361,11 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       depots = depots.filter((d) => isValidKey(d.depotKey));
     }
 
-    // 严密防线：若云端与 ManifestHub3 均无任何有效分包/密钥，直接响应「暂时没有这款游戏」
+    // 严密防线：若云端无任何有效分包/密钥，直接响应「暂时没有这款游戏」
     if (depots.length === 0) {
       return res.status(200).json({
         success: false,
-        message: `暂时没有这款游戏（云端与 ManifestHub3 暂未收录 AppID ${sAppId} 的清单与解密数据）`,
+        message: `暂时没有这款游戏（云端暂未收录 AppID ${sAppId} 的清单与解密数据）`,
         data: null
       });
     }

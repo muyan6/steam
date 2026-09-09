@@ -292,7 +292,7 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
             }
             let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
 
-            // 核心断言：若该游戏需要清单（precache_total > 0），但云端与 ManifestHub3 均未提供物理实体（ok_count == 0），
+            // 核心断言：若该游戏需要清单（precache_total > 0），但云端均未提供物理实体（ok_count == 0），
             // 坚决不落无效规则，撤销刚刚生成的脚本并直接提示用户「暂时没有这款游戏」
             if precache_total > 0 && precache_ok_count == 0 {
                 let _ = std::fs::remove_file(&res.lua_path);
@@ -301,12 +301,12 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                 ost::sync_greenluma_app_list(steam_path);
                 return json!({
                     "success": false,
-                    "message": format!("暂时没有这款游戏（云端与 ManifestHub3 暂未收录「{}」的清单实体文件）", name),
+                    "message": format!("暂时没有这款游戏（云端暂未收录「{}」的清单实体文件）", name),
                     "scriptPath": "",
                     "keyCount": 0,
                     "manifestCount": 0,
                     "metadataOk": false,
-                    "metadataMessage": Some("云端与 ManifestHub3 暂未收录该游戏的物理清单文件"),
+                    "metadataMessage": Some("云端暂未收录该游戏的物理清单文件"),
                     "precacheOk": 0,
                     "precacheTotal": precache_total,
                     "missingManifests": true

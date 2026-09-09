@@ -193,13 +193,13 @@ pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
         // 服务端不可达/网络异常时：尝试 ManifestHub3 备用容灾源
         Err(server_err) => {
             log_diag(&format!(
-                "云端服务不可达 ({})，尝试 ManifestHub3 备用容灾源...",
+                "云端服务不可达 ({})，尝试备用容灾源...",
                 server_err
             ));
             fetch_metadata_from_backup_sources(app_id)
         }
         Ok(_) => {
-            log_diag(&format!("云端未收录游戏 {}，尝试 ManifestHub3 备用容灾源...", app_id));
+            log_diag(&format!("云端未收录游戏 {}，尝试备用容灾源...", app_id));
             fetch_metadata_from_backup_sources(app_id)
         }
     }
@@ -409,7 +409,7 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
         Some(content) => content,
         None => {
             return Err(format!(
-                "暂时没有这款游戏（云端与 ManifestHub3 暂未收录 AppID {} 的清单与解密数据）",
+                "暂时没有这款游戏（云端暂未收录 AppID {} 的清单与解密数据）",
                 app_id
             ));
         }
@@ -418,7 +418,7 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
     let meta = parse_lua_metadata(&lua, app_id);
     if meta.depots.is_empty() {
         return Err(format!(
-            "暂时没有这款游戏（ManifestHub3 分支中未包含有效分包数据）"
+            "暂时没有这款游戏（云端暂未收录有效分包数据）"
         ));
     }
 
@@ -757,7 +757,7 @@ async fn download_single_manifest(
                         if !payload.is_empty() {
                             fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                             clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                            return Ok(format!("已从 ManifestHub3 镜像下载 ({} 字节)", payload.len()));
+                            return Ok(format!("已从云端备用源下载 ({} 字节)", payload.len()));
                         }
                     }
                 }
@@ -799,9 +799,9 @@ async fn download_single_manifest(
     }
 
     // [已封存] 鉴于 Valve 官方接口已全面拦截匿名清单请求 (401/403)，向 Steam 获取清单的兜底路径已失效封存。
-    // 如果没有从云端或 ManifestHub3 获取到实际的文件，不再请求后续向 Steam 获取清单的源，直接提示
+    // 如果没有从云端获取到实际的文件，不再请求后续向 Steam 获取清单的源，直接提示
     Err(format!(
-        "暂时没有这款游戏（云端与 ManifestHub3 暂未收录清单文件 {}_{}）",
+        "暂时没有这款游戏（云端暂未收录清单文件 {}_{}）",
         depot_id, manifest_gid
     ))
 }
@@ -866,7 +866,7 @@ pub fn download_depot_manifests(
             precache.ok_count, precache.total
         )
     } else {
-        "暂时没有这款游戏（云端与 ManifestHub3 暂未收录该游戏的清单实体文件）".to_string()
+        "暂时没有这款游戏（云端暂未收录该游戏的清单实体文件）".to_string()
     };
 
     ManifestInstallResult {

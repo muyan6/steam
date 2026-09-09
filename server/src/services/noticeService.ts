@@ -68,7 +68,7 @@ export class NoticeService {
           {
             id: 'notice_banner_01',
             title: '⚡ 云端数据源实时同步引擎已就绪',
-            content: '苏大猫 993499094 及 ManifestHub 全量密钥与 PICS Token 每日自动更新。',
+            content: '苏大猫 993499094 及全量清单密钥与 PICS Token 每日自动更新。',
             type: 'banner',
             level: 'info',
             priority: 50,
