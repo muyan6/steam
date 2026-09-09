@@ -288,18 +288,16 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
         lines.push(format!("addappid({})", dlc_id));
     }
 
-    // 5. 清单 GID 固定（仅版本锁定模式写入）：不钉 GID 时 OST 内核在每次下载时
-    // 以注入授权向官方拉取当时最新清单，密钥按 depot 固定跨版本有效，
-    // 游戏更新后无须任何手动操作；旧 GID 会被 Valve 从 CDN 回收导致 404，
-    // 因此默认不再钉死版本。需要联机对版本时由用户显式开启锁定
-    if payload.lock_version == Some(true) {
-        if let Some(depots) = &payload.depots {
-            for depot in depots {
-                if let Some(man) = depot.manifest_id.as_deref() {
-                    let man = man.trim();
-                    if !man.is_empty() && man != "0" && man.chars().all(|c| c.is_ascii_digit()) {
-                        lines.push(format!("setManifestid({}, \"{}\", 0)", depot.depot_id, man));
-                    }
+    // 5. 清单 GID 绑定：只要分包具备有效 manifest_id，一律写入 setManifestid。
+    // 在 Valve CM 接口全面限制非拥有者拉取动态清单代码（返回 403 / Access Denied / 报错无互联网连接）
+    // 的新机制下，显式绑定本地清单 GID 可使 Steam 直接载入 depotcache/ 中的解密清单文件，
+    // 零请求绕过 Valve CM 接口风控，实现 100% 稳妥下载。
+    if let Some(depots) = &payload.depots {
+        for depot in depots {
+            if let Some(man) = depot.manifest_id.as_deref() {
+                let man = man.trim();
+                if !man.is_empty() && man != "0" && man.chars().all(|c| c.is_ascii_digit()) {
+                    lines.push(format!("setManifestid({}, \"{}\", 0)", depot.depot_id, man));
                 }
             }
         }

@@ -171,6 +171,7 @@ pub struct DepotMeta {
 /// 服务端元数据聚合结果（分包/密钥/DLC 列表）
 #[derive(Debug, Clone)]
 pub struct AppMetadata {
+    pub app_id: u32,
     pub depots: Vec<DepotMeta>,
     pub depot_keys: BTreeMap<String, String>,
     pub dlc_ids: Vec<u32>,
@@ -312,6 +313,7 @@ fn parse_lua_metadata(lua: &str, app_id: u32) -> AppMetadata {
     }
 
     AppMetadata {
+        app_id,
         depots: depots_map.into_values().collect(),
         depot_keys,
         dlc_ids,
@@ -351,6 +353,7 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
         parse_lua_metadata(lua, app_id)
     } else {
         AppMetadata {
+            app_id,
             depots: Vec::new(),
             depot_keys: BTreeMap::new(),
             dlc_ids: Vec::new(),
@@ -468,6 +471,7 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
         return Err("SteamCMD 降级查询未返回任何分包".to_string());
     }
     Ok(AppMetadata {
+        app_id,
         depots,
         depot_keys,
         dlc_ids,
@@ -520,13 +524,14 @@ fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
             Some(serde_json::Value::String(s)) => s.clone(),
             _ => return,
         };
-        let gid = match obj.get("manifestGid") {
+        let gid = match obj.get("manifestGid").or_else(|| obj.get("manifestId")) {
             Some(serde_json::Value::Number(n)) => Some(n.to_string()),
             Some(serde_json::Value::String(s)) if !s.is_empty() && s != "0" => Some(s.clone()),
             _ => None,
         };
         let key = obj
             .get("depotKey")
+            .or_else(|| obj.get("key"))
             .and_then(|k| k.as_str())
             .filter(|k| is_valid_key(k))
             .map(|k| k.to_string());
@@ -590,6 +595,7 @@ fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
         .map(|t| t.to_string());
 
     Ok(AppMetadata {
+        app_id,
         depots,
         depot_keys,
         dlc_ids,
@@ -628,11 +634,14 @@ fn get_cdn_hosts() -> Vec<String> {
     }).clone()
 }
 
-/// 异步版清单下载：必须运行在 Tokio 运行时上下文内（由 precache_manifests
-/// 经 tauri::async_runtime::spawn 调度）。禁止在普通线程上手动 block_on——
-/// 该组合在 Tauri 运行时下会因反应器不可用而 panic（"there is no reactor running"）。
-async fn download_single_manifest_with_hosts(
+/// 异步版单清单下载（四级容灾分发）：
+/// 1. 第一优先级：自有云端服务端下载（支持服务端 Cache-Through 自动回源沉淀）
+/// 2. 第二优先级：ManifestHub3 加速镜像（拉取真实 .manifest 实体）
+/// 3. 第三优先级：ManifestHub3 GitHub Raw 直连
+/// 4. 第四优先级：Steam 官方 CDN 多节点调度
+async fn download_single_manifest(
     steam_path: &Path,
+    app_id: u32,
     depot_id: &str,
     manifest_gid: &str,
     hosts: &[String],
@@ -644,11 +653,110 @@ async fn download_single_manifest_with_hosts(
         return Ok("已存在".to_string());
     }
 
-    let url_tpl = |host: &str| format!("https://{}/depot/{}/manifest/{}/5/0", host, depot_id, manifest_gid);
+    let device_id = crate::device::get_device_id();
 
+    // 1. 第一优先级：自有云端服务端下载（带 Cache-Through 自动沉淀机制）
+    let server_url = format!(
+        "{}/api/manifests/download/{}/{}?appId={}&deviceId={}",
+        SERVER_API,
+        depot_id,
+        manifest_gid,
+        app_id,
+        urlencoding_query(&device_id)
+    );
+    if let Ok(resp) = http_client()
+        .get(&server_url)
+        .timeout(Duration::from_secs(8))
+        .header("x-device-id", &device_id)
+        .header("User-Agent", "ChunFengDu-Client")
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(bytes) = resp.bytes().await {
+                if !bytes.is_empty() {
+                    let payload = extract_manifest_payload(&bytes);
+                    if !payload.is_empty() {
+                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                        return Ok(format!("已从自有服务端下载 ({} 字节)", payload.len()));
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 第二优先级：ManifestHub3 加速镜像源（拉取真实 .manifest 实体）
+    let mirror_candidates = [
+        format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            depot_id, depot_id, manifest_gid
+        ),
+    ];
+    for m_url in &mirror_candidates {
+        if let Ok(resp) = http_client()
+            .get(m_url)
+            .timeout(Duration::from_secs(8))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(bytes) = resp.bytes().await {
+                    if !bytes.is_empty() {
+                        let payload = extract_manifest_payload(&bytes);
+                        if !payload.is_empty() {
+                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                            return Ok(format!("已从 ManifestHub3 镜像下载 ({} 字节)", payload.len()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. 第三优先级：ManifestHub3 GitHub Raw 直连
+    let raw_candidates = [
+        format!(
+            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            depot_id, depot_id, manifest_gid
+        ),
+    ];
+    for r_url in &raw_candidates {
+        if let Ok(resp) = http_client()
+            .get(r_url)
+            .timeout(Duration::from_secs(8))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(bytes) = resp.bytes().await {
+                    if !bytes.is_empty() {
+                        let payload = extract_manifest_payload(&bytes);
+                        if !payload.is_empty() {
+                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                            return Ok(format!("已从 GitHub 直连下载 ({} 字节)", payload.len()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. 第四优先级：Steam 官方 CDN 多节点调度（兜底路径）
+    let url_tpl = |host: &str| format!("https://{}/depot/{}/manifest/{}/5/0", host, depot_id, manifest_gid);
     for host in hosts {
         let resp = http_client()
-            .get(url_tpl(&host))
+            .get(url_tpl(host))
             .timeout(Duration::from_millis(2500))
             .header("User-Agent", "Valve/Steam HTTP Client 1.0")
             .header("Accept", "*/*")
@@ -656,9 +764,6 @@ async fn download_single_manifest_with_hosts(
             .await;
         if let Ok(resp) = resp {
             let status = resp.status();
-            // 404 / 401 / 403 表示该清单在 Steam CDN 上不存在或需要专属授权凭据，
-            // 所有 Valve CDN 边缘节点策略均一致，换节点重试必然同样失败，
-            // 必须立即短路，杜绝因遍历多个节点超时把单清单等待拉长数十秒
             if status == reqwest::StatusCode::NOT_FOUND
                 || status == reqwest::StatusCode::UNAUTHORIZED
                 || status == reqwest::StatusCode::FORBIDDEN
@@ -672,7 +777,7 @@ async fn download_single_manifest_with_hosts(
                         if !payload.is_empty() {
                             fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                             clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                            return Ok(format!("已下载 ({} 字节)", payload.len()));
+                            return Ok(format!("已从 Steam CDN 下载 ({} 字节)", payload.len()));
                         }
                     }
                 }
@@ -680,7 +785,7 @@ async fn download_single_manifest_with_hosts(
         }
     }
 
-    Err(format!("所有 CDN 均未找到清单 {}_{}", depot_id, manifest_gid))
+    Err(format!("所有源均未找到清单 {}_{}", depot_id, manifest_gid))
 }
 
 fn extract_manifest_payload(data: &[u8]) -> Vec<u8> {
@@ -820,6 +925,7 @@ pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResu
     // ——该位置的单次 block_on 与旧版串行实现相同，已验证可用。
     let chunk_size = (total + 3) / 4;
     let mut handles = Vec::new();
+    let app_id = meta.app_id;
     for chunk in valid.chunks(chunk_size.max(1)) {
         let steam_path = steam_path.to_path_buf();
         let hosts = hosts.clone();
@@ -830,7 +936,7 @@ pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResu
         handles.push(tauri::async_runtime::spawn(async move {
             let mut files = Vec::new();
             for (depot_id, gid) in tasks {
-                match download_single_manifest_with_hosts(&steam_path, &depot_id, &gid, &hosts).await {
+                match download_single_manifest(&steam_path, app_id, &depot_id, &gid, &hosts).await {
                     Ok(_) => files.push(format!("{}_{}.manifest", depot_id, gid)),
                     Err(e) => log_diag(&format!("manifest {} 下载失败: {}", depot_id, e)),
                 }

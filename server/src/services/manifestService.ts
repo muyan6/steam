@@ -195,36 +195,149 @@ export class ManifestService {
   }
 
   /**
-   * 从 GitHub ManifestHub 加速源检索
+   * 从 GitHub ManifestHub3 加速源检索（steamtools-games/ManifestHub3）
    */
   private async fetchFromManifestHub(appId: number, depotIds: string[]): Promise<DepotManifestInfo[]> {
     const results: DepotManifestInfo[] = [];
-    const proxyBase = 'https://ghfast.top/https://raw.githubusercontent.com/ManifestHub';
+    const proxyBase = 'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3';
+    const rawBase = 'https://raw.githubusercontent.com/steamtools-games/ManifestHub3';
 
-    for (const dId of depotIds.slice(0, 8)) {
-      const candidateUrls = [
-        `${proxyBase}/Manifest/main/${dId}.json`,
-        `${proxyBase}/Manifest-Index/main/data/${appId}/${dId}.json`
+    // 1. 优先拉取 {appId}.json
+    const jsonUrls = [
+      `${proxyBase}/${appId}/${appId}.json`,
+      `${rawBase}/${appId}/${appId}.json`
+    ];
+
+    for (const ju of jsonUrls) {
+      try {
+        const resp = await axios.get(ju, { timeout: 4000 });
+        if (resp.data && resp.data.depot && typeof resp.data.depot === 'object') {
+          for (const [dId, dInfo] of Object.entries<any>(resp.data.depot)) {
+            if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+            let gid: string | undefined;
+            if (dInfo.manifests && typeof dInfo.manifests === 'object') {
+              gid = dInfo.manifests.public?.gid || Object.values<any>(dInfo.manifests)[0]?.gid;
+            }
+            if (gid && gid !== '0' && /^\d+$/.test(gid.toString())) {
+              const key = (dInfo.decryptionkey && typeof dInfo.decryptionkey === 'string' && dInfo.decryptionkey.length >= 32)
+                ? dInfo.decryptionkey
+                : (depotService.getDepotKey(dId) || undefined);
+              results.push({
+                depotId: dId,
+                manifestId: gid.toString(),
+                downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
+                source: 'manifesthub',
+                key
+              });
+            }
+          }
+          if (results.length > 0) break;
+        }
+      } catch {}
+    }
+
+    // 2. 若 json 失败，兜底尝试拉取 {appId}.lua
+    if (results.length === 0) {
+      const luaUrls = [
+        `${proxyBase}/${appId}/${appId}.lua`,
+        `${rawBase}/${appId}/${appId}.lua`
       ];
-
-      for (const cu of candidateUrls) {
+      for (const lu of luaUrls) {
         try {
-          const resp = await axios.get(cu, { timeout: 2500 });
-          if (resp.data && (resp.data.manifest_id || resp.data.manifestId)) {
-            const mId = (resp.data.manifest_id || resp.data.manifestId).toString();
-            results.push({
-              depotId: dId,
-              manifestId: mId,
-              downloadUrl: resp.data.download_url || `${proxyBase}/Manifest/main/${dId}_${mId}.manifest`,
-              source: 'manifesthub',
-              key: depotService.getDepotKey(dId) || undefined
-            });
-            break;
+          const resp = await axios.get(lu, { timeout: 4000 });
+          const lua = typeof resp.data === 'string' ? resp.data : '';
+          if (lua.includes('setManifestid') || lua.includes('addappid')) {
+            const gidMap = new Map<string, string>();
+            const keyMap = new Map<string, string>();
+
+            for (const rawLine of lua.split('\n')) {
+              const line = rawLine.trim();
+              const mMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d+)"/);
+              if (mMatch && mMatch[2] !== '0') {
+                gidMap.set(mMatch[1], mMatch[2]);
+              }
+              const kMatch = line.match(/^(?:addappid|setDepotKey)\((\d+)\s*,\s*(?:\d+\s*,\s*)?"([0-9a-fA-F]{32,})"/);
+              if (kMatch && !/^0+$/.test(kMatch[2])) {
+                keyMap.set(kMatch[1], kMatch[2]);
+              }
+            }
+
+            for (const [dId, gid] of gidMap) {
+              if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+              const key = keyMap.get(dId) || depotService.getDepotKey(dId) || undefined;
+              results.push({
+                depotId: dId,
+                manifestId: gid,
+                downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
+                source: 'manifesthub',
+                key
+              });
+            }
+            if (results.length > 0) break;
           }
         } catch {}
       }
     }
+
+    // 3. 异步后台触发沉淀落盘（非阻塞），确保后续下载请求秒级响应
+    for (const item of results) {
+      this.ensureManifestCached(item.depotId, item.manifestId, appId).catch(() => {});
+    }
+
     return results;
+  }
+
+  /**
+   * 确保指定清单在服务端本地 manifests/ 目录中就绪
+   * 若本地不存在，则从 steamtools-games/ManifestHub3 回源拉取并沉淀落盘（Cache-Through 模式）
+   */
+  public async ensureManifestCached(depotId: string, manifestId: string, appId?: number): Promise<string | null> {
+    if (!/^\d+$/.test(String(depotId)) || !/^\d+$/.test(String(manifestId))) {
+      return null;
+    }
+
+    const localPath = this.getLocalManifestFilePath(depotId, manifestId);
+    if (localPath && fs.existsSync(localPath)) {
+      return localPath;
+    }
+
+    const targetFile = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
+
+    // 确定上游回源 AppID 候选分支
+    const candidateAppIds: string[] = [];
+    if (appId && appId > 0) {
+      candidateAppIds.push(appId.toString());
+    }
+    if (!candidateAppIds.includes(depotId)) {
+      candidateAppIds.push(depotId);
+    }
+
+    const proxyBases = [
+      'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+    ];
+
+    for (const targetApp of candidateAppIds) {
+      for (const base of proxyBases) {
+        const manifestUrl = `${base}/${targetApp}/${depotId}_${manifestId}.manifest`;
+        try {
+          const resp = await axios.get(manifestUrl, {
+            responseType: 'arraybuffer',
+            timeout: 8000
+          });
+          if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
+            const buf = Buffer.from(resp.data);
+            const saved = this.saveManifestFile(depotId, manifestId, buf);
+            if (saved) {
+              console.log(`[ManifestService] 成功从 ManifestHub3 回源沉淀清单到本地: ${depotId}_${manifestId}.manifest (${buf.byteLength} 字节)`);
+              return targetFile;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    return null;
   }
 
   /**

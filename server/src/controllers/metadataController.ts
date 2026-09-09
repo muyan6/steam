@@ -4,6 +4,7 @@ import https from 'https';
 import { gameService } from '../services/gameService.js';
 import { depotService } from '../services/depotService.js';
 import { tokenService } from '../services/tokenService.js';
+import { manifestService } from '../services/manifestService.js';
 
 // 安全策略：不再关闭上游 HTTPS 证书校验（原 rejectUnauthorized:false 存在 MITM 注入密钥风险）
 const httpsAgent = new https.Agent();
@@ -360,6 +361,13 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     const appLevelKey =
       matchedKeys[sAppId] || depotService.getDepotKey(sAppId) || hub3Data?.depotKeys.get(sAppId) || undefined;
     const accessToken = tokenService.getTokenByAppId(sAppId) || hub3Data?.accessToken || undefined;
+
+    // 6. 异步后台触发清单本地沉淀（非阻塞），确保用户后续在客户端一键入库或预缓存时秒级响应
+    for (const d of depots) {
+      if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
+        manifestService.ensureManifestCached(d.depotId, d.manifestGid, appId).catch(() => {});
+      }
+    }
 
     return res.json({
       success: true,

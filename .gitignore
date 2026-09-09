@@ -29,6 +29,8 @@ server/data/notice.json
 server/data/chinese_games_cache.json
 server/data/toolbox_logs.json
 server/data/license_ed25519_*
+server/data/manifests/*
+!server/data/manifests/.gitkeep
 
 # OS & Editor files
 .DS_Store

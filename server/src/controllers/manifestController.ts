@@ -34,9 +34,17 @@ export const downloadManifestFile = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '参数缺失或格式非法' });
     }
 
-    const filePath = manifestService.getLocalManifestFilePath(depotId, manifestId);
+    let filePath = manifestService.getLocalManifestFilePath(depotId, manifestId);
     if (!filePath || !fs.existsSync(filePath)) {
-      return res.status(404).json({ success: false, message: '未找到该清单文件缓存' });
+      // 本地无缓存，尝试从 ManifestHub3 镜像拉取并沉淀在本地 server/data/manifests/ 目录
+      const rawAppId = req.query.appId ? (Array.isArray(req.query.appId) ? req.query.appId[0] : req.query.appId) : undefined;
+      const appId = rawAppId ? parseInt(String(rawAppId), 10) : undefined;
+
+      filePath = await manifestService.ensureManifestCached(depotId, manifestId, appId);
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: '未找到该清单文件缓存且回源拉取失败' });
     }
 
     res.setHeader('Content-Type', 'application/octet-stream');
