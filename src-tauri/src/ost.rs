@@ -77,19 +77,25 @@ pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
 /// 彻底根除因上游默认源超时、阻断或 403 导致的 Steam 报错“无互联网连接”
 pub fn deploy_manifest_lua(steam_path: &Path) -> Result<(), String> {
     let lua_content = r#"function fetch_manifest_code(gid)
-    -- 第一优先级：古韵高速镜像源 (国内直连专线，毫秒级响应)
-    local body, status = http_get("https://gmrc.guyunsq.com/" .. gid)
+    -- 第一优先级：wudrm 官方清单代码源 (全球最大覆盖面与高可用源)
+    local body, status = http_get("http://gmrc.wudrm.com/manifest/" .. gid)
     if status == 200 and body and body:match("^%d+$") then
         return body
     end
 
-    -- 第二优先级：春风渡云端官方备用代理
+    -- 第二优先级：古韵高速镜像源 (国内直连专线，毫秒级响应)
+    body, status = http_get("https://gmrc.guyunsq.com/" .. gid)
+    if status == 200 and body and body:match("^%d+$") then
+        return body
+    end
+
+    -- 第三优先级：春风渡云端官方备用代理
     body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
     if status == 200 and body and body:match("^%d+$") then
         return body
     end
 
-    -- 第三优先级：steamrun 亚太源
+    -- 第四优先级：steamrun 亚太源
     body, status = http_get("https://manifest.steam.run/api/manifest/" .. gid)
     if status == 200 and body then
         local code = body:match('"content":"(%d+)"')

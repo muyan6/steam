@@ -485,7 +485,18 @@ export class ManifestService {
   public async getManifestCode(gid: string): Promise<string | null> {
     if (!gid || !/^\d+$/.test(gid)) return null;
 
-    // 1. 古韵国内镜像源
+    // 1. wudrm 官方清单代码源（全球最大覆盖面与最新数据）
+    try {
+      const resp = await axios.get(`http://gmrc.wudrm.com/manifest/${gid}`, { timeout: 3500, responseType: 'text' });
+      if (resp.status === 200 && typeof resp.data === 'string') {
+        const text = resp.data.trim();
+        if (/^\d+$/.test(text)) {
+          return text;
+        }
+      }
+    } catch {}
+
+    // 2. 古韵国内镜像源
     try {
       const resp = await axios.get(`https://gmrc.guyunsq.com/${gid}`, { timeout: 3000, responseType: 'text' });
       if (resp.status === 200 && typeof resp.data === 'string') {
@@ -496,7 +507,7 @@ export class ManifestService {
       }
     } catch {}
 
-    // 2. steamrun 官方镜像源
+    // 3. steamrun 官方镜像源
     try {
       const resp = await axios.get(`https://manifest.steam.run/api/manifest/${gid}`, { timeout: 3000 });
       if (resp.status === 200 && resp.data) {

@@ -263,14 +263,24 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
             // 预缓存是尽力而为的附加步骤：此时 Lua 规则已写入，无论这里发生什么
             // （包括 panic）都不能把入库结果翻转为失败
             let mut precache_text = String::new();
+            let mut missing_manifests = false;
+            let mut precache_ok_count = 0;
+            let mut precache_total = 0;
             if let Some(meta) = &res.metadata {
                 let pc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     manifests::precache_manifests(steam_path, meta)
                 }));
                 match pc {
                     Ok(pc) => {
+                        precache_ok_count = pc.ok_count;
+                        precache_total = pc.total;
                         if pc.total > 0 {
-                            precache_text = format!("，清单预缓存 {}/{} 已就绪", pc.ok_count, pc.total);
+                            if pc.ok_count == pc.total {
+                                precache_text = format!("，清单预缓存 {}/{} 全部就绪", pc.ok_count, pc.total);
+                            } else {
+                                missing_manifests = true;
+                                precache_text = format!("，清单实体预缓存 {}/{}（云端暂缺 {} 个清单实体）", pc.ok_count, pc.total, pc.total - pc.ok_count);
+                            }
                         }
                     }
                     Err(panic) => {
@@ -289,10 +299,17 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                 } else {
                     "版本跟随官方最新".to_string()
                 };
-                format!(
-                    "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！若 Steam 下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
-                    name, res.key_count, version_text, res.dlc_count, precache_text
-                )
+                if missing_manifests {
+                    format!(
+                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！【注意】ManifestHub 云端暂未收录该版本的物理清单实体文件，已配置 OST 动态代理拉取清单；若 Steam 报错“无网络连接/缺少清单”，说明 Valve 官方接口已拦截匿名请求，需等待社区 ManifestHub 收录该游戏清单实体或手动导入！",
+                        name, res.key_count, version_text, res.dlc_count, precache_text
+                    )
+                } else {
+                    format!(
+                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！若 Steam 下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
+                        name, res.key_count, version_text, res.dlc_count, precache_text
+                    )
+                }
             } else if res.metadata_ok && res.manifest_count > 0 {
                 format!(
                     "成功为「{}」写入入库规则（已固定 {} 条清单 GID，但服务端暂无可用分包密钥{}），直接下载可能为 0 字节！建议稍后重新入库以补齐密钥。",
@@ -304,25 +321,28 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                     name, res.depot_count, precache_text
                 )
             } else {
-                        format!(
-                            "已为「{}」写入入库授权，但未能获取分包密钥与清单，下载可能为 0 字节！{}请检查网络后重新入库，或在库中对该游戏执行「预缓存」。",
-                            name,
-                            res.metadata_message
-                                .as_deref()
-                                .map(|m| format!("原因：{}。", m))
-                                .unwrap_or_default()
-                        )
-                    };
-                    json!({
-                        "success": true,
-                        "message": message,
-                        "scriptPath": res.lua_path.to_string_lossy(),
-                        "keyCount": res.key_count,
-                        "manifestCount": res.manifest_count,
-                        "metadataOk": res.metadata_ok,
-                        "metadataMessage": res.metadata_message
-                    })
-                }
+                format!(
+                    "已为「{}」写入入库授权，但未能获取分包密钥与清单，下载可能为 0 字节！{}请检查网络后重新入库，或在库中对该游戏执行「预缓存」。",
+                    name,
+                    res.metadata_message
+                        .as_deref()
+                        .map(|m| format!("原因：{}。", m))
+                        .unwrap_or_default()
+                )
+            };
+            json!({
+                "success": true,
+                "message": message,
+                "scriptPath": res.lua_path.to_string_lossy(),
+                "keyCount": res.key_count,
+                "manifestCount": res.manifest_count,
+                "metadataOk": res.metadata_ok,
+                "metadataMessage": res.metadata_message,
+                "precacheOk": precache_ok_count,
+                "precacheTotal": precache_total,
+                "missingManifests": missing_manifests
+            })
+        }
                 Err(e) => json!({ "success": false, "message": e }),
     }
 }
