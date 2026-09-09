@@ -56,24 +56,7 @@ export class ManifestService {
       };
     }
 
-    // 2. 本地无缓存，尝试向上游 GMRC / WuDRM 清单源获取
-    try {
-      const gmrcResult = await this.fetchFromGMRC(appId);
-      if (gmrcResult && gmrcResult.length > 0) {
-        return {
-          success: true,
-          appId,
-          source: 'gmrc',
-          depots: gmrcResult,
-          keys,
-          message: `从 GMRC 清单源成功检索到 ${gmrcResult.length} 个分包清单！`
-        };
-      }
-    } catch (err: any) {
-      console.warn(`[ManifestService] GMRC 源查询失败 (${appId}):`, err.message);
-    }
-
-    // 3. 尝试向 ManifestHub / GitHub 镜像清单库检索
+    // 2. 尝试向 ManifestHub3 社区镜像清单库检索
     try {
       const mhResult = await this.fetchFromManifestHub(appId, candidateDepotIds);
       if (mhResult && mhResult.length > 0) {
@@ -90,20 +73,15 @@ export class ManifestService {
       console.warn(`[ManifestService] ManifestHub 镜像检索失败 (${appId}):`, err.message);
     }
 
-    // 4. 若上游未找到清单文件，但有 DepotKey，返回基础 Depot 映射
-    const fallbackDepots: DepotManifestInfo[] = candidateDepotIds.map((dId) => ({
-      depotId: dId,
-      manifestId: '0',
-      key: keys[dId]
-    }));
-
+    // 3. [已封存] GMRC 与向 Steam 请求清单的其它失效源均已封存
+    // 若本地缓存与 ManifestHub3 均未找到清单文件，直接返回未收录提示
     return {
-      success: true,
+      success: false,
       appId,
       source: 'none',
-      depots: fallbackDepots,
+      depots: [],
       keys,
-      message: `已匹配 ${candidateDepotIds.length} 个分包密钥（需客户端通过 OST 动态代理拉取清单）`
+      message: '暂时没有这款游戏（云端与 ManifestHub3 暂未收录该游戏的清单文件）'
     };
   }
 

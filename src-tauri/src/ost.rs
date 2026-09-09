@@ -83,25 +83,8 @@ pub fn deploy_manifest_lua(steam_path: &Path) -> Result<(), String> {
         return body
     end
 
-    -- 第二优先级：wudrm 官方清单代码源 (全球最大覆盖面与高可用源)
-    body, status = http_get("http://gmrc.wudrm.com/manifest/" .. gid)
-    if status == 200 and body and body:match("^%d+$") then
-        return body
-    end
-
-    -- 第三优先级：古韵高速镜像源 (国内直连专线，毫秒级响应)
-    body, status = http_get("https://gmrc.guyunsq.com/" .. gid)
-    if status == 200 and body and body:match("^%d+$") then
-        return body
-    end
-
-    -- 第四优先级：steamrun 亚太源
-    body, status = http_get("https://manifest.steam.run/api/manifest/" .. gid)
-    if status == 200 and body then
-        local code = body:match('"content":"(%d+)"')
-        if code then return code end
-    end
-
+    -- [已封存] 鉴于第三方公共清单代码源 (wudrm, guyunsq, steam.run) 均已失效或 502/404，
+    -- 为防止 Steam 客户端超时卡顿与长时间等待，已封存后续请求，未命中直接返回 nil
     return nil
 end
 
@@ -449,6 +432,13 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
         .count();
     let depot_count = merged.depots.as_ref().map(|d| d.len()).unwrap_or(0);
     let dlc_count = merged.dlcs.as_ref().map(|d| d.len()).unwrap_or(0);
+
+    // 严密防线：如果云端与 ManifestHub3 均未收录该游戏，坚决不写无效空规则，直接返回提示
+    if !metadata_ok && key_count == 0 && manifest_count == 0 {
+        return Err(metadata_message.unwrap_or_else(|| {
+            format!("暂时没有这款游戏（云端与 ManifestHub3 暂未收录 AppID {}）", payload.app_id)
+        }));
+    }
 
     let lua_dir = ensure_lua_dir(steam_path)?;
     let lua_file = lua_dir.join(format!("{}.lua", payload.app_id));

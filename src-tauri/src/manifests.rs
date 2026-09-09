@@ -190,27 +190,18 @@ pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
         // 授权被拒（未激活/免费额度耗尽）属于权限问题而非数据问题：
         // 直接透传服务端原因并终止，不再降级（降级也拿不到密钥）
         Err(e) if e.contains("云端密钥服务拒绝") => Err(e),
-        // 服务端不可达/网络异常时：严格校验本地离线会员防篡改数字签名
-        Err(server_err) => match crate::license_verify::verify_offline_license() {
-            Ok(_verified) => {
-                log_diag(&format!(
-                    "云端服务不可达 ({})，已成功离线验签会员资格，切换至备用容灾源拉取...",
-                    server_err
-                ));
-                fetch_metadata_from_backup_sources(app_id)
-            }
-            Err(lic_err) => Err(format!(
-                "云端密钥服务连接失败（{}），且未激活离线会员容灾资格：{}。请检查网络或激活后重试。",
-                server_err, lic_err
-            )),
-        },
-        Ok(_) => match crate::license_verify::verify_offline_license() {
-            Ok(_verified) => {
-                log_diag(&format!("云端未收录游戏 {}，尝试备用容灾源...", app_id));
-                fetch_metadata_from_backup_sources(app_id)
-            }
-            Err(_) => parse_metadata_from_steamcmd(app_id),
-        },
+        // 服务端不可达/网络异常时：尝试 ManifestHub3 备用容灾源
+        Err(server_err) => {
+            log_diag(&format!(
+                "云端服务不可达 ({})，尝试 ManifestHub3 备用容灾源...",
+                server_err
+            ));
+            fetch_metadata_from_backup_sources(app_id)
+        }
+        Ok(_) => {
+            log_diag(&format!("云端未收录游戏 {}，尝试 ManifestHub3 备用容灾源...", app_id));
+            fetch_metadata_from_backup_sources(app_id)
+        }
     }
 }
 
@@ -414,54 +405,28 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
         }
     }
 
-    let mut meta = if let Some(lua) = &lua_content {
-        parse_lua_metadata(lua, app_id)
-    } else {
-        AppMetadata {
-            app_id,
-            depots: Vec::new(),
-            depot_keys: BTreeMap::new(),
-            dlc_ids: Vec::new(),
-            app_level_key: None,
-            access_token: None,
+    let lua = match lua_content {
+        Some(content) => content,
+        None => {
+            return Err(format!(
+                "暂时没有这款游戏（云端与 ManifestHub3 暂未收录 AppID {} 的清单与解密数据）",
+                app_id
+            ));
         }
     };
 
-    // 结合 SteamCMD 补充公共分支分包结构与最新清单 GID
-    if let Ok(cmd_meta) = parse_metadata_from_steamcmd(app_id) {
-        for cmd_depot in cmd_meta.depots {
-            if let Some(existing) = meta.depots.iter_mut().find(|d| d.depot_id == cmd_depot.depot_id) {
-                if existing.manifest_gid.is_none() && cmd_depot.manifest_gid.is_some() {
-                    existing.manifest_gid = cmd_depot.manifest_gid;
-                }
-            } else {
-                let d_id = cmd_depot.depot_id.clone();
-                let key = meta.depot_keys.get(&d_id).cloned();
-                meta.depots.push(DepotMeta {
-                    depot_id: d_id,
-                    manifest_gid: cmd_depot.manifest_gid,
-                    depot_key: key,
-                });
-            }
-        }
-        for dlc in cmd_meta.dlc_ids {
-            if !meta.dlc_ids.contains(&dlc) {
-                meta.dlc_ids.push(dlc);
-            }
-        }
-    }
-
+    let meta = parse_lua_metadata(&lua, app_id);
     if meta.depots.is_empty() {
         return Err(format!(
-            "备用容灾源暂未收录 AppID {} 的规则，建议云端恢复后重试。",
-            app_id
+            "暂时没有这款游戏（ManifestHub3 分支中未包含有效分包数据）"
         ));
     }
 
     Ok(meta)
 }
 
-/// 直连 SteamCMD 公共 API 获取清单 GID（降级路径，不产生 DepotKey）
+/// 直连 SteamCMD 公共 API 获取清单 GID（[已封存] 降级路径，不产生 DepotKey，已停止向客户端默认透传）
+#[allow(dead_code)]
 fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
     let url = format!("https://api.steamcmd.net/v1/info/{}", app_id);
     let resp = block_on(http_client().get(&url).timeout(Duration::from_secs(10)).send())
@@ -709,7 +674,7 @@ async fn download_single_manifest(
     app_id: u32,
     depot_id: &str,
     manifest_gid: &str,
-    hosts: &[String],
+    _hosts: &[String],
 ) -> Result<String, String> {
     let depot_cache = steam_path.join("depotcache");
     fs::create_dir_all(&depot_cache).map_err(|e| format!("创建 depotcache 失败: {}", e))?;
@@ -833,40 +798,12 @@ async fn download_single_manifest(
         }
     }
 
-    // 4. 第四优先级：Steam 官方 CDN 多节点调度（兜底路径）
-    let url_tpl = |host: &str| format!("https://{}/depot/{}/manifest/{}/5/0", host, depot_id, manifest_gid);
-    for host in hosts {
-        let resp = http_client()
-            .get(url_tpl(host))
-            .timeout(Duration::from_millis(2500))
-            .header("User-Agent", "Valve/Steam HTTP Client 1.0")
-            .header("Accept", "*/*")
-            .send()
-            .await;
-        if let Ok(resp) = resp {
-            let status = resp.status();
-            if status == reqwest::StatusCode::NOT_FOUND
-                || status == reqwest::StatusCode::UNAUTHORIZED
-                || status == reqwest::StatusCode::FORBIDDEN
-            {
-                break;
-            }
-            if status == reqwest::StatusCode::OK {
-                if let Ok(bytes) = resp.bytes().await {
-                    if !bytes.is_empty() {
-                        let payload = extract_manifest_payload(&bytes);
-                        if !payload.is_empty() {
-                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                            return Ok(format!("已从 Steam CDN 下载 ({} 字节)", payload.len()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Err(format!("所有源均未找到清单 {}_{}", depot_id, manifest_gid))
+    // [已封存] 鉴于 Valve 官方接口已全面拦截匿名清单请求 (401/403)，向 Steam 获取清单的兜底路径已失效封存。
+    // 如果没有从云端或 ManifestHub3 获取到实际的文件，不再请求后续向 Steam 获取清单的源，直接提示
+    Err(format!(
+        "暂时没有这款游戏（云端与 ManifestHub3 暂未收录清单文件 {}_{}）",
+        depot_id, manifest_gid
+    ))
 }
 
 fn extract_manifest_payload(data: &[u8]) -> Vec<u8> {
@@ -922,18 +859,25 @@ pub fn download_depot_manifests(
     let depot_keys = meta.depot_keys.clone();
     let precache = precache_manifests(steam_path, &meta);
 
+    let success = precache.ok_count > 0;
+    let message = if success {
+        format!(
+            "成功就绪 {}/{} 个分包清单到 depotcache！",
+            precache.ok_count, precache.total
+        )
+    } else {
+        "暂时没有这款游戏（云端与 ManifestHub3 暂未收录该游戏的清单实体文件）".to_string()
+    };
+
     ManifestInstallResult {
-        success: precache.ok_count > 0,
+        success,
         app_id,
         downloaded_count: precache.ok_count,
         total_depots: precache.total,
         depot_keys,
         manifest_files: precache.files,
-        source: "cdn".to_string(),
-        message: format!(
-            "成功就绪 {}/{} 个分包清单到 depotcache！",
-            precache.ok_count, precache.total
-        ),
+        source: if success { "cloud/manifesthub".to_string() } else { "none".to_string() },
+        message,
     }
 }
 

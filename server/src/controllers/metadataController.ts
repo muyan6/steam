@@ -361,6 +361,15 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       depots = depots.filter((d) => isValidKey(d.depotKey));
     }
 
+    // 严密防线：若云端与 ManifestHub3 均无任何有效分包/密钥，直接响应「暂时没有这款游戏」
+    if (depots.length === 0) {
+      return res.status(200).json({
+        success: false,
+        message: `暂时没有这款游戏（云端与 ManifestHub3 暂未收录 AppID ${sAppId} 的清单与解密数据）`,
+        data: null
+      });
+    }
+
     // 5. 获取 PICS Access Token
     const appLevelKey =
       matchedKeys[sAppId] || depotService.getDepotKey(sAppId) || hub3Data?.depotKeys.get(sAppId) || undefined;

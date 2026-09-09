@@ -291,6 +291,28 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                 }
             }
             let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
+
+            // 核心断言：若该游戏需要清单（precache_total > 0），但云端与 ManifestHub3 均未提供物理实体（ok_count == 0），
+            // 坚决不落无效规则，撤销刚刚生成的脚本并直接提示用户「暂时没有这款游戏」
+            if precache_total > 0 && precache_ok_count == 0 {
+                let _ = std::fs::remove_file(&res.lua_path);
+                let legacy_file = steam_path.join("st_scripts").join(format!("{}.lua", payload.app_id));
+                let _ = std::fs::remove_file(&legacy_file);
+                ost::sync_greenluma_app_list(steam_path);
+                return json!({
+                    "success": false,
+                    "message": format!("暂时没有这款游戏（云端与 ManifestHub3 暂未收录「{}」的清单实体文件）", name),
+                    "scriptPath": "",
+                    "keyCount": 0,
+                    "manifestCount": 0,
+                    "metadataOk": false,
+                    "metadataMessage": Some("云端与 ManifestHub3 暂未收录该游戏的物理清单文件"),
+                    "precacheOk": 0,
+                    "precacheTotal": precache_total,
+                    "missingManifests": true
+                });
+            }
+
             // 只有真正注入了分包密钥才提示"可直接下载"；
             // 仅有清单 GID（如 SteamCMD 降级数据）时如实警告下载可能 0 字节
             let message = if res.metadata_ok && res.key_count > 0 {
@@ -301,7 +323,7 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                 };
                 if missing_manifests {
                     format!(
-                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！【注意】ManifestHub 云端暂未收录该版本的物理清单实体文件，已配置 OST 动态代理拉取清单；若 Steam 报错“无网络连接/缺少清单”，说明 Valve 官方接口已拦截匿名请求，需等待社区 ManifestHub 收录该游戏清单实体或手动导入！",
+                        "为「{}」写入入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！【提示】部分扩展分包清单未收录，核心内容已就绪；若 Steam 提示加密，点击左下角【重启 Steam】即可生效！",
                         name, res.key_count, version_text, res.dlc_count, precache_text
                     )
                 } else {
