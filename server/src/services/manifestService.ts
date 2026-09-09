@@ -43,8 +43,8 @@ export class ManifestService {
     const keys = await depotService.getDepotsForGame(appId, dlcs);
     const candidateDepotIds = Object.keys(keys);
 
-    // 1. 检查服务端本地 manifests/ 缓存目录
-    const localDepots = this.scanLocalManifests(candidateDepotIds);
+    // 1. 检查服务端本地 manifests/ 缓存目录（支持扁平与 ManifestHub3 标准 AppID 树形目录）
+    const localDepots = this.scanLocalManifests(candidateDepotIds, appId);
     if (localDepots.length > 0) {
       return {
         success: true,
@@ -109,35 +109,103 @@ export class ManifestService {
 
   /**
    * 扫描本地 manifests/ 目录下匹配 depotId 的 .manifest 文件
+   * 支持两种存放方式：
+   * 1. ManifestHub3 标准树形结构：manifests/<appId>/<depotId>_<manifestId>.manifest 及 <appId>.json
+   * 2. 全局扁平存放：manifests/<depotId>_<manifestId>.manifest
    */
-  private scanLocalManifests(depotIds: string[]): DepotManifestInfo[] {
+  private scanLocalManifests(depotIds: string[], appId?: number): DepotManifestInfo[] {
     if (!fs.existsSync(this.manifestDir)) return [];
+    const results: DepotManifestInfo[] = [];
+    const matchedDepots = new Set<string>();
+
+    // 1. 优先检查本地 ManifestHub3 标准 AppID 结构目录: manifests/<appId>/
+    if (appId) {
+      const appDir = path.join(this.manifestDir, String(appId));
+      const appJsonPath = path.join(appDir, `${appId}.json`);
+
+      // 若存在本地 {appId}.json，直接解析提取精准的 depotId -> gid 映射与密钥
+      if (fs.existsSync(appJsonPath)) {
+        try {
+          const raw = fs.readFileSync(appJsonPath, 'utf-8');
+          const data = JSON.parse(raw);
+          if (data && data.depot && typeof data.depot === 'object') {
+            for (const [dId, dInfo] of Object.entries<any>(data.depot)) {
+              if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+              let gid: string | undefined;
+              if (dInfo.manifests && typeof dInfo.manifests === 'object') {
+                gid = dInfo.manifests.public?.gid || Object.values<any>(dInfo.manifests)[0]?.gid;
+              }
+              if (gid && gid !== '0' && /^\d+$/.test(gid.toString())) {
+                const manifestFile = path.join(appDir, `${dId}_${gid}.manifest`);
+                const flatFile = path.join(this.manifestDir, `${dId}_${gid}.manifest`);
+                // 无论清单实体在 appDir 还是平铺在 manifestDir，只要存在即可
+                if (fs.existsSync(manifestFile) || fs.existsSync(flatFile)) {
+                  matchedDepots.add(dId);
+                  results.push({
+                    depotId: dId,
+                    manifestId: gid.toString(),
+                    manifestFileName: `${dId}_${gid}.manifest`,
+                    downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
+                    source: 'local_cache',
+                    key: (dInfo.decryptionkey && typeof dInfo.decryptionkey === 'string' && dInfo.decryptionkey.length >= 32)
+                      ? dInfo.decryptionkey
+                      : (depotService.getDepotKey(dId) || undefined)
+                  });
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // 扫描 appId 子目录下的所有 .manifest 实体
+      if (fs.existsSync(appDir) && fs.statSync(appDir).isDirectory()) {
+        try {
+          const files = fs.readdirSync(appDir);
+          for (const file of files) {
+            const match = file.match(/^(\d+)_(\d+)\.manifest$/i);
+            if (match) {
+              const [, dId, mId] = match;
+              if (!matchedDepots.has(dId) && (depotIds.length === 0 || depotIds.includes(dId))) {
+                matchedDepots.add(dId);
+                results.push({
+                  depotId: dId,
+                  manifestId: mId,
+                  manifestFileName: file,
+                  downloadUrl: `/api/manifests/download/${dId}/${mId}?appId=${appId}`,
+                  source: 'local_cache',
+                  key: depotService.getDepotKey(dId) || undefined
+                });
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // 2. 扫描扁平根目录: manifests/<depotId>_<manifestId>.manifest
     try {
       const files = fs.readdirSync(this.manifestDir);
-      const results: DepotManifestInfo[] = [];
-
       for (const file of files) {
-        // 文件名格式通常为 <depotId>_<manifestId>.manifest
         const match = file.match(/^(\d+)_(\d+)\.manifest$/i);
         if (match) {
           const [, dId, mId] = match;
-          // depotIds 为空视为未提供有效查询条件，不返回全部清单
-          if (depotIds.includes(dId)) {
+          if (!matchedDepots.has(dId) && (depotIds.length === 0 || depotIds.includes(dId))) {
+            matchedDepots.add(dId);
             results.push({
               depotId: dId,
               manifestId: mId,
               manifestFileName: file,
-              downloadUrl: `/api/manifests/download/${dId}/${mId}`,
+              downloadUrl: `/api/manifests/download/${dId}/${mId}${appId ? `?appId=${appId}` : ''}`,
               source: 'local_cache',
               key: depotService.getDepotKey(dId) || undefined
             });
           }
         }
       }
-      return results;
-    } catch {
-      return [];
-    }
+    } catch {}
+
+    return results;
   }
 
   /**
@@ -296,7 +364,7 @@ export class ManifestService {
       return null;
     }
 
-    const localPath = this.getLocalManifestFilePath(depotId, manifestId);
+    const localPath = this.getLocalManifestFilePath(depotId, manifestId, appId);
     if (localPath && fs.existsSync(localPath)) {
       return localPath;
     }
@@ -342,11 +410,42 @@ export class ManifestService {
 
   /**
    * 获取本地指定清单文件路径
+   * 支持以下检索优先级：
+   * 1. 扁平存放: manifests/<depotId>_<manifestId>.manifest
+   * 2. ManifestHub3 标准 AppID 分组: manifests/<appId>/<depotId>_<manifestId>.manifest
+   * 3. 分包 DepotID 分组: manifests/<depotId>/<depotId>_<manifestId>.manifest
+   * 4. 模糊匹配同 depotId 清单实体
    */
-  public getLocalManifestFilePath(depotId: string, manifestId: string): string | null {
-    const candidate1 = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
-    if (fs.existsSync(candidate1)) return candidate1;
+  public getLocalManifestFilePath(depotId: string, manifestId: string, appId?: number | string): string | null {
+    // 1. 扁平根目录
+    const candidateFlat = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
+    if (fs.existsSync(candidateFlat)) return candidateFlat;
 
+    // 2. 按 AppID 子目录 (ManifestHub3 标准仓库目录)
+    if (appId) {
+      const candidateAppDir = path.join(this.manifestDir, String(appId), `${depotId}_${manifestId}.manifest`);
+      if (fs.existsSync(candidateAppDir)) return candidateAppDir;
+    }
+
+    // 3. 按 DepotID 子目录
+    const candidateDepotDir = path.join(this.manifestDir, String(depotId), `${depotId}_${manifestId}.manifest`);
+    if (fs.existsSync(candidateDepotDir)) return candidateDepotDir;
+
+    // 4. 若指定了 appId 子目录，尝试该目录下的同 depotId 模糊匹配
+    if (appId) {
+      try {
+        const appDir = path.join(this.manifestDir, String(appId));
+        if (fs.existsSync(appDir) && fs.statSync(appDir).isDirectory()) {
+          const appFiles = fs.readdirSync(appDir);
+          const found = appFiles.find((f) => f.startsWith(`${depotId}_`) && f.endsWith('.manifest'));
+          if (found) {
+            return path.join(appDir, found);
+          }
+        }
+      } catch {}
+    }
+
+    // 5. 扁平根目录模糊匹配
     try {
       const files = fs.readdirSync(this.manifestDir);
       const found = files.find((f) => f.startsWith(`${depotId}_`) && f.endsWith('.manifest'));

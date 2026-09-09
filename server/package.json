@@ -9,7 +9,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "sync:manifests": "node scripts/syncManifests.mjs",
-    "sync:manifests:full": "node scripts/syncManifests.mjs --full"
+    "sync:manifests:full": "node scripts/syncManifests.mjs --full",
+    "import:manifests": "node scripts/importManifests.mjs",
+    "stats:manifests": "node scripts/importManifests.mjs --stats"
   },
   "keywords": [
     "steammaster",
