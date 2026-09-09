@@ -388,6 +388,52 @@ export class ManifestService {
     return null;
   }
 
+  public isValidManifestBuffer(buf: Buffer): boolean {
+    if (!buf || buf.length < 32) return false;
+    const str128 = buf.subarray(0, 128).toString('utf8').toLowerCase();
+    if (
+      str128.includes('<!doctype') ||
+      str128.includes('<html') ||
+      str128.includes('<!--') ||
+      str128.includes('404: not found') ||
+      str128.includes('domain is for sale') ||
+      str128.includes('"error"') ||
+      str128.includes('"message"')
+    ) {
+      return false;
+    }
+    // Zip: PK\x03\x04
+    if (buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) return true;
+    // Magic: 0x71F617D0, 0x71F617B0, 0x71F617D1, 0x71F617B1
+    if (
+      (buf[0] === 0xd0 || buf[0] === 0xb0 || buf[0] === 0xd1 || buf[0] === 0xb1) &&
+      buf[1] === 0x17 && buf[2] === 0xf6 && buf[3] === 0x71
+    ) {
+      return true;
+    }
+    // Protobuf
+    if ((buf[0] === 0x08 || buf[0] === 0x0a || buf[0] === 0x12) && buf.subarray(0, 32).some((b) => b > 0x7f || b === 0)) {
+      return true;
+    }
+    return false;
+  }
+
+  private checkAndReturnManifestFile(filePath: string): string | null {
+    if (!fs.existsSync(filePath)) return null;
+    try {
+      const buf = fs.readFileSync(filePath);
+      if (this.isValidManifestBuffer(buf)) {
+        return filePath;
+      } else {
+        console.warn(`[ManifestService] 清理损坏的非清单实体缓存: ${filePath}`);
+        fs.unlinkSync(filePath);
+        return null;
+      }
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * 获取本地指定清单文件路径
    * 支持以下检索优先级：
@@ -399,17 +445,20 @@ export class ManifestService {
   public getLocalManifestFilePath(depotId: string, manifestId: string, appId?: number | string): string | null {
     // 1. 扁平根目录
     const candidateFlat = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
-    if (fs.existsSync(candidateFlat)) return candidateFlat;
+    const validFlat = this.checkAndReturnManifestFile(candidateFlat);
+    if (validFlat) return validFlat;
 
     // 2. 按 AppID 子目录 (ManifestHub3 标准仓库目录)
     if (appId) {
       const candidateAppDir = path.join(this.manifestDir, String(appId), `${depotId}_${manifestId}.manifest`);
-      if (fs.existsSync(candidateAppDir)) return candidateAppDir;
+      const validAppDir = this.checkAndReturnManifestFile(candidateAppDir);
+      if (validAppDir) return validAppDir;
     }
 
     // 3. 按 DepotID 子目录
     const candidateDepotDir = path.join(this.manifestDir, String(depotId), `${depotId}_${manifestId}.manifest`);
-    if (fs.existsSync(candidateDepotDir)) return candidateDepotDir;
+    const validDepotDir = this.checkAndReturnManifestFile(candidateDepotDir);
+    if (validDepotDir) return validDepotDir;
 
     // 4. 若指定了 appId 子目录，尝试该目录下的同 depotId 模糊匹配
     if (appId) {
@@ -419,7 +468,8 @@ export class ManifestService {
           const appFiles = fs.readdirSync(appDir);
           const found = appFiles.find((f) => f.startsWith(`${depotId}_`) && f.endsWith('.manifest'));
           if (found) {
-            return path.join(appDir, found);
+            const valid = this.checkAndReturnManifestFile(path.join(appDir, found));
+            if (valid) return valid;
           }
         }
       } catch {}
@@ -430,7 +480,8 @@ export class ManifestService {
       const files = fs.readdirSync(this.manifestDir);
       const found = files.find((f) => f.startsWith(`${depotId}_`) && f.endsWith('.manifest'));
       if (found) {
-        return path.join(this.manifestDir, found);
+        const valid = this.checkAndReturnManifestFile(path.join(this.manifestDir, found));
+        if (valid) return valid;
       }
     } catch {}
 
@@ -444,6 +495,10 @@ export class ManifestService {
     // depotId/manifestId 必须是纯数字：防止路径穿越等非法 ID 拼进文件名
     if (!/^\d+$/.test(String(depotId)) || !/^\d+$/.test(String(manifestId))) {
       console.error('[ManifestService] 保存清单文件失败: 非法的 depotId/manifestId');
+      return false;
+    }
+    if (!this.isValidManifestBuffer(buffer)) {
+      console.warn(`[ManifestService] 忽略非清单数据写入: ${depotId}_${manifestId}.manifest`);
       return false;
     }
     try {

@@ -259,12 +259,18 @@ export const getGameMetadata = async (req: Request, res: Response) => {
 
             let manifestGid = '';
             if ((info as any).manifests && typeof (info as any).manifests === 'object') {
-              // SteamCMD 返回的分支顺序不固定（previous 可能排在 public 之前），
-              // 取第一个分支会拿到旧版清单，必须优先取 public 分支
+              // SteamCMD 返回的分支顺序不固定，优先取 public 分支
               const branchEntries = Object.entries((info as any).manifests) as Array<[string, any]>;
               const chosen = branchEntries.find(([b, v]) => b === 'public' && v && v.gid) || branchEntries.find(([, v]) => v && v.gid);
               if (chosen) {
-                manifestGid = chosen[1].gid.toString();
+                const candidateGid = chosen[1].gid.toString();
+                // 严密防线：SteamCMD GID 仅为构建号；
+                // 只有在服务端本地确有有效 .manifest 实体时，才提前赋予该 GID；
+                // 否则交由 4.5 步骤从 ManifestHub3 确认具有实体文件的分支真实 GID，杜绝无实体假 GID
+                const localPath = manifestService.getLocalManifestFilePath(dId, candidateGid, appId);
+                if (localPath) {
+                  manifestGid = candidateGid;
+                }
               }
             }
 

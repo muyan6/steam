@@ -76,8 +76,17 @@ pub fn check_manifest_status(steam_path: &Path, app_id: u32, dlcs: &[u32]) -> Ap
     let mut matched_depots = Vec::new();
     if let Ok(files) = fs::read_dir(&depot_cache) {
         for f in files.filter_map(|e| e.ok()) {
+            let path = f.path();
             let name = f.file_name().to_string_lossy().to_string();
             if !name.ends_with(".manifest") {
+                continue;
+            }
+            if let Ok(bytes) = fs::read(&path) {
+                if !is_valid_manifest_payload(&bytes) {
+                    let _ = fs::remove_file(&path);
+                    continue;
+                }
+            } else {
                 continue;
             }
             if let Some(d_id) = name.strip_suffix(".manifest").and_then(|s| s.split('_').next()) {
@@ -124,8 +133,17 @@ pub fn batch_manifest_status(steam_path: &Path, app_ids: &[u32]) -> BTreeMap<u32
     }
     if let Ok(files) = fs::read_dir(&depot_cache) {
         for f in files.filter_map(|e| e.ok()) {
+            let path = f.path();
             let name = f.file_name().to_string_lossy().to_string();
             if !name.ends_with(".manifest") {
+                continue;
+            }
+            if let Ok(bytes) = fs::read(&path) {
+                if !is_valid_manifest_payload(&bytes) {
+                    let _ = fs::remove_file(&path);
+                    continue;
+                }
+            } else {
                 continue;
             }
             if let Some(d_id) = name.strip_suffix(".manifest").and_then(|s| s.split('_').next()) {
@@ -690,8 +708,15 @@ async fn download_single_manifest(
     let depot_cache = steam_path.join("depotcache");
     fs::create_dir_all(&depot_cache).map_err(|e| format!("创建 depotcache 失败: {}", e))?;
     let target = depot_cache.join(format!("{}_{}.manifest", depot_id, manifest_gid));
-    if target.exists() && fs::metadata(&target).map(|m| m.len() > 0).unwrap_or(false) {
-        return Ok("已存在".to_string());
+    if target.exists() {
+        if let Ok(bytes) = fs::read(&target) {
+            if is_valid_manifest_payload(&bytes) {
+                return Ok("已存在".to_string());
+            } else {
+                log_diag(&format!("清理 depotcache 中已损坏的非清单实体文件: {:?}", target));
+                let _ = fs::remove_file(&target);
+            }
+        }
     }
 
     let device_id = crate::device::get_device_id();
@@ -717,10 +742,12 @@ async fn download_single_manifest(
             if let Ok(bytes) = resp.bytes().await {
                 if !bytes.is_empty() {
                     let payload = extract_manifest_payload(&bytes);
-                    if !payload.is_empty() {
+                    if !payload.is_empty() && is_valid_manifest_payload(&payload) {
                         fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                         clean_old_manifests(&depot_cache, depot_id, manifest_gid);
                         return Ok(format!("已从自有服务端下载 ({} 字节)", payload.len()));
+                    } else {
+                        log_diag(&format!("自有服务端返回非有效清单实体数据 ({} 字节)，已丢弃", payload.len()));
                     }
                 }
             }
@@ -765,7 +792,7 @@ async fn download_single_manifest(
                 if let Ok(bytes) = resp.bytes().await {
                     if !bytes.is_empty() {
                         let payload = extract_manifest_payload(&bytes);
-                        if !payload.is_empty() {
+                        if !payload.is_empty() && is_valid_manifest_payload(&payload) {
                             fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                             clean_old_manifests(&depot_cache, depot_id, manifest_gid);
                             return Ok(format!("已从云端备用源下载 ({} 字节)", payload.len()));
@@ -798,7 +825,7 @@ async fn download_single_manifest(
                 if let Ok(bytes) = resp.bytes().await {
                     if !bytes.is_empty() {
                         let payload = extract_manifest_payload(&bytes);
-                        if !payload.is_empty() {
+                        if !payload.is_empty() && is_valid_manifest_payload(&payload) {
                             fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                             clean_old_manifests(&depot_cache, depot_id, manifest_gid);
                             return Ok(format!("已从 GitHub 直连下载 ({} 字节)", payload.len()));
@@ -815,6 +842,41 @@ async fn download_single_manifest(
         "暂时没有这款游戏（云端暂未收录清单文件 {}_{}）",
         depot_id, manifest_gid
     ))
+}
+
+pub fn is_valid_manifest_payload(bytes: &[u8]) -> bool {
+    if bytes.len() < 32 {
+        return false;
+    }
+    // 1. 绝对不能是 HTML / XML / 纯文本错误响应
+    let s = String::from_utf8_lossy(&bytes[..bytes.len().min(128)]).to_lowercase();
+    if s.contains("<!doctype")
+        || s.contains("<html")
+        || s.contains("<!--")
+        || s.contains("404: not found")
+        || s.contains("domain is for sale")
+        || s.contains("\"error\"")
+        || s.contains("\"message\"")
+    {
+        return false;
+    }
+    // 2. 匹配 Steam 标准清单二进制特征：
+    // - Zip 容器: PK\x03\x04
+    // - Steam depot manifest 标准魔数: 0x71F617D0, 0x71F617B0, 0x71F617D1, 0x71F617B1
+    if bytes.starts_with(b"PK\x03\x04")
+        || bytes.starts_with(&[0xD0, 0x17, 0xF6, 0x71])
+        || bytes.starts_with(&[0xB0, 0x17, 0xF6, 0x71])
+        || bytes.starts_with(&[0xD1, 0x17, 0xF6, 0x71])
+        || bytes.starts_with(&[0xB1, 0x17, 0xF6, 0x71])
+    {
+        return true;
+    }
+    // 3. Protobuf 结构（首字节为 0x08 / 0x0A / 0x12 且前 32 字节含有非 ASCII 字节）
+    let first = bytes[0];
+    if (first == 0x08 || first == 0x0A || first == 0x12) && bytes.iter().take(32).any(|&b| b > 0x7F || b == 0) {
+        return true;
+    }
+    false
 }
 
 fn extract_manifest_payload(data: &[u8]) -> Vec<u8> {
