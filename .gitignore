@@ -9,6 +9,7 @@ release/
 build/
 out/
 *.log
+*.exe
 
 # Environment & Local files
 .env
