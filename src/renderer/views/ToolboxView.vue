@@ -304,7 +304,7 @@
 
         <span class="flex items-center gap-1.5" :class="statusInfo.autoSwitchEnabled ? 'text-emerald-400' : 'text-slate-400'">
           <span class="w-2 h-2 rounded-full" :class="statusInfo.autoSwitchEnabled ? 'bg-emerald-400' : 'bg-slate-500'"></span>
-          <span>{{ statusInfo.autoSwitchEnabled ? '清单高可用自动轮询: 已开启' : '清单自动切换: 未开启' }}</span>
+          <span>{{ statusInfo.autoSwitchEnabled ? '清单自动切换: 已开启 (多节点高可用)' : '清单自动切换: 未开启' }}</span>
         </span>
       </div>
     </div>

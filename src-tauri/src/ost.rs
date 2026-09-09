@@ -110,6 +110,11 @@ end
     ];
 
     for target in targets {
+        if let Ok(existing) = fs::read_to_string(&target) {
+            if existing == lua_content {
+                continue;
+            }
+        }
         if let Some(parent) = target.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -144,6 +149,7 @@ pub fn generate_toml_config(steam_path: &Path, manifest_server: &str) -> Result<
         [remote]\n\
         url_template = \"https://cdn.jsdelivr.net/gh/OpenSteam001/steam-monitor@{{channel}}/{{component}}/{{sha256}}.toml\"\n\n\
         [manifest]\n\
+        auto_switch = true\n\
         url = \"{}\"\n\
         server = \"{}\"\n\
         timeout_resolve_ms = 3000\n\
@@ -182,12 +188,30 @@ pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
     }
     if !content.contains("url =") {
         lines.push("\n[manifest]".to_string());
+        lines.push("auto_switch = true".to_string());
         lines.push("url = \"wudrm\"".to_string());
         lines.push("server = \"wudrm\"".to_string());
         lines.push("timeout_resolve_ms = 3000".to_string());
         lines.push("timeout_connect_ms = 3000".to_string());
         lines.push("timeout_send_ms = 5000".to_string());
         lines.push("timeout_recv_ms = 5000".to_string());
+        updated = true;
+    } else if !content.contains("auto_switch") {
+        let mut new_lines = Vec::new();
+        let mut inserted = false;
+        for line in lines {
+            let is_manifest = line.trim() == "[manifest]";
+            new_lines.push(line);
+            if is_manifest && !inserted {
+                new_lines.push("auto_switch = true".to_string());
+                inserted = true;
+            }
+        }
+        if !inserted {
+            new_lines.push("\n[manifest]".to_string());
+            new_lines.push("auto_switch = true".to_string());
+        }
+        lines = new_lines;
         updated = true;
     }
 

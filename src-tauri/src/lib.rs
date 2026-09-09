@@ -730,7 +730,7 @@ fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
     (auto_switch, server)
 }
 
-// 存量配置迁移：opensteamtool.toml 规范化与 manifest.lua 部署
+// 存量配置迁移：opensteamtool.toml 规范化与 manifest.lua 部署（默认开启清单自动切换）
 fn ensure_auto_switch_default(steam_path: &std::path::Path) {
     let toml_path = steam_path.join("opensteamtool.toml");
     if !toml_path.exists() {
@@ -741,10 +741,21 @@ fn ensure_auto_switch_default(steam_path: &std::path::Path) {
     // 在锁内完成整个序列；update_toml_manifest_fields_locked 不再加锁
     let _guard = ost::TOML_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let content = std::fs::read_to_string(&toml_path).unwrap_or_default();
-    if !content.contains("url =") {
+
+    let has_auto_switch = content.lines().any(|line| {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if let Some((k, v)) = line.split_once('=') {
+            k.trim() == "auto_switch" && v.trim().trim_matches('"').trim().eq_ignore_ascii_case("true")
+        } else {
+            false
+        }
+    });
+
+    if !has_auto_switch || !content.contains("url =") {
         let _ = update_toml_manifest_fields_locked(
             steam_path,
             &[
+                ("auto_switch", "true"),
                 ("url", "\"wudrm\""),
                 ("server", "\"wudrm\""),
                 ("timeout_resolve_ms", "3000"),
@@ -773,6 +784,7 @@ async fn get_toolbox_status() -> serde_json::Value {
                 "currentManifestServer": "steamrun"
             }),
             Some(p) => {
+                ensure_auto_switch_default(p);
                 let (auto_switch, server) = read_toml_server(p);
                 json!({
                     "steamPath": p.to_string_lossy(),
@@ -881,7 +893,8 @@ async fn auto_switch_manifest() -> ToolboxActionResult {
     steps.push("✓ Steam 进程已安全退出".to_string());
 
     steps.push("2. 正在写入多节点高可用清单自动切换配置与调度脚本...".to_string());
-    let updates: [(&str, &str); 6] = [
+    let updates: [(&str, &str); 7] = [
+        ("auto_switch", "true"),
         ("url", "\"wudrm\""),
         ("server", "\"wudrm\""),
         ("timeout_resolve_ms", "3000"),
