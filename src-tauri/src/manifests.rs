@@ -598,43 +598,34 @@ fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
     })
 }
 
-const FALLBACK_CDN_HOSTS: [&str; 18] = [
+const FALLBACK_CDN_HOSTS: [&str; 5] = [
     "dl.steam.clngaa.com",
     "st.dl.eccdnx.com",
     "xz.pphimalayanrt.com",
     "al.dl.eccdnx.com",
     "client-download.steampowered.com.edgesuite.net",
-    "cdn.mileweb.cs.steampowered.com.8686c.com",
-    "cache1-steamcontent.com",
-    "cache2-steamcontent.com",
-    "cache3-steamcontent.com",
-    "cache4-steamcontent.com",
-    "cache5-steamcontent.com",
-    "cache6-steamcontent.com",
-    "cache7-steamcontent.com",
-    "cache8-steamcontent.com",
-    "cache9-steamcontent.com",
-    "cache10-steamcontent.com",
-    "cache1-lax1.steamcontent.com",
-    "cache2-lax1.steamcontent.com",
 ];
 
 fn get_cdn_hosts() -> Vec<String> {
-    let url = "https://api.steampowered.com/IContentServerDirectoryService/GetServersForSteamPipe/v1/?cell_id=33&max_servers=30";
-    if let Ok(resp) = block_on(http_client().get(url).timeout(Duration::from_secs(6)).send()) {
-        if let Ok(json) = block_on(resp.json::<serde_json::Value>()) {
-            if let Some(servers) = json.pointer("/response/servers").and_then(|v| v.as_array()) {
-                let hosts: Vec<String> = servers
-                    .iter()
-                    .filter_map(|s| s.get("host").and_then(|h| h.as_str()).map(|h| h.to_string()))
-                    .collect();
-                if !hosts.is_empty() {
-                    return hosts;
+    static CACHED_HOSTS: OnceLock<Vec<String>> = OnceLock::new();
+    CACHED_HOSTS.get_or_init(|| {
+        let url = "https://api.steampowered.com/IContentServerDirectoryService/GetServersForSteamPipe/v1/?cell_id=33&max_servers=5";
+        if let Ok(resp) = block_on(http_client().get(url).timeout(Duration::from_secs(2)).send()) {
+            if let Ok(json) = block_on(resp.json::<serde_json::Value>()) {
+                if let Some(servers) = json.pointer("/response/servers").and_then(|v| v.as_array()) {
+                    let hosts: Vec<String> = servers
+                        .iter()
+                        .filter_map(|s| s.get("host").and_then(|h| h.as_str()).map(|h| h.to_string()))
+                        .take(5)
+                        .collect();
+                    if !hosts.is_empty() {
+                        return hosts;
+                    }
                 }
             }
         }
-    }
-    FALLBACK_CDN_HOSTS.iter().map(|s| s.to_string()).collect()
+        FALLBACK_CDN_HOSTS.iter().map(|s| s.to_string()).collect()
+    }).clone()
 }
 
 /// 异步版清单下载：必须运行在 Tokio 运行时上下文内（由 precache_manifests
@@ -658,18 +649,23 @@ async fn download_single_manifest_with_hosts(
     for host in hosts {
         let resp = http_client()
             .get(url_tpl(&host))
-            .timeout(Duration::from_secs(5))
+            .timeout(Duration::from_millis(2500))
             .header("User-Agent", "Valve/Steam HTTP Client 1.0")
             .header("Accept", "*/*")
             .send()
             .await;
         if let Ok(resp) = resp {
-            // 404 表示该清单在 Steam CDN 上已不存在，换镜像也无济于事，
-            // 直接短路，避免 30 个节点 × 超时把单清单下载拖到数分钟
-            if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            let status = resp.status();
+            // 404 / 401 / 403 表示该清单在 Steam CDN 上不存在或需要专属授权凭据，
+            // 所有 Valve CDN 边缘节点策略均一致，换节点重试必然同样失败，
+            // 必须立即短路，杜绝因遍历多个节点超时把单清单等待拉长数十秒
+            if status == reqwest::StatusCode::NOT_FOUND
+                || status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN
+            {
                 break;
             }
-            if resp.status() == 200 {
+            if status == reqwest::StatusCode::OK {
                 if let Ok(bytes) = resp.bytes().await {
                     if !bytes.is_empty() {
                         let payload = extract_manifest_payload(&bytes);
