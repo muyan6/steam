@@ -478,12 +478,21 @@ export class ManifestService {
     }
   }
 
+  private manifestCodeCache = new Map<string, { code: string; fetchedAt: number }>();
+  private readonly MANIFEST_CODE_TTL_MS = 2 * 60 * 60 * 1000; // 2小时内存缓存
+
   /**
    * 获取指定 GID 的清单请求代码（Manifest Request Code）
-   * 优先古韵国内专线镜像 -> steamrun 亚太源兜底
+   * 优先内存缓存 -> wudrm 官方源 -> 古韵国内镜像源 -> steamrun 亚太源
    */
   public async getManifestCode(gid: string): Promise<string | null> {
     if (!gid || !/^\d+$/.test(gid)) return null;
+
+    // 0. 优先命中内存缓存
+    const cached = this.manifestCodeCache.get(gid);
+    if (cached && Date.now() - cached.fetchedAt < this.MANIFEST_CODE_TTL_MS) {
+      return cached.code;
+    }
 
     // 1. wudrm 官方清单代码源（全球最大覆盖面与最新数据）
     try {
@@ -491,6 +500,7 @@ export class ManifestService {
       if (resp.status === 200 && typeof resp.data === 'string') {
         const text = resp.data.trim();
         if (/^\d+$/.test(text)) {
+          this.manifestCodeCache.set(gid, { code: text, fetchedAt: Date.now() });
           return text;
         }
       }
@@ -502,6 +512,7 @@ export class ManifestService {
       if (resp.status === 200 && typeof resp.data === 'string') {
         const text = resp.data.trim();
         if (/^\d+$/.test(text)) {
+          this.manifestCodeCache.set(gid, { code: text, fetchedAt: Date.now() });
           return text;
         }
       }
@@ -513,7 +524,9 @@ export class ManifestService {
       if (resp.status === 200 && resp.data) {
         const code = typeof resp.data === 'string' ? resp.data.match(/"content":"(\d+)"/)?.[1] : (resp.data as any).content;
         if (code && /^\d+$/.test(String(code))) {
-          return String(code);
+          const sCode = String(code);
+          this.manifestCodeCache.set(gid, { code: sCode, fetchedAt: Date.now() });
+          return sCode;
         }
       }
     } catch {}
