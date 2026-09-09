@@ -77,12 +77,67 @@ export function getPrimarySmallCapsule(appId: number): string {
   return getSteamCdnImageUrl(appId, 'capsule_184x69.jpg', 0);
 }
 
+const realHeaderCache = new Map<number, string>();
+
+/**
+ * 动态解析 Steam 新版带 Content-Hash 的封面图
+ * （针对新发布、独立游戏没有静态通用 header.jpg 的情况，直接通过第三方公共免费接口获取真实封面）
+ * 注意：严格执行客户端直连第三方，严禁通过用户自有云端中继图片或请求，确保云端零带宽消耗
+ */
+export async function resolveRealGameHeader(appId: number): Promise<string | null> {
+  if (!appId || appId <= 0) return null;
+  if (realHeaderCache.has(appId)) return realHeaderCache.get(appId)!;
+
+  // 1. 优先使用第三方公共免费的 SteamCMD 元数据接口 (直连第三方，零占用用户云端带宽，国内免翻墙直通)
+  try {
+    const res = await fetch(`https://api.steamcmd.net/v1/info/${appId}`, {
+      signal: AbortSignal.timeout(3500)
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const common = json?.data?.[String(appId)]?.common;
+      const libraryAssets = common?.library_assets_full?.library_header?.image;
+      const relPath =
+        common?.header_image?.schinese ||
+        common?.header_image?.english ||
+        libraryAssets?.schinese ||
+        libraryAssets?.english ||
+        common?.small_capsule?.schinese ||
+        common?.small_capsule?.english;
+      if (relPath && typeof relPath === 'string') {
+        const url = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appId}/${relPath}`;
+        realHeaderCache.set(appId, url);
+        return url;
+      }
+    }
+  } catch {}
+
+  // 2. 备用直接从 Steam 官方公共网关获取公开元数据（客户端直接发起）
+  try {
+    const res = await fetch(
+      `https://store.cloudflare.steamstatic.com/api/appdetails?appids=${appId}&filters=basic`,
+      { signal: AbortSignal.timeout(3000) }
+    );
+    if (res.ok) {
+      const json = await res.json();
+      const header = json?.[String(appId)]?.data?.header_image;
+      if (header && typeof header === 'string') {
+        realHeaderCache.set(appId, header);
+        return header;
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
 /**
  * 多 CDN 智能保底轮询核心实现
  * 流程：
  * 1. 尝试当前分辨率资源在 5 大 CDN 节点的依次轮询
  * 2. 若当前分辨率所有 CDN 均失败，自动降级切换至高兼容度的 `header.jpg` 并重新轮询 5 大 CDN
- * 3. 若全部 CDN 与备用分辨率均不可达，优雅展示官方安全占位图并终止重试
+ * 3. 若所有静态 CDN 均为 404（新游戏 Valve Asset Hash 机制），触发动态哈希封面自动解析
+ * 4. 若最终均不可达，优雅展示官方安全占位图并终止重试
  */
 export function smartMultiCdnImageFallback(
   e: Event,
@@ -130,6 +185,25 @@ export function smartMultiCdnImageFallback(
     return;
   }
 
+  // 所有标准静态 CDN 路径均 404：针对新版 Valve 带 Hash 机制的游戏发起动态封面解析
+  if (target.dataset.hashResolved !== '1') {
+    target.dataset.hashResolved = '1';
+    resolveRealGameHeader(appId)
+      .then((realUrl) => {
+        if (realUrl) {
+          target.src = realUrl;
+        } else {
+          target.dataset.fallbackDone = '1';
+          target.src = STEAM_FALLBACK_LOGO;
+        }
+      })
+      .catch(() => {
+        target.dataset.fallbackDone = '1';
+        target.src = STEAM_FALLBACK_LOGO;
+      });
+    return;
+  }
+
   // 所有资产在所有 CDN 均无法加载：转为官方安全兜底 Logo
   target.dataset.fallbackDone = '1';
   target.src = STEAM_FALLBACK_LOGO;
@@ -152,4 +226,5 @@ export function applyImageFallback(e: Event, appId?: number): void {
 export function steamCardImageFallback(e: Event, appId: number): void {
   smartMultiCdnImageFallback(e, appId, 'capsule_616x353.jpg');
 }
+
 

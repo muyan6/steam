@@ -371,7 +371,7 @@ import {
 } from 'lucide-vue-next';
 import { SteamGame, SearchSourceId, SearchSourceConfig } from '../../types';
 import { formatIpcError, getJson } from '../api/tauriBridge';
-import { STEAM_IMAGE_CDNS, getSteamCdnImageUrl } from '../utils/imageFallback';
+import { STEAM_IMAGE_CDNS, getSteamCdnImageUrl, resolveRealGameHeader } from '../utils/imageFallback';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
@@ -452,21 +452,17 @@ const handleImgError = async (game: SteamGame) => {
     return;
   }
 
-  // 所有 5 个 CDN 均失败：尝试一次 Steam 官方 API 动态获取（每 appId 仅一次）
+  // 静态 5 大 CDN 均失败：针对采用 Valve 新版 Content-Hashed 资源的游戏（如 4864560 超级变色龙等）
+  // 触发第三方公共免费接口（SteamCMD 等）直连解析（零占用用户自有云端带宽）
   if (currentIdx > STEAM_IMAGE_CDNS.length) {
     failedImgs.add(game.appId);
     return;
   }
   imgCdnIndices.set(game.appId, STEAM_IMAGE_CDNS.length + 1);
   try {
-    const url = `https://store.steampowered.com/api/appdetails?appids=${game.appId}&l=schinese`;
-    // 走 Tauri Rust 通道（无 CORS）；浏览器 axios 请求该接口会被 CORS 拦截，
-    // 兜底从未真正生效过
-    const json = await getJson<any>(url, 3500);
-    const data = json?.[game.appId.toString()];
-    if (data && data.data && data.data.header_image) {
-      // 先更新 URL 再保持"未失败"状态，让模板渲染新封面
-      game.headerUrl = data.data.header_image;
+    const realUrl = await resolveRealGameHeader(game.appId);
+    if (realUrl) {
+      game.headerUrl = realUrl;
       return;
     }
   } catch {}
