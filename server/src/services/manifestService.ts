@@ -267,14 +267,16 @@ export class ManifestService {
    */
   private async fetchFromManifestHub(appId: number, depotIds: string[]): Promise<DepotManifestInfo[]> {
     const results: DepotManifestInfo[] = [];
-    const proxyBase = 'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3';
-    const rawBase = 'https://raw.githubusercontent.com/steamtools-games/ManifestHub3';
+    const proxyBases = [
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+    ];
 
     // 1. 优先拉取 {appId}.json
-    const jsonUrls = [
-      `${proxyBase}/${appId}/${appId}.json`,
-      `${rawBase}/${appId}/${appId}.json`
-    ];
+    const jsonUrls = proxyBases.map((base) => `${base}/${appId}/${appId}.json`);
 
     for (const ju of jsonUrls) {
       try {
@@ -306,10 +308,7 @@ export class ManifestService {
 
     // 2. 若 json 失败，兜底尝试拉取 {appId}.lua
     if (results.length === 0) {
-      const luaUrls = [
-        `${proxyBase}/${appId}/${appId}.lua`,
-        `${rawBase}/${appId}/${appId}.lua`
-      ];
+      const luaUrls = proxyBases.map((base) => `${base}/${appId}/${appId}.lua`);
       for (const lu of luaUrls) {
         try {
           const resp = await axios.get(lu, { timeout: 4000 });
@@ -381,6 +380,9 @@ export class ManifestService {
     }
 
     const proxyBases = [
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
       'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
       'https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];

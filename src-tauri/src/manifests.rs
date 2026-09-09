@@ -218,6 +218,18 @@ pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
 fn align_manifest_gids_with_hub3(meta: &mut AppMetadata, app_id: u32) {
     let urls = [
         format!(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
             app_id, app_id
         ),
@@ -367,6 +379,18 @@ fn parse_lua_metadata(lua: &str, app_id: u32) -> AppMetadata {
 pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, String> {
     let mut lua_content: Option<String> = None;
     let urls = [
+        format!(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
         format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
             app_id, app_id
@@ -727,11 +751,27 @@ async fn download_single_manifest(
         }
     }
 
-    // 2. 第二优先级：ManifestHub3 加速镜像源（拉取真实 .manifest 实体）
+    // 2. 第二优先级：ManifestHub3 国内高速多路镜像专线（拉取真实 .manifest 实体）
     let mirror_candidates = [
+        format!(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
         format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
             app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            depot_id, depot_id, manifest_gid
         ),
         format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",

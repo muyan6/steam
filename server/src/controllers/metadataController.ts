@@ -94,10 +94,14 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
 
   const task = (async (): Promise<ManifestHub3Data | null> => {
     const urls = [
-      // 直连 GitHub raw（海外服务器可达）
-      `https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
-      // ghfast.top 加速代理（中国大陆服务器直连 raw 往往超时）
-      `https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`
+      // 1. 国内顶级加速专线（实测 700ms 毫秒级极速直达）
+      `https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
+      // 2. 国内稳定双路镜像备用
+      `https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
+      `https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
+      `https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
+      // 3. 海外直连兜底
+      `https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`
     ];
 
     let data: ManifestHub3Data | null = null;

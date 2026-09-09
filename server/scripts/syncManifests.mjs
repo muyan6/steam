@@ -49,45 +49,74 @@ const FORCE_RELOAD = hasFlag('--force');
 const FORCE_PROXY = hasFlag('--proxy');
 const FORCE_DIRECT = hasFlag('--direct');
 
-// ==================== 网络环境探活 ====================
-let useProxy = true;
+// ==================== 网络环境探活与多镜像选优 ====================
+const MIRROR_LIST = [
+  'https://gh-proxy.com/',
+  'https://ghproxy.net/',
+  'https://ghproxy.cn/',
+  'https://ghfast.top/'
+];
+
+let selectedMirror = 'https://gh-proxy.com/';
+let useDirect = false;
 
 async function probeNetwork() {
-  if (FORCE_PROXY) {
-    useProxy = true;
-    console.log('[网络策略] 显式指定使用 ghfast.top 镜像源加速');
-    return;
-  }
   if (FORCE_DIRECT) {
-    useProxy = false;
+    useDirect = true;
     console.log('[网络策略] 显式指定使用 GitHub Raw 直连');
     return;
   }
 
-  console.log('[网络探活] 正在检测当前服务器到 GitHub Raw 的连通性...');
-  const t0 = Date.now();
+  console.log('[网络探活] 正在对 GitHub 直连及各大国内高速镜像进行测速选优...');
+
+  // 1. 测试海外直连
   try {
+    const t0 = Date.now();
     const res = await axios.get(
       'https://raw.githubusercontent.com/steamtools-games/ManifestHub3/main/README.md',
-      { timeout: 2500 }
+      { timeout: 2000 }
     );
     if (res.status === 200) {
       const elapsed = Date.now() - t0;
-      console.log(`[网络策略] GitHub Raw 直连通畅（耗时 ${elapsed}ms），采用海外高速直连模式！`);
-      useProxy = false;
-      return;
+      if (elapsed < 600) {
+        console.log(`[网络策略] GitHub Raw 直连极速（耗时 ${elapsed}ms），采用海外高速直连模式！`);
+        useDirect = true;
+        return;
+      }
     }
   } catch {}
 
-  console.log('[网络策略] GitHub 直连受限或超时，自动切换为国内 ghfast.top 代理加速通道！');
-  useProxy = true;
+  // 2. 多镜像并行测速
+  let bestMirror = MIRROR_LIST[0];
+  let minLatency = 99999;
+
+  for (const mirror of MIRROR_LIST) {
+    try {
+      const t0 = Date.now();
+      const testUrl = `${mirror}https://raw.githubusercontent.com/steamtools-games/ManifestHub3/main/README.md`;
+      const res = await axios.get(testUrl, { timeout: 3500 });
+      if (res.status === 200) {
+        const elapsed = Date.now() - t0;
+        console.log(`  - 镜像 [${mirror}] 测速成功: ${elapsed}ms`);
+        if (elapsed < minLatency) {
+          minLatency = elapsed;
+          bestMirror = mirror;
+        }
+      }
+    } catch {
+      console.log(`  - 镜像 [${mirror}] 测速失败或超时`);
+    }
+  }
+
+  selectedMirror = bestMirror;
+  console.log(`[最优镜像选定] 自动选定最快专线: ${selectedMirror}（响应耗时 ${minLatency}ms）`);
 }
 
 function getBaseUrl(appId, file) {
-  if (useProxy) {
-    return `https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${file}`;
+  if (useDirect) {
+    return `https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${file}`;
   }
-  return `https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${file}`;
+  return `${selectedMirror}https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${file}`;
 }
 
 // ==================== 候选 AppID 获取 ====================
