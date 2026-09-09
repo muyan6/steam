@@ -292,9 +292,9 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
             }
             let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
 
-            // 核心断言：若该游戏需要清单（precache_total > 0），但云端均未提供物理实体（ok_count == 0），
+            // 核心断言：若该游戏清单实体未就绪（precache_ok_count == 0），
             // 坚决不落无效规则，撤销刚刚生成的脚本并直接提示用户「暂时没有这款游戏」
-            if precache_total > 0 && precache_ok_count == 0 {
+            if precache_ok_count == 0 {
                 let _ = std::fs::remove_file(&res.lua_path);
                 let legacy_file = steam_path.join("st_scripts").join(format!("{}.lua", payload.app_id));
                 let _ = std::fs::remove_file(&legacy_file);

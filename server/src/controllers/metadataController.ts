@@ -288,12 +288,6 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       } catch {}
     }
 
-    // 如果仍没有分包，默认生成主体候选 Depot
-    if (depots.length === 0) {
-      depots.push({ depotId: sAppId });
-      depots.push({ depotId: (appId + 1).toString() });
-    }
-
     // 4. 后端内存密钥库高精度匹配（28.8万条 DepotKeys）
     const matchedKeys = await depotService.getDepotsForGame(
       appId,
@@ -361,11 +355,16 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       depots = depots.filter((d) => isValidKey(d.depotKey));
     }
 
-    // 严密防线：若云端无任何有效分包/密钥，直接响应「暂时没有这款游戏」
-    if (depots.length === 0) {
+    // 严密断言：必须具备实际有效的清单 GID（无清单文件即无法通过 Steam 下载）
+    const hasValidManifest = depots.some(
+      (d) => d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0'
+    );
+
+    // 严密防线：若云端无任何有效分包、或没有任何有效清单实体 GID，直接响应「暂时没有这款游戏」
+    if (depots.length === 0 || !hasValidManifest) {
       return res.status(200).json({
         success: false,
-        message: `暂时没有这款游戏（云端暂未收录 AppID ${sAppId} 的清单与解密数据）`,
+        message: `暂时没有这款游戏（云端暂未收录 AppID ${sAppId} 的清单实体文件）`,
         data: null
       });
     }

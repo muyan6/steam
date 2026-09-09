@@ -433,10 +433,10 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
     let depot_count = merged.depots.as_ref().map(|d| d.len()).unwrap_or(0);
     let dlc_count = merged.dlcs.as_ref().map(|d| d.len()).unwrap_or(0);
 
-    // 严密防线：如果云端未收录该游戏，坚决不写无效空规则，直接返回提示
-    if !metadata_ok && key_count == 0 && manifest_count == 0 {
+    // 严密防线：如果没有从云端获取到任何有效清单 GID，坚决不写无效空规则，直接返回提示
+    if manifest_count == 0 {
         return Err(metadata_message.unwrap_or_else(|| {
-            format!("暂时没有这款游戏（云端暂未收录 AppID {}）", payload.app_id)
+            format!("暂时没有这款游戏（云端暂未收录 AppID {} 的清单实体文件）", payload.app_id)
         }));
     }
 
