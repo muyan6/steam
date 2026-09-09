@@ -1,5 +1,24 @@
 [
   {
+    "version": "5.6.0",
+    "channel": "stable",
+    "releaseDate": "2026-09-09",
+    "title": "春风渡 v5.6.0 官方多CDN保底与新版游戏封面自适应版",
+    "changelog": [
+      "🌐 5 大官方 CDN 智能保底矩阵：集成 Fastly、Akamai 主/备节点、Cloudflare 与官方通用 CDN，实现全自动平滑保底",
+      "🎨 解决 Valve 新版 Content-Hashed 封面 404 问题：针对近年新游戏（如超级变色龙等）采用 SHA1 哈希目录机制，自动直连获取真实封面",
+      "⚡ 零云端负载架构：封面元数据完全由客户端直连第三方免费公共接口解析，彻底免除自有云端流量与带宽消耗",
+      "🛡️ 杜绝红叉破图与死循环：优化检索页、入库列表与联机专区图片加载链路，实现多级优雅降级与熔断保护"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v5.6.0/ChunFengDu_5.6.0_x64-setup.exe",
+    "forceUpdate": true,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-09T00:00:00.000Z",
+    "updatedAt": "2026-09-09T00:00:00.000Z"
+  },
+  {
     "version": "2.5.5",
     "channel": "stable",
     "releaseDate": "2026-09-09",

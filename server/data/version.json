@@ -1,15 +1,15 @@
 {
-  "version": "2.5.5",
+  "version": "5.6.0",
   "channel": "stable",
   "releaseDate": "2026-09-09",
-  "title": "春风渡 v2.5.5 清单极速匹配与CDN短路优化版",
+  "title": "春风渡 v5.6.0 官方多CDN保底与新版游戏封面自适应版",
   "changelog": [
-    "⚡ 优化清单预缓存网络短路机制：遇到 401/403/404 鉴权或无资源状态立即短路，不再无效遍历海外被墙 CDN 节点",
-    "🌐 优化国内 CDN 镜像池：剔除海外高延迟节点，锁定国内极速边缘 CDN 镜像，超时减半快速失败",
-    "🚀 引入 CDN 节点池单例缓存机制（OnceLock），运行期间 0 延迟秒级响应，消除重复网络探活阻塞",
-    "🎯 彻底消除入库漫长转圈：Steam 库即时显示后，分包清单与密钥匹配时间从 30 秒暴降至 1 秒以内"
+    "🌐 5 大官方 CDN 智能保底矩阵：集成 Fastly、Akamai 主/备节点、Cloudflare 与官方通用 CDN，实现全自动平滑保底",
+    "🎨 解决 Valve 新版 Content-Hashed 封面 404 问题：针对近年新游戏（如超级变色龙等）采用 SHA1 哈希目录机制，自动直连获取真实封面",
+    "⚡ 零云端负载架构：封面元数据完全由客户端直连第三方免费公共接口解析，彻底免除自有云端流量与带宽消耗",
+    "🛡️ 杜绝红叉破图与死循环：优化检索页、入库列表与联机专区图片加载链路，实现多级优雅降级与熔断保护"
   ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.5.5/ChunFengDu_2.5.5_x64-setup.exe",
+  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v5.6.0/ChunFengDu_5.6.0_x64-setup.exe",
   "forceUpdate": true,
   "minSupportedVersion": "1.0.0",
   "enabled": true,
