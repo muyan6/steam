@@ -192,14 +192,14 @@
             <div>
               <div class="text-[11px] text-slate-400">累计赞助人次</div>
               <div class="text-lg font-black text-rose-400 font-mono mt-0.5">
-                {{ sponsorsData.totalCount }} <span class="text-xs font-normal text-slate-400">位</span>
+                {{ sponsorsData.totalCount || 0 }} <span class="text-xs font-normal text-slate-400">位</span>
               </div>
             </div>
             <div class="h-8 w-px bg-white/10"></div>
             <div>
               <div class="text-[11px] text-slate-400">累计支持金额</div>
               <div class="text-lg font-black text-amber-400 font-mono mt-0.5">
-                ¥{{ sponsorsData.totalAmount }}
+                ¥{{ (sponsorsData.totalAmount || 0).toFixed(2) }}
               </div>
             </div>
           </div>
@@ -207,7 +207,7 @@
           <div class="text-right">
             <div class="flex items-center justify-end gap-1.5 text-[10.5px] text-slate-300 font-medium">
               <span class="w-2 h-2 rounded-full" :class="sponsorsData.source === 'afdian' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"></span>
-              <span>{{ sponsorsData.source === 'afdian' ? '爱发电官方实时同步' : '官方认证赞助榜' }}</span>
+              <span>{{ sponsorsData.source === 'afdian' ? '爱发电官方实时同步' : '官方赞助榜' }}</span>
             </div>
             <div class="text-[10px] font-mono text-slate-500 mt-0.5">
               更新于: {{ formatUpdatedDate(sponsorsData.updatedAt) }}
@@ -215,8 +215,11 @@
           </div>
         </div>
 
-        <!-- 赞助者列表 (带美化排版与滚动条) -->
-        <div class="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
+        <!-- 赞助者列表 (有赞助数据时展示) -->
+        <div
+          v-if="sponsorsData.sponsors && sponsorsData.sponsors.length > 0"
+          class="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar"
+        >
           <div
             v-for="(sponsor, index) in sponsorsData.sponsors"
             :key="sponsor.id || index"
@@ -282,6 +285,29 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- 暂无赞助者优雅空状态 -->
+        <div
+          v-else
+          class="flex-1 flex flex-col items-center justify-center p-6 text-center rounded-2xl bg-slate-950/30 border border-white/5 space-y-4 my-auto min-h-[260px]"
+        >
+          <div class="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shadow-inner">
+            <Heart class="w-7 h-7 text-rose-400/80 animate-pulse" />
+          </div>
+          <div class="space-y-1.5 max-w-sm">
+            <div class="text-sm font-bold text-slate-100">当前暂无赞助记录</div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              开源与服务器维护不易，期待您的支持！在爱发电支持后，榜单将自动同步您的昵称与赞助寄语。
+            </p>
+          </div>
+          <button
+            @click="handleOpenSponsorLink"
+            class="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white font-bold text-xs shadow-lg shadow-rose-500/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+          >
+            <Heart class="w-3.5 h-3.5 fill-current" />
+            <span>成为第一位赞助者</span>
+          </button>
         </div>
 
         <!-- 底部引导支持卡片 -->
@@ -353,9 +379,9 @@ const changelogs = ref<VersionChangelogItem[]>([]);
 
 // 赞助榜单数据
 const sponsorsData = ref<SponsorDataResponse>({
-  totalCount: 10,
-  totalAmount: 1777,
-  updatedAt: '2026-09-08',
+  totalCount: 0,
+  totalAmount: 0,
+  updatedAt: new Date().toISOString().slice(0, 10),
   source: 'cache',
   sponsors: []
 });

@@ -278,111 +278,7 @@ export const DEFAULT_CHANGELOGS: VersionChangelogItem[] = [
   }
 ];
 
-export const FALLBACK_SPONSORS: SponsorItem[] = [
-  {
-    id: 'af_top01',
-    name: '星海漫游者',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-purple.png',
-    allSumAmount: 588.00,
-    planTitle: '终身赞助者',
-    lastPayTime: '2026-09-08',
-    isLifetime: true,
-    rank: 1,
-    comment: '感谢开发者无私奉献，Steam一键入库太好用了，永远支持春风渡！'
-  },
-  {
-    id: 'af_top02',
-    name: '云水禅心',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-blue.png',
-    allSumAmount: 366.00,
-    planTitle: '终身赞助者',
-    lastPayTime: '2026-09-07',
-    isLifetime: true,
-    rank: 2,
-    comment: '联机补丁和创意工坊一键订阅功能非常强大，加油！'
-  },
-  {
-    id: 'af_top03',
-    name: 'CyberSamurai',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-green.png',
-    allSumAmount: 288.00,
-    planTitle: '终身赞助者',
-    lastPayTime: '2026-09-06',
-    isLifetime: true,
-    rank: 3,
-    comment: '界面审美在线，极速入库很稳定，请喝几杯咖啡！'
-  },
-  {
-    id: 'af_04',
-    name: '极光幻梦',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-orange.png',
-    allSumAmount: 168.00,
-    planTitle: '豪华支持者',
-    lastPayTime: '2026-09-05',
-    rank: 4,
-    comment: '每日更新清单辛苦了，支持服务器续费！'
-  },
-  {
-    id: 'af_05',
-    name: '风之诺言',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-pink.png',
-    allSumAmount: 128.00,
-    planTitle: '豪华支持者',
-    lastPayTime: '2026-09-05',
-    rank: 5,
-    comment: '从旧版一路用过来，体验越来越棒了。'
-  },
-  {
-    id: 'af_06',
-    name: '秋水长天',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-yellow.png',
-    allSumAmount: 99.00,
-    planTitle: '月度先锋',
-    lastPayTime: '2026-09-04',
-    rank: 6,
-    comment: '全DLC自动匹配是真的香，帮了大忙！'
-  },
-  {
-    id: 'af_07',
-    name: 'NightOwl_99',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-teal.png',
-    allSumAmount: 68.00,
-    planTitle: '月度先锋',
-    lastPayTime: '2026-09-03',
-    rank: 7,
-    comment: '低调支持一下作者，好工具值得被看见。'
-  },
-  {
-    id: 'af_08',
-    name: '浮生若梦',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-indigo.png',
-    allSumAmount: 50.00,
-    planTitle: '爱心发电',
-    lastPayTime: '2026-09-02',
-    rank: 8,
-    comment: '给开发者加个鸡腿！'
-  },
-  {
-    id: 'af_09',
-    name: '代码写到天亮',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-purple.png',
-    allSumAmount: 30.00,
-    planTitle: '爱心发电',
-    lastPayTime: '2026-09-01',
-    rank: 9,
-    comment: '同行支持，代码写得很规范优雅！'
-  },
-  {
-    id: 'af_10',
-    name: 'Steam重度爱好者',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-blue.png',
-    allSumAmount: 20.00,
-    planTitle: '爱心发电',
-    lastPayTime: '2026-08-30',
-    rank: 10,
-    comment: '支持国产独立工具开源维护！'
-  }
-];
+export const FALLBACK_SPONSORS: SponsorItem[] = [];
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -843,12 +739,12 @@ export const createTauriBridge = () => {
       } catch {}
 
       return {
-        totalCount: FALLBACK_SPONSORS.length,
-        totalAmount: 1777,
-        updatedAt: '2026-09-08',
+        totalCount: 0,
+        totalAmount: 0,
+        updatedAt: new Date().toISOString().slice(0, 10),
         source: 'fallback',
         sponsorUrl: 'https://afdian.com/a/chunfengdu',
-        sponsors: FALLBACK_SPONSORS
+        sponsors: []
       };
     },
     // 触发从爱发电同步赞助数据

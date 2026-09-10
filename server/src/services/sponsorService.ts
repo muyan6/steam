@@ -15,118 +15,7 @@ const DEFAULT_AFDIAN_CONFIG: AfdianConfig = {
   updatedAt: new Date().toISOString()
 };
 
-const SEED_SPONSORS: SponsorItem[] = [
-  {
-    id: 'af_top01',
-    name: '星海漫游者',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-purple.png',
-    allSumAmount: 588.00,
-    planTitle: '终身赞助者',
-    lastPayTime: '2026-09-08',
-    firstPayTime: '2026-08-01',
-    isLifetime: true,
-    comment: '感谢开发者无私奉献，Steam一键入库太好用了，永远支持春风渡！'
-  },
-  {
-    id: 'af_top02',
-    name: '云水禅心',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-blue.png',
-    allSumAmount: 366.00,
-    planTitle: '终身赞助者',
-    lastPayTime: '2026-09-07',
-    firstPayTime: '2026-08-10',
-    isLifetime: true,
-    comment: '联机补丁和创意工坊一键订阅功能非常强大，加油！'
-  },
-  {
-    id: 'af_top03',
-    name: 'CyberSamurai',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-green.png',
-    allSumAmount: 288.00,
-    planTitle: '终身赞助者',
-    lastPayTime: '2026-09-06',
-    firstPayTime: '2026-08-15',
-    isLifetime: true,
-    comment: '界面审美在线，极速入库很稳定，请喝几杯咖啡！'
-  },
-  {
-    id: 'af_04',
-    name: '极光幻梦',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-orange.png',
-    allSumAmount: 168.00,
-    planTitle: '豪华支持者',
-    lastPayTime: '2026-09-05',
-    firstPayTime: '2026-08-20',
-    isLifetime: false,
-    comment: '每日更新清单辛苦了，支持服务器续费！'
-  },
-  {
-    id: 'af_05',
-    name: '风之诺言',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-pink.png',
-    allSumAmount: 128.00,
-    planTitle: '豪华支持者',
-    lastPayTime: '2026-09-05',
-    firstPayTime: '2026-08-22',
-    isLifetime: false,
-    comment: '从旧版一路用过来，体验越来越棒了。'
-  },
-  {
-    id: 'af_06',
-    name: '秋水长天',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-yellow.png',
-    allSumAmount: 99.00,
-    planTitle: '月度先锋',
-    lastPayTime: '2026-09-04',
-    firstPayTime: '2026-08-25',
-    isLifetime: false,
-    comment: '全DLC自动匹配是真的香，帮了大忙！'
-  },
-  {
-    id: 'af_07',
-    name: 'NightOwl_99',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-teal.png',
-    allSumAmount: 68.00,
-    planTitle: '月度先锋',
-    lastPayTime: '2026-09-03',
-    firstPayTime: '2026-08-28',
-    isLifetime: false,
-    comment: '低调支持一下作者，好工具值得被看见。'
-  },
-  {
-    id: 'af_08',
-    name: '浮生若梦',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-indigo.png',
-    allSumAmount: 50.00,
-    planTitle: '爱心发电',
-    lastPayTime: '2026-09-02',
-    firstPayTime: '2026-09-01',
-    isLifetime: false,
-    comment: '给开发者加个鸡腿！'
-  },
-  {
-    id: 'af_09',
-    name: '代码写到天亮',
-    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-purple.png',
-    allSumAmount: 30.00,
-    planTitle: '爱心发电',
-    lastPayTime: '2026-09-01',
-    firstPayTime: '2026-09-01',
-    isLifetime: false,
-    comment: '同行支持，代码写得很规范优雅！'
-  },
-  {
-    "id": "af_10",
-    "name": "Steam重度爱好者",
-    "avatar": "https://pic1.afdiancdn.com/default/avatar/avatar-blue.png",
-    "allSumAmount": 20.00,
-    "planTitle": "爱心发电",
-    "lastPayTime": "2026-08-30",
-    "firstPayTime": "2026-08-30",
-    "isLifetime": false,
-    "comment": "支持国产独立工具开源维护！"
-  }
-];
+const SEED_SPONSORS: SponsorItem[] = [];
 
 export class SponsorService {
   private sponsorsFilePath: string;
@@ -148,9 +37,9 @@ export class SponsorService {
     }
 
     if (!fs.existsSync(this.sponsorsFilePath)) {
-      writeJsonAtomic(this.sponsorsFilePath, SEED_SPONSORS);
-      this.sponsorsCache = [...SEED_SPONSORS];
-      this.lastSource = 'fallback';
+      writeJsonAtomic(this.sponsorsFilePath, []);
+      this.sponsorsCache = [];
+      this.lastSource = 'cache';
     }
 
     if (!fs.existsSync(this.configFilePath)) {
@@ -219,11 +108,7 @@ export class SponsorService {
       }
     } catch (e: any) {
       console.warn('[SponsorService] 读取赞助数据失败:', e.message);
-      list = this.sponsorsCache || [...SEED_SPONSORS];
-    }
-
-    if (list.length === 0) {
-      list = [...SEED_SPONSORS];
+      list = this.sponsorsCache || [];
     }
 
     // 排序：累计金额降序，次要以最近支付日期降序
@@ -265,7 +150,7 @@ export class SponsorService {
     if (!config.userId || !config.token) {
       return {
         success: false,
-        message: '未配置爱发电开发者 User ID 或 API Token，请先在管理后台完成配置。当前展示预设榜单。',
+        message: '未配置爱发电开发者 User ID 或 API Token，请先在管理后台完成配置。',
         count: 0,
         data: this.getSponsors()
       };
@@ -356,9 +241,15 @@ export class SponsorService {
           data: this.getSponsors()
         };
       } else {
+        writeJsonAtomic(this.sponsorsFilePath, []);
+        this.sponsorsCache = [];
+        this.lastSyncTime = new Date().toISOString();
+        this.lastSource = 'afdian';
+        console.log('[SponsorService] 爱发电接口返回成功，当前暂无赞助记录');
+
         return {
           success: true,
-          message: '爱发电接口返回成功，但当前暂无赞助记录。',
+          message: '爱发电接口返回成功，当前暂无赞助记录。',
           count: 0,
           data: this.getSponsors()
         };
