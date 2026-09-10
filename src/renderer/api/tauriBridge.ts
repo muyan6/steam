@@ -425,6 +425,43 @@ async function searchLocal(q: string, page: number, pageSize: number): Promise<a
   }
 }
 
+const isMockSponsor = (s: SponsorItem): boolean => {
+  if (!s) return true;
+  const mockNames = [
+    '星海漫游者', '云水禅心', 'CyberSamurai', '极光幻梦', '风之诺言',
+    '秋水长天', 'NightOwl_99', '浮生若梦', '代码写到天亮', 'Steam重度爱好者'
+  ];
+  if (mockNames.includes(s.name)) return true;
+  if (s.id && /^af_(top\d+|\d+)$/.test(s.id)) return true;
+  return false;
+};
+
+const sanitizeSponsorResponse = (data: any, fallbackUrl = 'https://afdian.com/a/chunfengdu'): SponsorDataResponse => {
+  if (!data) {
+    return {
+      totalCount: 0,
+      totalAmount: 0,
+      updatedAt: new Date().toISOString().slice(0, 10),
+      source: 'afdian',
+      sponsorUrl: fallbackUrl,
+      sponsors: []
+    };
+  }
+
+  const rawList: SponsorItem[] = Array.isArray(data.sponsors) ? data.sponsors : [];
+  const realSponsors = rawList.filter(s => !isMockSponsor(s));
+  const totalAmount = realSponsors.reduce((sum, item) => sum + (item.allSumAmount || 0), 0);
+
+  return {
+    totalCount: realSponsors.length,
+    totalAmount: Math.round(totalAmount * 100) / 100,
+    updatedAt: data.updatedAt || new Date().toISOString().slice(0, 10),
+    source: 'afdian',
+    sponsorUrl: data.sponsorUrl || fallbackUrl,
+    sponsors: realSponsors
+  };
+};
+
 // ==================== 桥接 ====================
 
 export const createTauriBridge = () => {
@@ -719,71 +756,96 @@ export const createTauriBridge = () => {
     getSponsors: async (): Promise<SponsorDataResponse> => {
       try {
         const json = await getJson<{ success: boolean; data: SponsorDataResponse }>(`${API}/api/sponsors`, 4000);
-        if (json?.success && json?.data && Array.isArray(json.data.sponsors)) {
+        if (json?.success && json?.data) {
+          const sanitized = sanitizeSponsorResponse(json.data);
           try {
-            localStorage.setItem('cfd_sponsors_cache', JSON.stringify(json.data));
+            localStorage.setItem('cfd_sponsors_cache', JSON.stringify(sanitized));
           } catch {}
-          return json.data;
+          return sanitized;
         }
       } catch (e) {
         console.warn('获取赞助榜单异常:', e);
       }
 
-      // 降级使用本地缓存或预设种子数据
+      // 降级使用本地缓存（同样经过脱敏清洗）
       try {
         const cached = localStorage.getItem('cfd_sponsors_cache');
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (parsed && Array.isArray(parsed.sponsors)) return parsed;
+          if (parsed) return sanitizeSponsorResponse(parsed);
         }
       } catch {}
 
-      return {
-        totalCount: 0,
-        totalAmount: 0,
-        updatedAt: new Date().toISOString().slice(0, 10),
-        source: 'fallback',
-        sponsorUrl: 'https://afdian.com/a/chunfengdu',
-        sponsors: []
-      };
+      return sanitizeSponsorResponse(null);
     },
     // 触发从爱发电同步赞助数据
     syncAfdianSponsors: async (): Promise<{ success: boolean; message: string; data?: any }> => {
       try {
         const json = await postJson<{ success: boolean; message: string; data?: any }>(`${API}/api/sponsors/sync`, {}, 8000);
-        if (json?.data) {
-          try {
-            localStorage.setItem('cfd_sponsors_cache', JSON.stringify(json.data));
-          } catch {}
+        if (json) {
+          if (json.data) {
+            json.data = sanitizeSponsorResponse(json.data);
+            try {
+              localStorage.setItem('cfd_sponsors_cache', JSON.stringify(json.data));
+            } catch {}
+          }
+          return json;
         }
-        return json || { success: false, message: '爱发电接口响应异常，请稍后再试' };
+        return { success: false, message: '爱发电接口响应异常，请稍后再试' };
       } catch (e: any) {
         return { success: false, message: '网络请求失败: ' + formatIpcError(e) };
       }
     },
     // 获取历代版本完整更新日志 (Changelog)
     getVersionChangelogs: async (): Promise<VersionChangelogItem[]> => {
+      // 客户端内置 DEFAULT_CHANGELOGS 为权威详尽日志基准（含 16 代完整演进与脱敏说明）
+      const logMap = new Map<string, VersionChangelogItem>();
+      for (const item of DEFAULT_CHANGELOGS) {
+        logMap.set(item.version, { ...item });
+      }
+
       try {
         const json = await getJson<{ success: boolean; data: VersionChangelogItem[] }>(`${API}/api/version/changelogs`, 4000);
         if (json?.success && Array.isArray(json.data) && json.data.length > 0) {
-          try {
-            localStorage.setItem('cfd_changelogs_cache', JSON.stringify(json.data));
-          } catch {}
-          return json.data;
+          for (const remoteItem of json.data) {
+            if (!remoteItem || !remoteItem.version) continue;
+            const existing = logMap.get(remoteItem.version);
+            if (!existing) {
+              // 全新未知版本（例如未来云端发布的版本），加入列表
+              logMap.set(remoteItem.version, remoteItem);
+            } else if (
+              remoteItem.title &&
+              remoteItem.title !== '新版本' &&
+              Array.isArray(remoteItem.changelog) &&
+              remoteItem.changelog.length > (existing.changelog?.length || 0)
+            ) {
+              // 仅当云端记录更详尽且不是占位文本时才更新
+              logMap.set(remoteItem.version, { ...existing, ...remoteItem });
+            }
+          }
         }
       } catch (e) {
         console.warn('获取版本更新日志异常:', e);
       }
 
-      try {
-        const cached = localStorage.getItem('cfd_changelogs_cache');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      // 按语义化版本降序排列，确保 v2.7.0 永远在首位
+      const result = Array.from(logMap.values()).sort((a, b) => {
+        const parseVer = (v: string) => (v || '0').replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+        const pA = parseVer(a.version);
+        const pB = parseVer(b.version);
+        for (let i = 0; i < Math.max(pA.length, pB.length); i++) {
+          const numA = pA[i] || 0;
+          const numB = pB[i] || 0;
+          if (numB !== numA) return numB - numA;
         }
+        return (b.releaseDate || '').localeCompare(a.releaseDate || '');
+      });
+
+      try {
+        localStorage.setItem('cfd_changelogs_cache', JSON.stringify(result));
       } catch {}
 
-      return DEFAULT_CHANGELOGS;
+      return result;
     },
     getDatabaseStats: async (): Promise<any> => {
       const json = await getJson(`${API}/api/stats`, 3000);

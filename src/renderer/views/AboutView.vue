@@ -453,13 +453,45 @@ const loadChangelogs = async () => {
   }
 };
 
+const isMockSponsor = (s: SponsorItem): boolean => {
+  if (!s) return true;
+  const mockNames = [
+    '星海漫游者', '云水禅心', 'CyberSamurai', '极光幻梦', '风之诺言',
+    '秋水长天', 'NightOwl_99', '浮生若梦', '代码写到天亮', 'Steam重度爱好者'
+  ];
+  return mockNames.includes(s.name) || /^af_(top\d+|\d+)$/.test(s.id || '');
+};
+
+const sanitizeSponsorState = (data: SponsorDataResponse): SponsorDataResponse => {
+  if (!data) {
+    return {
+      totalCount: 0,
+      totalAmount: 0,
+      updatedAt: new Date().toISOString().slice(0, 10),
+      source: 'afdian',
+      sponsorUrl: 'https://afdian.com/a/chunfengdu',
+      sponsors: []
+    };
+  }
+  const realSponsors = (data.sponsors || []).filter(s => !isMockSponsor(s));
+  const realAmount = realSponsors.reduce((sum, item) => sum + (item.allSumAmount || 0), 0);
+  return {
+    ...data,
+    totalCount: realSponsors.length,
+    totalAmount: Math.round(realAmount * 100) / 100,
+    source: 'afdian',
+    sponsors: realSponsors
+  };
+};
+
 const loadSponsors = async () => {
   try {
     const data = await window.electronAPI.getSponsors();
     if (data) {
-      sponsorsData.value = data;
-      if (data.sponsorUrl && !appLinks.value.sponsorUrl) {
-        appLinks.value.sponsorUrl = data.sponsorUrl;
+      const sanitized = sanitizeSponsorState(data);
+      sponsorsData.value = sanitized;
+      if (sanitized.sponsorUrl && !appLinks.value.sponsorUrl) {
+        appLinks.value.sponsorUrl = sanitized.sponsorUrl;
       }
     }
   } catch (e) {
@@ -525,6 +557,16 @@ const checkUpdates = async () => {
 };
 
 onMounted(() => {
+  try {
+    const cached = localStorage.getItem('cfd_sponsors_cache');
+    if (cached && (cached.includes('星海漫游者') || cached.includes('1805'))) {
+      localStorage.removeItem('cfd_sponsors_cache');
+    }
+    const cachedLogs = localStorage.getItem('cfd_changelogs_cache');
+    if (cachedLogs && cachedLogs.includes('新版本')) {
+      localStorage.removeItem('cfd_changelogs_cache');
+    }
+  } catch {}
   loadAppLinks();
   loadChangelogs();
   loadSponsors();
