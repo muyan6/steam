@@ -337,30 +337,6 @@ pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
 fn align_manifest_gids_with_hub3(meta: &mut AppMetadata, app_id: u32) {
     let urls = [
         format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
-            app_id, app_id
-        ),
-        format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
             app_id, app_id
         ),
@@ -369,17 +345,21 @@ fn align_manifest_gids_with_hub3(meta: &mut AppMetadata, app_id: u32) {
             app_id, app_id
         ),
         format!(
-            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
             app_id, app_id
         ),
         format!(
-            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
             app_id, app_id
         ),
     ];
 
     for url in &urls {
-        if let Ok(resp) = block_on(http_client().get(url).timeout(Duration::from_secs(3)).send()) {
+        if let Ok(resp) = block_on(http_client().get(url).timeout(Duration::from_secs(2)).send()) {
             if resp.status().is_success() {
                 if let Ok(text) = block_on(resp.text()) {
                     if text.contains("setManifestid") {
@@ -600,73 +580,55 @@ pub fn extract_manifest_from_zip(zip_bytes: &[u8], depot_id: &str, manifest_gid:
     None
 }
 
-/// 从备用容灾源（ManifestHub3 镜像加速 + SteamML + ManifestHub.uk）拉取分包与密钥数据（仅限合法会员）
+/// 从备用容灾源（SteamML R2 极速桶 + ManifestHub3 高速镜像 + ManifestHub.uk）拉取分包与密钥数据（仅限合法会员）
 pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, String> {
     let mut lua_content: Option<String> = None;
-    let urls = [
-        format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
-            app_id, app_id
-        ),
-        format!(
-            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
-            app_id, app_id
-        ),
-    ];
 
-    for url in &urls {
-        if let Ok(resp) = block_on(http_client().get(url).timeout(Duration::from_secs(8)).send()) {
-            if resp.status().is_success() {
-                if let Ok(text) = block_on(resp.text()) {
-                    if text.contains("addappid") || text.contains("setManifestid") || text.contains("setDepotKey") {
-                        lua_content = Some(text);
-                        break;
-                    }
+    // 1. 优先尝试 SteamML (Cloudflare R2 全球边缘 CDN 直连桶，单次 300ms 响应，免反爬频控)
+    let sml_url = format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id);
+    if let Ok(resp) = block_on(http_client().get(&sml_url).timeout(Duration::from_secs(4)).send()) {
+        if resp.status().is_success() {
+            if let Ok(bytes) = block_on(resp.bytes()) {
+                if let Some(text) = extract_lua_from_zip(&bytes) {
+                    lua_content = Some(text);
                 }
             }
         }
     }
 
-    // 2. 若 ManifestHub3 未命中，尝试 SteamML (Cloudflare R2 直连桶)
+    // 2. 若 SteamML 未命中，尝试 ManifestHub3 国内极速镜像与直连
     if lua_content.is_none() {
-        let sml_url = format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id);
-        if let Ok(resp) = block_on(http_client().get(&sml_url).timeout(Duration::from_secs(8)).send()) {
-            if resp.status().is_success() {
-                if let Ok(bytes) = block_on(resp.bytes()) {
-                    if let Some(text) = extract_lua_from_zip(&bytes) {
-                        lua_content = Some(text);
+        let urls = [
+            format!(
+                "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+                app_id, app_id
+            ),
+            format!(
+                "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+                app_id, app_id
+            ),
+            format!(
+                "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+                app_id, app_id
+            ),
+            format!(
+                "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+                app_id, app_id
+            ),
+            format!(
+                "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+                app_id, app_id
+            ),
+        ];
+
+        for url in &urls {
+            if let Ok(resp) = block_on(http_client().get(url).timeout(Duration::from_secs(3)).send()) {
+                if resp.status().is_success() {
+                    if let Ok(text) = block_on(resp.text()) {
+                        if text.contains("addappid") || text.contains("setManifestid") || text.contains("setDepotKey") {
+                            lua_content = Some(text);
+                            break;
+                        }
                     }
                 }
             }
@@ -1038,37 +1000,48 @@ async fn download_single_manifest(
         }
     }
 
-    // 2. 第二优先级：ManifestHub3 国内高速多路镜像专线（拉取真实 .manifest 实体）
+    // 2. 第二优先级：SteamML R2 存储桶直连（Cloudflare 全球 CDN 边缘节点，单次 300ms 直出，支持海量最新独立游戏，免反爬频控）
+    let sml_candidates = [
+        format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id),
+        format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", depot_id),
+    ];
+    for sml_url in &sml_candidates {
+        if let Ok(resp) = http_client().get(sml_url).timeout(Duration::from_secs(5)).send().await {
+            if resp.status().is_success() {
+                if let Ok(bytes) = resp.bytes().await {
+                    if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
+                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                        return Ok(format!("已从 SteamML 极速源下载 ({} 字节)", payload.len()));
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. 第三优先级：ManifestHub3 国内高速镜像专线（优先使用 ghfast.top 与 gh-proxy.com）
     let mirror_candidates = [
-        format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
         format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
             app_id, depot_id, manifest_gid
         ),
         format!(
             "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
             depot_id, depot_id, manifest_gid
         ),
         format!(
-            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
             depot_id, depot_id, manifest_gid
         ),
     ];
     for m_url in &mirror_candidates {
         if let Ok(resp) = http_client()
             .get(m_url)
-            .timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(4))
             .send()
             .await
         {
@@ -1087,7 +1060,7 @@ async fn download_single_manifest(
         }
     }
 
-    // 3. 第三优先级：ManifestHub3 GitHub Raw 直连
+    // 4. 第四优先级：ManifestHub3 GitHub Raw 直连
     let raw_candidates = [
         format!(
             "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
@@ -1101,7 +1074,7 @@ async fn download_single_manifest(
     for r_url in &raw_candidates {
         if let Ok(resp) = http_client()
             .get(r_url)
-            .timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(4))
             .send()
             .await
         {
@@ -1120,31 +1093,12 @@ async fn download_single_manifest(
         }
     }
 
-    // 4. 第四优先级：SteamML R2 存储桶直连（支持海量最新游戏清单包）
-    let sml_candidates = [
-        format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id),
-        format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", depot_id),
-    ];
-    for sml_url in &sml_candidates {
-        if let Ok(resp) = http_client().get(sml_url).timeout(Duration::from_secs(8)).send().await {
-            if resp.status().is_success() {
-                if let Ok(bytes) = resp.bytes().await {
-                    if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
-                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                        return Ok(format!("已从 SteamML 备用源下载 ({} 字节)", payload.len()));
-                    }
-                }
-            }
-        }
-    }
-
-    // 5. 第五优先级：ManifestHub.uk 代理下载
+    // 5. 第五优先级：ManifestHub.uk 代理下载（末位容灾冷备）
     let enc_id = encode_manifesthub_uk_cipher(app_id);
     let proxy_url = format!("https://api.manifesthub.uk/proxy?id={}", enc_id);
     if let Ok(resp) = http_client()
         .get(&proxy_url)
-        .timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(6))
         .header("Referer", "https://steamtools.pages.dev/")
         .send()
         .await
@@ -1157,7 +1111,7 @@ async fn download_single_manifest(
                             let dl_url = format!("https://api.manifesthub.uk{}", href);
                             if let Ok(dl_resp) = http_client()
                                 .get(&dl_url)
-                                .timeout(Duration::from_secs(10))
+                                .timeout(Duration::from_secs(8))
                                 .header("Referer", &proxy_url)
                                 .send()
                                 .await

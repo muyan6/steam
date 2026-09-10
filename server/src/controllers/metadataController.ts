@@ -126,35 +126,48 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
   }
 
   const task = (async (): Promise<ManifestHub3Data | null> => {
-    const proxyBases = [
-      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+    // 采用国内响应最快且稳定的两大镜像：ghfast.top 与 gh-proxy.com，并发竞速探测
+    const fastBases = [
       'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];
 
-    const urls: string[] = [];
-    for (const b of proxyBases) {
-      urls.push(`${b}/${appId}/${appId}.lua`);
-      urls.push(`${b}/${appId}/${appId}_public.lua`);
-      urls.push(`${b}/${appId}/${appId}.json`);
-    }
-
     let data: ManifestHub3Data | null = null;
-    for (const u of urls) {
+
+    // 1. 并发探测 {appId}.json
+    try {
+      const jsonPromises = fastBases.map(async (base) => {
+        const resp = await axios.get(`${base}/${appId}/${appId}.json`, { httpsAgent, timeout: 2500 });
+        if (resp.data && resp.data.depot && typeof resp.data.depot === 'object') {
+          return resp.data;
+        }
+        throw new Error('Not valid json');
+      });
+      const jsonData = await Promise.any(jsonPromises);
+      if (jsonData) {
+        data = parseManifestHub3Json(jsonData, appId);
+      }
+    } catch {}
+
+    // 2. 若 json 未命中，并发探测 {appId}.lua 与 {appId}_public.lua
+    if (!data) {
       try {
-        const isJson = u.endsWith('.json');
-        const resp = await axios.get(u, { httpsAgent, timeout: 6000 });
-        if (isJson && resp.data && resp.data.depot && typeof resp.data.depot === 'object') {
-          data = parseManifestHub3Json(resp.data, appId);
-          break;
-        } else if (!isJson) {
-          const lua = typeof resp.data === 'string' ? resp.data : '';
-          if (lua.includes('addappid') || lua.includes('setManifestid')) {
-            data = parseManifestHub3Lua(lua, appId);
-            break;
+        const luaUrls: string[] = [];
+        for (const base of fastBases) {
+          luaUrls.push(`${base}/${appId}/${appId}.lua`);
+          luaUrls.push(`${base}/${appId}/${appId}_public.lua`);
+        }
+        const luaPromises = luaUrls.map(async (u) => {
+          const resp = await axios.get(u, { httpsAgent, timeout: 2500 });
+          const text = typeof resp.data === 'string' ? resp.data : '';
+          if (text.includes('addappid') || text.includes('setManifestid')) {
+            return text;
           }
+          throw new Error('Not valid lua');
+        });
+        const luaText = await Promise.any(luaPromises);
+        if (luaText) {
+          data = parseManifestHub3Lua(luaText, appId);
         }
       } catch {}
     }
@@ -356,21 +369,39 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     // 仅当 SteamCMD 或 ManifestHub3 明确收录且具备真实清单 GID 的分包才允许下发。
     const claimedDepotIds = new Set(depots.map((d) => d.depotId));
 
-    // 4.5 ManifestHub3 社区实体清单库优先对齐（steamtools-games/ManifestHub3）：
+    // 4.5 社区实体清单库并发竞速对齐（ManifestHub3 镜像 + SteamML R2 并发并行提取）：
     // 关键原理：SteamCMD 返回的是 Valve 云端实时构建号，但 Valve CM 接口已严厉封禁非拥有者索码；
     // 若使用 SteamCMD 的虚假最新 GID，会导致客户端与服务端均无法找到 .manifest 实体文件（404），
     // 进而迫使 Steam 向官方索码触发 403 Access Denied（无互联网连接）；
     // 只有 ManifestHub3 / SteamML 实际归档并提供实体下载的 GID，才能保证 100% 成功下载与解密！
-    let hub3Data: ManifestHub3Data | null = await fetchManifestHub3(appId);
-    if (!hub3Data || hub3Data.depotKeys.size === 0) {
-      try {
-        const multiData = await manifestService.extractParsedDataFromMultiSources(appId);
-        if (multiData && (multiData.depotKeys.size > 0 || multiData.manifestGids.size > 0)) {
-          hub3Data = multiData;
+    let hub3Data: ManifestHub3Data | null = null;
+    try {
+      const [hub3Res, multiRes] = await Promise.allSettled([
+        fetchManifestHub3(appId),
+        manifestService.extractParsedDataFromMultiSources(appId)
+      ]);
+      const hData = hub3Res.status === 'fulfilled' ? hub3Res.value : null;
+      const mData = multiRes.status === 'fulfilled' ? multiRes.value : null;
+
+      if (hData && hData.depotKeys && hData.depotKeys.size > 0) {
+        hub3Data = hData;
+        if (mData) {
+          // 深度智能合并：补充 SteamML 中更多可用的 DLC 与最新分包密钥
+          for (const [dId, key] of mData.depotKeys) {
+            if (!hub3Data.depotKeys.has(dId)) hub3Data.depotKeys.set(dId, key);
+          }
+          for (const [dId, gid] of mData.manifestGids) {
+            if (!hub3Data.manifestGids.has(dId)) hub3Data.manifestGids.set(dId, gid);
+          }
+          if (Array.isArray(mData.dlcIds)) {
+            hub3Data.dlcIds = Array.from(new Set([...hub3Data.dlcIds, ...mData.dlcIds]));
+          }
         }
-      } catch (err: any) {
-        console.warn(`[MetadataController] 多源清单库提取失败 (${appId}):`, err.message);
+      } else if (mData) {
+        hub3Data = mData;
       }
+    } catch (err: any) {
+      console.warn(`[MetadataController] 并发多源清单库检索异常 (${appId}):`, err.message);
     }
     if (hub3Data) {
       if (Array.isArray(hub3Data.dlcIds) && hub3Data.dlcIds.length > 0) {

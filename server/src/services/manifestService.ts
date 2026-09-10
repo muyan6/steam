@@ -57,41 +57,43 @@ export class ManifestService {
       };
     }
 
-    // 2. 尝试向 ManifestHub3 社区镜像清单库检索
+    // 2. 核心并发竞速：SteamML R2 直连（免鉴权/全量清单）与 ManifestHub3 高速镜像并行检索
     try {
-      const mhResult = await this.fetchFromManifestHub(appId, candidateDepotIds);
-      if (mhResult && mhResult.length > 0) {
-        return {
-          success: true,
-          appId,
-          source: 'manifesthub',
-          depots: mhResult,
-          keys,
-          message: `从云端清单库检索到 ${mhResult.length} 个分包清单！`
-        };
-      }
-    } catch (err: any) {
-      console.warn(`[ManifestService] ManifestHub 镜像检索失败 (${appId}):`, err.message);
-    }
+      const [steamResult, hubResult] = await Promise.allSettled([
+        this.fetchFromSteamML(appId, candidateDepotIds),
+        this.fetchFromManifestHub(appId, candidateDepotIds)
+      ]);
 
-    // 3. 尝试向 SteamML 社区清单库检索（Cloudflare R2 存储桶直连，免鉴权且支持大量新游与独立游戏）
-    try {
-      const smlResult = await this.fetchFromSteamML(appId, candidateDepotIds);
-      if (smlResult && smlResult.length > 0) {
+      const smlList = steamResult.status === 'fulfilled' ? steamResult.value : [];
+      const hubList = hubResult.status === 'fulfilled' ? hubResult.value : [];
+
+      // 优先采用具备完整实体文件的 SteamML (R2 全球 CDN)，若 SteamML 未命中则采用 ManifestHub3
+      if (smlList && smlList.length > 0) {
         return {
           success: true,
           appId,
           source: 'steamml',
-          depots: smlResult,
+          depots: smlList,
           keys,
-          message: `从 SteamML 清单库检索到 ${smlResult.length} 个分包清单！`
+          message: `从 SteamML 清单库极速检索到 ${smlList.length} 个分包清单！`
+        };
+      }
+
+      if (hubList && hubList.length > 0) {
+        return {
+          success: true,
+          appId,
+          source: 'manifesthub',
+          depots: hubList,
+          keys,
+          message: `从云端清单库检索到 ${hubList.length} 个分包清单！`
         };
       }
     } catch (err: any) {
-      console.warn(`[ManifestService] SteamML 检索失败 (${appId}):`, err.message);
+      console.warn(`[ManifestService] 并发清单检索异常 (${appId}):`, err.message);
     }
 
-    // 4. 尝试向 ManifestHub.uk 检索（多节点 API 代理与防盗链 Token 调度）
+    // 3. 末位冷备容灾：ManifestHub.uk（严格限制触发条件，防止触发单 IP 频控，且一旦命中即落盘本地缓存）
     try {
       const mhUkResult = await this.fetchFromManifestHubUK(appId, candidateDepotIds);
       if (mhUkResult && mhUkResult.length > 0) {
@@ -275,90 +277,94 @@ export class ManifestService {
   }
 
   /**
-   * 从 GitHub ManifestHub3 加速源检索（steamtools-games/ManifestHub3）
+   * 从 GitHub ManifestHub3 加速源检索（并发竞速极速通道：ghfast.top 与 gh-proxy.com）
    */
   private async fetchFromManifestHub(appId: number, depotIds: string[]): Promise<DepotManifestInfo[]> {
     const results: DepotManifestInfo[] = [];
-    const proxyBases = [
-      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+    const fastBases = [
       'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];
 
-    // 1. 优先拉取 {appId}.json
-    const jsonUrls = proxyBases.map((base) => `${base}/${appId}/${appId}.json`);
-
-    for (const ju of jsonUrls) {
-      try {
-        const resp = await axios.get(ju, { timeout: 4000 });
-        if (resp.data && resp.data.depot && typeof resp.data.depot === 'object') {
-          for (const [dId, dInfo] of Object.entries<any>(resp.data.depot)) {
-            if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
-            let gid: string | undefined;
-            if (dInfo.manifests && typeof dInfo.manifests === 'object') {
-              gid = dInfo.manifests.public?.gid || Object.values<any>(dInfo.manifests)[0]?.gid;
-            }
-            if (gid && gid !== '0' && /^\d+$/.test(gid.toString())) {
-              const key = (dInfo.decryptionkey && typeof dInfo.decryptionkey === 'string' && dInfo.decryptionkey.length >= 32)
-                ? dInfo.decryptionkey
-                : (depotService.getDepotKey(dId) || undefined);
-              results.push({
-                depotId: dId,
-                manifestId: gid.toString(),
-                downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
-                source: 'manifesthub',
-                key
-              });
-            }
-          }
-          if (results.length > 0) break;
+    // 1. 优先并发拉取 {appId}.json
+    try {
+      const jsonPromises = fastBases.map(async (base) => {
+        const resp = await axios.get(`${base}/${appId}/${appId}.json`, { timeout: 2500 });
+        if (resp.status === 200 && resp.data && resp.data.depot && typeof resp.data.depot === 'object') {
+          return resp.data;
         }
-      } catch {}
-    }
+        throw new Error('Invalid json');
+      });
+      const data = await Promise.any(jsonPromises);
+      if (data && data.depot) {
+        for (const [dId, dInfo] of Object.entries<any>(data.depot)) {
+          if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+          let gid: string | undefined;
+          if (dInfo.manifests && typeof dInfo.manifests === 'object') {
+            gid = dInfo.manifests.public?.gid || Object.values<any>(dInfo.manifests)[0]?.gid;
+          }
+          if (gid && gid !== '0' && /^\d+$/.test(gid.toString())) {
+            const key = (dInfo.decryptionkey && typeof dInfo.decryptionkey === 'string' && dInfo.decryptionkey.length >= 32)
+              ? dInfo.decryptionkey
+              : (depotService.getDepotKey(dId) || undefined);
+            results.push({
+              depotId: dId,
+              manifestId: gid.toString(),
+              downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
+              source: 'manifesthub',
+              key
+            });
+          }
+        }
+      }
+    } catch {}
 
-    // 2. 若 json 失败，兜底尝试拉取 {appId}.lua / {appId}_public.lua
+    // 2. 若 json 失败，兜底并发尝试拉取 {appId}.lua / {appId}_public.lua
     if (results.length === 0) {
-      const luaUrls = proxyBases.flatMap((base) => [
-        `${base}/${appId}/${appId}.lua`,
-        `${base}/${appId}/${appId}_public.lua`
-      ]);
-      for (const lu of luaUrls) {
-        try {
-          const resp = await axios.get(lu, { timeout: 4000 });
+      const luaUrls: string[] = [];
+      for (const base of fastBases) {
+        luaUrls.push(`${base}/${appId}/${appId}.lua`);
+        luaUrls.push(`${base}/${appId}/${appId}_public.lua`);
+      }
+      try {
+        const luaPromises = luaUrls.map(async (lu) => {
+          const resp = await axios.get(lu, { timeout: 2500 });
           const lua = typeof resp.data === 'string' ? resp.data : '';
           if (lua.includes('setManifestid') || lua.includes('addappid')) {
-            const gidMap = new Map<string, string>();
-            const keyMap = new Map<string, string>();
-
-            for (const rawLine of lua.split('\n')) {
-              const line = rawLine.trim();
-              const mMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d+)"/);
-              if (mMatch && mMatch[2] !== '0') {
-                gidMap.set(mMatch[1], mMatch[2]);
-              }
-              const kMatch = line.match(/^(?:addappid|setDepotKey)\((\d+)\s*,\s*(?:\d+\s*,\s*)?"([0-9a-fA-F]{32,})"/);
-              if (kMatch && !/^0+$/.test(kMatch[2])) {
-                keyMap.set(kMatch[1], kMatch[2]);
-              }
-            }
-
-            for (const [dId, gid] of gidMap) {
-              if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
-              const key = keyMap.get(dId) || depotService.getDepotKey(dId) || undefined;
-              results.push({
-                depotId: dId,
-                manifestId: gid,
-                downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
-                source: 'manifesthub',
-                key
-              });
-            }
-            if (results.length > 0) break;
+            return lua;
           }
-        } catch {}
-      }
+          throw new Error('Invalid lua');
+        });
+        const lua = await Promise.any(luaPromises);
+        if (lua) {
+          const gidMap = new Map<string, string>();
+          const keyMap = new Map<string, string>();
+
+          for (const rawLine of lua.split('\n')) {
+            const line = rawLine.trim();
+            const mMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d+)"/);
+            if (mMatch && mMatch[2] !== '0') {
+              gidMap.set(mMatch[1], mMatch[2]);
+            }
+            const kMatch = line.match(/^(?:addappid|setDepotKey)\((\d+)\s*,\s*(?:\d+\s*,\s*)?"([0-9a-fA-F]{32,})"/);
+            if (kMatch && !/^0+$/.test(kMatch[2])) {
+              keyMap.set(kMatch[1], kMatch[2]);
+            }
+          }
+
+          for (const [dId, gid] of gidMap) {
+            if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+            const key = keyMap.get(dId) || depotService.getDepotKey(dId) || undefined;
+            results.push({
+              depotId: dId,
+              manifestId: gid,
+              downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
+              source: 'manifesthub',
+              key
+            });
+          }
+        }
+      } catch {}
     }
 
     // 3. 异步后台触发沉淀落盘（非阻塞），确保后续下载请求秒级响应
@@ -691,50 +697,70 @@ export class ManifestService {
       candidateAppIds.push(depotId);
     }
 
-    // 1. 优先尝试 ManifestHub3 GitHub 镜像与直连
-    const proxyBases = [
-      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+    // 1. 并发竞速回源：ManifestHub3 极速镜像直拉 vs SteamML R2 全包解压沉淀
+    const fastBases = [
       'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];
 
+    const hubManifestUrls: string[] = [];
     for (const targetApp of candidateAppIds) {
-      for (const base of proxyBases) {
-        const manifestUrl = `${base}/${targetApp}/${depotId}_${manifestId}.manifest`;
-        try {
-          const resp = await axios.get(manifestUrl, {
-            responseType: 'arraybuffer',
-            timeout: 8000
-          });
-          if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
-            const buf = Buffer.from(resp.data);
-            const saved = this.saveManifestFile(depotId, manifestId, buf);
-            if (saved) {
-              console.log(`[ManifestService] 成功从 ManifestHub3 回源沉淀清单到本地: ${depotId}_${manifestId}.manifest (${buf.byteLength} 字节)`);
-              return targetFile;
-            }
-          }
-        } catch {}
+      for (const base of fastBases) {
+        hubManifestUrls.push(`${base}/${targetApp}/${depotId}_${manifestId}.manifest`);
       }
     }
 
-    // 2. 尝试从 SteamML / ManifestHubUK 多源回源拉取并解压沉淀
-    const searchAppId = appId && appId > 0 ? appId : Number(depotId);
-    if (searchAppId > 0) {
+    const hubDownloadTask = async (): Promise<string | null> => {
       try {
-        await this.fetchFromSteamML(searchAppId, [depotId]);
-        const recheck1 = this.getLocalManifestFilePath(depotId, manifestId, appId);
-        if (recheck1 && fs.existsSync(recheck1)) {
-          return recheck1;
+        const promises = hubManifestUrls.map(async (url) => {
+          const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 3500 });
+          if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
+            return Buffer.from(resp.data);
+          }
+          throw new Error('Not found');
+        });
+        const buf = await Promise.any(promises);
+        if (buf && this.isValidManifestBuffer(buf)) {
+          const saved = this.saveManifestFile(depotId, manifestId, buf);
+          if (saved) {
+            console.log(`[ManifestService] 成功从 ManifestHub3 极速镜像沉淀清单到本地: ${depotId}_${manifestId}.manifest (${buf.byteLength} 字节)`);
+            return targetFile;
+          }
         }
       } catch {}
+      return null;
+    };
 
+    const searchAppId = appId && appId > 0 ? appId : Number(depotId);
+    const steamMlTask = async (): Promise<string | null> => {
+      if (searchAppId > 0) {
+        try {
+          await this.fetchFromSteamML(searchAppId, [depotId]);
+          const recheck = this.getLocalManifestFilePath(depotId, manifestId, appId);
+          if (recheck && fs.existsSync(recheck)) {
+            console.log(`[ManifestService] 成功从 SteamML R2 沉淀清单到本地: ${depotId}_${manifestId}.manifest`);
+            return recheck;
+          }
+        } catch {}
+      }
+      return null;
+    };
+
+    const [hubResult, smlResult] = await Promise.allSettled([hubDownloadTask(), steamMlTask()]);
+    if (hubResult.status === 'fulfilled' && hubResult.value) {
+      return hubResult.value;
+    }
+    if (smlResult.status === 'fulfilled' && smlResult.value) {
+      return smlResult.value;
+    }
+
+    // 2. 末位冷备容灾：ManifestHub.uk 代理下载与解压沉淀
+    if (searchAppId > 0) {
       try {
         await this.fetchFromManifestHubUK(searchAppId, [depotId]);
         const recheck2 = this.getLocalManifestFilePath(depotId, manifestId, appId);
         if (recheck2 && fs.existsSync(recheck2)) {
+          console.log(`[ManifestService] 成功从 ManifestHub.uk 沉淀清单到本地: ${depotId}_${manifestId}.manifest`);
           return recheck2;
         }
       } catch {}
