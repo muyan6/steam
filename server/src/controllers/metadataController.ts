@@ -79,6 +79,39 @@ function parseManifestHub3Lua(lua: string, targetAppId?: number): ManifestHub3Da
   return { depotKeys, manifestGids, accessToken, dlcIds };
 }
 
+function parseManifestHub3Json(json: any, targetAppId?: number): ManifestHub3Data {
+  const depotKeys = new Map<string, string>();
+  const manifestGids = new Map<string, string>();
+  const dlcIds: string[] = [];
+  if (json && json.depot && typeof json.depot === 'object') {
+    for (const [dId, info] of Object.entries<any>(json.depot)) {
+      if (!/^\d+$/.test(dId)) continue;
+      if (
+        info.decryptionkey &&
+        typeof info.decryptionkey === 'string' &&
+        info.decryptionkey.length >= 32 &&
+        !/^0+$/.test(info.decryptionkey)
+      ) {
+        depotKeys.set(dId, info.decryptionkey);
+      }
+      let gid: string | undefined;
+      if (info.manifests && typeof info.manifests === 'object') {
+        gid = info.manifests.public?.gid || Object.values<any>(info.manifests)[0]?.gid;
+      }
+      if (gid && gid !== '0' && /^\d+$/.test(gid.toString())) {
+        manifestGids.set(dId, gid.toString());
+      }
+      if (info.dlcappid && /^\d+$/.test(String(info.dlcappid))) {
+        const dlcAppId = String(info.dlcappid);
+        if (targetAppId && dlcAppId !== targetAppId.toString() && !dlcIds.includes(dlcAppId)) {
+          dlcIds.push(dlcAppId);
+        }
+      }
+    }
+  }
+  return { depotKeys, manifestGids, dlcIds };
+}
+
 async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null> {
   const now = Date.now();
   const cached = manifestHub3Cache.get(appId);
@@ -93,25 +126,35 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
   }
 
   const task = (async (): Promise<ManifestHub3Data | null> => {
-    const urls = [
-      // 1. 国内顶级加速专线（实测 700ms 毫秒级极速直达）
-      `https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
-      // 2. 国内稳定双路镜像备用
-      `https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
-      `https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
-      `https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`,
-      // 3. 海外直连兜底
-      `https://raw.githubusercontent.com/steamtools-games/ManifestHub3/${appId}/${appId}.lua`
+    const proxyBases = [
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];
+
+    const urls: string[] = [];
+    for (const b of proxyBases) {
+      urls.push(`${b}/${appId}/${appId}.lua`);
+      urls.push(`${b}/${appId}/${appId}_public.lua`);
+      urls.push(`${b}/${appId}/${appId}.json`);
+    }
 
     let data: ManifestHub3Data | null = null;
     for (const u of urls) {
       try {
+        const isJson = u.endsWith('.json');
         const resp = await axios.get(u, { httpsAgent, timeout: 6000 });
-        const lua = typeof resp.data === 'string' ? resp.data : '';
-        if (lua.includes('addappid') || lua.includes('setManifestid')) {
-          data = parseManifestHub3Lua(lua, appId);
+        if (isJson && resp.data && resp.data.depot && typeof resp.data.depot === 'object') {
+          data = parseManifestHub3Json(resp.data, appId);
           break;
+        } else if (!isJson) {
+          const lua = typeof resp.data === 'string' ? resp.data : '';
+          if (lua.includes('addappid') || lua.includes('setManifestid')) {
+            data = parseManifestHub3Lua(lua, appId);
+            break;
+          }
         }
       } catch {}
     }
@@ -307,26 +350,11 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 为 DLC 分包聚合密钥：DLC 的实际 DepotID 不一定等于其 AppID（常为
-    // dlcId+1 等相邻编号），沿用底层 dlcId+0..10 候选启发式，把该范围内
-    // 全部有效密钥下发，避免偏离规律的 DLC 密钥漏发
+    // 铁律：DLC 授权统一通过 dlcIds 下发，客户端以 addappid(dlcId) 纯许可挂载；
+    // 严禁通过 dlcBase+0..10 盲目递增猜测分包（如 2672611 等占位分包），
+    // 否则客户端写入 addappid(candId, 1, key) 必然导致 Steam 尝试索取清单报 401 Unauthorized 未知错误。
+    // 仅当 SteamCMD 或 ManifestHub3 明确收录且具备真实清单 GID 的分包才允许下发。
     const claimedDepotIds = new Set(depots.map((d) => d.depotId));
-    for (const dlcId of dlcIds) {
-      const dlcBase = parseInt(dlcId, 10);
-      if (isNaN(dlcBase)) continue;
-      for (let j = 0; j <= 10; j++) {
-        const candidateId = (dlcBase + j).toString();
-        if (claimedDepotIds.has(candidateId)) continue;
-        const k = matchedKeys[candidateId] || depotService.getDepotKey(candidateId);
-        if (k && isValidKey(k)) {
-          dlcDepots.push({
-            dlcAppId: dlcId,
-            depot: { depotId: candidateId, depotKey: k }
-          });
-          claimedDepotIds.add(candidateId);
-        }
-      }
-    }
 
     // 4.5 ManifestHub3 社区实体清单库优先对齐（steamtools-games/ManifestHub3）：
     // 关键原理：SteamCMD 返回的是 Valve 云端实时构建号，但 Valve CM 接口已严厉封禁非拥有者索码；
@@ -348,23 +376,25 @@ export const getGameMetadata = async (req: Request, res: Response) => {
           d.manifestGid = hub3Data.manifestGids.get(d.depotId);
         }
       }
-      // 本地数据完全没有的分包（新 DLC / 新增 depot）一并补入
+      // 本地数据完全没有的分包（新 DLC / 新增 depot）一并补入（必须带清单 GID）
       for (const [dId, key] of hub3Data.depotKeys) {
         if (knownDepots.has(dId)) continue;
-        depots.push({ depotId: dId, depotKey: key, manifestGid: hub3Data.manifestGids.get(dId) });
-        knownDepots.add(dId);
+        const gid = hub3Data.manifestGids.get(dId);
+        if (gid && /^\d+$/.test(gid) && gid !== '0') {
+          depots.push({ depotId: dId, depotKey: key, manifestGid: gid });
+          knownDepots.add(dId);
+        }
       }
     }
 
-    // 若存在有效密钥分包，则剔除无有效密钥的残余分包（防止 Steam 尝试解密无密钥分包报“内容仍然处于加密状态”）
-    if (depots.some((d) => isValidKey(d.depotKey))) {
-      depots = depots.filter((d) => isValidKey(d.depotKey));
-    }
+    // 严密防线：内容分包必须同时具备有效解密密钥与有效清单 GID！
+    // 无清单 GID 的分包绝不下发为内容分包，杜绝客户端挂载后触发 Steam 401“未知错误”
+    depots = depots.filter(
+      (d) => isValidKey(d.depotKey) && d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0'
+    );
 
     // 严密断言：必须具备实际有效的清单 GID（无清单文件即无法通过 Steam 下载）
-    const hasValidManifest = depots.some(
-      (d) => d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0'
-    );
+    const hasValidManifest = depots.length > 0;
 
     // 严密防线：若云端无任何有效分包、或没有任何有效清单实体 GID，直接响应「暂时没有这款游戏」
     if (depots.length === 0 || !hasValidManifest) {

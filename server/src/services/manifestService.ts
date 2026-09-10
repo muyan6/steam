@@ -284,9 +284,12 @@ export class ManifestService {
       } catch {}
     }
 
-    // 2. 若 json 失败，兜底尝试拉取 {appId}.lua
+    // 2. 若 json 失败，兜底尝试拉取 {appId}.lua / {appId}_public.lua
     if (results.length === 0) {
-      const luaUrls = proxyBases.map((base) => `${base}/${appId}/${appId}.lua`);
+      const luaUrls = proxyBases.flatMap((base) => [
+        `${base}/${appId}/${appId}.lua`,
+        `${base}/${appId}/${appId}_public.lua`
+      ]);
       for (const lu of luaUrls) {
         try {
           const resp = await axios.get(lu, { timeout: 4000 });

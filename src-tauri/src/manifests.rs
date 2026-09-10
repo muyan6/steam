@@ -54,7 +54,70 @@ pub struct ManifestInstallResult {
     pub message: String,
 }
 
-/// 检查 depotcache 中该 app（含 DLC）的清单就绪状态（仅精确匹配 depotId）
+/// 从已入库的 Lua 规则提取该游戏关注的分包 ID 集合及特定的 (depot_id, gid) 清单对
+pub fn extract_depots_from_lua(steam_path: &Path, app_id: u32) -> (std::collections::HashSet<String>, Vec<(String, String)>) {
+    let mut depot_ids = std::collections::HashSet::new();
+    let mut pinned_manifests = Vec::new();
+    depot_ids.insert(app_id.to_string());
+
+    let lua_paths = [
+        steam_path.join("config").join("lua").join(format!("{}.lua", app_id)),
+        steam_path.join("st_scripts").join(format!("{}.lua", app_id)),
+    ];
+
+    for lp in &lua_paths {
+        if let Ok(content) = fs::read_to_string(lp) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("--") {
+                    continue;
+                }
+                // setManifestid(depot_id, "gid"...)
+                if let Some(rest) = trimmed.strip_prefix("setManifestid(") {
+                    if let Some(inner) = rest.split(')').next() {
+                        let parts: Vec<&str> = inner.split(',').collect();
+                        if parts.len() >= 2 {
+                            let d = parts[0].trim().to_string();
+                            let g = parts[1].trim().trim_matches('"').trim_matches('\'').trim().to_string();
+                            if d.chars().all(|c| c.is_ascii_digit()) && !g.is_empty() && g != "0" {
+                                depot_ids.insert(d.clone());
+                                pinned_manifests.push((d, g));
+                            }
+                        }
+                    }
+                }
+                // addappid(depot_id, ...)
+                if let Some(rest) = trimmed.strip_prefix("addappid(") {
+                    if let Some(inner) = rest.split(')').next() {
+                        let parts: Vec<&str> = inner.split(',').collect();
+                        if !parts.is_empty() {
+                            let d = parts[0].trim();
+                            if d.chars().all(|c| c.is_ascii_digit()) {
+                                depot_ids.insert(d.to_string());
+                            }
+                        }
+                    }
+                }
+                // setDepotKey(depot_id, ...)
+                if let Some(rest) = trimmed.strip_prefix("setDepotKey(") {
+                    if let Some(inner) = rest.split(')').next() {
+                        let parts: Vec<&str> = inner.split(',').collect();
+                        if !parts.is_empty() {
+                            let d = parts[0].trim();
+                            if d.chars().all(|c| c.is_ascii_digit()) {
+                                depot_ids.insert(d.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+    (depot_ids, pinned_manifests)
+}
+
+/// 检查 depotcache 中该 app（含分包及 DLC）的清单就绪状态
 pub fn check_manifest_status(steam_path: &Path, app_id: u32, dlcs: &[u32]) -> AppManifestStatus {
     let depot_cache = steam_path.join("depotcache");
     if !depot_cache.exists() {
@@ -67,9 +130,9 @@ pub fn check_manifest_status(steam_path: &Path, app_id: u32, dlcs: &[u32]) -> Ap
         };
     }
 
-    let mut prefixes: Vec<String> = vec![app_id.to_string()];
+    let (mut target_depots, pinned) = extract_depots_from_lua(steam_path, app_id);
     for d in dlcs {
-        prefixes.push(d.to_string());
+        target_depots.insert(d.to_string());
     }
 
     let mut matched_files = Vec::new();
@@ -90,7 +153,7 @@ pub fn check_manifest_status(steam_path: &Path, app_id: u32, dlcs: &[u32]) -> Ap
                 continue;
             }
             if let Some(d_id) = name.strip_suffix(".manifest").and_then(|s| s.split('_').next()) {
-                if prefixes.iter().any(|p| p == d_id) {
+                if target_depots.contains(d_id) {
                     if !matched_depots.iter().any(|x| x == d_id) {
                         matched_depots.push(d_id.to_string());
                     }
@@ -100,16 +163,26 @@ pub fn check_manifest_status(steam_path: &Path, app_id: u32, dlcs: &[u32]) -> Ap
         }
     }
 
+    // 若游戏在 Lua 规则中锁定了具体清单 GID，则必须确保锁定的实体文件均已在 depotcache 就绪
+    let has_manifest = if !pinned.is_empty() {
+        pinned.iter().all(|(d_id, gid)| {
+            let fname = format!("{}_{}.manifest", d_id, gid);
+            matched_files.contains(&fname)
+        })
+    } else {
+        !matched_files.is_empty()
+    };
+
     AppManifestStatus {
         app_id,
-        has_manifest: !matched_files.is_empty(),
+        has_manifest,
         manifest_count: matched_files.len(),
         matched_depots,
         manifest_files: matched_files,
     }
 }
 
-/// 批量清单状态：仅扫描一次 depotcache，避免逐游戏全量遍历（depotcache 可有数千文件）
+/// 批量清单状态：仅扫描一次 depotcache，通过 Lua 分包倒排索引精准匹配（解决分包 DepotID 与 AppID 不一致问题）
 pub fn batch_manifest_status(steam_path: &Path, app_ids: &[u32]) -> BTreeMap<u32, AppManifestStatus> {
     let mut result: BTreeMap<u32, AppManifestStatus> = app_ids
         .iter()
@@ -131,6 +204,22 @@ pub fn batch_manifest_status(steam_path: &Path, app_ids: &[u32]) -> BTreeMap<u32
     if !depot_cache.exists() {
         return result;
     }
+
+    // 建立 depot_id -> Vec<app_id> 倒排索引，并记录每个游戏的 pinned 清单
+    let mut depot_to_apps: std::collections::HashMap<String, Vec<u32>> = std::collections::HashMap::new();
+    let mut app_pinned: std::collections::HashMap<u32, Vec<(String, String)>> = std::collections::HashMap::new();
+
+    for id in app_ids {
+        depot_to_apps.entry(id.to_string()).or_default().push(*id);
+        let (depots, pinned) = extract_depots_from_lua(steam_path, *id);
+        for d in depots {
+            depot_to_apps.entry(d).or_default().push(*id);
+        }
+        if !pinned.is_empty() {
+            app_pinned.insert(*id, pinned);
+        }
+    }
+
     if let Ok(files) = fs::read_dir(&depot_cache) {
         for f in files.filter_map(|e| e.ok()) {
             let path = f.path();
@@ -147,19 +236,33 @@ pub fn batch_manifest_status(steam_path: &Path, app_ids: &[u32]) -> BTreeMap<u32
                 continue;
             }
             if let Some(d_id) = name.strip_suffix(".manifest").and_then(|s| s.split('_').next()) {
-                if let Ok(id) = d_id.parse::<u32>() {
-                    if let Some(status) = result.get_mut(&id) {
-                        status.has_manifest = true;
-                        status.manifest_count += 1;
-                        if !status.matched_depots.iter().any(|x| x == d_id) {
-                            status.matched_depots.push(d_id.to_string());
+                if let Some(matched_app_ids) = depot_to_apps.get(d_id) {
+                    for app_id in matched_app_ids {
+                        if let Some(status) = result.get_mut(app_id) {
+                            status.manifest_count += 1;
+                            if !status.matched_depots.iter().any(|x| x == d_id) {
+                                status.matched_depots.push(d_id.to_string());
+                            }
+                            status.manifest_files.push(name.clone());
                         }
-                        status.manifest_files.push(name.clone());
                     }
                 }
             }
         }
     }
+
+    // 核对每个游戏的 has_manifest 状态：有 pinned 清单的必须全部满足，否则只要有匹配文件即可
+    for (app_id, status) in result.iter_mut() {
+        if let Some(pinned) = app_pinned.get(app_id) {
+            status.has_manifest = !pinned.is_empty() && pinned.iter().all(|(d_id, gid)| {
+                let fname = format!("{}_{}.manifest", d_id, gid);
+                status.manifest_files.contains(&fname)
+            });
+        } else {
+            status.has_manifest = !status.manifest_files.is_empty();
+        }
+    }
+
     result
 }
 
@@ -238,7 +341,15 @@ fn align_manifest_gids_with_hub3(meta: &mut AppMetadata, app_id: u32) {
             app_id, app_id
         ),
         format!(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+            app_id, app_id
+        ),
+        format!(
             "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
             app_id, app_id
         ),
         format!(
@@ -246,11 +357,23 @@ fn align_manifest_gids_with_hub3(meta: &mut AppMetadata, app_id: u32) {
             app_id, app_id
         ),
         format!(
+            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+            app_id, app_id
+        ),
+        format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
             app_id, app_id
         ),
         format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+            app_id, app_id
+        ),
+        format!(
             "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
             app_id, app_id
         ),
     ];
@@ -400,7 +523,15 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
             app_id, app_id
         ),
         format!(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+            app_id, app_id
+        ),
+        format!(
             "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
             app_id, app_id
         ),
         format!(
@@ -408,11 +539,23 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
             app_id, app_id
         ),
         format!(
+            "https://ghproxy.cn/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+            app_id, app_id
+        ),
+        format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
             app_id, app_id
         ),
         format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
+            app_id, app_id
+        ),
+        format!(
             "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}.lua",
+            app_id, app_id
+        ),
+        format!(
+            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_public.lua",
             app_id, app_id
         ),
     ];

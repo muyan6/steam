@@ -273,9 +273,18 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
             }
             match depot.depot_key.as_deref() {
                 Some(k) if is_valid_key(k.trim()) => {
-                    seen.push(depot.depot_id);
-                    lines.push(format!("addappid({}, 1, \"{}\")", depot.depot_id, k.trim()));
-                    lines.push(format!("setDepotKey({}, \"{}\")", depot.depot_id, k.trim()));
+                    // 铁律防御：只有具备有效清单 GID（manifest_id）的分包才允许以内容分包方式挂载（addappid(d, 1, key)）
+                    // 若无有效清单 GID，挂载后 Steam 必然向 Valve CDN 索取清单报 401 Unauthorized 导致“未知错误”
+                    let has_manifest = depot
+                        .manifest_id
+                        .as_deref()
+                        .map(|m| !m.trim().is_empty() && m.trim() != "0")
+                        .unwrap_or(false);
+                    if has_manifest {
+                        seen.push(depot.depot_id);
+                        lines.push(format!("addappid({}, 1, \"{}\")", depot.depot_id, k.trim()));
+                        lines.push(format!("setDepotKey({}, \"{}\")", depot.depot_id, k.trim()));
+                    }
                 }
                 _ => {
                     // 无有效密钥的分包绝不写入 addappid，防止触发 Steam 无法解密的加密状态假死

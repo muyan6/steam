@@ -292,22 +292,30 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
             }
             let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
 
-            // 核心断言：若该游戏清单实体未就绪（precache_ok_count == 0），
-            // 坚决不落无效规则，撤销刚刚生成的脚本并直接提示用户「暂时没有这款游戏」
-            if precache_ok_count == 0 {
+            // 核心断言：若该游戏清单实体未完全就绪（precache_ok_count == 0 或未能获取到全部清单），
+            // 坚决不落无效规则，撤销刚刚生成的脚本并直接提示用户「获取失败」
+            if precache_ok_count == 0 || (precache_total > 0 && precache_ok_count < precache_total) {
                 let _ = std::fs::remove_file(&res.lua_path);
                 let legacy_file = steam_path.join("st_scripts").join(format!("{}.lua", payload.app_id));
                 let _ = std::fs::remove_file(&legacy_file);
                 ost::sync_greenluma_app_list(steam_path);
+                let err_msg = if precache_ok_count == 0 {
+                    format!("获取失败：未获取到「{}」的清单实体文件（云端暂未收录该游戏的物理清单文件）", name)
+                } else {
+                    format!(
+                        "获取失败：未能完整获取「{}」的全部清单实体（已就绪 {}/{}，缺少 {} 个分包清单）",
+                        name, precache_ok_count, precache_total, precache_total - precache_ok_count
+                    )
+                };
                 return json!({
                     "success": false,
-                    "message": format!("暂时没有这款游戏（云端暂未收录「{}」的清单实体文件）", name),
+                    "message": err_msg,
                     "scriptPath": "",
                     "keyCount": 0,
                     "manifestCount": 0,
                     "metadataOk": false,
-                    "metadataMessage": Some("云端暂未收录该游戏的物理清单文件"),
-                    "precacheOk": 0,
+                    "metadataMessage": Some("云端暂未完整收录该游戏的物理清单文件"),
+                    "precacheOk": precache_ok_count,
                     "precacheTotal": precache_total,
                     "missingManifests": true
                 });
