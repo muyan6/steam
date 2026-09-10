@@ -306,7 +306,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import { APP_CONFIG } from '../../config/appConfig';
 import { formatIpcError } from '../api/tauriBridge';
 import type { SponsorItem, SponsorDataResponse, VersionChangelogItem } from '../../types';
@@ -389,6 +389,14 @@ const getPlanBadgeClass = (sponsor: SponsorItem) => {
   return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
 };
 
+const activeSponsorUrl = computed(() => {
+  return (
+    (sponsorsData.value.sponsorUrl && sponsorsData.value.sponsorUrl.trim()) ||
+    (appLinks.value.sponsorUrl && appLinks.value.sponsorUrl.trim()) ||
+    'https://afdian.com/a/chunfengdu'
+  );
+});
+
 const loadAppLinks = async () => {
   try {
     const links = await window.electronAPI.getAppLinks();
@@ -397,7 +405,7 @@ const loadAppLinks = async () => {
         tutorialUrl: links.tutorialUrl || '',
         faqUrl: links.faqUrl || '',
         qqGroupUrl: links.qqGroupUrl || '',
-        sponsorUrl: links.sponsorUrl || 'https://afdian.com/a/chunfengdu'
+        sponsorUrl: links.sponsorUrl || sponsorsData.value.sponsorUrl || 'https://afdian.com/a/chunfengdu'
       };
     }
   } catch (e) {
@@ -424,6 +432,9 @@ const loadSponsors = async () => {
     const data = await window.electronAPI.getSponsors();
     if (data) {
       sponsorsData.value = data;
+      if (data.sponsorUrl && !appLinks.value.sponsorUrl) {
+        appLinks.value.sponsorUrl = data.sponsorUrl;
+      }
     }
   } catch (e) {
     console.warn('加载赞助榜单异常:', e);
@@ -436,11 +447,10 @@ const handleSyncAfdian = async () => {
     const res = await window.electronAPI.syncAfdianSponsors();
     if (res.success) {
       emit('notify', res.message || '爱发电赞助榜单同步成功！', 'success');
-      await loadSponsors();
     } else {
       emit('notify', res.message || '同步未完成，已刷新本地榜单', 'warning');
-      await loadSponsors();
     }
+    await Promise.all([loadSponsors(), loadAppLinks()]);
   } catch (e: any) {
     emit('notify', '爱发电同步异常: ' + formatIpcError(e), 'error');
   } finally {
@@ -449,10 +459,10 @@ const handleSyncAfdian = async () => {
 };
 
 const handleOpenSponsorLink = async () => {
-  const url = appLinks.value.sponsorUrl || 'https://afdian.com/a/chunfengdu';
+  const url = activeSponsorUrl.value;
   try {
     await window.electronAPI.openExternalUrl(url);
-    emit('notify', '正在浏览器打开爱发电赞助支持主页...', 'info');
+    emit('notify', '正在打开爱发电赞助支持主页...', 'info');
   } catch (e: any) {
     emit('notify', '打开外部链接失败: ' + formatIpcError(e), 'error');
   }

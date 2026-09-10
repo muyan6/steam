@@ -65,7 +65,7 @@ export class VersionService {
               '🛡️ 内置 OpenSteamTool 64位无感知注入核心'
             ],
             downloadUrl: 'https://gitee.com/muyan6/steam/releases',
-            downloadUrlBackup: 'https://github.com/SteamAutoCracks/ManifestHub',
+            downloadUrlBackup: 'https://github.com/muyan6/steam/releases',
             forceUpdate: false,
             minSupportedVersion: '1.0.0',
             fileSize: '48.5 MB',

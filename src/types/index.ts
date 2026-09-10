@@ -361,6 +361,7 @@ export interface SponsorDataResponse {
   totalAmount: number;
   updatedAt: string;
   source: 'afdian' | 'cache' | 'fallback';
+  sponsorUrl?: string;
   sponsors: SponsorItem[];
 }
 

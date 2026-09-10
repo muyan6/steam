@@ -459,6 +459,12 @@ const loadAppLinks = async () => {
         sponsorUrl: links.sponsorUrl || ''
       };
     }
+    if (!appLinks.value.sponsorUrl) {
+      const sp = await window.electronAPI.getSponsors();
+      if (sp?.sponsorUrl) {
+        appLinks.value.sponsorUrl = sp.sponsorUrl;
+      }
+    }
   } catch (e: any) {
     console.warn('获取链接配置异常:', formatIpcError(e));
   }

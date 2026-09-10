@@ -242,11 +242,16 @@ export class SponsorService {
     const totalAmount = rankedList.reduce((acc, cur) => acc + (cur.allSumAmount || 0), 0);
     this.sponsorsCache = rankedList;
 
+    const afConfig = this.getAfdianConfig();
+    const links = appLinksService.getLinks();
+    const activeSponsorUrl = afConfig.sponsorUrl || links.sponsorUrl || 'https://afdian.com';
+
     return {
       totalCount: rankedList.length,
       totalAmount: Math.round(totalAmount * 100) / 100,
       updatedAt: this.lastSyncTime || new Date().toISOString(),
       source: this.lastSource,
+      sponsorUrl: activeSponsorUrl,
       sponsors: rankedList
     };
   }

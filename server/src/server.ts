@@ -592,12 +592,12 @@ const ADMIN_HTML = `<!DOCTYPE html>
           <div class="card kpi-card" style="border-left-color: var(--c-green);">
             <div class="kpi-title"><span>持久化 DepotKey 总量</span> <span>🔑</span></div>
             <div class="kpi-val" id="kpiKeys" style="color: var(--c-green);">...</div>
-            <div class="kpi-sub">含苏大猫与全球历史密钥库</div>
+            <div class="kpi-sub">后端清单源与权威密钥库</div>
           </div>
           <div class="card kpi-card" style="border-left-color: var(--c-blue);">
             <div class="kpi-title"><span>PICS AccessToken 令牌</span> <span>🎫</span></div>
             <div class="kpi-val" id="kpiTokens" style="color: var(--c-blue);">...</div>
-            <div class="kpi-sub">苏大猫 993499094 实时同步</div>
+            <div class="kpi-sub">后端清单源每日实时同步</div>
           </div>
           <div class="card kpi-card" style="border-left-color: var(--c-purple);">
             <div class="kpi-title"><span>累计客户端设备数</span> <span>💻</span></div>
@@ -887,7 +887,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <div>
             <strong style="color: var(--text-strong); font-size: 17px; font-weight: 700;">🌐 多源数据管道与爬虫调度中心</strong>
-            <div style="color: var(--text-mid); font-size: 13px; margin-top: 2px;">汇聚苏大猫实时分发源、ManifestHub 历史库与官方 SteamPipe CDN</div>
+            <div style="color: var(--text-mid); font-size: 13px; margin-top: 2px;">汇聚云端权威分发矩阵与高可用多节点备份链路</div>
           </div>
           <button onclick="triggerSyncAll()" class="btn btn-primary">🔄 一键全量多源同步</button>
         </div>

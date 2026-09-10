@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { appLinksService } from '../services/appLinksService.js';
+import { sponsorService } from '../services/sponsorService.js';
 
 /**
  * 公开：客户端获取应用内跳转链接（教程 / FAQ）。
@@ -33,6 +34,9 @@ export function updateAppLinks(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: 'sponsorUrl 必须为字符串或空' });
     }
     const data = appLinksService.updateLinks({ tutorialUrl, faqUrl, qqGroupUrl, sponsorUrl });
+    if (sponsorUrl !== undefined) {
+      sponsorService.updateAfdianConfig({ sponsorUrl });
+    }
     res.json({ success: true, message: '链接配置已更新', data });
   } catch (e) {
     console.error('[LinksController] 更新链接配置失败:', e);
