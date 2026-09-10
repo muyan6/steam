@@ -187,6 +187,11 @@
           @refresh-status="fetchSteamInfo"
           @open-license-modal="showLicenseModal = true"
         />
+        <FeaturesView
+          v-else-if="currentTab === 'features'"
+          @notify="addToast"
+          @open-disclaimer="openDisclaimerModal"
+        />
         <AboutView
           v-else-if="currentTab === 'about'"
           @notify="addToast"
@@ -404,6 +409,7 @@ import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
 import OnlineFixView from './views/OnlineFixView.vue';
 import ToolboxView from './views/ToolboxView.vue';
+import FeaturesView from './views/FeaturesView.vue';
 import AboutView from './views/AboutView.vue';
 import SettingsView from './views/SettingsView.vue';
 import StartupWizardModal from './components/StartupWizardModal.vue';
@@ -417,7 +423,7 @@ import { formatIpcError } from './api/tauriBridge';
 import { APP_CONFIG } from '../config/appConfig';
 
 const appVersion = APP_CONFIG.VERSION;
-const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'about' | 'settings'>('search');
+const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'features' | 'about' | 'settings'>('search');
 const showStartupWizard = ref(false);
 // 启动引导打开来源：首次启动(环境未就绪)为强引导不可关闭；设置页手动打开可随时关闭
 const wizardClosable = ref(false);
@@ -556,7 +562,8 @@ const navItems = [
   { id: 'library' as const, label: '已入库规则管理', iconComponent: Library },
   { id: 'onlinefix' as const, label: '联机中心', iconComponent: Gamepad2 },
   { id: 'toolbox' as const, label: '实用工具箱', iconComponent: Wrench },
-  { id: 'about' as const, label: '功能详解与关于', iconComponent: Info },
+  { id: 'features' as const, label: '功能详解', iconComponent: Sparkles },
+  { id: 'about' as const, label: '关于软件', iconComponent: Info },
   { id: 'settings' as const, label: '系统与环境设置', iconComponent: Settings2 },
 ];
 

@@ -343,3 +343,33 @@ export interface ToolboxRepairLog {
   timestamp: string;
 }
 
+export interface SponsorItem {
+  id: string;
+  name: string;
+  avatar: string;
+  allSumAmount: number;
+  planTitle?: string;
+  lastPayTime: string;
+  firstPayTime?: string;
+  rank?: number;
+  isLifetime?: boolean;
+  comment?: string;
+}
+
+export interface SponsorDataResponse {
+  totalCount: number;
+  totalAmount: number;
+  updatedAt: string;
+  source: 'afdian' | 'cache' | 'fallback';
+  sponsors: SponsorItem[];
+}
+
+export interface VersionChangelogItem {
+  version: string;
+  releaseDate: string;
+  title: string;
+  changelog: string[];
+  forceUpdate?: boolean;
+  downloadUrl?: string;
+}
+

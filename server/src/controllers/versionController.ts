@@ -38,6 +38,27 @@ export const getLatestVersionInfo = (req: Request, res: Response) => {
   }
 };
 
+export const getVersionChangelogs = (_req: Request, res: Response) => {
+  try {
+    const list = versionService.getAllVersions();
+    // 仅过滤出启用的版本，供客户端展示公开更新日志
+    const changelogs = list
+      .filter(v => v.enabled !== false)
+      .map(v => ({
+        version: v.version,
+        releaseDate: v.releaseDate,
+        title: v.title,
+        changelog: v.changelog,
+        forceUpdate: v.forceUpdate,
+        downloadUrl: v.downloadUrl
+      }));
+    res.json({ success: true, data: changelogs });
+  } catch (e) {
+    console.error('[VersionController] 获取历史更新日志异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+};
+
 // ==================== 管理员管理端点 ====================
 
 export const getAllVersionsAdmin = (req: Request, res: Response) => {

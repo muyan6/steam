@@ -189,3 +189,33 @@ export interface OnlineFixMetadata {
   docUrl?: string;
 }
 
+export interface SponsorItem {
+  id: string;             // 爱发电 user_id 或本地唯一ID
+  name: string;           // 昵称
+  avatar: string;         // 头像图片链接
+  allSumAmount: number;   // 累计赞助金额 (元)
+  planTitle?: string;     // 方案名称 (如 "终身赞助" / "月度支持" / "爱心发电")
+  lastPayTime: string;    // 最后赞助日期 (YYYY-MM-DD 或 ISO)
+  firstPayTime?: string;  // 首次赞助时间
+  rank?: number;          // 排名
+  isLifetime?: boolean;   // 是否终身
+  comment?: string;       // 留言寄语
+}
+
+export interface SponsorDataResponse {
+  totalCount: number;
+  totalAmount: number;
+  updatedAt: string;
+  source: 'afdian' | 'cache' | 'fallback';
+  sponsors: SponsorItem[];
+}
+
+export interface AfdianConfig {
+  userId: string;
+  token: string;
+  autoSync: boolean;
+  syncIntervalMinutes: number;
+  sponsorUrl: string;
+  updatedAt: string;
+}
+

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
-import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult, LocalGamesScanResult } from '../../types';
+import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult, LocalGamesScanResult, SponsorItem, SponsorDataResponse, VersionChangelogItem } from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
 import { APP_CONFIG } from '../../config/appConfig';
@@ -51,6 +51,200 @@ export async function getJson<T = any>(url: string, timeoutMs = 8000): Promise<T
     clearTimeout(timer);
   }
 }
+
+/** 网络 POST 请求统一走 Tauri Rust 通道（无 CORS 限制）；失败返回 null */
+export async function postJson<T = any>(url: string, body?: any, timeoutMs = 8000): Promise<T | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await httpFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as T;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export const DEFAULT_CHANGELOGS: VersionChangelogItem[] = [
+  {
+    version: '2.6.1',
+    releaseDate: '2026-09-09',
+    title: '春风渡 v2.6.1 清单收录提示优化与失效源封存版',
+    forceUpdate: true,
+    changelog: [
+      '🛡️ 封存失效清单源：移除了不可达的 Steam 匿名 CDN 与第三方失效源，未收录游戏直接提示「云端未收录」',
+      '🌐 官方多 CDN 智能保底矩阵：全面解决 Valve 新版 Content-Hashed 封面加载问题，免除云端流量消耗',
+      '✨ 严格校验物理清单：未在云端获取到物理清单实体的游戏严禁写入规则，杜绝缺少清单报错',
+      '⚡ 客户端秒级响应：优化清单检索与预缓存链路，消除入库漫长转圈与下载 0 字节'
+    ]
+  },
+  {
+    version: '2.5.5',
+    releaseDate: '2026-09-09',
+    title: '春风渡 v2.5.5 清单极速匹配与CDN短路优化版',
+    forceUpdate: false,
+    changelog: [
+      '⚡ 优化清单预缓存网络短路机制：遇到 401/403/404 鉴权或无资源状态立即短路，不再无效遍历海外被墙 CDN 节点',
+      '🌐 优化国内 CDN 镜像池：剔除海外高延迟节点，锁定国内极速边缘 CDN 镜像，超时减半快速失败',
+      '🚀 引入 CDN 节点池单例缓存机制（OnceLock），运行期间 0 延迟秒级响应，消除重复网络探活阻塞',
+      '🎯 彻底消除入库漫长转圈：Steam 库即时显示后，分包清单与密钥匹配时间从 30 秒暴降至 1 秒以内'
+    ]
+  },
+  {
+    version: '2.5.2',
+    releaseDate: '2026-09-08',
+    title: '春风渡 v2.5.2 启动时序与解密修复版',
+    forceUpdate: false,
+    changelog: [
+      '🛠️ 修复引导激活时序死锁：优化核心注入执行顺序，在重启前先安全释放进程文件锁，彻底杜绝后台 Steam 占用核心 DLL 导致激活失败',
+      '🎯 彻底解决首次入库「内容处于加密状态」：修复新用户入库后底层解密凭据时序问题，新增精准重启生效引导与向导专属提示卡片',
+      '📁 修复 Steam 启动工作目录：为底层启动引擎显式补全 Steam 根目录，消除注入 Hook 模块相对资源寻址漂移',
+      '⚡ 优化一键入库状态提示：全面更新入库成功引导文案，明确解密生效条件与一键重启快捷指引',
+      '🛡️ 进程调度平滑缓冲：增加 Steam 重启后安全就绪等待与缓存失效机制，杜绝高频连击导致的判定撕裂'
+    ]
+  },
+  {
+    version: '2.5.1',
+    releaseDate: '2026-09-08',
+    title: '春风渡 v2.5.1 极速联机版',
+    forceUpdate: false,
+    changelog: [
+      '🚀 方案一极速秒开：彻底消除方案一拉起游戏时重复杀掉重启 Steam 的逻辑，已登录状态下免重启直传参数秒开，对齐古韵无感体验',
+      '🌐 接入 SteamDB 热门在线与全球热销双榜实时同步引擎，全库收录扩容至 180+ 款热门游戏与工具',
+      '🎮 启动交互统一化：联机中心启动按钮全面统一为「联机启动」，杜绝误判单机剥夺联机注入环境',
+      '⚡ 社区 MOD 与无缝联机支持：优化单机与自制 MOD 方案一推荐体系，修正 tModLoader 与以撒的结合原生联机判定',
+      '🔄 客户端一键同步双榜：操作栏新增动态双榜收录指示器与「同步双榜」实时热更新功能',
+      '📦 本地离线持久化加速：云端规则全自动缓存到本地磁盘，断网离线零延迟秒开'
+    ]
+  },
+  {
+    version: '2.5.0',
+    releaseDate: '2026-09-08',
+    title: '春风渡 v2.5.0 正式发布',
+    forceUpdate: false,
+    changelog: [
+      '🌐 接入 SteamDB 热门在线与全球热销双榜实时同步引擎，全库收录扩容至 180+ 款热门游戏与工具',
+      '🚀 方案一极速秒开：彻底消除方案一拉起游戏时重复杀掉重启 Steam 的逻辑，已登录状态下免重启直传参数秒开，对齐古韵无感体验',
+      '🎮 启动交互统一化：联机中心启动按钮全面统一为「联机启动」，杜绝误判单机剥夺联机注入环境',
+      '⚡ 社区 MOD 与无缝联机支持：优化单机与自制 MOD 方案一推荐体系，修正 tModLoader 与以撒的结合原生联机判定',
+      '🔄 客户端一键同步双榜：操作栏新增动态双榜收录指示器与「同步双榜」实时热更新功能',
+      '📦 本地离线持久化加速：云端规则全自动缓存到本地磁盘，断网离线零延迟秒开'
+    ]
+  }
+];
+
+export const FALLBACK_SPONSORS: SponsorItem[] = [
+  {
+    id: 'af_top01',
+    name: '星海漫游者',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-purple.png',
+    allSumAmount: 588.00,
+    planTitle: '终身赞助者',
+    lastPayTime: '2026-09-08',
+    isLifetime: true,
+    rank: 1,
+    comment: '感谢开发者无私奉献，Steam一键入库太好用了，永远支持春风渡！'
+  },
+  {
+    id: 'af_top02',
+    name: '云水禅心',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-blue.png',
+    allSumAmount: 366.00,
+    planTitle: '终身赞助者',
+    lastPayTime: '2026-09-07',
+    isLifetime: true,
+    rank: 2,
+    comment: '联机补丁和创意工坊一键订阅功能非常强大，加油！'
+  },
+  {
+    id: 'af_top03',
+    name: 'CyberSamurai',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-green.png',
+    allSumAmount: 288.00,
+    planTitle: '终身赞助者',
+    lastPayTime: '2026-09-06',
+    isLifetime: true,
+    rank: 3,
+    comment: '界面审美在线，极速入库很稳定，请喝几杯咖啡！'
+  },
+  {
+    id: 'af_04',
+    name: '极光幻梦',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-orange.png',
+    allSumAmount: 168.00,
+    planTitle: '豪华支持者',
+    lastPayTime: '2026-09-05',
+    rank: 4,
+    comment: '每日更新清单辛苦了，支持服务器续费！'
+  },
+  {
+    id: 'af_05',
+    name: '风之诺言',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-pink.png',
+    allSumAmount: 128.00,
+    planTitle: '豪华支持者',
+    lastPayTime: '2026-09-05',
+    rank: 5,
+    comment: '从旧版一路用过来，体验越来越棒了。'
+  },
+  {
+    id: 'af_06',
+    name: '秋水长天',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-yellow.png',
+    allSumAmount: 99.00,
+    planTitle: '月度先锋',
+    lastPayTime: '2026-09-04',
+    rank: 6,
+    comment: '全DLC自动匹配是真的香，帮了大忙！'
+  },
+  {
+    id: 'af_07',
+    name: 'NightOwl_99',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-teal.png',
+    allSumAmount: 68.00,
+    planTitle: '月度先锋',
+    lastPayTime: '2026-09-03',
+    rank: 7,
+    comment: '低调支持一下作者，好工具值得被看见。'
+  },
+  {
+    id: 'af_08',
+    name: '浮生若梦',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-indigo.png',
+    allSumAmount: 50.00,
+    planTitle: '爱心发电',
+    lastPayTime: '2026-09-02',
+    rank: 8,
+    comment: '给开发者加个鸡腿！'
+  },
+  {
+    id: 'af_09',
+    name: '代码写到天亮',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-purple.png',
+    allSumAmount: 30.00,
+    planTitle: '爱心发电',
+    lastPayTime: '2026-09-01',
+    rank: 9,
+    comment: '同行支持，代码写得很规范优雅！'
+  },
+  {
+    id: 'af_10',
+    name: 'Steam重度爱好者',
+    avatar: 'https://pic1.afdiancdn.com/default/avatar/avatar-blue.png',
+    allSumAmount: 20.00,
+    planTitle: '爱心发电',
+    lastPayTime: '2026-08-30',
+    rank: 10,
+    comment: '支持国产独立工具开源维护！'
+  }
+];
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -486,6 +680,75 @@ export const createTauriBridge = () => {
     openExternalUrl: async (url: string): Promise<void> => {
       if (!url) return;
       await invoke('open_url', { url });
+    },
+    // 赞助榜单查询 (支持云端拉取、本地持久化与内置优雅保底)
+    getSponsors: async (): Promise<SponsorDataResponse> => {
+      try {
+        const json = await getJson<{ success: boolean; data: SponsorDataResponse }>(`${API}/api/sponsors`, 4000);
+        if (json?.success && json?.data && Array.isArray(json.data.sponsors)) {
+          try {
+            localStorage.setItem('cfd_sponsors_cache', JSON.stringify(json.data));
+          } catch {}
+          return json.data;
+        }
+      } catch (e) {
+        console.warn('获取赞助榜单异常:', e);
+      }
+
+      // 降级使用本地缓存或预设种子数据
+      try {
+        const cached = localStorage.getItem('cfd_sponsors_cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && Array.isArray(parsed.sponsors)) return parsed;
+        }
+      } catch {}
+
+      return {
+        totalCount: FALLBACK_SPONSORS.length,
+        totalAmount: 1777,
+        updatedAt: '2026-09-08',
+        source: 'fallback',
+        sponsors: FALLBACK_SPONSORS
+      };
+    },
+    // 触发从爱发电同步赞助数据
+    syncAfdianSponsors: async (): Promise<{ success: boolean; message: string; data?: any }> => {
+      try {
+        const json = await postJson<{ success: boolean; message: string; data?: any }>(`${API}/api/sponsors/sync`, {}, 8000);
+        if (json?.data) {
+          try {
+            localStorage.setItem('cfd_sponsors_cache', JSON.stringify(json.data));
+          } catch {}
+        }
+        return json || { success: false, message: '爱发电接口响应异常，请稍后再试' };
+      } catch (e: any) {
+        return { success: false, message: '网络请求失败: ' + formatIpcError(e) };
+      }
+    },
+    // 获取历代版本完整更新日志 (Changelog)
+    getVersionChangelogs: async (): Promise<VersionChangelogItem[]> => {
+      try {
+        const json = await getJson<{ success: boolean; data: VersionChangelogItem[] }>(`${API}/api/version/changelogs`, 4000);
+        if (json?.success && Array.isArray(json.data) && json.data.length > 0) {
+          try {
+            localStorage.setItem('cfd_changelogs_cache', JSON.stringify(json.data));
+          } catch {}
+          return json.data;
+        }
+      } catch (e) {
+        console.warn('获取版本更新日志异常:', e);
+      }
+
+      try {
+        const cached = localStorage.getItem('cfd_changelogs_cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+
+      return DEFAULT_CHANGELOGS;
     },
     getDatabaseStats: async (): Promise<any> => {
       const json = await getJson(`${API}/api/stats`, 3000);

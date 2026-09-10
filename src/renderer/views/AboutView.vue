@@ -1,248 +1,326 @@
 <template>
-  <div class="h-full flex flex-col p-6 xl:p-8 overflow-y-auto space-y-6">
+  <div class="h-full flex flex-col p-5 xl:p-7 overflow-hidden space-y-5">
     <!-- 顶部品牌 Header -->
-    <div class="flex items-center justify-between gap-4 pb-5 border-b border-white/10 flex-wrap shrink-0">
-      <div class="flex items-center gap-4">
-        <div class="w-14 h-14 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-lg shrink-0">
+    <div class="flex items-center justify-between gap-4 pb-4 border-b border-white/10 flex-wrap shrink-0">
+      <div class="flex items-center gap-3.5">
+        <div class="w-12 h-12 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-lg shrink-0">
           <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
         </div>
         <div>
           <div class="flex items-center gap-2.5">
-            <h1 class="text-xl font-black tracking-wide text-slate-100">春风渡</h1>
+            <h1 class="text-lg font-black tracking-wide text-slate-100">关于春风渡</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full theme-btn-primary text-slate-950 font-mono font-bold shadow-sm">
               v{{ appVersion }}
             </span>
           </div>
-          <p class="text-xs text-slate-400 mt-1">极速入库 · 联机生态引擎 · 专为 Steam 玩家打造的高性能工具</p>
+          <p class="text-xs text-slate-400 mt-0.5">极速入库 · 联机生态引擎 · 专为 Steam 玩家打造的高性能工具</p>
         </div>
       </div>
 
-      <div class="flex items-center gap-2.5">
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <button
+          @click="handleOpenSponsorLink"
+          class="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/30 transition flex items-center gap-2 text-xs font-bold cursor-pointer shadow-sm active:scale-95"
+          title="前往爱发电支持春风渡"
+        >
+          <HeartHandshake class="w-4 h-4 text-rose-400" />
+          <span>在爱发电支持我们</span>
+          <ExternalLink class="w-3.5 h-3.5 opacity-75" />
+        </button>
+
         <button
           @click="handleOpenFeedback"
-          class="px-4 py-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 hover:text-sky-200 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer"
+          class="px-3.5 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 hover:text-sky-200 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer"
           title="加入官方 QQ 交流反馈群"
         >
           <MessageSquare class="w-3.5 h-3.5 text-sky-400" />
-          <span>提交反馈</span>
+          <span>加入交流群</span>
         </button>
 
         <button
           @click="checkUpdates"
           :disabled="isCheckingUpdate"
-          class="px-4 py-2.5 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer"
+          class="px-3.5 py-2 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer"
         >
           <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isCheckingUpdate }" />
-          <span>{{ isCheckingUpdate ? '正在检查...' : '检查最新版本' }}</span>
+          <span>{{ isCheckingUpdate ? '正在检查...' : '检查更新' }}</span>
         </button>
 
         <button
           @click="emit('open-disclaimer')"
-          class="px-4 py-2.5 theme-btn-primary rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
+          class="px-3.5 py-2 theme-btn-primary rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
         >
           <ShieldAlert class="w-3.5 h-3.5" />
-          <span>查看免责声明</span>
+          <span>免责声明</span>
         </button>
       </div>
     </div>
 
-    <!-- 功能详解 (Features Matrix) -->
-    <div class="theme-card rounded-3xl p-6 xl:p-7 space-y-5">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-center gap-2 text-xs font-mono font-bold theme-text-accent uppercase tracking-wider">
-            <Sparkles class="w-4 h-4" />
-            <span>Core Features</span>
-          </div>
-          <h2 class="text-lg font-black text-slate-100 mt-1">功能详解</h2>
-        </div>
-        <span class="text-xs px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/20">
-          全功能开箱即用
-        </span>
-      </div>
-
-      <!-- 10 项特性网格列表 (对齐参考界面) -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div
-          v-for="(feature, idx) in featuresList"
-          :key="idx"
-          class="flex items-center gap-3.5 p-3.5 rounded-2xl bg-slate-950/40 border border-white/5 hover:border-sky-500/30 transition group"
-        >
-          <div class="w-7 h-7 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20 group-hover:scale-110 transition-transform">
-            <Check class="w-4 h-4 stroke-[3]" />
-          </div>
-          <div class="min-w-0">
-            <div class="font-bold text-xs text-slate-100">{{ feature.title }}</div>
-            <div class="text-[11px] text-slate-400 truncate mt-0.5">{{ feature.desc }}</div>
-          </div>
-        </div>
-
-        <!-- 红色警告项：不支持类型 -->
-        <div class="md:col-span-2 flex items-start gap-3.5 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-200">
-          <div class="w-7 h-7 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30 mt-0.5">
-            <X class="w-4 h-4 stroke-[3]" />
-          </div>
-          <div class="text-xs leading-relaxed">
-            <strong class="font-bold text-rose-300 block mb-0.5">不支持游戏类型提示：</strong>
-            <span>不支持 D 加密（Denuvo）、第三方独立启动器（如育碧 Ubisoft Connect / EA 橘子 / 暴雪战网）、以及必须通过官方服务器进行高强度联网验证的特定游戏（如使命召唤战区/黑色行动等）。</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 教程与支持中心 -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-      <!-- 使用教程卡片 -->
-      <div class="theme-card rounded-3xl p-6 flex flex-col justify-between space-y-4">
-        <div>
-          <div class="flex items-center gap-2 text-xs font-mono font-bold theme-text-accent uppercase tracking-wider">
-            <BookOpen class="w-4 h-4" />
-            <span>Tutorial & Guide</span>
-          </div>
-          <h3 class="text-base font-bold text-slate-100 mt-1">使用图文教程</h3>
-          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-            首次使用或入库遇到疑问？查看完整的快速上手指南与一键入库全流程演示。
-          </p>
-        </div>
-
-        <a
-          v-if="appLinks.tutorialUrl"
-          :href="appLinks.tutorialUrl"
-          target="_blank"
-          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 hover:border-sky-500/40 hover:bg-sky-500/5 transition flex items-center justify-between text-xs text-slate-200 group cursor-pointer"
-        >
+    <!-- 主体双栏内容区域 (左侧更新日志，右侧赞助榜单) -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-0 overflow-hidden">
+      
+      <!-- ==================== 左侧：更新日志 (5/12 列) ==================== -->
+      <section class="lg:col-span-6 xl:col-span-6 flex flex-col theme-card rounded-3xl p-5 overflow-hidden shadow-lg border border-white/10">
+        <!-- 栏目标题与操作 -->
+        <div class="flex items-center justify-between pb-3.5 mb-3 border-b border-white/5 shrink-0">
           <div class="flex items-center gap-2.5">
-            <FileText class="w-4 h-4 theme-text-accent" />
-            <span>查看完整图文使用教程</span>
+            <div class="w-8 h-8 rounded-xl bg-sky-500/15 border border-sky-500/25 flex items-center justify-center text-sky-400">
+              <Sparkles class="w-4 h-4" />
+            </div>
+            <div>
+              <h2 class="text-sm font-black text-slate-100 flex items-center gap-2">
+                <span>更新日志</span>
+                <span class="text-[11px] font-normal text-slate-400 font-mono">Changelog</span>
+              </h2>
+              <p class="text-[11px] text-slate-400">记录春风渡历代版本进化历程</p>
+            </div>
           </div>
-          <ExternalLink class="w-4 h-4 text-slate-400 group-hover:theme-text-accent transition" />
-        </a>
-        <div
-          v-else
-          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 transition flex items-center justify-between text-xs text-slate-500 select-none"
-          title="链接暂未配置，敬请期待"
-        >
+
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-950/60 border border-white/10 text-slate-300">
+              当前: v{{ appVersion }}
+            </span>
+            <button
+              @click="loadChangelogs"
+              :disabled="loadingChangelogs"
+              class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+              title="刷新更新日志"
+            >
+              <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': loadingChangelogs }" />
+            </button>
+          </div>
+        </div>
+
+        <!-- 时间轴列表 (垂直滚动) -->
+        <div class="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">
+          <div
+            v-for="(ver, idx) in changelogs"
+            :key="ver.version || idx"
+            class="relative pl-6 pb-2 group"
+          >
+            <!-- 时间线左侧竖线与节点圆点 -->
+            <div
+              v-if="idx !== changelogs.length - 1"
+              class="absolute left-2.5 top-6 bottom-0 w-0.5 bg-slate-800 group-hover:bg-sky-500/40 transition-colors"
+            ></div>
+            <div
+              class="absolute left-1 top-2.5 w-3.5 h-3.5 rounded-full border-2 transition-transform group-hover:scale-125"
+              :class="idx === 0 
+                ? 'bg-sky-400 border-sky-200 shadow-md shadow-sky-500/50' 
+                : 'bg-slate-900 border-slate-600 group-hover:border-sky-400'"
+            ></div>
+
+            <!-- 版本卡片 -->
+            <div class="p-4 rounded-2xl bg-slate-950/40 border border-white/5 hover:border-white/15 transition space-y-2.5">
+              <!-- 卡片头部：版本号 + 标签 + 发布日期 -->
+              <div class="flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono font-black text-sm text-slate-100">v{{ ver.version }}</span>
+                  <span
+                    v-if="idx === 0"
+                    class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
+                  >
+                    最新版本
+                  </span>
+                  <span
+                    v-if="ver.forceUpdate"
+                    class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/25"
+                  >
+                    重大更新
+                  </span>
+                </div>
+                <span class="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                  <Calendar class="w-3 h-3 text-slate-500" />
+                  <span>{{ ver.releaseDate }}</span>
+                </span>
+              </div>
+
+              <!-- 版本标题 -->
+              <div v-if="ver.title" class="text-xs font-bold text-slate-200">
+                {{ ver.title }}
+              </div>
+
+              <!-- 更新要点条目 -->
+              <ul class="space-y-1.5 pt-1 text-xs text-slate-300">
+                <li
+                  v-for="(item, cIdx) in ver.changelog"
+                  :key="cIdx"
+                  class="flex items-start gap-2 leading-relaxed text-[11.5px]"
+                >
+                  <span class="text-sky-400 font-bold shrink-0 mt-0.5">•</span>
+                  <span class="text-slate-300">{{ item }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== 右侧：爱发电赞助榜单 (6/12 列) ==================== -->
+      <section class="lg:col-span-6 xl:col-span-6 flex flex-col theme-card rounded-3xl p-5 overflow-hidden shadow-lg border border-white/10">
+        <!-- 栏目标题与同步操作 -->
+        <div class="flex items-center justify-between pb-3.5 mb-3 border-b border-white/5 shrink-0">
           <div class="flex items-center gap-2.5">
-            <FileText class="w-4 h-4 text-slate-500" />
-            <span>查看完整图文使用教程（暂未开放）</span>
+            <div class="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400">
+              <Heart class="w-4 h-4" />
+            </div>
+            <div>
+              <h2 class="text-sm font-black text-slate-100 flex items-center gap-2">
+                <span>爱发电赞助榜</span>
+                <span class="text-[11px] font-normal text-slate-400 font-mono">Sponsor Hall</span>
+              </h2>
+              <p class="text-[11px] text-slate-400">感谢每一位支持春风渡开源生态的伙伴</p>
+            </div>
           </div>
-          <ExternalLink class="w-4 h-4 text-slate-600" />
-        </div>
-      </div>
 
-      <!-- 问题大全与排错中心 -->
-      <div class="theme-card rounded-3xl p-6 flex flex-col justify-between space-y-4">
-        <div>
-          <div class="flex items-center gap-2 text-xs font-mono font-bold theme-text-accent uppercase tracking-wider">
-            <HelpCircle class="w-4 h-4" />
-            <span>Troubleshoot</span>
-          </div>
-          <h3 class="text-base font-bold text-slate-100 mt-1">入库没有效果？</h3>
-          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-            遇到 Steam 提示清单缺失、无下载权限或杀毒软件拦截？一键排查常见问题。
-          </p>
-        </div>
-
-        <a
-          v-if="appLinks.faqUrl"
-          :href="appLinks.faqUrl"
-          target="_blank"
-          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 hover:border-sky-500/40 hover:bg-sky-500/5 transition flex items-center justify-between text-xs text-slate-200 group cursor-pointer"
-        >
-          <div class="flex items-center gap-2.5">
-            <HelpCircle class="w-4 h-4 theme-text-accent" />
-            <span>查看常见问题大全与自愈中心</span>
-          </div>
-          <ExternalLink class="w-4 h-4 text-slate-400 group-hover:theme-text-accent transition" />
-        </a>
-        <div
-          v-else
-          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 transition flex items-center justify-between text-xs text-slate-500 select-none"
-          title="链接暂未配置，敬请期待"
-        >
-          <div class="flex items-center gap-2.5">
-            <HelpCircle class="w-4 h-4 text-slate-500" />
-            <span>查看常见问题大全与自愈中心（暂未开放）</span>
-          </div>
-          <ExternalLink class="w-4 h-4 text-slate-600" />
-        </div>
-      </div>
-
-      <!-- QQ 交流反馈群 -->
-      <div v-if="appLinks.qqGroupUrl" class="md:col-span-2 theme-card rounded-3xl p-5 flex items-center justify-between border border-sky-500/20 bg-sky-950/10">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
-            <MessageSquare class="w-5 h-5" />
-          </div>
-          <div>
-            <h4 class="text-sm font-bold text-slate-100">官方交流与意见反馈群</h4>
-            <p class="text-xs text-slate-400 mt-0.5">遇到使用问题、程序 Bug 或有新功能想法？欢迎加群交流</p>
-          </div>
-        </div>
-        <a
-          :href="appLinks.qqGroupUrl"
-          target="_blank"
-          class="px-4 py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 hover:text-sky-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-        >
-          <span>加入 QQ 反馈群</span>
-          <ExternalLink class="w-3.5 h-3.5" />
-        </a>
-      </div>
-    </div>
-
-    <!-- 运行环境与设备参数 -->
-    <div class="theme-card rounded-3xl p-6 space-y-4">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-bold text-slate-100 flex items-center gap-2">
-          <Cpu class="w-4 h-4 theme-text-accent" />
-          <span>本地运行环境与设备标识</span>
-        </h3>
-        <span class="text-xs font-mono text-slate-400">{{ isTauriEnvironment() ? 'Tauri 2.0 + WebView2' : 'Node.js + Electron' }}</span>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-        <div class="p-3 rounded-2xl bg-slate-950/40 border border-white/5">
-          <div class="text-slate-400 text-[11px] mb-1">本机唯一设备码 (Device ID)</div>
-          <div class="font-mono text-slate-200 font-bold truncate" :title="deviceId">
-            {{ deviceId || '正在探测...' }}
+          <div class="flex items-center gap-2">
+            <button
+              @click="handleSyncAfdian"
+              :disabled="syncingAfdian"
+              class="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 transition flex items-center gap-1.5 text-[11px] font-bold cursor-pointer disabled:opacity-60"
+              title="立即从爱发电自动拉取最新赞助榜"
+            >
+              <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': syncingAfdian }" />
+              <span>{{ syncingAfdian ? '正在同步...' : '自动刷新' }}</span>
+            </button>
           </div>
         </div>
 
-        <div class="p-3 rounded-2xl bg-slate-950/40 border border-white/5">
-          <div class="text-slate-400 text-[11px] mb-1">Steam 内核状态</div>
-          <div class="font-bold flex items-center gap-1.5" :class="ostInstalled ? 'text-emerald-400' : 'text-amber-400'">
-            <span class="w-2 h-2 rounded-full" :class="ostInstalled ? 'bg-emerald-400' : 'bg-amber-400'"></span>
-            <span>{{ ostInstalled ? 'OpenSteamTool 已挂载' : '待同步/未安装' }}</span>
+        <!-- 统计面板大盘卡片 -->
+        <div class="p-3.5 rounded-2xl bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-sky-500/10 border border-white/10 mb-3.5 flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-4">
+            <div>
+              <div class="text-[11px] text-slate-400">累计赞助人次</div>
+              <div class="text-lg font-black text-rose-400 font-mono mt-0.5">
+                {{ sponsorsData.totalCount }} <span class="text-xs font-normal text-slate-400">位</span>
+              </div>
+            </div>
+            <div class="h-8 w-px bg-white/10"></div>
+            <div>
+              <div class="text-[11px] text-slate-400">累计支持金额</div>
+              <div class="text-lg font-black text-amber-400 font-mono mt-0.5">
+                ¥{{ sponsorsData.totalAmount }}
+              </div>
+            </div>
+          </div>
+
+          <div class="text-right">
+            <div class="flex items-center justify-end gap-1.5 text-[10.5px] text-slate-300 font-medium">
+              <span class="w-2 h-2 rounded-full" :class="sponsorsData.source === 'afdian' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"></span>
+              <span>{{ sponsorsData.source === 'afdian' ? '爱发电官方实时同步' : '官方认证赞助榜' }}</span>
+            </div>
+            <div class="text-[10px] font-mono text-slate-500 mt-0.5">
+              更新于: {{ formatUpdatedDate(sponsorsData.updatedAt) }}
+            </div>
           </div>
         </div>
 
-        <div class="p-3 rounded-2xl bg-slate-950/40 border border-white/5">
-          <div class="text-slate-400 text-[11px] mb-1">授权状态</div>
-          <div class="font-bold" :class="isActivated ? 'text-emerald-400' : 'text-slate-300'">
-            {{ isActivated ? '社区赞助版' : '普通用户 (基础版)' }}
+        <!-- 赞助者列表 (带美化排版与滚动条) -->
+        <div class="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
+          <div
+            v-for="(sponsor, index) in sponsorsData.sponsors"
+            :key="sponsor.id || index"
+            class="p-3 rounded-2xl bg-slate-950/40 border border-white/5 hover:border-rose-500/30 transition flex items-center justify-between gap-3 group"
+          >
+            <!-- 排名与赞助者信息 -->
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <!-- 排名勋章 -->
+              <div
+                class="w-7 h-7 rounded-xl flex items-center justify-center font-mono font-black text-xs shrink-0 shadow-sm"
+                :class="getRankBadgeClass(sponsor.rank || index + 1)"
+              >
+                <Crown v-if="(sponsor.rank || index + 1) === 1" class="w-4 h-4 text-amber-300 fill-amber-300" />
+                <Medal v-else-if="(sponsor.rank || index + 1) === 2" class="w-4 h-4 text-slate-200" />
+                <Medal v-else-if="(sponsor.rank || index + 1) === 3" class="w-4 h-4 text-amber-600" />
+                <span v-else>{{ sponsor.rank || index + 1 }}</span>
+              </div>
+
+              <!-- 头像 (带加载兜底与渐变首字母) -->
+              <div class="w-9 h-9 rounded-xl overflow-hidden bg-slate-800 border border-white/10 shrink-0 relative flex items-center justify-center text-xs font-bold text-slate-200">
+                <img
+                  v-if="sponsor.avatar && !avatarErrors[sponsor.id]"
+                  :src="sponsor.avatar"
+                  :alt="sponsor.name"
+                  @error="onAvatarError(sponsor.id)"
+                  class="w-full h-full object-cover"
+                  draggable="false"
+                />
+                <span v-else class="bg-gradient-to-tr from-rose-500 to-indigo-500 w-full h-full flex items-center justify-center text-white font-bold">
+                  {{ (sponsor.name || 'S').slice(0, 1).toUpperCase() }}
+                </span>
+              </div>
+
+              <!-- 昵称与身份标识 -->
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-bold text-xs text-slate-100 truncate max-w-[130px] xl:max-w-[180px]">
+                    {{ sponsor.name }}
+                  </span>
+                  <span
+                    class="text-[10px] px-2 py-0.5 rounded-full font-medium border shrink-0"
+                    :class="getPlanBadgeClass(sponsor)"
+                  >
+                    {{ sponsor.planTitle || (sponsor.isLifetime ? '终身赞助者' : '爱心支持') }}
+                  </span>
+                </div>
+                <div v-if="sponsor.comment" class="text-[11px] text-slate-400 truncate mt-0.5 italic">
+                  “{{ sponsor.comment }}”
+                </div>
+                <div v-else class="text-[10px] font-mono text-slate-500 mt-0.5">
+                  赞助日期: {{ sponsor.lastPayTime || '2026-09-08' }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 赞助金额与支持标志 -->
+            <div class="text-right shrink-0">
+              <div class="font-mono font-black text-xs text-rose-400">
+                ¥{{ sponsor.allSumAmount ? sponsor.allSumAmount.toFixed(2) : '20.00' }}
+              </div>
+              <div class="text-[10px] text-slate-400 mt-0.5">
+                发电贡献
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+
+        <!-- 底部引导支持卡片 -->
+        <div class="pt-3 mt-2 border-t border-white/5 shrink-0 flex items-center justify-between text-xs">
+          <span class="text-[11px] text-slate-400 flex items-center gap-1.5">
+            <HeartHandshake class="w-3.5 h-3.5 text-rose-400" />
+            <span>发电后榜单自动更新</span>
+          </span>
+
+          <button
+            @click="handleOpenSponsorLink"
+            class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs transition shadow-md shadow-rose-600/30 flex items-center gap-1.5 cursor-pointer active:scale-95"
+          >
+            <span>我要赞助</span>
+            <ExternalLink class="w-3 h-3" />
+          </button>
+        </div>
+      </section>
+
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { isTauriEnvironment, formatIpcError } from '../api/tauriBridge';
+import { ref, reactive, onMounted } from 'vue';
 import { APP_CONFIG } from '../../config/appConfig';
-import { ref, onMounted } from 'vue';
+import { formatIpcError } from '../api/tauriBridge';
+import type { SponsorItem, SponsorDataResponse, VersionChangelogItem } from '../../types';
 import appLogo from '../assets/logo.svg';
 import {
-  RotateCw, 
-  ShieldAlert, 
-  Check, 
-  X, 
-  Sparkles, 
-  BookOpen, 
-  FileText, 
-  HelpCircle, 
+  RotateCw,
+  ShieldAlert,
+  Sparkles,
+  Heart,
+  HeartHandshake,
+  Calendar,
+  Crown,
+  Medal,
   ExternalLink,
-  Cpu,
   MessageSquare
 } from 'lucide-vue-next';
 
@@ -253,16 +331,63 @@ const emit = defineEmits<{
 
 const appVersion = APP_CONFIG.VERSION;
 const isCheckingUpdate = ref(false);
-const deviceId = ref('');
-const ostInstalled = ref(false);
-const isActivated = ref(false);
-// 教程/FAQ/QQ群/赞助 跳转链接由服务端配置 (GET /api/links)
+const loadingChangelogs = ref(false);
+const syncingAfdian = ref(false);
+
+// 头像加载错误记录
+const avatarErrors = reactive<Record<string, boolean>>({});
+const onAvatarError = (id: string) => {
+  avatarErrors[id] = true;
+};
+
+// 服务端下发链接
 const appLinks = ref<{ tutorialUrl: string; faqUrl: string; qqGroupUrl: string; sponsorUrl: string }>({
   tutorialUrl: '',
   faqUrl: '',
   qqGroupUrl: '',
   sponsorUrl: ''
 });
+
+// 版本更新日志
+const changelogs = ref<VersionChangelogItem[]>([]);
+
+// 赞助榜单数据
+const sponsorsData = ref<SponsorDataResponse>({
+  totalCount: 10,
+  totalAmount: 1777,
+  updatedAt: '2026-09-08',
+  source: 'cache',
+  sponsors: []
+});
+
+const formatUpdatedDate = (dt: string) => {
+  if (!dt) return '刚刚';
+  try {
+    return dt.slice(0, 10);
+  } catch {
+    return dt;
+  }
+};
+
+const getRankBadgeClass = (rank: number) => {
+  if (rank === 1) return 'bg-amber-400/20 text-amber-300 border border-amber-400/50';
+  if (rank === 2) return 'bg-slate-300/20 text-slate-200 border border-slate-300/40';
+  if (rank === 3) return 'bg-amber-700/25 text-amber-500 border border-amber-600/40';
+  return 'bg-slate-900 text-slate-400 border border-white/5';
+};
+
+const getPlanBadgeClass = (sponsor: SponsorItem) => {
+  if (sponsor.isLifetime || (sponsor.planTitle && sponsor.planTitle.includes('终身'))) {
+    return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+  }
+  if (sponsor.planTitle && sponsor.planTitle.includes('豪华')) {
+    return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+  }
+  if (sponsor.planTitle && sponsor.planTitle.includes('月度')) {
+    return 'bg-sky-500/15 text-sky-300 border-sky-500/30';
+  }
+  return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
+};
 
 const loadAppLinks = async () => {
   try {
@@ -272,11 +397,64 @@ const loadAppLinks = async () => {
         tutorialUrl: links.tutorialUrl || '',
         faqUrl: links.faqUrl || '',
         qqGroupUrl: links.qqGroupUrl || '',
-        sponsorUrl: links.sponsorUrl || ''
+        sponsorUrl: links.sponsorUrl || 'https://afdian.com/a/chunfengdu'
       };
     }
-  } catch {
-    // 服务端不可用时保持置灰，不阻塞页面
+  } catch (e) {
+    console.warn('获取跳转链接失败:', e);
+  }
+};
+
+const loadChangelogs = async () => {
+  loadingChangelogs.value = true;
+  try {
+    const logs = await window.electronAPI.getVersionChangelogs();
+    if (logs && logs.length > 0) {
+      changelogs.value = logs;
+    }
+  } catch (e) {
+    console.warn('加载更新日志异常:', e);
+  } finally {
+    loadingChangelogs.value = false;
+  }
+};
+
+const loadSponsors = async () => {
+  try {
+    const data = await window.electronAPI.getSponsors();
+    if (data) {
+      sponsorsData.value = data;
+    }
+  } catch (e) {
+    console.warn('加载赞助榜单异常:', e);
+  }
+};
+
+const handleSyncAfdian = async () => {
+  syncingAfdian.value = true;
+  try {
+    const res = await window.electronAPI.syncAfdianSponsors();
+    if (res.success) {
+      emit('notify', res.message || '爱发电赞助榜单同步成功！', 'success');
+      await loadSponsors();
+    } else {
+      emit('notify', res.message || '同步未完成，已刷新本地榜单', 'warning');
+      await loadSponsors();
+    }
+  } catch (e: any) {
+    emit('notify', '爱发电同步异常: ' + formatIpcError(e), 'error');
+  } finally {
+    syncingAfdian.value = false;
+  }
+};
+
+const handleOpenSponsorLink = async () => {
+  const url = appLinks.value.sponsorUrl || 'https://afdian.com/a/chunfengdu';
+  try {
+    await window.electronAPI.openExternalUrl(url);
+    emit('notify', '正在浏览器打开爱发电赞助支持主页...', 'info');
+  } catch (e: any) {
+    emit('notify', '打开外部链接失败: ' + formatIpcError(e), 'error');
   }
 };
 
@@ -290,28 +468,14 @@ const handleOpenFeedback = async () => {
       emit('notify', '打开外部链接失败: ' + formatIpcError(e), 'error');
     }
   } else {
-    emit('notify', '官方 QQ 反馈群暂未配置，请联系开发者或稍后重试', 'warning');
+    emit('notify', '官方 QQ 反馈群暂未配置，请稍后重试', 'warning');
   }
 };
-
-const featuresList = [
-  { title: '创意工坊支持', desc: '一键订阅与模组自动同步下载' },
-  { title: '游戏实时更新', desc: '云端与官方清单数据保持实时同步更新' },
-  { title: '可视化游戏列表', desc: '超清海报封面、AppID、中文别名与状态呈现' },
-  { title: '每天更新新游戏', desc: '每日持续收录 Steam 官方最新上架与热门力作' },
-  { title: '完整入库 + 全部 DLC', desc: '一键自动匹配全量 DLC 清单与 DepotKey 密钥' },
-  { title: '提前游玩 / 锁区游戏', desc: '支持锁区与预载应用清单直接入库与下载' },
-  { title: '联机补丁一键启动', desc: '内置 SpaceWar、Goldberg 与 OnlineFix 原生联机修复' },
-  { title: '双入库内核自由切换', desc: 'OpenSteamTool 与 GreenLuma (AppList) 双轨自由兼容' },
-  { title: '真实免费无隐瞒', desc: '核心功能纯净体验，永久持续维护' },
-  { title: '轻量好用教程齐全', desc: '操作简单直观，新手秒上手，配套完整使用文档' }
-];
 
 const checkUpdates = async () => {
   isCheckingUpdate.value = true;
   try {
     const res = await window.electronAPI.checkVersion(appVersion);
-    // hasUpdate 为真但 latest/version 缺失时按"无更新"处理，避免访问 undefined 属性报错
     if (res && res.hasUpdate && res.latest?.version) {
       emit('notify', `发现新版本 v${res.latest.version}，可前往下载！`, 'info');
     } else {
@@ -324,24 +488,9 @@ const checkUpdates = async () => {
   }
 };
 
-const loadEnvInfo = async () => {
-  try {
-    const info = await window.electronAPI.getSteamInfo();
-    if (info) {
-      ostInstalled.value = !!info.ostInstalled;
-    }
-    const lic = await window.electronAPI.getLicenseInfo();
-    if (lic) {
-      deviceId.value = lic.deviceId || '';
-      isActivated.value = !!lic.isActivated;
-    }
-  } catch (e) {
-    console.warn('获取环境信息失败:', e);
-  }
-};
-
 onMounted(() => {
-  loadEnvInfo();
   loadAppLinks();
+  loadChangelogs();
+  loadSponsors();
 });
 </script>

@@ -726,6 +726,68 @@ async function loadAdminSettings() {
       if (quota && document.activeElement !== quota) quota.value = String(res.data.freeDailyLimit != null ? res.data.freeDailyLimit : 2);
     }
   } catch(e) { console.warn('loadAdminSettings error:', e); }
+
+  try {
+    var afdianResp = await fetch('/api/admin/sponsors/config', { headers: getHeaders() });
+    if (afdianResp.ok) {
+      var afRes = await afdianResp.json();
+      if (afRes && afRes.success && afRes.data) {
+        var uEl = document.getElementById('cfgAfdianUserId'); if (uEl) uEl.value = afRes.data.userId || '';
+        var tEl = document.getElementById('cfgAfdianToken'); if (tEl) tEl.value = afRes.data.token || '';
+        var sEl = document.getElementById('cfgAfdianAutoSync'); if (sEl) sEl.checked = afRes.data.autoSync !== false;
+      }
+    }
+  } catch(e) { console.warn('loadAfdianConfig error:', e); }
+}
+
+async function handleAfdianConfigSubmit() {
+  var userId = (document.getElementById('cfgAfdianUserId').value || '').trim();
+  var token = (document.getElementById('cfgAfdianToken').value || '').trim();
+  var autoSync = !!(document.getElementById('cfgAfdianAutoSync') && document.getElementById('cfgAfdianAutoSync').checked);
+  var btn = document.getElementById('btnSaveAfdian');
+  var msg = document.getElementById('afdianMsg');
+  var msgText = document.getElementById('afdianMsgText');
+  if (btn) { btn.disabled = true; btn.innerText = '正在保存...'; }
+  try {
+    var resp = await fetch('/api/admin/sponsors/config', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ userId: userId, token: token, autoSync: autoSync })
+    });
+    var res = await resp.json();
+    if (res && res.success) {
+      if (msg && msgText) { msg.className = 'alert-box alert-success'; msgText.innerText = res.message || '爱发电配置已保存'; msg.classList.remove('d-none'); }
+    } else {
+      if (msg && msgText) { msg.className = 'alert-box alert-error'; msgText.innerText = res.message || '保存失败'; msg.classList.remove('d-none'); }
+    }
+  } catch(e) {
+    if (msg && msgText) { msg.className = 'alert-box alert-error'; msgText.innerText = '请求异常: ' + e.message; msg.classList.remove('d-none'); }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = '保存爱发电配置'; }
+  }
+}
+
+async function handleAfdianSyncNow() {
+  var btn = document.getElementById('btnSyncAfdian');
+  var msg = document.getElementById('afdianMsg');
+  var msgText = document.getElementById('afdianMsgText');
+  if (btn) { btn.disabled = true; btn.innerText = '🔄 同步中...'; }
+  try {
+    var resp = await fetch('/api/admin/sponsors/sync', {
+      method: 'POST',
+      headers: getHeaders()
+    });
+    var res = await resp.json();
+    if (msg && msgText) {
+      msg.className = res.success ? 'alert-box alert-success' : 'alert-box alert-amber';
+      msgText.innerText = res.message || (res.success ? '同步成功' : '同步未完成');
+      msg.classList.remove('d-none');
+    }
+  } catch(e) {
+    if (msg && msgText) { msg.className = 'alert-box alert-error'; msgText.innerText = '同步异常: ' + e.message; msg.classList.remove('d-none'); }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = '🔄 立即从爱发电同步'; }
+  }
 }
 
 async function handleLinksSubmit() {

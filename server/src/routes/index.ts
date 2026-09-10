@@ -22,6 +22,7 @@ import {
 import {
   checkVersion,
   getLatestVersionInfo,
+  getVersionChangelogs,
   getAllVersionsAdmin,
   getVersionDetailAdmin,
   publishVersionAdmin,
@@ -31,6 +32,15 @@ import {
   pushBroadcastAdmin,
   getPushLogsAdmin
 } from '../controllers/versionController.js';
+import {
+  getPublicSponsors,
+  syncAfdianSponsors,
+  getAfdianConfigAdmin,
+  updateAfdianConfigAdmin,
+  getSponsorsAdmin,
+  saveSponsorAdmin,
+  deleteSponsorAdmin
+} from '../controllers/sponsorController.js';
 import { getSourcesList, triggerSyncFromSources } from '../controllers/sourceController.js';
 import { getAppLinks, updateAppLinks } from '../controllers/linksController.js';
 import { getOnlineRules, syncOnlineRulesFromCharts } from '../controllers/onlineRulesController.js';
@@ -158,6 +168,18 @@ router.get('/notice/list', getActiveNoticesList);
 // 版本检测与升级
 router.get('/version/check', checkVersion);
 router.get('/version/latest', getLatestVersionInfo);
+router.get('/version/changelogs', getVersionChangelogs);
+
+// 爱发电赞助榜单与实时同步
+const sponsorSyncLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '爱发电同步请求过于频繁，请稍后再试' }
+});
+router.get('/sponsors', getPublicSponsors);
+router.post('/sponsors/sync', sponsorSyncLimiter, syncAfdianSponsors);
 
 // 应用内跳转链接 (教程/FAQ，由服务端数据文件配置，未配置为空串)
 router.get('/links', getAppLinks);
@@ -416,6 +438,14 @@ router.post('/admin/settings/free-quota', updateFreeQuotaLimitAdmin);
 router.get('/admin/links', (req, res) => {
   res.json({ success: true, data: appLinksService.getLinks() });
 });
+
+// 爱发电开发者配置与赞助榜单管理
+router.get('/admin/sponsors/config', getAfdianConfigAdmin);
+router.post('/admin/sponsors/config', updateAfdianConfigAdmin);
+router.post('/admin/sponsors/sync', syncAfdianSponsors);
+router.get('/admin/sponsors', getSponsorsAdmin);
+router.post('/admin/sponsors', saveSponsorAdmin);
+router.delete('/admin/sponsors/:id', deleteSponsorAdmin);
 
 // 卡密管理 CRUD 与批量生成
 router.get('/admin/license/list', getLicenseListAdmin);

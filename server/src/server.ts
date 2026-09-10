@@ -930,6 +930,28 @@ const ADMIN_HTML = `<!DOCTYPE html>
             <div id="quotaMsg" class="alert-box alert-success d-none" style="margin-bottom: 12px;"><span id="quotaMsgText"></span></div>
             <button type="button" id="btnSaveQuota" onclick="handleFreeQuotaSubmit()" class="btn btn-primary" style="width: 100%; justify-content: center;">保存并立即生效</button>
           </div>
+
+          <div class="card">
+            <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 4px; display: block;">⚡ 爱发电 (Afdian) 开发者 API 与赞助榜单同步</strong>
+            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">配置爱发电开发者 User ID 与 API Token 后，支持自动从爱发电拉取最新赞助者名单并展示在客户端关于界面的赞助榜中</div>
+            <div class="form-group">
+              <label>爱发电开发者 User ID</label>
+              <input type="text" id="cfgAfdianUserId" class="input-ctrl" placeholder="爱发电开发者后台 user_id" />
+            </div>
+            <div class="form-group">
+              <label>爱发电开发者 API Token</label>
+              <input type="password" id="cfgAfdianToken" class="input-ctrl" placeholder="爱发电开发者后台 token" />
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+              <input type="checkbox" id="cfgAfdianAutoSync" style="width: 16px; height: 16px;" checked />
+              <label for="cfgAfdianAutoSync" style="margin: 0; color: var(--text-strong); cursor: pointer;">启用定时自动同步 (默认每 60 分钟)</label>
+            </div>
+            <div id="afdianMsg" class="alert-box alert-success d-none" style="margin-bottom: 12px;"><span id="afdianMsgText"></span></div>
+            <div style="display: flex; gap: 12px;">
+              <button type="button" id="btnSaveAfdian" onclick="handleAfdianConfigSubmit()" class="btn btn-primary" style="flex: 1; justify-content: center;">保存爱发电配置</button>
+              <button type="button" id="btnSyncAfdian" onclick="handleAfdianSyncNow()" class="btn btn-secondary" style="justify-content: center;">🔄 立即从爱发电同步</button>
+            </div>
+          </div>
         </div>
 
         <div class="card" style="max-width: 540px; margin-bottom: 24px;">
