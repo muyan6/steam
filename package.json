@@ -11,6 +11,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "preview": "vite preview",
+    "release:upload": "node scripts/uploadRelease.mjs",
+    "release:build-and-upload": "npm run build:web && tauri build && node scripts/uploadRelease.mjs",
     "server:dev": "npm --prefix server run dev",
     "server:build": "npm --prefix server run build",
     "server:start": "npm --prefix server run start"

@@ -5,11 +5,14 @@
 ### 自动代码提交与远程双端推送 (Auto Git Commit & Push to GitHub & Gitee)
 - 每次完成用户的任务修改、代码调试、页面优化或 Bug 修复后，**必须在最终回复前自动执行 Git 暂存、提交并同时推送到 GitHub 与 Gitee 远端仓库**：
   ```bash
+  # 若涉及新版本编译发布，自动执行安装程序双端 Release 上传
+  npm run release:upload
+
   git add -A
   git commit -m "feat/fix/refactor: 详细更新说明"
   git push origin main  # origin 已配置同时向 GitHub 与 Gitee 双端推送
   ```
-- 提交完成后向用户汇报提交摘要与双端推送状态。
+- 提交完成后向用户汇报提交摘要、双端推送状态及 Release 上传结果。
 
 ### 前后端同步修改与一体化协同规范 (Frontend & Backend Synchronization)
 - **同步新增与对齐**：前端（Vue/Electron 客户端）新增功能时，后端（Express/Server API/Dashboard）必须**同步新增**配套的接口、字段和数据支持，拒绝单端孤立或脱节开发。

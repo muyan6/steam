@@ -6,10 +6,11 @@
 - **要求**：在每次完成代码修改、Bug 修复、新增功能或重构后，**必须自动执行 Git 提交并实时同步推送到 GitHub 与 Gitee 双端远端仓库**。
 - **操作流程**：
   1. 运行测试或构建命令确保代码无错误 (`npm run build` / `npx vite build`)。
-  2. 执行 `git add -A` 暂存所有工作区修改。
-  3. 编写符合 Conventional Commits 规范的清晰提交信息执行 `git commit -m "..."`。
-  4. 执行 `git push origin <当前分支>` 将最新提交实时推送到 GitHub 与 Gitee（`origin` 已配置同时推送双端）。
-  5. 在回复中向用户汇报提交哈希与双端推送状态。
+  2. 若涉及新版本编译发布（如打包生成 setup.exe），**必须自动执行 `npm run release:upload` 将安装程序同步上传至 GitHub 与 Gitee Releases**。
+  3. 执行 `git add -A` 暂存所有工作区修改。
+  4. 编写符合 Conventional Commits 规范的清晰提交信息执行 `git commit -m "..."`。
+  5. 执行 `git push origin <当前分支>` 将最新提交实时推送到 GitHub 与 Gitee（`origin` 已配置同时推送双端）。如有新 tag，同步 `git push origin -f <tag>`。
+  6. 在回复中向用户汇报提交哈希、双端推送状态以及 Release 上传直链。
 
 ### 2. 前后端同步修改与一体化协同规范 (Frontend & Backend Synchronization)
 - **功能对齐与闭环同步**：前端（Vue 客户端界面、主进程 IPC 服务）新增或拓展任何功能模块，后端（Node.js/Express 服务端、API 路由、控制器、数据库模型及 Web 控制台 Dashboard）必须**同步新增并完全适配对应的支持接口与数据调度逻辑**，严禁前端新增功能而后端缺失支持、或后端单方面孤立改动。

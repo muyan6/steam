@@ -11,7 +11,7 @@
     "✨ 客户端与管理端全链路协同：完善前后端元数据 DTO 与清单探测状态接口，优化界面提示交互"
   ],
   "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.1/ChunFengDu_2.7.1_x64-setup.exe",
-  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases",
+  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.1/ChunFengDu_2.7.1_x64-setup.exe",
   "forceUpdate": true,
   "minSupportedVersion": "1.0.0",
   "enabled": true,
