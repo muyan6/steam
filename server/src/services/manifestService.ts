@@ -17,7 +17,7 @@ export interface DepotManifestInfo {
 export interface AppManifestResult {
   success: boolean;
   appId: number;
-  source: 'local_cache' | 'gmrc' | 'manifesthub' | 'steamml' | 'manifesthub_uk' | 'none';
+  source: 'local_cache' | 'gmrc' | 'manifesthub' | 'steamml' | 'remlua' | 'manifesthub_uk' | 'none';
   depots: DepotManifestInfo[];
   keys: { [depotId: string]: string };
   message: string;
@@ -57,17 +57,19 @@ export class ManifestService {
       };
     }
 
-    // 2. 核心并发竞速：SteamML R2 直连（免鉴权/全量清单）与 ManifestHub3 高速镜像并行检索
+    // 2. 核心并发竞速：SteamML (Cloudflare R2) + Remlua (AWS CloudFront) + ManifestHub3 高速镜像并行检索
     try {
-      const [steamResult, hubResult] = await Promise.allSettled([
+      const [steamResult, remluaResult, hubResult] = await Promise.allSettled([
         this.fetchFromSteamML(appId, candidateDepotIds),
+        this.fetchFromRemlua(appId, candidateDepotIds),
         this.fetchFromManifestHub(appId, candidateDepotIds)
       ]);
 
       const smlList = steamResult.status === 'fulfilled' ? steamResult.value : [];
+      const remluaList = remluaResult.status === 'fulfilled' ? remluaResult.value : [];
       const hubList = hubResult.status === 'fulfilled' ? hubResult.value : [];
 
-      // 优先采用具备完整实体文件的 SteamML (R2 全球 CDN)，若 SteamML 未命中则采用 ManifestHub3
+      // 优先采用具备完整实体文件的全球边缘 CDN (SteamML R2 / Remlua CloudFront)
       if (smlList && smlList.length > 0) {
         return {
           success: true,
@@ -76,6 +78,17 @@ export class ManifestService {
           depots: smlList,
           keys,
           message: `从 SteamML 清单库极速检索到 ${smlList.length} 个分包清单！`
+        };
+      }
+
+      if (remluaList && remluaList.length > 0) {
+        return {
+          success: true,
+          appId,
+          source: 'remlua',
+          depots: remluaList,
+          keys,
+          message: `从 Remlua CloudFront 极速检索到 ${remluaList.length} 个分包清单！`
         };
       }
 
@@ -419,6 +432,20 @@ export class ManifestService {
   }
 
   /**
+   * 从 Remlua (AWS CloudFront 直连 CDN) 检索并解压清单实体
+   */
+  public async fetchFromRemlua(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
+    const url = `https://d41hvr6rtvs2p.cloudfront.net/${appId}.zip`;
+    try {
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 7000 });
+      if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
+        return this.unpackZipAndExtractManifests(appId, Buffer.from(resp.data), depotIds, 'remlua');
+      }
+    } catch {}
+    return [];
+  }
+
+  /**
    * 从 ManifestHub.uk 检索并解压清单实体
    */
   public async fetchFromManifestHubUK(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
@@ -562,13 +589,26 @@ export class ManifestService {
     dlcIds: string[];
     accessToken?: string;
   } | null> {
-    // 1. 优先尝试 SteamML (R2)
+    // 1. 优先尝试全球顶级边缘 CDN：SteamML (R2) 与 Remlua (CloudFront)
     try {
       const smlUrl = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
       const resp = await axios.get(smlUrl, { responseType: 'arraybuffer', timeout: 6000 });
       if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
         const zipBuf = Buffer.from(resp.data);
         this.unpackZipAndExtractManifests(appId, zipBuf, [], 'steamml');
+        const parsed = this.parseLuaFromZip(zipBuf, appId);
+        if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
+          return parsed;
+        }
+      }
+    } catch {}
+
+    try {
+      const remluaUrl = `https://d41hvr6rtvs2p.cloudfront.net/${appId}.zip`;
+      const resp = await axios.get(remluaUrl, { responseType: 'arraybuffer', timeout: 6000 });
+      if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
+        const zipBuf = Buffer.from(resp.data);
+        this.unpackZipAndExtractManifests(appId, zipBuf, [], 'remlua');
         const parsed = this.parseLuaFromZip(zipBuf, appId);
         if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
           return parsed;
@@ -746,12 +786,33 @@ export class ManifestService {
       return null;
     };
 
-    const [hubResult, smlResult] = await Promise.allSettled([hubDownloadTask(), steamMlTask()]);
+    const remluaTask = async (): Promise<string | null> => {
+      if (searchAppId > 0) {
+        try {
+          await this.fetchFromRemlua(searchAppId, [depotId]);
+          const recheck = this.getLocalManifestFilePath(depotId, manifestId, appId);
+          if (recheck && fs.existsSync(recheck)) {
+            console.log(`[ManifestService] 成功从 Remlua CloudFront 沉淀清单到本地: ${depotId}_${manifestId}.manifest`);
+            return recheck;
+          }
+        } catch {}
+      }
+      return null;
+    };
+
+    const [hubResult, smlResult, remluaResult] = await Promise.allSettled([
+      hubDownloadTask(),
+      steamMlTask(),
+      remluaTask()
+    ]);
     if (hubResult.status === 'fulfilled' && hubResult.value) {
       return hubResult.value;
     }
     if (smlResult.status === 'fulfilled' && smlResult.value) {
       return smlResult.value;
+    }
+    if (remluaResult.status === 'fulfilled' && remluaResult.value) {
+      return remluaResult.value;
     }
 
     // 2. 末位冷备容灾：ManifestHub.uk 代理下载与解压沉淀

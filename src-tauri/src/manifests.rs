@@ -584,7 +584,7 @@ pub fn extract_manifest_from_zip(zip_bytes: &[u8], depot_id: &str, manifest_gid:
 pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, String> {
     let mut lua_content: Option<String> = None;
 
-    // 1. 优先尝试 SteamML (Cloudflare R2 全球边缘 CDN 直连桶，单次 300ms 响应，免反爬频控)
+    // 1. 优先尝试全球顶级边缘 CDN：SteamML (Cloudflare R2) 与 Remlua (AWS CloudFront)
     let sml_url = format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id);
     if let Ok(resp) = block_on(http_client().get(&sml_url).timeout(Duration::from_secs(4)).send()) {
         if resp.status().is_success() {
@@ -596,7 +596,20 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
         }
     }
 
-    // 2. 若 SteamML 未命中，尝试 ManifestHub3 国内极速镜像与直连
+    if lua_content.is_none() {
+        let remlua_url = format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", app_id);
+        if let Ok(resp) = block_on(http_client().get(&remlua_url).timeout(Duration::from_secs(4)).send()) {
+            if resp.status().is_success() {
+                if let Ok(bytes) = block_on(resp.bytes()) {
+                    if let Some(text) = extract_lua_from_zip(&bytes) {
+                        lua_content = Some(text);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 若顶级 CDN 未命中，尝试 ManifestHub3 国内极速镜像与直连
     if lua_content.is_none() {
         let urls = [
             format!(
@@ -939,11 +952,13 @@ fn get_cdn_hosts() -> Vec<String> {
     }).clone()
 }
 
-/// 异步版单清单下载（四级容灾分发）：
+/// 异步版单清单下载（六级容灾分发）：
 /// 1. 第一优先级：自有云端服务端下载（支持服务端 Cache-Through 自动回源沉淀）
-/// 2. 第二优先级：ManifestHub3 加速镜像（拉取真实 .manifest 实体）
-/// 3. 第三优先级：ManifestHub3 GitHub Raw 直连
-/// 4. 第四优先级：Steam 官方 CDN 多节点调度
+/// 2. 第二优先级：SteamML R2 存储桶直连（Cloudflare 全球 CDN 边缘节点，单次 300ms 直出）
+/// 3. 第三优先级：Remlua AWS CloudFront 直连（全球超低延迟边缘分发，直出完整 Lua 与清单实体）
+/// 4. 第四优先级：ManifestHub3 国内高速镜像专线
+/// 5. 第五优先级：ManifestHub3 GitHub Raw 直连
+/// 6. 第六优先级：ManifestHub.uk 代理下载（末位容灾冷备）
 async fn download_single_manifest(
     steam_path: &Path,
     app_id: u32,
@@ -1019,7 +1034,26 @@ async fn download_single_manifest(
         }
     }
 
-    // 3. 第三优先级：ManifestHub3 国内高速镜像专线（优先使用 ghfast.top 与 gh-proxy.com）
+    // 3. 第三优先级：Remlua AWS CloudFront 直连（全球超低延迟边缘分发，直出完整 Lua 与清单实体）
+    let remlua_candidates = [
+        format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", app_id),
+        format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", depot_id),
+    ];
+    for remlua_url in &remlua_candidates {
+        if let Ok(resp) = http_client().get(remlua_url).timeout(Duration::from_secs(5)).send().await {
+            if resp.status().is_success() {
+                if let Ok(bytes) = resp.bytes().await {
+                    if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
+                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                        return Ok(format!("已从 Remlua 极速源下载 ({} 字节)", payload.len()));
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. 第四优先级：ManifestHub3 国内高速镜像专线（优先使用 ghfast.top 与 gh-proxy.com）
     let mirror_candidates = [
         format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
@@ -1060,7 +1094,7 @@ async fn download_single_manifest(
         }
     }
 
-    // 4. 第四优先级：ManifestHub3 GitHub Raw 直连
+    // 5. 第五优先级：ManifestHub3 GitHub Raw 直连
     let raw_candidates = [
         format!(
             "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
@@ -1093,7 +1127,7 @@ async fn download_single_manifest(
         }
     }
 
-    // 5. 第五优先级：ManifestHub.uk 代理下载（末位容灾冷备）
+    // 6. 第六优先级：ManifestHub.uk 代理下载（末位容灾冷备）
     let enc_id = encode_manifesthub_uk_cipher(app_id);
     let proxy_url = format!("https://api.manifesthub.uk/proxy?id={}", enc_id);
     if let Ok(resp) = http_client()
