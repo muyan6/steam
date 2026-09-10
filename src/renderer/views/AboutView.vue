@@ -298,7 +298,7 @@
           <div class="space-y-1.5 max-w-sm">
             <div class="text-sm font-bold text-slate-100">当前暂无赞助记录</div>
             <p class="text-xs text-slate-400 leading-relaxed">
-              开源与服务器维护不易，期待您的支持！在爱发电支持后，榜单将自动同步您的昵称与赞助寄语。
+              开源与服务器维护不易，期待您的支持！赞助支持后，榜单将自动同步您的昵称与赞助寄语。
             </p>
           </div>
           <button
@@ -314,7 +314,7 @@
         <div class="pt-3 mt-2 border-t border-white/5 shrink-0 flex items-center justify-between text-xs">
           <span class="text-[11px] text-slate-400 flex items-center gap-1.5">
             <HeartHandshake class="w-3.5 h-3.5 text-rose-400" />
-            <span>发电后榜单自动更新</span>
+            <span>赞助后榜单自动更新</span>
           </span>
 
           <button
@@ -418,9 +418,9 @@ const getPlanBadgeClass = (sponsor: SponsorItem) => {
 
 const activeSponsorUrl = computed(() => {
   return (
-    (sponsorsData.value.sponsorUrl && sponsorsData.value.sponsorUrl.trim()) ||
     (appLinks.value.sponsorUrl && appLinks.value.sponsorUrl.trim()) ||
-    'https://afdian.com/a/chunfengdu'
+    (sponsorsData.value.sponsorUrl && sponsorsData.value.sponsorUrl.trim()) ||
+    ''
   );
 });
 
@@ -429,10 +429,10 @@ const loadAppLinks = async () => {
     const links = await window.electronAPI.getAppLinks();
     if (links) {
       appLinks.value = {
-        tutorialUrl: links.tutorialUrl || '',
-        faqUrl: links.faqUrl || '',
-        qqGroupUrl: links.qqGroupUrl || '',
-        sponsorUrl: links.sponsorUrl || sponsorsData.value.sponsorUrl || 'https://afdian.com/a/chunfengdu'
+        tutorialUrl: (links.tutorialUrl || '').trim(),
+        faqUrl: (links.faqUrl || '').trim(),
+        qqGroupUrl: (links.qqGroupUrl || '').trim(),
+        sponsorUrl: (links.sponsorUrl || '').trim()
       };
     }
   } catch (e) {
@@ -470,7 +470,7 @@ const sanitizeSponsorState = (data: SponsorDataResponse): SponsorDataResponse =>
       totalAmount: 0,
       updatedAt: new Date().toISOString().slice(0, 10),
       source: 'afdian',
-      sponsorUrl: 'https://afdian.com/a/chunfengdu',
+      sponsorUrl: '',
       sponsors: []
     };
   }
@@ -480,7 +480,8 @@ const sanitizeSponsorState = (data: SponsorDataResponse): SponsorDataResponse =>
     ...data,
     totalCount: realSponsors.length,
     totalAmount: Math.round(realAmount * 100) / 100,
-    source: 'afdian',
+    source: data.source || 'afdian',
+    sponsorUrl: typeof data.sponsorUrl === 'string' ? data.sponsorUrl.trim() : '',
     sponsors: realSponsors
   };
 };
@@ -519,9 +520,13 @@ const handleSyncAfdian = async () => {
 
 const handleOpenSponsorLink = async () => {
   const url = activeSponsorUrl.value;
+  if (!url) {
+    emit('notify', '暂未配置赞助支持链接，感谢您的心意与支持！', 'info');
+    return;
+  }
   try {
     await window.electronAPI.openExternalUrl(url);
-    emit('notify', '正在打开爱发电赞助支持主页...', 'info');
+    emit('notify', '正在打开赞助支持页面...', 'info');
   } catch (e: any) {
     emit('notify', '打开外部链接失败: ' + formatIpcError(e), 'error');
   }
@@ -561,7 +566,7 @@ const checkUpdates = async () => {
 onMounted(() => {
   try {
     const cached = localStorage.getItem('cfd_sponsors_cache');
-    if (cached && (cached.includes('星海漫游者') || cached.includes('1805'))) {
+    if (cached && (cached.includes('星海漫游者') || cached.includes('1805') || cached.includes('chunfengdu') || cached.includes('afdian.com'))) {
       localStorage.removeItem('cfd_sponsors_cache');
     }
     const cachedLogs = localStorage.getItem('cfd_changelogs_cache');

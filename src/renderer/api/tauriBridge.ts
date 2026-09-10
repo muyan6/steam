@@ -436,7 +436,7 @@ const isMockSponsor = (s: SponsorItem): boolean => {
   return false;
 };
 
-const sanitizeSponsorResponse = (data: any, fallbackUrl = 'https://afdian.com/a/chunfengdu'): SponsorDataResponse => {
+const sanitizeSponsorResponse = (data: any, fallbackUrl = ''): SponsorDataResponse => {
   if (!data) {
     return {
       totalCount: 0,
@@ -456,8 +456,8 @@ const sanitizeSponsorResponse = (data: any, fallbackUrl = 'https://afdian.com/a/
     totalCount: realSponsors.length,
     totalAmount: Math.round(totalAmount * 100) / 100,
     updatedAt: data.updatedAt || new Date().toISOString().slice(0, 10),
-    source: 'afdian',
-    sponsorUrl: data.sponsorUrl || fallbackUrl,
+    source: data.source || 'afdian',
+    sponsorUrl: typeof data.sponsorUrl === 'string' ? data.sponsorUrl.trim() : (fallbackUrl || ''),
     sponsors: realSponsors
   };
 };

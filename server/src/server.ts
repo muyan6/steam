@@ -902,8 +902,8 @@ const ADMIN_HTML = `<!DOCTYPE html>
             <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 4px; display: block;">🔗 应用内跳转链接配置</strong>
             <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">配置客户端「赞助支持」页面跳转地址（如爱发电/赞助主页）以及「功能详解与关于」界面的 QQ 交流反馈群、图文教程与常见问题跳转链接，保存后客户端即时生效</div>
             <div class="form-group">
-              <label>💖 赞助支持页面链接 (Sponsor URL - 爱发电/个人主页等)</label>
-              <input type="text" id="cfgSponsorUrl" class="input-ctrl" placeholder="https://afdian.com/a/xxxxxx" />
+              <label>💖 赞助支持页面链接 (Sponsor URL - 留空则不开启外部跳转，可填任意自定义主页/赞助平台)</label>
+              <input type="text" id="cfgSponsorUrl" class="input-ctrl" placeholder="https://... (留空则不跳转任何第三方页面)" />
             </div>
             <div class="form-group">
               <label>💬 QQ 交流/反馈群链接 (QQ Group URL)</label>

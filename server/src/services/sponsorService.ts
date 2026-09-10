@@ -11,7 +11,7 @@ const DEFAULT_AFDIAN_CONFIG: AfdianConfig = {
   token: '',
   autoSync: true,
   syncIntervalMinutes: 60,
-  sponsorUrl: 'https://afdian.com/a/chunfengdu',
+  sponsorUrl: '',
   updatedAt: new Date().toISOString()
 };
 
@@ -37,7 +37,7 @@ export class SponsorService {
     }
 
     if (!fs.existsSync(this.sponsorsFilePath)) {
-      writeJsonAtomic(this.sponsorsFilePath, []);
+      writeJsonAtomic(this.sponsorsFilePath, SEED_SPONSORS);
       this.sponsorsCache = [];
       this.lastSource = 'cache';
     }
@@ -58,7 +58,7 @@ export class SponsorService {
           token: typeof raw.token === 'string' ? raw.token.trim() : '',
           autoSync: Boolean(raw.autoSync ?? true),
           syncIntervalMinutes: typeof raw.syncIntervalMinutes === 'number' ? raw.syncIntervalMinutes : 60,
-          sponsorUrl: typeof raw.sponsorUrl === 'string' ? raw.sponsorUrl.trim() : DEFAULT_AFDIAN_CONFIG.sponsorUrl,
+          sponsorUrl: typeof raw.sponsorUrl === 'string' ? raw.sponsorUrl.trim() : '',
           updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString()
         };
         return this.configCache;
@@ -82,13 +82,10 @@ export class SponsorService {
     writeJsonAtomic(this.configFilePath, next);
     this.configCache = next;
 
-    // 若更新了 sponsorUrl，且 appLinks 中的 sponsorUrl 为空或旧值，同步更新 appLinks
-    if (next.sponsorUrl) {
+    // 若显式传入了 sponsorUrl（包含传入空串清空），同步更新 appLinks
+    if (partial.sponsorUrl !== undefined) {
       try {
-        const links = appLinksService.getLinks();
-        if (!links.sponsorUrl || links.sponsorUrl.includes('afdian.com')) {
-          appLinksService.updateLinks({ sponsorUrl: next.sponsorUrl });
-        }
+        appLinksService.updateLinks({ sponsorUrl: next.sponsorUrl });
       } catch (e) {
         console.warn('[SponsorService] 同步更新 appLinks 失败:', e);
       }
@@ -129,7 +126,8 @@ export class SponsorService {
 
     const afConfig = this.getAfdianConfig();
     const links = appLinksService.getLinks();
-    const activeSponsorUrl = afConfig.sponsorUrl || links.sponsorUrl || 'https://afdian.com';
+    // 优先取 appLinks 中管理员显式配置的跳转地址，未配置则为空，绝不强行回退跳转到爱发电首页
+    const activeSponsorUrl = (links.sponsorUrl && links.sponsorUrl.trim()) || (afConfig.sponsorUrl && afConfig.sponsorUrl.trim()) || '';
 
     return {
       totalCount: rankedList.length,

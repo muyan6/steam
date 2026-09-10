@@ -455,16 +455,15 @@ const loadAppLinks = async () => {
     const links = await window.electronAPI.getAppLinks();
     if (links) {
       appLinks.value = {
-        tutorialUrl: links.tutorialUrl || '',
-        faqUrl: links.faqUrl || '',
-        qqGroupUrl: links.qqGroupUrl || '',
-        sponsorUrl: links.sponsorUrl || ''
+        tutorialUrl: (links.tutorialUrl || '').trim(),
+        faqUrl: (links.faqUrl || '').trim(),
+        qqGroupUrl: (links.qqGroupUrl || '').trim(),
+        sponsorUrl: (links.sponsorUrl || '').trim()
       };
-    }
-    if (!appLinks.value.sponsorUrl) {
+    } else {
       const sp = await window.electronAPI.getSponsors();
-      if (sp?.sponsorUrl) {
-        appLinks.value.sponsorUrl = sp.sponsorUrl;
+      if (sp?.sponsorUrl && sp.sponsorUrl.trim()) {
+        appLinks.value.sponsorUrl = sp.sponsorUrl.trim();
       }
     }
   } catch (e: any) {
