@@ -514,7 +514,93 @@ fn parse_lua_metadata(lua: &str, app_id: u32) -> AppMetadata {
     }
 }
 
-/// 从备用容灾源（ManifestHub3 镜像加速 + SteamCMD）拉取分包与密钥数据（仅限合法会员）
+/// ManifestHub.uk 确定性密钥代换加密算法
+pub fn encode_manifesthub_uk_cipher(app_id: u32) -> String {
+    let secret_key = b"N4F1S_FU4D_OWN_SYSTEM_2025";
+    let s = app_id.to_string();
+    let mut table: Vec<char> = "0123456789".chars().collect();
+    let mut seed: u64 = 0;
+    for &b in secret_key {
+        seed = (seed * 31 + b as u64) & 0xFFFF;
+    }
+    for i in (1..table.len()).rev() {
+        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
+        let j = (seed % (i as u64 + 1)) as usize;
+        table.swap(i, j);
+    }
+    let mut substituted = String::new();
+    let mut sum: u32 = 0;
+    for c in s.chars() {
+        let digit = c.to_digit(10).unwrap_or(0) as usize;
+        substituted.push(table[digit]);
+        sum += digit as u32;
+    }
+    let length_char = (b'A' + (s.len() as u8 - 1)) as char;
+    let checksum = (sum * 7) % 10;
+    format!("{}{}{}", length_char, checksum, substituted)
+}
+
+/// 从 ZIP 归档中提取任意包含的 .lua 文本
+pub fn extract_lua_from_zip(zip_bytes: &[u8]) -> Option<String> {
+    if let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)) {
+        for i in 0..archive.len() {
+            if let Ok(mut entry) = archive.by_index(i) {
+                if !entry.is_dir() && entry.name().ends_with(".lua") {
+                    let mut s = String::new();
+                    if entry.read_to_string(&mut s).is_ok() && !s.is_empty() {
+                        return Some(s);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 从 ZIP 归档中查找并提取目标分包的二进制清单实体
+pub fn extract_manifest_from_zip(zip_bytes: &[u8], depot_id: &str, manifest_gid: &str) -> Option<Vec<u8>> {
+    let target_name = format!("{}_{}.manifest", depot_id, manifest_gid);
+    if let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)) {
+        // 先精确匹配完整文件名
+        for i in 0..archive.len() {
+            if let Ok(mut entry) = archive.by_index(i) {
+                if !entry.is_dir() {
+                    let file_name = std::path::Path::new(entry.name())
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+                    if file_name.eq_ignore_ascii_case(&target_name) {
+                        let mut buf = Vec::new();
+                        if entry.read_to_end(&mut buf).is_ok() && is_valid_manifest_payload(&buf) {
+                            return Some(buf);
+                        }
+                    }
+                }
+            }
+        }
+        // 若无精确匹配，尝试以 depot_id 开头的 .manifest 模糊匹配
+        let prefix = format!("{}_", depot_id);
+        for i in 0..archive.len() {
+            if let Ok(mut entry) = archive.by_index(i) {
+                if !entry.is_dir() {
+                    let file_name = std::path::Path::new(entry.name())
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+                    if file_name.starts_with(&prefix) && file_name.ends_with(".manifest") {
+                        let mut buf = Vec::new();
+                        if entry.read_to_end(&mut buf).is_ok() && is_valid_manifest_payload(&buf) {
+                            return Some(buf);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 从备用容灾源（ManifestHub3 镜像加速 + SteamML + ManifestHub.uk）拉取分包与密钥数据（仅限合法会员）
 pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, String> {
     let mut lua_content: Option<String> = None;
     let urls = [
@@ -567,6 +653,61 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
                     if text.contains("addappid") || text.contains("setManifestid") || text.contains("setDepotKey") {
                         lua_content = Some(text);
                         break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 若 ManifestHub3 未命中，尝试 SteamML (Cloudflare R2 直连桶)
+    if lua_content.is_none() {
+        let sml_url = format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id);
+        if let Ok(resp) = block_on(http_client().get(&sml_url).timeout(Duration::from_secs(8)).send()) {
+            if resp.status().is_success() {
+                if let Ok(bytes) = block_on(resp.bytes()) {
+                    if let Some(text) = extract_lua_from_zip(&bytes) {
+                        lua_content = Some(text);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. 若依然未命中，尝试 ManifestHub.uk 代理
+    if lua_content.is_none() {
+        let enc_id = encode_manifesthub_uk_cipher(app_id);
+        let proxy_url = format!("https://api.manifesthub.uk/proxy?id={}", enc_id);
+        if let Ok(resp) = block_on(
+            http_client()
+                .get(&proxy_url)
+                .timeout(Duration::from_secs(8))
+                .header("Referer", "https://steamtools.pages.dev/")
+                .send(),
+        ) {
+            if resp.status().is_success() {
+                if let Ok(html) = block_on(resp.text()) {
+                    for part in html.split("href=\"").skip(1) {
+                        if let Some(href) = part.split('"').next() {
+                            if href.starts_with("/download?") {
+                                let dl_url = format!("https://api.manifesthub.uk{}", href);
+                                if let Ok(dl_resp) = block_on(
+                                    http_client()
+                                        .get(&dl_url)
+                                        .timeout(Duration::from_secs(10))
+                                        .header("Referer", &proxy_url)
+                                        .send(),
+                                ) {
+                                    if dl_resp.status().is_success() {
+                                        if let Ok(bytes) = block_on(dl_resp.bytes()) {
+                                            if let Some(text) = extract_lua_from_zip(&bytes) {
+                                                lua_content = Some(text);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -972,6 +1113,65 @@ async fn download_single_manifest(
                             fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                             clean_old_manifests(&depot_cache, depot_id, manifest_gid);
                             return Ok(format!("已从 GitHub 直连下载 ({} 字节)", payload.len()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. 第四优先级：SteamML R2 存储桶直连（支持海量最新游戏清单包）
+    let sml_candidates = [
+        format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id),
+        format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", depot_id),
+    ];
+    for sml_url in &sml_candidates {
+        if let Ok(resp) = http_client().get(sml_url).timeout(Duration::from_secs(8)).send().await {
+            if resp.status().is_success() {
+                if let Ok(bytes) = resp.bytes().await {
+                    if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
+                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                        return Ok(format!("已从 SteamML 备用源下载 ({} 字节)", payload.len()));
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. 第五优先级：ManifestHub.uk 代理下载
+    let enc_id = encode_manifesthub_uk_cipher(app_id);
+    let proxy_url = format!("https://api.manifesthub.uk/proxy?id={}", enc_id);
+    if let Ok(resp) = http_client()
+        .get(&proxy_url)
+        .timeout(Duration::from_secs(8))
+        .header("Referer", "https://steamtools.pages.dev/")
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(html) = resp.text().await {
+                for part in html.split("href=\"").skip(1) {
+                    if let Some(href) = part.split('"').next() {
+                        if href.starts_with("/download?") {
+                            let dl_url = format!("https://api.manifesthub.uk{}", href);
+                            if let Ok(dl_resp) = http_client()
+                                .get(&dl_url)
+                                .timeout(Duration::from_secs(10))
+                                .header("Referer", &proxy_url)
+                                .send()
+                                .await
+                            {
+                                if dl_resp.status().is_success() {
+                                    if let Ok(bytes) = dl_resp.bytes().await {
+                                        if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
+                                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                                            return Ok(format!("已从 ManifestHub.uk 备用源下载 ({} 字节)", payload.len()));
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

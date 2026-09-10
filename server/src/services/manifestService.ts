@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import AdmZip from 'adm-zip';
 import { CONFIG } from '../config/index.js';
 import { depotService } from './depotService.js';
 
@@ -16,7 +17,7 @@ export interface DepotManifestInfo {
 export interface AppManifestResult {
   success: boolean;
   appId: number;
-  source: 'local_cache' | 'gmrc' | 'manifesthub' | 'none';
+  source: 'local_cache' | 'gmrc' | 'manifesthub' | 'steamml' | 'manifesthub_uk' | 'none';
   depots: DepotManifestInfo[];
   keys: { [depotId: string]: string };
   message: string;
@@ -73,8 +74,41 @@ export class ManifestService {
       console.warn(`[ManifestService] ManifestHub 镜像检索失败 (${appId}):`, err.message);
     }
 
-    // 3. [已封存] GMRC 与向 Steam 请求清单的其它失效源均已封存
-    // 若本地缓存与云端均未找到清单文件，直接返回未收录提示
+    // 3. 尝试向 SteamML 社区清单库检索（Cloudflare R2 存储桶直连，免鉴权且支持大量新游与独立游戏）
+    try {
+      const smlResult = await this.fetchFromSteamML(appId, candidateDepotIds);
+      if (smlResult && smlResult.length > 0) {
+        return {
+          success: true,
+          appId,
+          source: 'steamml',
+          depots: smlResult,
+          keys,
+          message: `从 SteamML 清单库检索到 ${smlResult.length} 个分包清单！`
+        };
+      }
+    } catch (err: any) {
+      console.warn(`[ManifestService] SteamML 检索失败 (${appId}):`, err.message);
+    }
+
+    // 4. 尝试向 ManifestHub.uk 检索（多节点 API 代理与防盗链 Token 调度）
+    try {
+      const mhUkResult = await this.fetchFromManifestHubUK(appId, candidateDepotIds);
+      if (mhUkResult && mhUkResult.length > 0) {
+        return {
+          success: true,
+          appId,
+          source: 'manifesthub_uk',
+          depots: mhUkResult,
+          keys,
+          message: `从 ManifestHub.uk 检索到 ${mhUkResult.length} 个分包清单！`
+        };
+      }
+    } catch (err: any) {
+      console.warn(`[ManifestService] ManifestHub.uk 检索失败 (${appId}):`, err.message);
+    }
+
+    // 若本地缓存与各云端源均未找到清单文件，直接返回未收录提示
     return {
       success: false,
       appId,
@@ -336,6 +370,303 @@ export class ManifestService {
   }
 
   /**
+   * ManifestHub.uk 确定性密钥代换加密算法
+   */
+  public encodeManifestHubUKCipher(appId: number | string): string {
+    const SECRET_KEY = 'N4F1S_FU4D_OWN_SYSTEM_2025';
+    const str = String(appId);
+    let table = '0123456789'.split('');
+    let seed = 0;
+    for (let i = 0; i < SECRET_KEY.length; i++) {
+      seed = (seed * 31 + SECRET_KEY.charCodeAt(i)) & 0xffff;
+    }
+    for (let i = table.length - 1; i > 0; i--) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const j = seed % (i + 1);
+      [table[i], table[j]] = [table[j], table[i]];
+    }
+    let substituted = '';
+    for (let i = 0; i < str.length; i++) {
+      substituted += table[parseInt(str[i], 10)];
+    }
+    const lengthChar = String.fromCharCode(65 + (str.length - 1));
+    let sum = 0;
+    for (let i = 0; i < str.length; i++) {
+      sum += parseInt(str[i], 10);
+    }
+    const checksum = (sum * 7) % 10;
+    return lengthChar + checksum + substituted;
+  }
+
+  /**
+   * 从 SteamML (Cloudflare R2 直连桶) 检索并解压清单实体
+   */
+  public async fetchFromSteamML(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
+    const url = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
+    try {
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 7000 });
+      if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
+        return this.unpackZipAndExtractManifests(appId, Buffer.from(resp.data), depotIds, 'steamml');
+      }
+    } catch {}
+    return [];
+  }
+
+  /**
+   * 从 ManifestHub.uk 检索并解压清单实体
+   */
+  public async fetchFromManifestHubUK(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
+    const encId = this.encodeManifestHubUKCipher(appId);
+    const proxyUrl = `https://api.manifesthub.uk/proxy?id=${encId}`;
+    try {
+      const htmlResp = await axios.get(proxyUrl, {
+        timeout: 8000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'Referer': 'https://steamtools.pages.dev/'
+        }
+      });
+      const html = typeof htmlResp.data === 'string' ? htmlResp.data : '';
+      const downloadMatches = Array.from(html.matchAll(/href="(\/download\?[^"]+)"/g)).map((m) => m[1]);
+      for (const href of downloadMatches) {
+        try {
+          const dlUrl = `https://api.manifesthub.uk${href}`;
+          const zipResp = await axios.get(dlUrl, {
+            responseType: 'arraybuffer',
+            timeout: 10000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0',
+              Referer: proxyUrl
+            }
+          });
+          if (zipResp.status === 200 && zipResp.data && zipResp.data.byteLength > 0) {
+            const list = this.unpackZipAndExtractManifests(appId, Buffer.from(zipResp.data), depotIds, 'manifesthub_uk');
+            if (list.length > 0) return list;
+          }
+        } catch {}
+      }
+    } catch {}
+    return [];
+  }
+
+  /**
+   * 解包 ZIP 归档，从中提取 Lua 规则并沉淀 .manifest 实体到本地缓存目录
+   */
+  public unpackZipAndExtractManifests(
+    appId: number,
+    zipBuffer: Buffer,
+    filterDepotIds: string[] = [],
+    sourceName: string = 'upstream_zip'
+  ): DepotManifestInfo[] {
+    const results: DepotManifestInfo[] = [];
+    try {
+      const zip = new AdmZip(zipBuffer);
+      const entries = zip.getEntries();
+
+      let luaContent = '';
+      const manifestEntries: Array<{ depotId: string; manifestId: string; entry: any }> = [];
+
+      for (const entry of entries) {
+        if (entry.isDirectory) continue;
+        const name = path.basename(entry.entryName);
+        if (name.endsWith('.lua')) {
+          luaContent += zip.readAsText(entry) + '\n';
+        } else {
+          const match = name.match(/^(\d+)_(\d+)\.manifest$/i);
+          if (match) {
+            manifestEntries.push({
+              depotId: match[1],
+              manifestId: match[2],
+              entry
+            });
+          }
+        }
+      }
+
+      // 解析 Lua 获取 key 和 gid
+      const gidMap = new Map<string, string>();
+      const keyMap = new Map<string, string>();
+      if (luaContent) {
+        for (const rawLine of luaContent.split('\n')) {
+          const line = rawLine.trim();
+          const mMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d+)"/);
+          if (mMatch && mMatch[2] !== '0') {
+            gidMap.set(mMatch[1], mMatch[2]);
+          }
+          const kMatch = line.match(/^(?:addappid|setDepotKey)\((\d+)\s*,\s*(?:\d+\s*,\s*)?"([0-9a-fA-F]{32,})"/);
+          if (kMatch && !/^0+$/.test(kMatch[2])) {
+            keyMap.set(kMatch[1], kMatch[2]);
+          }
+        }
+      }
+
+      // 解压并落盘所有 .manifest 文件
+      for (const item of manifestEntries) {
+        const fileData = zip.readFile(item.entry);
+        if (fileData && this.isValidManifestBuffer(fileData)) {
+          this.saveManifestFile(item.depotId, item.manifestId, fileData);
+          try {
+            const appDir = path.join(this.manifestDir, String(appId));
+            if (!fs.existsSync(appDir)) fs.mkdirSync(appDir, { recursive: true });
+            fs.writeFileSync(path.join(appDir, `${item.depotId}_${item.manifestId}.manifest`), fileData);
+          } catch {}
+
+          if (filterDepotIds.length === 0 || filterDepotIds.includes(item.depotId)) {
+            const key = keyMap.get(item.depotId) || depotService.getDepotKey(item.depotId) || undefined;
+            results.push({
+              depotId: item.depotId,
+              manifestId: item.manifestId,
+              manifestFileName: `${item.depotId}_${item.manifestId}.manifest`,
+              downloadUrl: `/api/manifests/download/${item.depotId}/${item.manifestId}?appId=${appId}`,
+              source: sourceName,
+              key
+            });
+          }
+        }
+      }
+
+      // 若 manifestEntries 中没有但 Lua 中标明了 GID，且过滤允许，也可加入
+      for (const [dId, gid] of gidMap) {
+        if (!results.some((r) => r.depotId === dId)) {
+          if (filterDepotIds.length === 0 || filterDepotIds.includes(dId)) {
+            const key = keyMap.get(dId) || depotService.getDepotKey(dId) || undefined;
+            results.push({
+              depotId: dId,
+              manifestId: gid,
+              manifestFileName: `${dId}_${gid}.manifest`,
+              downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
+              source: sourceName,
+              key
+            });
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[ManifestService] 解压上游清单 ZIP 异常 (${appId}):`, e.message);
+    }
+    return results;
+  }
+
+  /**
+   * 从 SteamML / ManifestHubUK 多源解析 Lua 并提取元数据（用于 metadataController 兜底补全）
+   */
+  public async extractParsedDataFromMultiSources(appId: number): Promise<{
+    depotKeys: Map<string, string>;
+    manifestGids: Map<string, string>;
+    dlcIds: string[];
+    accessToken?: string;
+  } | null> {
+    // 1. 优先尝试 SteamML (R2)
+    try {
+      const smlUrl = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
+      const resp = await axios.get(smlUrl, { responseType: 'arraybuffer', timeout: 6000 });
+      if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
+        const zipBuf = Buffer.from(resp.data);
+        this.unpackZipAndExtractManifests(appId, zipBuf, [], 'steamml');
+        const parsed = this.parseLuaFromZip(zipBuf, appId);
+        if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
+          return parsed;
+        }
+      }
+    } catch {}
+
+    // 2. 备用尝试 ManifestHub.uk
+    try {
+      const encId = this.encodeManifestHubUKCipher(appId);
+      const proxyUrl = `https://api.manifesthub.uk/proxy?id=${encId}`;
+      const htmlResp = await axios.get(proxyUrl, {
+        timeout: 7000,
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://steamtools.pages.dev/' }
+      });
+      const html = typeof htmlResp.data === 'string' ? htmlResp.data : '';
+      const downloadMatches = Array.from(html.matchAll(/href="(\/download\?[^"]+)"/g)).map((m) => m[1]);
+      for (const href of downloadMatches) {
+        try {
+          const zipResp = await axios.get(`https://api.manifesthub.uk${href}`, {
+            responseType: 'arraybuffer',
+            timeout: 8000,
+            headers: { 'User-Agent': 'Mozilla/5.0', Referer: proxyUrl }
+          });
+          if (zipResp.status === 200 && zipResp.data && zipResp.data.byteLength > 0) {
+            const zipBuf = Buffer.from(zipResp.data);
+            this.unpackZipAndExtractManifests(appId, zipBuf, [], 'manifesthub_uk');
+            const parsed = this.parseLuaFromZip(zipBuf, appId);
+            if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
+              return parsed;
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+
+    return null;
+  }
+
+  /**
+   * 从 ZIP 归档中的 Lua 脚本提取 depotKeys, manifestGids, dlcIds 与 accessToken
+   */
+  public parseLuaFromZip(
+    zipBuffer: Buffer,
+    targetAppId?: number
+  ): {
+    depotKeys: Map<string, string>;
+    manifestGids: Map<string, string>;
+    dlcIds: string[];
+    accessToken?: string;
+  } | null {
+    try {
+      const zip = new AdmZip(zipBuffer);
+      const entries = zip.getEntries();
+      let lua = '';
+      for (const e of entries) {
+        if (!e.isDirectory && e.entryName.endsWith('.lua')) {
+          lua += zip.readAsText(e) + '\n';
+        }
+      }
+      if (!lua) return null;
+
+      const depotKeys = new Map<string, string>();
+      const manifestGids = new Map<string, string>();
+      const dlcIds: string[] = [];
+      const sTarget = targetAppId ? targetAppId.toString() : '';
+      let accessToken: string | undefined;
+
+      for (const rawLine of lua.split('\n')) {
+        const line = rawLine.trim();
+        const addMatch = line.match(/^addappid\((\d+)\s*,\s*\d+\s*,\s*"([0-9a-fA-F]{32,})"\s*\)/);
+        const setKeyMatch = line.match(/^setDepotKey\((\d+)\s*,\s*"([0-9a-fA-F]{32,})"\s*\)/);
+        const keyMatch = addMatch || setKeyMatch;
+        if (keyMatch) {
+          const depotId = keyMatch[1];
+          const key = keyMatch[2];
+          if (!/^0+$/.test(key)) depotKeys.set(depotId, key);
+          continue;
+        }
+        const simpleAddMatch = line.match(/^addappid\((\d+)\s*(?:,\s*\d+)?\s*\)/);
+        if (simpleAddMatch) {
+          const id = simpleAddMatch[1];
+          if (id !== sTarget && !dlcIds.includes(id)) {
+            dlcIds.push(id);
+          }
+          continue;
+        }
+        const gidMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d{5,})"/);
+        if (gidMatch && gidMatch[2] !== '0') {
+          manifestGids.set(gidMatch[1], gidMatch[2]);
+          continue;
+        }
+        const tokenMatch = line.match(/^addtoken\((\d+)\s*,\s*"([0-9a-fA-F]+)"\s*\)/);
+        if (tokenMatch) {
+          accessToken = tokenMatch[2];
+        }
+      }
+      return { depotKeys, manifestGids, dlcIds, accessToken };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 确保指定清单在服务端本地 manifests/ 目录中就绪
    * 若本地不存在，则从 steamtools-games/ManifestHub3 回源拉取并沉淀落盘（Cache-Through 模式）
    */
@@ -360,6 +691,7 @@ export class ManifestService {
       candidateAppIds.push(depotId);
     }
 
+    // 1. 优先尝试 ManifestHub3 GitHub 镜像与直连
     const proxyBases = [
       'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
       'https://ghproxy.net/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
@@ -386,6 +718,26 @@ export class ManifestService {
           }
         } catch {}
       }
+    }
+
+    // 2. 尝试从 SteamML / ManifestHubUK 多源回源拉取并解压沉淀
+    const searchAppId = appId && appId > 0 ? appId : Number(depotId);
+    if (searchAppId > 0) {
+      try {
+        await this.fetchFromSteamML(searchAppId, [depotId]);
+        const recheck1 = this.getLocalManifestFilePath(depotId, manifestId, appId);
+        if (recheck1 && fs.existsSync(recheck1)) {
+          return recheck1;
+        }
+      } catch {}
+
+      try {
+        await this.fetchFromManifestHubUK(searchAppId, [depotId]);
+        const recheck2 = this.getLocalManifestFilePath(depotId, manifestId, appId);
+        if (recheck2 && fs.existsSync(recheck2)) {
+          return recheck2;
+        }
+      } catch {}
     }
 
     return null;

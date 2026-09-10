@@ -26,6 +26,7 @@
   },
   "homepage": "https://gitee.com/muyan6/steam",
   "dependencies": {
+    "adm-zip": "^0.6.0",
     "axios": "^1.7.9",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -34,6 +35,7 @@
     "pinyin-pro": "^3.27.0"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.1",

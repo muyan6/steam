@@ -360,8 +360,18 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     // 关键原理：SteamCMD 返回的是 Valve 云端实时构建号，但 Valve CM 接口已严厉封禁非拥有者索码；
     // 若使用 SteamCMD 的虚假最新 GID，会导致客户端与服务端均无法找到 .manifest 实体文件（404），
     // 进而迫使 Steam 向官方索码触发 403 Access Denied（无互联网连接）；
-    // 只有 ManifestHub3 实际归档并提供实体下载的 GID，才能保证 100% 成功下载与解密！
+    // 只有 ManifestHub3 / SteamML 实际归档并提供实体下载的 GID，才能保证 100% 成功下载与解密！
     let hub3Data: ManifestHub3Data | null = await fetchManifestHub3(appId);
+    if (!hub3Data || hub3Data.depotKeys.size === 0) {
+      try {
+        const multiData = await manifestService.extractParsedDataFromMultiSources(appId);
+        if (multiData && (multiData.depotKeys.size > 0 || multiData.manifestGids.size > 0)) {
+          hub3Data = multiData;
+        }
+      } catch (err: any) {
+        console.warn(`[MetadataController] 多源清单库提取失败 (${appId}):`, err.message);
+      }
+    }
     if (hub3Data) {
       if (Array.isArray(hub3Data.dlcIds) && hub3Data.dlcIds.length > 0) {
         dlcIds = Array.from(new Set([...dlcIds, ...hub3Data.dlcIds]));
