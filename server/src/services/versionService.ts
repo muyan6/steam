@@ -217,17 +217,10 @@ export class VersionService {
     let hasUpdate = false;
     let force = false;
 
-    // 当客户端与服务端最新版本不一致时判定升级
-    if (cleanClient !== cleanLatest) {
-      if (isLegacy5x || isLower) {
-        hasUpdate = true;
-      } else if (latest.forceUpdate) {
-        // 后台标记强制全量升级，所有非最新版本的客户端均须强制更新
-        hasUpdate = true;
-      }
-    }
-
-    if (hasUpdate) {
+    // 严格语义版本比对：只有当服务端最新版本严格高于客户端当前版本时，才判定存在更新
+    // 若客户端版本 >= 服务端版本（例如开发/构建的本地新版本），坚决不提示更新，杜绝倒挂反向弹窗！
+    if (isLegacy5x || isLower) {
+      hasUpdate = true;
       if (latest.forceUpdate || isLegacy5x) {
         force = true;
       } else if (
@@ -236,6 +229,9 @@ export class VersionService {
       ) {
         force = true;
       }
+    } else {
+      hasUpdate = false;
+      force = false;
     }
 
     return {

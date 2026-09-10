@@ -52,6 +52,33 @@ export async function getJson<T = any>(url: string, timeoutMs = 8000): Promise<T
   }
 }
 
+/**
+ * 语义化版本号比较：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0
+ * 历史 5.x 异常测试版本特殊兼容：5.x 客户端始终视为旧版本
+ */
+export function compareSemver(v1: string, v2: string): number {
+  const clean1 = (v1 || '0').replace(/^v/i, '').trim();
+  const clean2 = (v2 || '0').replace(/^v/i, '').trim();
+
+  // 历史 5.x 客户端倒挂兼容：5.x 始终视为历史遗留测试包（低于 2.x/3.x）
+  const isLegacy1 = clean1.startsWith('5.');
+  const isLegacy2 = clean2.startsWith('5.');
+  if (isLegacy1 && !isLegacy2) return -1;
+  if (!isLegacy1 && isLegacy2) return 1;
+
+  const parts1 = clean1.split('.').map((n) => parseInt(n, 10) || 0);
+  const parts2 = clean2.split('.').map((n) => parseInt(n, 10) || 0);
+  const len = Math.max(parts1.length, parts2.length);
+
+  for (let i = 0; i < len; i++) {
+    const p1 = parts1[i] || 0;
+    const p2 = parts2[i] || 0;
+    if (p1 > p2) return 1;
+    if (p1 < p2) return -1;
+  }
+  return 0;
+}
+
 /** 网络 POST 请求统一走 Tauri Rust 通道（无 CORS 限制）；失败返回 null */
 export async function postJson<T = any>(url: string, body?: any, timeoutMs = 8000): Promise<T | null> {
   const ctrl = new AbortController();
@@ -750,15 +777,21 @@ export const createTauriBridge = () => {
       const json = await getJson(`${API}/api/version/check?version=${current}`, 3000);
       const data = json?.data || { hasUpdate: false };
 
-      // 客户端双重保障：
-      // 若本地为历史异常版本（5.x）或服务端标记强制更新且版本不一致，强制激活更新弹窗
+      // 客户端严格防御语义校验：
+      // 核心原则：只有当云端最新版本严格高于当前客户端版本时（cleanLatest > current），才判定存在更新！
+      // 若当前客户端版本 >= 云端版本（例如本地已编译 2.7.1，而云端尚未部署仍为 2.7.0），
+      // 坚决判定为无需更新（hasUpdate = false），严禁倒挂/反向降级弹窗！
       if (data && data.latest && data.latest.version) {
         const cleanLatest = String(data.latest.version).replace(/^v/i, '').trim();
-        if (current !== cleanLatest) {
-          if (current.startsWith('5.') || data.latest.forceUpdate) {
-            data.hasUpdate = true;
-            data.forceUpdate = Boolean(data.latest.forceUpdate || current.startsWith('5.'));
-          }
+        const isClientLower = compareSemver(cleanLatest, current) > 0;
+        const isLegacy5x = current.startsWith('5.');
+
+        if (isLegacy5x || isClientLower) {
+          data.hasUpdate = true;
+          data.forceUpdate = Boolean(data.latest.forceUpdate || isLegacy5x);
+        } else {
+          data.hasUpdate = false;
+          data.forceUpdate = false;
         }
       }
 
