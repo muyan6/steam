@@ -353,6 +353,7 @@ import {
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
   (e: 'open-disclaimer'): void;
+  (e: 'show-version-modal', modal: any): void;
 }>();
 
 const appVersion = APP_CONFIG.VERSION;
@@ -545,7 +546,8 @@ const checkUpdates = async () => {
   try {
     const res = await window.electronAPI.checkVersion(appVersion);
     if (res && res.hasUpdate && res.latest?.version) {
-      emit('notify', `发现新版本 v${res.latest.version}，可前往下载！`, 'info');
+      emit('show-version-modal', res);
+      emit('notify', `发现新版本 v${res.latest.version}，已为您打开更新窗口！`, 'info');
     } else {
       emit('notify', '当前已是最新版本 (v' + appVersion + ')！', 'success');
     }

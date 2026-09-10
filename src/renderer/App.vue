@@ -191,11 +191,13 @@
           v-else-if="currentTab === 'features'"
           @notify="addToast"
           @open-disclaimer="openDisclaimerModal"
+          @show-version-modal="(val) => (versionModal = val)"
         />
         <AboutView
           v-else-if="currentTab === 'about'"
           @notify="addToast"
           @open-disclaimer="openDisclaimerModal"
+          @show-version-modal="(val) => (versionModal = val)"
         />
         <SettingsView
           v-else-if="currentTab === 'settings'"
@@ -819,7 +821,7 @@ const checkNoticeAndVersion = async () => {
     }
 
     const versionRes = await window.electronAPI.checkVersion(appVersion);
-    if (versionRes && versionRes.hasUpdate) {
+    if (versionRes && versionRes.hasUpdate && updateState.value === 'idle') {
       versionModal.value = versionRes;
     }
   } catch (e) {
@@ -900,6 +902,7 @@ const syncMaximizedState = async () => {
 
 let steamInfoTimer: ReturnType<typeof setInterval> | null = null;
 let licenseTimer: ReturnType<typeof setInterval> | null = null;
+let versionCheckTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
   initApp();
@@ -910,6 +913,8 @@ onMounted(() => {
   // 15s 轮询一次 Steam 环境信息即可，5s 过于频繁（纯状态展示无实时性要求）
   steamInfoTimer = setInterval(fetchSteamInfo, 15000);
   licenseTimer = setInterval(() => loadLicenseInfo(false), 30000);
+  // 3 分钟轻量静默轮询云端公告与新版本更新，确保长时间开启的客户端能实时接收发布与推送
+  versionCheckTimer = setInterval(checkNoticeAndVersion, 3 * 60 * 1000);
   // 每日一次的 OST 内核更新静默检测：有新版才轻提示，检测失败不打扰
   const OST_CHECK_KEY = 'ost_last_sync_check';
   const lastCheck = Number(localStorage.getItem(OST_CHECK_KEY) || 0);
@@ -934,5 +939,6 @@ onUnmounted(() => {
   window.removeEventListener('resize', syncMaximizedState);
   if (steamInfoTimer) { clearInterval(steamInfoTimer); steamInfoTimer = null; }
   if (licenseTimer) { clearInterval(licenseTimer); licenseTimer = null; }
+  if (versionCheckTimer) { clearInterval(versionCheckTimer); versionCheckTimer = null; }
 });
 </script>

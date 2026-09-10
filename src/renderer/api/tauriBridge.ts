@@ -733,8 +733,23 @@ export const createTauriBridge = () => {
       return json.data;
     },
     checkVersion: async (ver?: string): Promise<any> => {
-      const json = await getJson(`${API}/api/version/check?version=${ver || '1.0.0'}`, 3000);
-      return json?.data || { hasUpdate: false };
+      const current = (ver || APP_CONFIG.VERSION || '1.0.0').replace(/^v/i, '').trim();
+      const json = await getJson(`${API}/api/version/check?version=${current}`, 3000);
+      const data = json?.data || { hasUpdate: false };
+
+      // 客户端双重保障：
+      // 若本地为历史异常版本（5.x）或服务端标记强制更新且版本不一致，强制激活更新弹窗
+      if (data && data.latest && data.latest.version) {
+        const cleanLatest = String(data.latest.version).replace(/^v/i, '').trim();
+        if (current !== cleanLatest) {
+          if (current.startsWith('5.') || data.latest.forceUpdate) {
+            data.hasUpdate = true;
+            data.forceUpdate = Boolean(data.latest.forceUpdate || current.startsWith('5.'));
+          }
+        }
+      }
+
+      return data;
     },
     // 应用内更新：下载进度经 update-download-progress 事件上报（Rust 端流式下载），
     // 完成返回安装包临时路径；拉起安装器后应用自动退出

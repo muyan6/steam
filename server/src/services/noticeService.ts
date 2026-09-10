@@ -216,8 +216,16 @@ export class NoticeService {
   }
 
   private compareVersions(v1: string, v2: string): number {
-    const p1 = v1.split('.').map((n) => parseInt(n, 10) || 0);
-    const p2 = v2.split('.').map((n) => parseInt(n, 10) || 0);
+    const clean1 = (v1 || '0').replace(/^v/i, '').trim();
+    const clean2 = (v2 || '0').replace(/^v/i, '').trim();
+
+    const isLegacy1 = clean1.startsWith('5.');
+    const isLegacy2 = clean2.startsWith('5.');
+    if (isLegacy1 && !isLegacy2) return -1;
+    if (!isLegacy1 && isLegacy2) return 1;
+
+    const p1 = clean1.split('.').map((n) => parseInt(n, 10) || 0);
+    const p2 = clean2.split('.').map((n) => parseInt(n, 10) || 0);
     const len = Math.max(p1.length, p2.length);
     for (let i = 0; i < len; i++) {
       const a = p1[i] || 0;

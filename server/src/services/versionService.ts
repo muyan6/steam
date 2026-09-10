@@ -132,8 +132,19 @@ export class VersionService {
    * 语义化版本号比较：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0
    */
   public compareVersions(v1: string, v2: string): number {
-    const parts1 = (v1 || '0').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
-    const parts2 = (v2 || '0').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+    const clean1 = (v1 || '0').replace(/^v/i, '').trim();
+    const clean2 = (v2 || '0').replace(/^v/i, '').trim();
+
+    // 历史异常测试版本特殊兼容（如 5.6.0）：
+    // 仓库历史提交曾误将客户端版本号标记为 5.6.0，而项目正式发布序列为 2.x
+    // 5.x 客户端属于历史遗留测试包，在与 2.x/3.x 正式版本比对时，5.x 始终视为旧版本
+    const isLegacy1 = clean1.startsWith('5.');
+    const isLegacy2 = clean2.startsWith('5.');
+    if (isLegacy1 && !isLegacy2) return -1;
+    if (!isLegacy1 && isLegacy2) return 1;
+
+    const parts1 = clean1.split('.').map((n) => parseInt(n, 10) || 0);
+    const parts2 = clean2.split('.').map((n) => parseInt(n, 10) || 0);
     const len = Math.max(parts1.length, parts2.length);
 
     for (let i = 0; i < len; i++) {
@@ -197,11 +208,27 @@ export class VersionService {
     forceUpdate: boolean;
   } {
     const latest = this.getLatestVersion(channel) || this.defaultRelease();
-    const hasUpdate = this.compareVersions(latest.version, currentVersion) > 0;
+    const cleanClient = (currentVersion || '0').replace(/^v/i, '').trim();
+    const cleanLatest = (latest.version || '0').replace(/^v/i, '').trim();
 
+    const isLegacy5x = cleanClient.startsWith('5.');
+    const isLower = this.compareVersions(latest.version, currentVersion) > 0;
+
+    let hasUpdate = false;
     let force = false;
+
+    // 当客户端与服务端最新版本不一致时判定升级
+    if (cleanClient !== cleanLatest) {
+      if (isLegacy5x || isLower) {
+        hasUpdate = true;
+      } else if (latest.forceUpdate) {
+        // 后台标记强制全量升级，所有非最新版本的客户端均须强制更新
+        hasUpdate = true;
+      }
+    }
+
     if (hasUpdate) {
-      if (latest.forceUpdate) {
+      if (latest.forceUpdate || isLegacy5x) {
         force = true;
       } else if (
         latest.minSupportedVersion &&

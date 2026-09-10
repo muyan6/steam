@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { versionService } from '../services/versionService.js';
 import { authService } from '../services/authService.js';
+import { noticeService } from '../services/noticeService.js';
 
 // 审计 IP 只取 socket 真实地址（X-Forwarded-For 可任意伪造）
 const getClientIp = (req: Request): string => {
@@ -194,6 +195,23 @@ export const pushBroadcastAdmin = (req: Request, res: Response) => {
     }
 
     const record = versionService.pushBroadcast(version, title, content, operator);
+
+    // 关键联动：向 noticeService 自动同步一条全网置顶高优先级版本升级弹窗，确保全部客户端即时捕获更新
+    try {
+      noticeService.createNotice({
+        title: record.title,
+        content: record.content || `春风渡 v${version} 现已发布，请及时更新升级！`,
+        type: 'popup',
+        level: 'info',
+        interaction: 'confirm',
+        priority: 999,
+        targetVersion: '*',
+        popupOnce: false,
+        enabled: true
+      });
+    } catch (noticeErr) {
+      console.warn('[VersionController] 同步全网广播公告失败:', noticeErr);
+    }
 
     authService.recordAuditLog({
       action: 'VERSION_PUSH_BROADCAST',
