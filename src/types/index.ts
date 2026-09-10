@@ -62,8 +62,15 @@ export interface DepotInfo {
   depotKey?: string;
 }
 
+export interface ManifestProbeInfo {
+  status: 'ready' | 'dynamic' | 'missing';
+  hasPhysicalManifest: boolean;
+  readyCount: number;
+  totalCount: number;
+}
+
 export interface GameMetadata {
-  appId: string;
+  appId: string | number;
   name: string;
   depots: DepotInfo[];
   dlcIds: string[];
@@ -71,6 +78,7 @@ export interface GameMetadata {
   accessToken?: string;
   workshopKey?: string;
   appLevelKey?: string;
+  manifestInfo?: ManifestProbeInfo;
 }
 
 export interface LuaGameInfo {

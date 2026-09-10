@@ -292,35 +292,6 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
             }
             let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
 
-            // 核心断言：若该游戏清单实体未完全就绪（precache_ok_count == 0 或未能获取到全部清单），
-            // 坚决不落无效规则，撤销刚刚生成的脚本并直接提示用户「获取失败」
-            if precache_ok_count == 0 || (precache_total > 0 && precache_ok_count < precache_total) {
-                let _ = std::fs::remove_file(&res.lua_path);
-                let legacy_file = steam_path.join("st_scripts").join(format!("{}.lua", payload.app_id));
-                let _ = std::fs::remove_file(&legacy_file);
-                ost::sync_greenluma_app_list(steam_path);
-                let err_msg = if precache_ok_count == 0 {
-                    format!("获取失败：未获取到「{}」的清单实体文件（云端暂未收录该游戏的物理清单文件）", name)
-                } else {
-                    format!(
-                        "获取失败：未能完整获取「{}」的全部清单实体（已就绪 {}/{}，缺少 {} 个分包清单）",
-                        name, precache_ok_count, precache_total, precache_total - precache_ok_count
-                    )
-                };
-                return json!({
-                    "success": false,
-                    "message": err_msg,
-                    "scriptPath": "",
-                    "keyCount": 0,
-                    "manifestCount": 0,
-                    "metadataOk": false,
-                    "metadataMessage": Some("云端暂未完整收录该游戏的物理清单文件"),
-                    "precacheOk": precache_ok_count,
-                    "precacheTotal": precache_total,
-                    "missingManifests": true
-                });
-            }
-
             // 只有真正注入了分包密钥才提示"可直接下载"；
             // 仅有清单 GID（如 SteamCMD 降级数据）时如实警告下载可能 0 字节
             let message = if res.metadata_ok && res.key_count > 0 {
@@ -329,15 +300,20 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                 } else {
                     "版本跟随官方最新".to_string()
                 };
-                if missing_manifests {
+                if precache_ok_count > 0 && precache_ok_count == precache_total {
+                    format!(
+                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！若 Steam 下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
+                        name, res.key_count, version_text, res.dlc_count, precache_text
+                    )
+                } else if precache_ok_count > 0 {
                     format!(
                         "为「{}」写入入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！【提示】部分扩展分包清单未收录，核心内容已就绪；若 Steam 提示加密，点击左下角【重启 Steam】即可生效！",
                         name, res.key_count, version_text, res.dlc_count, precache_text
                     )
                 } else {
                     format!(
-                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！若 Steam 下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
-                        name, res.key_count, version_text, res.dlc_count, precache_text
+                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC）！【提示】云端物理清单库暂未收录该版本离线清单实体，若 Steam 提示缺少清单，可尝试直接在 Steam 点击下载（由动态清单调度），或通过群文件/第三方将清单导入 depotcache 文件夹。",
+                        name, res.key_count, version_text, res.dlc_count
                     )
                 }
             } else if res.metadata_ok && res.manifest_count > 0 {
@@ -352,12 +328,8 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                 )
             } else {
                 format!(
-                    "已为「{}」写入入库授权，但未能获取分包密钥与清单，下载可能为 0 字节！{}请检查网络后重新入库，或在库中对该游戏执行「预缓存」。",
-                    name,
-                    res.metadata_message
-                        .as_deref()
-                        .map(|m| format!("原因：{}。", m))
-                        .unwrap_or_default()
+                    "已为「{}」写入本地规则（离线模式），但未获取到云端密钥与清单数据。若下载提示无许可，请联网后重试入库！",
+                    name
                 )
             };
             json!({

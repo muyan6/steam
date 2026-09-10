@@ -315,18 +315,11 @@ export const getGameMetadata = async (req: Request, res: Response) => {
 
             let manifestGid = '';
             if ((info as any).manifests && typeof (info as any).manifests === 'object') {
-              // SteamCMD 返回的分支顺序不固定，优先取 public 分支
+              // SteamCMD 返回的分支顺序不固定，优先取 public 分支真实构建 GID
               const branchEntries = Object.entries((info as any).manifests) as Array<[string, any]>;
               const chosen = branchEntries.find(([b, v]) => b === 'public' && v && v.gid) || branchEntries.find(([, v]) => v && v.gid);
-              if (chosen) {
-                const candidateGid = chosen[1].gid.toString();
-                // 严密防线：SteamCMD GID 仅为构建号；
-                // 只有在服务端本地确有有效 .manifest 实体时，才提前赋予该 GID；
-                // 否则交由 4.5 步骤从 ManifestHub3 确认具有实体文件的分支真实 GID，杜绝无实体假 GID
-                const localPath = manifestService.getLocalManifestFilePath(dId, candidateGid, appId);
-                if (localPath) {
-                  manifestGid = candidateGid;
-                }
+              if (chosen && chosen[1].gid) {
+                manifestGid = chosen[1].gid.toString();
               }
             }
 
@@ -350,30 +343,27 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       } catch {}
     }
 
-    // 4. 后端内存密钥库高精度匹配（28.8万条 DepotKeys）
+    // 4. 后端内存密钥库高精度匹配（28.8万/30万条 DepotKeys - 核心旧源）
     const matchedKeys = await depotService.getDepotsForGame(
       appId,
       dlcIds.map((d) => parseInt(d, 10)).filter((n) => !isNaN(n))
     );
 
-    // 为主分包注入有效密钥（绝不保留全 0 占位符）
+    // 为已识别分包注入有效密钥，并补入 30w 密钥库命中的其他关联有效分包（杜绝无许可）
     for (const d of depots) {
       if ((!d.depotKey || !isValidKey(d.depotKey)) && matchedKeys[d.depotId]) {
         d.depotKey = matchedKeys[d.depotId];
       }
     }
-
-    // 铁律：DLC 授权统一通过 dlcIds 下发，客户端以 addappid(dlcId) 纯许可挂载；
-    // 严禁通过 dlcBase+0..10 盲目递增猜测分包（如 2672611 等占位分包），
-    // 否则客户端写入 addappid(candId, 1, key) 必然导致 Steam 尝试索取清单报 401 Unauthorized 未知错误。
-    // 仅当 SteamCMD 或 ManifestHub3 明确收录且具备真实清单 GID 的分包才允许下发。
-    const claimedDepotIds = new Set(depots.map((d) => d.depotId));
+    for (const [dId, key] of Object.entries(matchedKeys)) {
+      if (!isValidKey(key)) continue;
+      if (!depots.some((d) => d.depotId === dId)) {
+        depots.push({ depotId: dId, depotKey: key });
+      }
+    }
 
     // 4.5 社区实体清单库并发竞速对齐（ManifestHub3 镜像 + SteamML R2 并发并行提取）：
-    // 关键原理：SteamCMD 返回的是 Valve 云端实时构建号，但 Valve CM 接口已严厉封禁非拥有者索码；
-    // 若使用 SteamCMD 的虚假最新 GID，会导致客户端与服务端均无法找到 .manifest 实体文件（404），
-    // 进而迫使 Steam 向官方索码触发 403 Access Denied（无互联网连接）；
-    // 只有 ManifestHub3 / SteamML 实际归档并提供实体下载的 GID，才能保证 100% 成功下载与解密！
+    // 关键原理：优先采用社区归档的清单 GID，保障物理清单下载成功率与密钥完整性
     let hub3Data: ManifestHub3Data | null = null;
     try {
       const [hub3Res, multiRes] = await Promise.allSettled([
@@ -412,46 +402,65 @@ export const getGameMetadata = async (req: Request, res: Response) => {
         if (!isValidKey(d.depotKey) && hub3Data.depotKeys.has(d.depotId)) {
           d.depotKey = hub3Data.depotKeys.get(d.depotId);
         }
-        // 核心对齐：优先使用 ManifestHub3 具备实体文件的清单 GID
+        // 优先使用社区具备实体文件的清单 GID
         if (hub3Data.manifestGids.has(d.depotId)) {
           d.manifestGid = hub3Data.manifestGids.get(d.depotId);
         }
       }
-      // 本地数据完全没有的分包（新 DLC / 新增 depot）一并补入（必须带清单 GID）
+      // 本地数据完全没有的分包一并补入
       for (const [dId, key] of hub3Data.depotKeys) {
         if (knownDepots.has(dId)) continue;
         const gid = hub3Data.manifestGids.get(dId);
-        if (gid && /^\d+$/.test(gid) && gid !== '0') {
-          depots.push({ depotId: dId, depotKey: key, manifestGid: gid });
-          knownDepots.add(dId);
-        }
+        depots.push({ depotId: dId, depotKey: key, manifestGid: gid });
+        knownDepots.add(dId);
       }
     }
 
-    // 严密防线：内容分包必须同时具备有效解密密钥与有效清单 GID！
-    // 无清单 GID 的分包绝不下发为内容分包，杜绝客户端挂载后触发 Steam 401“未知错误”
-    depots = depots.filter(
-      (d) => isValidKey(d.depotKey) && d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0'
-    );
+    // 铁律防御：分包必须具备有效解密密钥（非全0、长度>=32），防止 Steam 尝试解密无密钥分包报“内容仍然处于加密状态”
+    // 注意：绝不因为暂无清单 GID 过滤分包，所有拥有密钥的分包必须 100% 注入 Steam，彻底绝迹“无许可”！
+    depots = depots.filter((d) => isValidKey(d.depotKey));
 
-    // 严密断言：必须具备实际有效的清单 GID（无清单文件即无法通过 Steam 下载）
-    const hasValidManifest = depots.length > 0;
-
-    // 严密防线：若云端无任何有效分包、或没有任何有效清单实体 GID，直接响应「暂时没有这款游戏」
-    if (depots.length === 0 || !hasValidManifest) {
-      return res.status(200).json({
-        success: false,
-        message: `暂时没有这款游戏（云端暂未收录 AppID ${sAppId} 的清单实体文件）`,
-        data: null
-      });
-    }
-
-    // 5. 获取 PICS Access Token
+    // 5. 获取 PICS Access Token 与主游戏本体 Key
     const appLevelKey =
       matchedKeys[sAppId] || depotService.getDepotKey(sAppId) || hub3Data?.depotKeys.get(sAppId) || undefined;
     const accessToken = tokenService.getTokenByAppId(sAppId) || hub3Data?.accessToken || undefined;
 
-    // 6. 异步后台触发清单本地沉淀（非阻塞），确保用户后续在客户端一键入库或预缓存时秒级响应
+    // 严密防线：若云端既无任何有效分包密钥、也无本体密钥，且无可用元数据，才响应「暂时没有这款游戏」
+    if (depots.length === 0 && !isValidKey(appLevelKey)) {
+      return res.status(200).json({
+        success: false,
+        message: `暂时没有这款游戏（云端暂未收录 AppID ${sAppId} 的解密密钥数据）`,
+        data: null
+      });
+    }
+
+    // 6. 物理清单可用性非破坏性轻量探针（Pre-flight Probe）
+    let readyManifestCount = 0;
+    for (const d of depots) {
+      if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
+        const localPath = manifestService.getLocalManifestFilePath(d.depotId, d.manifestGid, appId);
+        if (localPath) {
+          readyManifestCount++;
+        }
+      }
+    }
+
+    const hasGidCount = depots.filter((d) => d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0').length;
+    const manifestStatus: 'ready' | 'dynamic' | 'missing' =
+      readyManifestCount > 0 && readyManifestCount >= depots.length
+        ? 'ready'
+        : hasGidCount > 0
+        ? 'dynamic'
+        : 'missing';
+
+    const manifestInfo = {
+      status: manifestStatus,
+      hasPhysicalManifest: readyManifestCount > 0,
+      readyCount: readyManifestCount,
+      totalCount: depots.length
+    };
+
+    // 7. 异步后台触发清单本地沉淀（非阻塞），确保后续秒级响应
     for (const d of depots) {
       if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
         manifestService.ensureManifestCached(d.depotId, d.manifestGid, appId).catch(() => {});
@@ -461,17 +470,19 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     return res.json({
       success: true,
       data: {
-        appId, // 统一 number 类型（其余接口均为 number，原字符串类型违反 DTO 规范）
+        appId, // 统一 number 类型
         name: gameName || `AppID ${sAppId}`,
         depots,
         dlcIds,
         dlcDepots,
         appLevelKey,
-        accessToken
+        accessToken,
+        manifestInfo
       }
     });
   } catch (e: any) {
     console.error('[MetadataController] 获取游戏元数据异常:', e);
     return res.status(500).json({ success: false, message: '获取元数据失败，请稍后重试' });
+
   }
 };

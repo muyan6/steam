@@ -303,17 +303,10 @@ pub struct AppMetadata {
 pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
     match parse_metadata_from_server(app_id) {
         Ok(mut m) if !m.depots.is_empty() => {
-            // 双端防御：即使服务端尚未重启部署或混入了 SteamCMD 虚假无实体 GID，
-            // 客户端自动与 ManifestHub3 对齐真实存在的清单实体 GID，确保 100% 可下载
+            // 双端防御：客户端自动与 ManifestHub3 对齐真实存在的清单实体 GID
             align_manifest_gids_with_hub3(&mut m, app_id);
-            let has_manifest = m.depots.iter().any(|d| {
-                d.manifest_gid.as_deref().map(|g| !g.is_empty() && g != "0").unwrap_or(false)
-            });
-            if has_manifest {
-                Ok(m)
-            } else {
-                fetch_metadata_from_backup_sources(app_id)
-            }
+            // 只要服务端成功返回分包与密钥，直接返回元数据，100% 确保密钥注入 Steam
+            Ok(m)
         }
         // 授权被拒（未激活/免费额度耗尽）属于权限问题而非数据问题：
         // 直接透传服务端原因并终止，不再降级（降级也拿不到密钥）
@@ -700,12 +693,9 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
     };
 
     let meta = parse_lua_metadata(&lua, app_id);
-    let has_manifest = meta.depots.iter().any(|d| {
-        d.manifest_gid.as_deref().map(|g| !g.is_empty() && g != "0").unwrap_or(false)
-    });
-    if meta.depots.is_empty() || !has_manifest {
+    if meta.depots.is_empty() {
         return Err(format!(
-            "暂时没有这款游戏（云端暂未收录 AppID {} 的清单实体文件）",
+            "暂时没有这款游戏（备用容灾源暂未收录 AppID {} 的分包与密钥数据）",
             app_id
         ));
     }

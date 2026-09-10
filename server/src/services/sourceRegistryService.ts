@@ -106,6 +106,34 @@ export class SourceRegistryService {
       description: '提供精准的 Depots 架构树与最新 Manifest GID（清单版本号）实时校验。',
       licenseOrNote: '公共只读 API。'
     },
+    remlua_cdn: {
+      id: 'remlua_cdn',
+      name: 'Remlua AWS CloudFront 全球 CDN 清单库',
+      author: 'Remlua / OpenSteam Community',
+      category: 'manifests',
+      sourceUrl: 'https://d2xt384j51hxca.cloudfront.net/',
+      endpointUrl: 'https://d2xt384j51hxca.cloudfront.net/manifests/{depotId}_{gid}.manifest',
+      syncFrequency: '并发按需毫秒级竞速拉取',
+      status: 'ready',
+      lastSyncTime: '实时加速',
+      totalRecordsCount: 45000,
+      description: 'AWS 边缘高速全球分发网络，覆盖最新 3A 大作与主流热门游戏二进制清单实体。',
+      licenseOrNote: '全球 CDN 静态直连。'
+    },
+    steamml_r2: {
+      id: 'steamml_r2',
+      name: 'SteamML Cloudflare R2 实体清单存储桶',
+      author: 'SteamML 团队 / 社区贡献者',
+      category: 'manifests',
+      sourceUrl: 'https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/',
+      endpointUrl: 'https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{appId}.zip',
+      syncFrequency: '并发按需并行提取',
+      status: 'ready',
+      lastSyncTime: '实时在线',
+      totalRecordsCount: 82000,
+      description: 'Cloudflare 全球 R2 零出口费用对象存储桶，打包提供全量分包的二进制清单文件与 DLC 架构。',
+      licenseOrNote: '社区开源 R2 镜像分发。'
+    },
     opensteam_hook: {
       id: 'opensteam_hook',
       name: 'OpenSteamTool 64位注入 Hook 核心组件',

@@ -87,8 +87,25 @@ pub fn deploy_manifest_lua(steam_path: &Path) -> Result<(), String> {
         return body
     end
 
-    -- [已封存] 鉴于第三方公共清单代码源 (wudrm, guyunsq, steam.run) 均已失效或 502/404，
-    -- 为防止 Steam 客户端超时卡顿与长时间等待，已封存后续请求，未命中直接返回 nil
+    -- 第二优先级：wudrm 官方清单代码源 (动态清单代码分发与兜底)
+    body, status = http_get("http://gmrc.wudrm.com/manifest/" .. gid)
+    if status == 200 and body and body:match("^%d+$") then
+        return body
+    end
+
+    -- 第三优先级：古韵高速镜像源 (国内直连专线，毫秒级响应)
+    body, status = http_get("https://gmrc.guyunsq.com/" .. gid)
+    if status == 200 and body and body:match("^%d+$") then
+        return body
+    end
+
+    -- 第四优先级：steamrun 亚太源
+    body, status = http_get("https://manifest.steam.run/api/manifest/" .. gid)
+    if status == 200 and body then
+        local code = body:match('"content":"(%d+)"')
+        if code then return code end
+    end
+
     return nil
 end
 
@@ -277,18 +294,11 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
             }
             match depot.depot_key.as_deref() {
                 Some(k) if is_valid_key(k.trim()) => {
-                    // 铁律防御：只有具备有效清单 GID（manifest_id）的分包才允许以内容分包方式挂载（addappid(d, 1, key)）
-                    // 若无有效清单 GID，挂载后 Steam 必然向 Valve CDN 索取清单报 401 Unauthorized 导致“未知错误”
-                    let has_manifest = depot
-                        .manifest_id
-                        .as_deref()
-                        .map(|m| !m.trim().is_empty() && m.trim() != "0")
-                        .unwrap_or(false);
-                    if has_manifest {
-                        seen.push(depot.depot_id);
-                        lines.push(format!("addappid({}, 1, \"{}\")", depot.depot_id, k.trim()));
-                        lines.push(format!("setDepotKey({}, \"{}\")", depot.depot_id, k.trim()));
-                    }
+                    // 铁律：所有具备有效解密密钥的分包，100% 写入 setDepotKey 与 addappid
+                    // 绝不能因为清单 GID 暂未缓存就漏写密钥，否则 Steam 必定弹窗报错“无许可”！
+                    seen.push(depot.depot_id);
+                    lines.push(format!("addappid({}, 1, \"{}\")", depot.depot_id, k.trim()));
+                    lines.push(format!("setDepotKey({}, \"{}\")", depot.depot_id, k.trim()));
                 }
                 _ => {
                     // 无有效密钥的分包绝不写入 addappid，防止触发 Steam 无法解密的加密状态假死
@@ -446,10 +456,10 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
     let depot_count = merged.depots.as_ref().map(|d| d.len()).unwrap_or(0);
     let dlc_count = merged.dlcs.as_ref().map(|d| d.len()).unwrap_or(0);
 
-    // 严密防线：如果没有从云端获取到任何有效清单 GID，坚决不写无效空规则，直接返回提示
-    if manifest_count == 0 {
+    // 严密防线：如果云端与备用源均未收录该游戏（无元数据且无任何密钥），坚决不写无效空规则，直接返回提示
+    if !metadata_ok && key_count == 0 && manifest_count == 0 {
         return Err(metadata_message.unwrap_or_else(|| {
-            format!("暂时没有这款游戏（云端暂未收录 AppID {} 的清单实体文件）", payload.app_id)
+            format!("暂时没有这款游戏（云端暂未收录 AppID {} 的解密数据）", payload.app_id)
         }));
     }
 
