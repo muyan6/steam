@@ -305,16 +305,25 @@ pub fn kill_steam() -> bool {
         return true;
     }
 
-    // 1. 先尝试 Steam 官方安全退出，避免强杀中断下载任务
+    // 1. 先尝试 Steam 官方安全退出，避免粗暴强杀导致本地 VDF 数据库损坏或下载未写盘
     if let Some(steam_path) = detect_steam_path() {
         let shutdown = steam_path.join("steam.exe");
         if shutdown.exists() {
             let _ = Command::new(&shutdown).arg("-shutdown").spawn();
         }
     }
-    std::thread::sleep(std::time::Duration::from_millis(1500));
 
-    // 2. 轮询强制结束：steam.exe / steamwebhelper.exe / steamservice.exe 全家桶
+    // 轮询等待平滑退出（最多 15 秒，每 500ms 检查一次）：
+    // 若 Steam 正常退出并保存好本地数据，一旦确认退出立即返回，无需执行暴力强杀
+    for _ in 0..30 {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        clear_steam_running_cache();
+        if !is_steam_running() {
+            return true;
+        }
+    }
+
+    // 2. 超时兜底：若 15 秒后仍在运行（例如界面卡死或进程无响应），轮询强制结束全家桶
     for _ in 0..4 {
         clear_steam_running_cache();
         if !is_steam_running() {
@@ -329,7 +338,7 @@ pub fn kill_steam() -> bool {
         std::thread::sleep(std::time::Duration::from_millis(600));
     }
 
-    // 3. 兜底：Steam 以管理员身份运行时普通 taskkill 无效，触发 UAC 提权强杀
+    // 3. 终极兜底：Steam 以管理员身份运行时普通 taskkill 无效，触发 UAC 提权强杀
     clear_steam_running_cache();
     if is_steam_running() {
         let _ = Command::new("powershell")
@@ -345,6 +354,17 @@ pub fn kill_steam() -> bool {
 
     clear_steam_running_cache();
     !is_steam_running()
+}
+
+/// 静默刷新 Windows 本地 DNS 解析缓存，清除 Steam 节点网络解析污染
+pub fn flush_dns() {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("ipconfig")
+            .arg("/flushdns")
+            .creation_flags(0x08000000)
+            .output();
+    }
 }
 
 pub fn launch_steam(steam_path: &Path, extra_args: &[String]) -> bool {
@@ -367,6 +387,8 @@ pub fn launch_steam(steam_path: &Path, extra_args: &[String]) -> bool {
 
 pub fn restart_steam(steam_path: &Path, extra_args: &[String]) -> bool {
     kill_steam();
+    // 默认执行本地网络 DNS 刷新，排除节点污染
+    flush_dns();
     // 轮询确认进程真正退出（最多 5s，每 250ms 一次），替代固定 800ms：
     // 机器慢时 800ms 可能 Steam 尚未完全退出，立即重启会导致窗口丢失/自更新失败
     clear_steam_running_cache();

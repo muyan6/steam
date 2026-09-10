@@ -67,6 +67,10 @@ pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
         })?;
     }
 
+    // 默认自愈：自动清理 depotcache 损坏的 0 字节坏清单，并刷新本地 DNS 解析
+    crate::toolbox::clean_depotcache_garbage(steam_path);
+    crate::steam::flush_dns();
+
     // 同步部署清单多节点调度脚本
     let _ = deploy_manifest_lua(steam_path);
 

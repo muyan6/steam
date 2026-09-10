@@ -969,6 +969,8 @@ export const createTauriBridge = () => {
       const manifestApi = localStorage.getItem('chunfengdu_manifest_api') || null;
       return invoke('toolbox_repair_ost', { manifestApi, customApiUrl: null });
     },
+    toolboxFixCloudRedirect: async (): Promise<ToolboxActionResult> =>
+      invoke('toolbox_fix_cloud_redirect'),
     toolboxFillSha256: async (): Promise<ToolboxActionResult> => invoke('fill_sha256'),
     toolboxAutoSwitchManifest: async (): Promise<ToolboxActionResult> => invoke('auto_switch_manifest'),
     toolboxGetStatus: async (): Promise<any> => invoke('get_toolbox_status'),

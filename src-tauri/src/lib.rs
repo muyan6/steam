@@ -757,6 +757,15 @@ async fn toolbox_repair_ost(manifest_api: Option<String>, custom_api_url: Option
         .unwrap_or_else(|e| toolbox::ToolboxActionResult { success: false, message: format!("任务执行失败: {}", e), steps: Some(Vec::new()), cleaned_files_count: None, restarted_steam: None })
     }
 
+#[tauri::command]
+async fn toolbox_fix_cloud_redirect() -> ToolboxActionResult {
+    if let Some(steam_path) = steam::detect_steam_path() {
+        toolbox::fix_cloud_redirect(&steam_path).await
+    } else {
+        toolbox_action(false, "未找到 Steam 客户端路径".to_string(), vec!["[失败] 无法定位 Steam 目录".to_string()])
+    }
+}
+
 // 读取 opensteamtool.toml 中的 server 值
 fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
     let toml_path = steam_path.join("opensteamtool.toml");
@@ -1741,6 +1750,7 @@ pub fn run() {
             check_environment_health,
             toolbox_clear_cache,
             toolbox_repair_ost,
+            toolbox_fix_cloud_redirect,
             get_toolbox_status,
             auto_switch_manifest,
             fill_sha256,
