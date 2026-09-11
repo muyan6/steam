@@ -447,12 +447,12 @@
                   <!-- 左上角联机架构预测徽章（基于本地文件指纹） -->
                   <div class="absolute top-2.5 left-2.5 max-w-[70%]">
                     <span
-                      v-if="netBadgeOf(game)"
-                      :class="netBadgeOf(game)!.cls"
-                      :title="netBadgeOf(game)!.tip"
+                      v-if="netBadges[game.appId]"
+                      :class="netBadges[game.appId]!.cls"
+                      :title="netBadges[game.appId]!.tip"
                       class="px-2.5 py-0.5 rounded-lg backdrop-blur-md text-[11px] font-bold shadow-sm truncate block cursor-help"
                     >
-                      {{ netBadgeOf(game)!.label }}
+                      {{ netBadges[game.appId]!.label }}
                     </span>
                   </div>
 
@@ -812,12 +812,12 @@
 
                     <!-- 联机架构徽章 (同主启动页) -->
                     <span
-                      v-if="netBadgeOf(game)"
-                      :class="netBadgeOf(game)!.cls"
-                      :title="netBadgeOf(game)!.tip"
+                      v-if="netBadges[game.appId]"
+                      :class="netBadges[game.appId]!.cls"
+                      :title="netBadges[game.appId]!.tip"
                       class="px-2 py-0.5 rounded-lg backdrop-blur-md text-[11px] font-bold shadow-sm truncate block cursor-help"
                     >
-                      {{ netBadgeOf(game)!.label }}
+                      {{ netBadges[game.appId]!.label }}
                     </span>
                   </div>
 
@@ -1037,7 +1037,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, type Ref } from 'vue';
+import { ref, computed, onMounted, onUnmounted, type Ref } from 'vue';
 import {
   Gamepad2,
   Rocket,
@@ -1149,6 +1149,13 @@ const filteredGames = computed(() => {
   );
 });
 
+// 徽章按 appId 预计算：模板原先是每个卡片调用 4 次 netBadgeOf，列表渲染时重复开销明显
+const netBadges = computed<Record<number, NetBadge | null>>(() => {
+  const map: Record<number, NetBadge | null> = {};
+  for (const g of filteredGames.value) map[g.appId] = netBadgeOf(g);
+  return map;
+});
+
 // 扫描加载本地 Steam 游戏：force=true 强制重扫；silent=true 不弹成功提示。
 // 后端三级策略：内存(60s) → 磁盘缓存(跨重启秒开) → 现场全量扫描
 const lastScanAt = ref(0);
@@ -1221,10 +1228,20 @@ const backgroundRefreshIfStale = async () => {
   }
 };
 
-// 「扫描于 x 前」提示文本
+// 「扫描于 x 前」提示文本。nowTick 每分钟自增以驱动重算，
+// 否则 computed 仅依赖 lastScanAt，文案会一直停在首次计算的"刚刚/x 分钟前"
+const nowTick = ref(Date.now());
+let nowTickTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  nowTickTimer = setInterval(() => { nowTick.value = Date.now(); }, 60_000);
+});
+onUnmounted(() => {
+  if (nowTickTimer) { clearInterval(nowTickTimer); nowTickTimer = null; }
+});
+
 const scanAgoText = computed(() => {
   if (!lastScanAt.value) return '';
-  const diff = Date.now() - lastScanAt.value;
+  const diff = nowTick.value - lastScanAt.value;
   if (diff < 60_000) return '刚刚';
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
@@ -1336,6 +1353,12 @@ const handleLaunchGame = async (game: LocalInstalledGame, bypassWarning: boolean
     targetCloudGame.value = game;
     showCloudWarningModal.value = true;
     return;
+  }
+
+  // 第三方自建网络为「建议补丁」而非强制：给出提示但允许本次直启，
+  // 避免与卡片徽标「三方网络·建议补丁」的指引自相矛盾
+  if (!bypassWarning && game.netType === 'thirdparty' && !game.isPatched) {
+    emit('notify', `《${game.name}》检测到第三方独立网络组件，Steam 通道大概率无效，建议先安装联机补丁；本次仍将尝试直启。`, 'warning');
   }
 
   addPending(pendingLaunches, game.appId);

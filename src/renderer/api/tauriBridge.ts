@@ -528,10 +528,6 @@ export const createTauriBridge = () => {
       document.documentElement.style.zoom = String(zoom);
       localStorage.setItem('cfd_ui_zoom', String(zoom));
     },
-    getZoomFactor: (): number => {
-      const v = parseFloat(localStorage.getItem('cfd_ui_zoom') || '1');
-      return Number.isFinite(v) ? v : 1;
-    },
 
     // Steam 环境与进程
     getSteamInfo: async (): Promise<SteamEnvironmentInfo> => invoke('get_steam_info', { customPath: null }),

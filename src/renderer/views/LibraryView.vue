@@ -368,8 +368,12 @@ const loadLibrary = async () => {
         for (const status of statuses || []) {
           if (status && status.appId != null) manifestStatuses[status.appId] = status;
         }
-      } catch {}
-    }  } catch (e: any) {
+      } catch (e) {
+        // 批量状态查询失败不应影响已加载的库列表，但需留下可诊断的提示
+        console.warn('批量清单状态查询失败:', formatIpcError(e));
+      }
+    }
+  } catch (e: any) {
     emit('notify', `加载游戏库失败: ${formatIpcError(e)}`, 'error');
   }
 };
