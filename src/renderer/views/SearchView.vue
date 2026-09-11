@@ -475,9 +475,10 @@ const quickTags = ['后室', '艾尔登法环', '双人成行', '只狼', '博�
 let searchRequestId = 0;
 
 // 聚合源跨页去重集合：同一搜索会话（关键词+数据源不变）内共享，
-// 翻页时由桥接层据此剔除已展示过的 Steam 官方结果，避免重复出现
+// 翻页时由桥接层据此剔除「已在其他页展示过」的 Steam 官方结果，避免重复出现。
+// 注意：每次请求只传入其他页累积的集合（不含当前页），否则回访已看过的页会被整体过滤成空。
 let searchSessionKey = '';
-let sessionSeenIds = new Set<number>();
+const sessionSeenIds = new Set<number>();
 
 // 执行搜索
 const handleSearch = async (page = 1) => {
@@ -490,8 +491,13 @@ const handleSearch = async (page = 1) => {
   const sessionKey = `${currentSource.value}|${searchQuery.value.trim()}`;
   if (sessionKey !== searchSessionKey) {
     searchSessionKey = sessionKey;
-    sessionSeenIds = new Set<number>();
+    sessionSeenIds.clear();
   }
+
+  // 当前页的结果不能参与本次去重，否则回退到已看过的页会被全部剔除（页面为空）。
+  // 关键：不直接把 sessionSeenIds 交给桥接层就地过滤，而是传入请求时刻的快照，
+  // 返回后再并入，这样「回访旧页」不会被自己上一次的 id 过滤掉。
+  const seenBefore = new Set(sessionSeenIds);
 
   try {
     const res = await window.electronAPI.searchGames({
@@ -499,10 +505,14 @@ const handleSearch = async (page = 1) => {
       source: currentSource.value,
       page,
       pageSize: pageSize.value,
-      seenIds: sessionSeenIds
+      seenIds: seenBefore
     });
 
     if (requestId !== searchRequestId) return; // 已有更新的请求，丢弃过期结果
+
+    // 桥接层会就地扩充传入的 seenBefore（含被 pageSize 截断的条目），
+    // 把它并回会话集合即可保持原有的跨页去重累积语义
+    for (const id of seenBefore) sessionSeenIds.add(id);
 
     if (res && res.items) {
       games.value = res.items;
@@ -578,6 +588,10 @@ const loadUnlockedList = async () => {
 };
 
 const unlockGame = async (game: SteamGame) => {
+  // 同步占位：必须在任何 await 之前设置，否则两次快速点击都能通过下方 disabled 判定，
+  // 导致重复执行入库流程并重复扣减免费配额
+  if (unlockingId.value !== null) return;
+  unlockingId.value = game.appId;
   let activated = false;
   try {
     const lic = await window.electronAPI.getLicenseInfo();
@@ -589,15 +603,16 @@ const unlockGame = async (game: SteamGame) => {
         const limitStr = quota?.limit ? `（每日 ${quota.limit} 次）` : '';
         emit('notify', `今日免费体验额度已用完${limitStr}，绑定赞助码后可享无限制极速入库。`, 'warning');
         emit('open-license-modal');
+        unlockingId.value = null;
         return;
       }
     }
   } catch (e: any) {
     emit('notify', `授权检测异常: ${formatIpcError(e)}`, 'error');
+    unlockingId.value = null;
     return;
   }
 
-  unlockingId.value = game.appId;
   try {
     const plainGame: SteamGame = {
       appId: game.appId,

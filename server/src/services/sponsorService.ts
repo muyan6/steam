@@ -94,6 +94,19 @@ export class SponsorService {
     return next;
   }
 
+  /** 读取原始赞助数组（不做排序/打标，供写入合并使用） */
+  private readRawSponsors(): SponsorItem[] {
+    try {
+      if (fs.existsSync(this.sponsorsFilePath)) {
+        const raw = JSON.parse(fs.readFileSync(this.sponsorsFilePath, 'utf-8'));
+        if (Array.isArray(raw)) return raw;
+      }
+    } catch (e: any) {
+      console.warn('[SponsorService] 读取赞助原始数据失败:', e.message);
+    }
+    return this.sponsorsCache || [];
+  }
+
   public getSponsors(): SponsorDataResponse {
     let list: SponsorItem[] = [];
     try {
@@ -217,6 +230,7 @@ export class SponsorService {
             planTitle: planName,
             lastPayTime: new Date(lastPayTs).toISOString().slice(0, 10),
             firstPayTime: new Date(firstPayTs).toISOString().slice(0, 10),
+            source: 'afdian',
             isLifetime: planName.includes('终身') || allSum >= 188,
             comment: item.remark || ''
           });
@@ -225,33 +239,34 @@ export class SponsorService {
         page++;
       }
 
-      if (allFetchedSponsors.length > 0) {
-        writeJsonAtomic(this.sponsorsFilePath, allFetchedSponsors);
-        this.sponsorsCache = allFetchedSponsors;
-        this.lastSyncTime = new Date().toISOString();
-        this.lastSource = 'afdian';
-        console.log(`[SponsorService] 爱发电数据同步成功，共获取 ${allFetchedSponsors.length} 位赞助者`);
-
-        return {
-          success: true,
-          message: `爱发电同步成功，共获取 ${allFetchedSponsors.length} 位赞助者！`,
-          count: allFetchedSponsors.length,
-          data: this.getSponsors()
-        };
-      } else {
-        writeJsonAtomic(this.sponsorsFilePath, []);
-        this.sponsorsCache = [];
-        this.lastSyncTime = new Date().toISOString();
-        this.lastSource = 'afdian';
-        console.log('[SponsorService] 爱发电接口返回成功，当前暂无赞助记录');
-
-        return {
-          success: true,
-          message: '爱发电接口返回成功，当前暂无赞助记录。',
-          count: 0,
-          data: this.getSponsors()
-        };
+      // 合并而非覆盖：爱发电数据按 id 覆盖，同时保留后台手动维护的本地条目，
+      // 避免一次同步（尤其是接口返回空时）抹掉管理员手工添加的赞助者。
+      const mergedMap = new Map<string, SponsorItem>();
+      for (const s of this.readRawSponsors()) {
+        if (s && s.source !== 'afdian') mergedMap.set(s.id, s);
       }
+      for (const s of allFetchedSponsors) {
+        mergedMap.set(s.id, s);
+      }
+      const merged = Array.from(mergedMap.values());
+
+      writeJsonAtomic(this.sponsorsFilePath, merged);
+      this.sponsorsCache = merged;
+      this.lastSyncTime = new Date().toISOString();
+      this.lastSource = 'afdian';
+      console.log(
+        `[SponsorService] 爱发电同步成功：拉取 ${allFetchedSponsors.length} 位，合并本地条目后共 ${merged.length} 位赞助者`
+      );
+
+      return {
+        success: true,
+        message:
+          allFetchedSponsors.length > 0
+            ? `爱发电同步成功，共获取 ${allFetchedSponsors.length} 位赞助者！`
+            : '爱发电接口返回成功，当前暂无赞助记录。',
+        count: allFetchedSponsors.length,
+        data: this.getSponsors()
+      };
     } catch (e: any) {
       console.error('[SponsorService] 爱发电拉取异常:', e.message);
       return {
@@ -277,7 +292,8 @@ export class SponsorService {
       lastPayTime: item.lastPayTime || new Date().toISOString().slice(0, 10),
       firstPayTime: item.firstPayTime || item.lastPayTime || new Date().toISOString().slice(0, 10),
       isLifetime: Boolean(item.isLifetime),
-      comment: item.comment || ''
+      comment: item.comment || '',
+      source: 'local'
     };
 
     if (index >= 0) {

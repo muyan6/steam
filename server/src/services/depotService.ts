@@ -14,6 +14,8 @@ import { writeStringAtomic } from '../utils/atomicJson.js';
 export class DepotService {
   private depotKeysDb: Map<string, string> = new Map();
   private isLoaded = false;
+  // 数据库损坏时置位：禁止任何落盘，防止空库/残缺库覆写 28.8 万条真实密钥
+  private saveBlocked = false;
 
   constructor() {
     this.loadDepotKeysDb();
@@ -42,6 +44,7 @@ export class DepotService {
         }
       } catch {}
       this.isLoaded = true;
+      this.saveBlocked = true;
       console.error('[DepotService] DepotKey 数据库损坏！已备份到 .corrupt，写入功能已禁用，请修复文件后重启服务:', e);
     }
   }
@@ -102,6 +105,10 @@ export class DepotService {
   }
 
   public saveDepotKeys(newKeys: Record<string, string>): boolean {
+    if (this.saveBlocked) {
+      console.error('[DepotService] 数据库处于损坏保护状态，已拒绝写入以免覆写真实密钥库。请修复 steam_depot_keys.json 后重启服务。');
+      return false;
+    }
     try {
       // 原地合并（增量），保留已有有效密钥；不做整库展开复制，避免内存尖峰
       let added = 0;

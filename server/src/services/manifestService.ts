@@ -955,6 +955,23 @@ export class ManifestService {
 
   private manifestCodeCache = new Map<string, { code: string; fetchedAt: number }>();
   private readonly MANIFEST_CODE_TTL_MS = 2 * 60 * 60 * 1000; // 2小时内存缓存
+  // 容量上限：公开接口可枚举 gid，仅靠 TTL 惰性淘汰不足以防止内存无界增长
+  private readonly MANIFEST_CODE_CACHE_MAX = 20000;
+
+  /** 写入清单代码缓存，并在超限时清理过期项/按插入序淘汰 */
+  private setManifestCodeCache(gid: string, code: string): void {
+    this.manifestCodeCache.set(gid, { code, fetchedAt: Date.now() });
+    if (this.manifestCodeCache.size <= this.MANIFEST_CODE_CACHE_MAX) return;
+    const now = Date.now();
+    for (const [k, v] of this.manifestCodeCache) {
+      if (now - v.fetchedAt >= this.MANIFEST_CODE_TTL_MS) this.manifestCodeCache.delete(k);
+    }
+    while (this.manifestCodeCache.size > this.MANIFEST_CODE_CACHE_MAX) {
+      const oldest = this.manifestCodeCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.manifestCodeCache.delete(oldest);
+    }
+  }
 
   /**
    * 获取指定 GID 的清单请求代码（Manifest Request Code）
@@ -975,7 +992,7 @@ export class ManifestService {
       if (resp.status === 200 && typeof resp.data === 'string') {
         const text = resp.data.trim();
         if (/^\d+$/.test(text)) {
-          this.manifestCodeCache.set(gid, { code: text, fetchedAt: Date.now() });
+          this.setManifestCodeCache(gid, text);
           return text;
         }
       }
@@ -987,7 +1004,7 @@ export class ManifestService {
       if (resp.status === 200 && typeof resp.data === 'string') {
         const text = resp.data.trim();
         if (/^\d+$/.test(text)) {
-          this.manifestCodeCache.set(gid, { code: text, fetchedAt: Date.now() });
+          this.setManifestCodeCache(gid, text);
           return text;
         }
       }
@@ -1000,7 +1017,7 @@ export class ManifestService {
         const code = typeof resp.data === 'string' ? resp.data.match(/"content":"(\d+)"/)?.[1] : (resp.data as any).content;
         if (code && /^\d+$/.test(String(code))) {
           const sCode = String(code);
-          this.manifestCodeCache.set(gid, { code: sCode, fetchedAt: Date.now() });
+          this.setManifestCodeCache(gid, sCode);
           return sCode;
         }
       }

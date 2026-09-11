@@ -17,6 +17,8 @@ export class GameService {
   // 封面图拉取失败的短 TTL 负缓存（appId -> 失败时间戳），防止重复请求打穿 Steam API
   private negativeHeaderCache: Map<number, number> = new Map();
   private static NEGATIVE_HEADER_TTL_MS = 5 * 60 * 1000;
+  // 负缓存容量上限：公开接口可按 AppID 枚举，无界会随随机/无效 ID 持续膨胀
+  private static NEGATIVE_CACHE_MAX = 20000;
   // 内存缓存硬上限：超过时按插入序淘汰最旧条目
   private static IMAGE_CACHE_MAX = 5000;
   private isLoaded = false;
@@ -149,6 +151,18 @@ export class GameService {
       // ignore
     }
     this.negativeHeaderCache.set(appId, Date.now());
+    // 负缓存同样限容：超限先清过期项，仍超限则按插入序淘汰最旧，防公开接口枚举打爆内存
+    if (this.negativeHeaderCache.size > GameService.NEGATIVE_CACHE_MAX) {
+      const now = Date.now();
+      for (const [id, ts] of this.negativeHeaderCache) {
+        if (now - ts >= GameService.NEGATIVE_HEADER_TTL_MS) this.negativeHeaderCache.delete(id);
+      }
+      while (this.negativeHeaderCache.size > GameService.NEGATIVE_CACHE_MAX) {
+        const oldest = this.negativeHeaderCache.keys().next().value;
+        if (oldest === undefined) break;
+        this.negativeHeaderCache.delete(oldest);
+      }
+    }
     return null;
   }
 

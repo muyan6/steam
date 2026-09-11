@@ -200,6 +200,7 @@ export interface SponsorItem {
   rank?: number;          // 排名
   isLifetime?: boolean;   // 是否终身
   comment?: string;       // 留言寄语
+  source?: 'afdian' | 'local'; // 数据来源：爱发电同步 or 后台手动维护（同步时据此保留本地条目）
 }
 
 export interface SponsorDataResponse {

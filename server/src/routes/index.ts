@@ -199,14 +199,20 @@ router.get('/games/library/version', getGameLibraryVersion);
 const LIBRARY_DAILY_LIMIT = 20;
 const LIBRARY_USAGE_MAP_MAX = 10000;
 const libraryDailyUsage = new Map<string, { date: string; count: number }>();
+// 本地日期 + 设备标识归一化（与 freeQuotaService 保持一致）：
+// 避免大小写/首尾空格变换被当作新设备重置计数，也避免与配额服务跨天边界（UTC vs 本地）不一致
+const localDayKey = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 const requireLibraryDeviceAccess = (req: Request, res: Response, next: any) => {
   // 优先请求头，兼容旧客户端 query 传参（与 requireKeyAccess 一致）
   const headerId = typeof req.headers['x-device-id'] === 'string' ? req.headers['x-device-id'] : '';
-  const deviceId = String(headerId || req.query.deviceId || '').trim();
+  const deviceId = String(headerId || req.query.deviceId || '').trim().toLowerCase();
   if (!deviceId || deviceId.length > 128) {
     return res.status(401).json({ success: false, message: '缺少或非法的 deviceId，请升级客户端后使用' });
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDayKey();
   const record = libraryDailyUsage.get(deviceId);
   if (!record || record.date !== today) {
     // 每日零点后首次访问自然重置计数

@@ -149,7 +149,10 @@ export class SyncService {
         }
       }
 
-      depotService.saveDepotKeys(cleanKeys);
+      if (!depotService.saveDepotKeys(cleanKeys)) {
+        sourceRegistryService.recordSyncError('manifesthub_keys', '落盘失败或数据库处于损坏保护状态');
+        return { success: false, message: '密钥数据落盘失败（可能数据库损坏保护已生效），请检查服务端日志。' };
+      }
       const count = depotService.getTotalKeysCount();
       sourceRegistryService.recordSyncSuccess('manifesthub_keys', count);
 
@@ -183,7 +186,10 @@ export class SyncService {
           }
         }
 
-        tokenService.saveTokens(tokens);
+        if (!tokenService.saveTokens(tokens)) {
+          sourceRegistryService.recordSyncError('sudama_tokens', '落盘失败或写入已被禁用');
+          return { success: false, message: 'AccessTokens 落盘失败（写入可能已被禁用），请检查服务端日志。' };
+        }
         const count = tokenService.getTotalTokensCount();
         sourceRegistryService.recordSyncSuccess('sudama_tokens', count);
 
@@ -218,6 +224,22 @@ export class SyncService {
       results.depotKeys = await this.syncDepotKeys();
       results.tokens = await this.syncTokens();
       results.games = await this.syncGames();
+
+      // 子任务失败必须如实上报：密钥库/令牌库属于核心数据，任一写入失败都视为整体失败，
+      // 否则管理端会在数据未落盘时仍显示「同步完成」，掩盖真实的持久化故障。
+      const coreFailed = !results.depotKeys?.success || !results.tokens?.success;
+      if (coreFailed) {
+        const failed = [
+          results.depotKeys?.success === false ? '密钥库' : '',
+          results.tokens?.success === false ? '令牌库' : ''
+        ].filter(Boolean).join('、');
+        console.error(`[SyncService] ⚠️ 全量同步存在核心数据失败: ${failed}`);
+        return {
+          success: false,
+          message: `同步完成但存在失败项（${failed}），请查看详情与日志。`,
+          results
+        };
+      }
 
       console.log('[SyncService] ✅ 全量数据自动化同步完成！');
       return {

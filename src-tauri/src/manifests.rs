@@ -146,7 +146,8 @@ pub fn check_manifest_status(steam_path: &Path, app_id: u32, dlcs: &[u32]) -> Ap
             }
             if let Ok(bytes) = fs::read(&path) {
                 if !is_valid_manifest_payload(&bytes) {
-                    let _ = fs::remove_file(&path);
+                    // 只读状态查询绝不删除文件：该启发式存在误判可能，
+                    // 删除会静默毁掉有效清单。此处仅跳过不计入匹配。
                     continue;
                 }
             } else {
@@ -229,7 +230,7 @@ pub fn batch_manifest_status(steam_path: &Path, app_ids: &[u32]) -> BTreeMap<u32
             }
             if let Ok(bytes) = fs::read(&path) {
                 if !is_valid_manifest_payload(&bytes) {
-                    let _ = fs::remove_file(&path);
+                    // 同上：批量状态查询为只读路径，绝不删除用户 depotcache 文件
                     continue;
                 }
             } else {
@@ -411,7 +412,11 @@ fn parse_lua_metadata(lua: &str, app_id: u32) -> AppMetadata {
                 if parts.len() >= 2 {
                     let d_id = parts[0].trim();
                     let gid = parts[1].trim().trim_matches('"').trim_matches('\'').trim();
-                    if d_id.chars().all(|c| c.is_ascii_digit()) && !gid.is_empty() && gid != "0" {
+                    if d_id.chars().all(|c| c.is_ascii_digit())
+                        && !gid.is_empty()
+                        && gid != "0"
+                        && gid.chars().all(|c| c.is_ascii_digit())
+                    {
                         let entry = depots_map.entry(d_id.to_string()).or_insert_with(|| DepotMeta {
                             depot_id: d_id.to_string(),
                             manifest_gid: None,
@@ -832,11 +837,18 @@ fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
             Some(serde_json::Value::String(s)) => s.clone(),
             _ => return,
         };
+        // depotId 必须是纯数字：它会参与 depot_cache.join("<depot>_<gid>.manifest") 的路径拼接，
+        // 未校验时形如 "..\..\x" 的值可把清单写出 depotcache 之外
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
+            return;
+        }
         let gid = match obj.get("manifestGid").or_else(|| obj.get("manifestId")) {
             Some(serde_json::Value::Number(n)) => Some(n.to_string()),
             Some(serde_json::Value::String(s)) if !s.is_empty() && s != "0" => Some(s.clone()),
             _ => None,
-        };
+        }
+        // gid 同样必须为纯数字，防止路径穿越与非数字脏值污染文件名
+        .filter(|g| !g.is_empty() && g != "0" && g.chars().all(|c| c.is_ascii_digit()));
         let key = obj
             .get("depotKey")
             .or_else(|| obj.get("key"))
@@ -1223,7 +1235,14 @@ fn clean_old_manifests(depot_cache: &Path, depot_id: &str, current_gid: &str) {
         for f in files.filter_map(|e| e.ok()) {
             let name = f.file_name().to_string_lossy().to_string();
             if name.starts_with(&format!("{}_", depot_id)) && name.ends_with(".manifest") && name != current {
-                let _ = fs::remove_file(f.path());
+                // 仅清理确认为损坏的清单，绝不删除同一 depot 下的其他有效 GID：
+                // 不同游戏/应用可能共享同一 depot 且各自固定不同 GID，
+                // 一揽子删除会让对方后续下载因清单缺失而失败
+                if let Ok(bytes) = fs::read(f.path()) {
+                    if !is_valid_manifest_payload(&bytes) {
+                        let _ = fs::remove_file(f.path());
+                    }
+                }
             }
         }
     }
@@ -1606,6 +1625,11 @@ pub fn check_and_sync_dictionary(resource_dir: Option<&Path>) -> Result<Dictiona
         .and_then(|v| v.as_str())
         .ok_or_else(|| "云端字典版本响应缺少 sha256".to_string())?
         .to_lowercase();
+    // 强校验为 64 位 ASCII 十六进制：后续多处按字节下标截取前 12 位展示，
+    // 若含多字节 UTF-8 字符会在字节边界处 panic（响应可被上游/代理污染）
+    if server_sha.len() != 64 || !server_sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("云端字典版本响应 sha256 非法".to_string());
+    }
     let server_count = data.get("count").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
 
     // 2. 版本一致则无需更新

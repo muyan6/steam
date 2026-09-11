@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { CONFIG } from '../config/index.js';
 import { Announcement } from '../types/index.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
+import { compareVersions, normalizeVersion } from '../utils/version.js';
 
 export class NoticeService {
   private noticesFilePath: string;
@@ -198,42 +199,21 @@ export class NoticeService {
 
   private matchesVersionRule(clientVersion: string, rule: string): boolean {
     if (!rule || rule === '*') return true;
-    const cleanClient = clientVersion.replace(/^v/i, '');
-    const cleanRule = rule.replace(/^v/i, '');
+    const cleanClient = normalizeVersion(clientVersion);
+    const cleanRule = normalizeVersion(rule);
     if (rule.startsWith('>=')) {
-      return this.compareVersions(cleanClient, cleanRule.replace('>=', '')) >= 0;
+      return compareVersions(cleanClient, cleanRule.replace('>=', '')) >= 0;
     }
     if (rule.startsWith('<=')) {
-      return this.compareVersions(cleanClient, cleanRule.replace('<=', '')) <= 0;
+      return compareVersions(cleanClient, cleanRule.replace('<=', '')) <= 0;
     }
     if (rule.startsWith('>')) {
-      return this.compareVersions(cleanClient, cleanRule.replace('>', '')) > 0;
+      return compareVersions(cleanClient, cleanRule.replace('>', '')) > 0;
     }
     if (rule.startsWith('<')) {
-      return this.compareVersions(cleanClient, cleanRule.replace('<', '')) < 0;
+      return compareVersions(cleanClient, cleanRule.replace('<', '')) < 0;
     }
     return cleanClient === cleanRule;
-  }
-
-  private compareVersions(v1: string, v2: string): number {
-    const clean1 = (v1 || '0').replace(/^v/i, '').trim();
-    const clean2 = (v2 || '0').replace(/^v/i, '').trim();
-
-    const isLegacy1 = clean1.startsWith('5.');
-    const isLegacy2 = clean2.startsWith('5.');
-    if (isLegacy1 && !isLegacy2) return -1;
-    if (!isLegacy1 && isLegacy2) return 1;
-
-    const p1 = clean1.split('.').map((n) => parseInt(n, 10) || 0);
-    const p2 = clean2.split('.').map((n) => parseInt(n, 10) || 0);
-    const len = Math.max(p1.length, p2.length);
-    for (let i = 0; i < len; i++) {
-      const a = p1[i] || 0;
-      const b = p2[i] || 0;
-      if (a > b) return 1;
-      if (a < b) return -1;
-    }
-    return 0;
   }
 
   public getLatestNotice(clientVersion?: string): Announcement | null {
@@ -247,7 +227,10 @@ export class NoticeService {
    */
   private sanitizeNoticeData(data: Partial<Announcement>): Partial<Announcement> {
     const cleanStr = (v: unknown, max: number): string | undefined =>
-      typeof v === 'string' ? v.replace(/[\x00-\x1F\x7F]/g, '').slice(0, max) : undefined;
+      typeof v === 'string'
+        // 去除控制字符，但显式保留 \t(0x09) \n(0x0A) \r(0x0D)：公告正文需保留换行
+        ? v.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').slice(0, max)
+        : undefined;
     const out: Partial<Announcement> = {};
 
     const title = cleanStr(data.title, 100);

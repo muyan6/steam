@@ -52,19 +52,28 @@ export async function getJson<T = any>(url: string, timeoutMs = 8000): Promise<T
   }
 }
 
+/** 历史误发布的退役客户端版本（对应服务端 utils/version.ts 的 RETIRED_VERSIONS） */
+const RETIRED_CLIENT_VERSIONS = new Set<string>(['5.6.0']);
+
+/** 是否为历史误发布、应无条件拉回正式序列的退役版本 */
+export function isRetiredVersion(v: string): boolean {
+  return RETIRED_CLIENT_VERSIONS.has((v || '').replace(/^v/i, '').trim());
+}
+
 /**
- * 语义化版本号比较：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0
- * 历史 5.x 异常测试版本特殊兼容：5.x 客户端始终视为旧版本
+ * 语义化版本号比较：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0。
+ * 仅将显式登记的退役版本（历史误发布的 5.6.0）视为早于任何正式版本，
+ * 不再粗暴地把整个 5.x 主版本判为旧版。
  */
 export function compareSemver(v1: string, v2: string): number {
   const clean1 = (v1 || '0').replace(/^v/i, '').trim();
   const clean2 = (v2 || '0').replace(/^v/i, '').trim();
 
-  // 历史 5.x 客户端倒挂兼容：5.x 始终视为历史遗留测试包（低于 2.x/3.x）
-  const isLegacy1 = clean1.startsWith('5.');
-  const isLegacy2 = clean2.startsWith('5.');
-  if (isLegacy1 && !isLegacy2) return -1;
-  if (!isLegacy1 && isLegacy2) return 1;
+  const retired1 = RETIRED_CLIENT_VERSIONS.has(clean1);
+  const retired2 = RETIRED_CLIENT_VERSIONS.has(clean2);
+  if (retired1 !== retired2) {
+    return retired1 ? -1 : 1;
+  }
 
   const parts1 = clean1.split('.').map((n) => parseInt(n, 10) || 0);
   const parts2 = clean2.split('.').map((n) => parseInt(n, 10) || 0);
@@ -784,11 +793,11 @@ export const createTauriBridge = () => {
       if (data && data.latest && data.latest.version) {
         const cleanLatest = String(data.latest.version).replace(/^v/i, '').trim();
         const isClientLower = compareSemver(cleanLatest, current) > 0;
-        const isLegacy5x = current.startsWith('5.');
+        const isRetired = isRetiredVersion(current);
 
-        if (isLegacy5x || isClientLower) {
+        if (isRetired || isClientLower) {
           data.hasUpdate = true;
-          data.forceUpdate = Boolean(data.latest.forceUpdate || isLegacy5x);
+          data.forceUpdate = Boolean(data.latest.forceUpdate || isRetired);
         } else {
           data.hasUpdate = false;
           data.forceUpdate = false;
@@ -983,16 +992,15 @@ export const createTauriBridge = () => {
       }
 
       // 联网校验（附带 3.5 秒严格超时熔断保护，防止云端掉线卡死界面）
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3500);
       try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 3500);
         const resp = await httpFetch(`${API}/api/license/verify`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ deviceId: devId, code: cached?.code }),
           signal: ctrl.signal
         });
-        clearTimeout(timer);
         const json = await resp.json();
         if (json?.success && json?.data) {
           await writeLocalCache(json.data);
@@ -1000,6 +1008,10 @@ export const createTauriBridge = () => {
         }
       } catch {
         // 网络超时、断网或云端掉线：走离线优雅降级
+      } finally {
+        // 必须在 finally 清理：否则请求抛错时定时器仍会触发一次无意义的 abort，
+        // 且 getLicenseInfo 每 30s 轮询会累积悬挂定时器
+        clearTimeout(timer);
       }
 
       if (isCacheValid) {

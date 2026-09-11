@@ -655,6 +655,13 @@ fn is_archive_magic(bytes: &[u8]) -> bool {
 
 pub fn is_temp_archive(path: &str) -> bool {
     let p = PathBuf::from(path);
+    // Path::starts_with 逐组件比较、不归一化 `..`，必须先拒绝任何父目录组件，
+    // 否则 "<临时目录>\..\..\<任意文件>" 会绕过该围栏，导致任意文件读取/删除
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
     p.starts_with(temp_download_dir())
 }
 

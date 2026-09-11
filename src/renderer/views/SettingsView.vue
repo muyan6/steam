@@ -883,6 +883,8 @@ const handleUninstallOST = async () => {
       emit('notify', res.message, 'success');
       await runEnvironmentHealthCheck();
       emit('refresh-status');
+    } else {
+      emit('notify', res.message || '卸载 OpenSteamTool 失败，请查看日志', 'error');
     }
   } catch (e: any) {
     emit('notify', `卸载异常: ${formatIpcError(e)}`, 'error');

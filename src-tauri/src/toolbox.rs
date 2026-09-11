@@ -213,13 +213,16 @@ pub async fn fix_cloud_redirect(steam_path: &Path) -> ToolboxActionResult {
                 if out.status.success() || stdout_str.contains("success") || stdout_str.contains("Success") || stdout_str.contains("Fixed") || stdout_str.contains("fixed") {
                     fixer_success = true;
                     steps.push("✓ CloudRedirect (STFixer) 修复策略已成功注入 SteamPipe".to_string());
-                } else if !stdout_str.is_empty() {
-                    steps.push(format!("✓ 修复执行完成: {}", stdout_str.lines().next().unwrap_or("已生效")));
-                    fixer_success = true;
                 } else {
-                    steps.push(format!("⚠ 修复输出: {}", stderr_str.lines().next().unwrap_or("已静默处理")));
-                    fixer_success = true;
+                    // 不得在修复失败时仍标记成功：否则会误导用户以为网络已修复
+                    steps.push(format!(
+                        "⚠ CloudRedirect 修复未成功 (退出码: {:?})，输出: {}",
+                        out.status.code(),
+                        stderr_str.lines().next().or_else(|| stdout_str.lines().next()).unwrap_or("无")
+                    ));
                 }
+            } else {
+                steps.push("⚠ 无法启动 CloudRedirectCLI.exe 执行修复".to_string());
             }
         }
     } else {
@@ -245,8 +248,12 @@ pub async fn fix_cloud_redirect(steam_path: &Path) -> ToolboxActionResult {
     }
 
     ToolboxActionResult {
-        success: true,
-        message: "Steam 下载网络修复已完成！若仍提示无网络连接，请在 Steam 设置中切换下载地区或重新点击下载。".to_string(),
+        success: fixer_success,
+        message: if fixer_success {
+            "Steam 下载网络修复已完成！若仍提示无网络连接，请在 Steam 设置中切换下载地区或重新点击下载。".to_string()
+        } else {
+            "CloudRedirect 修复未能成功执行，请检查网络后重试，或改用「深度清理」后重新入库。".to_string()
+        },
         steps: Some(steps),
         cleaned_files_count: Some(garbage),
         restarted_steam: Some(restarted),

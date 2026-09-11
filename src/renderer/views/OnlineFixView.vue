@@ -1159,7 +1159,15 @@ const applyScanResult = (res: LocalGamesScanResult) => {
   lastScanAt.value = res.scannedAt || 0;
 };
 
+// 扫描竞态守卫：多个入口（手动刷新/双榜同步/后台静默刷新）可能并发，
+// 只有最新一次发起的扫描结果才允许落地，避免旧快照覆盖新数据
+let scanRequestId = 0;
+const applyScanResultIfCurrent = (id: number, res: LocalGamesScanResult) => {
+  if (id === scanRequestId) applyScanResult(res);
+};
+
 const handleRefreshLocalGames = async (force: boolean = false, silent: boolean = false) => {
+  const requestId = ++scanRequestId;
   isScanning.value = true;
   try {
     if (force) {
@@ -1169,8 +1177,8 @@ const handleRefreshLocalGames = async (force: boolean = false, silent: boolean =
         rulesCount.value = syncRes.count;
       }
     }
-    applyScanResult(await window.electronAPI.scanLocalGames(force));
-    if (!silent) {
+    applyScanResultIfCurrent(requestId, await window.electronAPI.scanLocalGames(force));
+    if (!silent && requestId === scanRequestId) {
       emit('notify', `成功扫描到 ${localGames.value.length} 款本地已安装 Steam 游戏！`, 'success');
     }
   } catch (err: any) {
@@ -1189,7 +1197,8 @@ const handleManualSyncCharts = async () => {
     if (res && res.count) {
       rulesCount.value = res.count;
     }
-    applyScanResult(await window.electronAPI.scanLocalGames(true));
+    const requestId = ++scanRequestId;
+    applyScanResultIfCurrent(requestId, await window.electronAPI.scanLocalGames(true));
     emit('notify', `Steam 双榜规则同步完成！当前全库已收录 ${rulesCount.value} 款热门游戏与工具`, 'success');
   } catch (e: any) {
     emit('notify', `双榜同步失败: ${formatIpcError(e)}`, 'error');
@@ -1203,7 +1212,8 @@ const backgroundRefreshIfStale = async () => {
   if (isBgRefreshing.value) return;
   isBgRefreshing.value = true;
   try {
-    applyScanResult(await window.electronAPI.scanLocalGames(true));
+    const requestId = ++scanRequestId;
+    applyScanResultIfCurrent(requestId, await window.electronAPI.scanLocalGames(true));
   } catch {
     // 静默失败：保留磁盘缓存数据，不打断用户
   } finally {
@@ -1420,9 +1430,9 @@ const handleRestorePatchForGame = async (game: LocalInstalledGame) => {
     const res = await window.electronAPI.restoreGame(game.fullInstallPath);
     if (res.success) {
       emit('notify', res.message, 'success');
-      game.isPatched = false;
-      game.hasBackup = false;
-      game.patchMode = 'none';
+      // 与安装补丁一致：强制重扫本地库同步磁盘真实状态，
+      // 避免只改内存标记导致 netType/徽标与实际（已还原）不一致
+      await handleRefreshLocalGames(true, true);
     } else {
       emit('notify', res.message, 'error');
     }

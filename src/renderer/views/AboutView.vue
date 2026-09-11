@@ -270,7 +270,7 @@
                   “{{ sponsor.comment }}”
                 </div>
                 <div v-else class="text-[10px] font-mono text-slate-500 mt-0.5">
-                  赞助日期: {{ sponsor.lastPayTime || '2026-09-08' }}
+                  赞助日期: {{ sponsor.lastPayTime || '—' }}
                 </div>
               </div>
             </div>
@@ -278,7 +278,7 @@
             <!-- 赞助金额与支持标志 -->
             <div class="text-right shrink-0">
               <div class="font-mono font-black text-xs text-rose-400">
-                ¥{{ sponsor.allSumAmount ? sponsor.allSumAmount.toFixed(2) : '20.00' }}
+                ¥{{ (sponsor.allSumAmount || 0).toFixed(2) }}
               </div>
               <div class="text-[10px] text-slate-400 mt-0.5">
                 发电贡献

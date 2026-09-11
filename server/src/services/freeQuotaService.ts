@@ -226,19 +226,21 @@ class FreeQuotaService {
    */
   public consumeIpDevice(ip: string, deviceId: string): boolean {
     const normalizedIp = String(ip || '').trim() || 'unknown';
+    // 设备标识归一化（trim+小写），避免同一设备变换大小写被算作多台独立设备绕过上限
+    const normalizedDevice = this.normalizeId(deviceId);
     const today = this.today();
     let entry = this.ipDevices.get(normalizedIp);
     if (!entry || entry.date !== today) {
       entry = { date: today, devices: new Set() };
       this.ipDevices.set(normalizedIp, entry);
     }
-    if (entry.devices.has(deviceId)) {
+    if (entry.devices.has(normalizedDevice)) {
       return true;
     }
     if (entry.devices.size >= MAX_DEVICES_PER_IP_PER_DAY) {
       return false;
     }
-    entry.devices.add(deviceId);
+    entry.devices.add(normalizedDevice);
     // IP 表自身防膨胀：超限清理非当日记录
     if (this.ipDevices.size > MAX_IP_ENTRIES) {
       for (const [k, v] of this.ipDevices) {

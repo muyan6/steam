@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { CONFIG } from '../config/index.js';
 import { VersionRelease, PushUpdateRecord } from '../types/index.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
+import { compareVersions, isRetiredVersion } from '../utils/version.js';
 
 export class VersionService {
   private versionsFilePath: string;
@@ -128,37 +129,9 @@ export class VersionService {
     }
   }
 
-  /**
-   * 语义化版本号比较：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0
-   */
-  public compareVersions(v1: string, v2: string): number {
-    const clean1 = (v1 || '0').replace(/^v/i, '').trim();
-    const clean2 = (v2 || '0').replace(/^v/i, '').trim();
-
-    // 历史异常测试版本特殊兼容（如 5.6.0）：
-    // 仓库历史提交曾误将客户端版本号标记为 5.6.0，而项目正式发布序列为 2.x
-    // 5.x 客户端属于历史遗留测试包，在与 2.x/3.x 正式版本比对时，5.x 始终视为旧版本
-    const isLegacy1 = clean1.startsWith('5.');
-    const isLegacy2 = clean2.startsWith('5.');
-    if (isLegacy1 && !isLegacy2) return -1;
-    if (!isLegacy1 && isLegacy2) return 1;
-
-    const parts1 = clean1.split('.').map((n) => parseInt(n, 10) || 0);
-    const parts2 = clean2.split('.').map((n) => parseInt(n, 10) || 0);
-    const len = Math.max(parts1.length, parts2.length);
-
-    for (let i = 0; i < len; i++) {
-      const p1 = parts1[i] || 0;
-      const p2 = parts2[i] || 0;
-      if (p1 > p2) return 1;
-      if (p1 < p2) return -1;
-    }
-    return 0;
-  }
-
   public getAllVersions(): VersionRelease[] {
     const list = this.readAll();
-    return list.sort((a, b) => this.compareVersions(b.version, a.version));
+    return list.sort((a, b) => compareVersions(b.version, a.version));
   }
 
   public getVersionByNumber(version: string): VersionRelease | null {
@@ -208,24 +181,24 @@ export class VersionService {
     forceUpdate: boolean;
   } {
     const latest = this.getLatestVersion(channel) || this.defaultRelease();
-    const cleanClient = (currentVersion || '0').replace(/^v/i, '').trim();
-    const cleanLatest = (latest.version || '0').replace(/^v/i, '').trim();
 
-    const isLegacy5x = cleanClient.startsWith('5.');
-    const isLower = this.compareVersions(latest.version, currentVersion) > 0;
+    // 退役版本（历史误发布的 5.6.0）一律强制更新：客户端已无法通过普通比较收到更新，
+    // 必须显式拉回正式序列。详见 utils/version.ts 的 RETIRED_VERSIONS。
+    const isRetired = isRetiredVersion(currentVersion);
+    const isLower = compareVersions(latest.version, currentVersion) > 0;
 
     let hasUpdate = false;
     let force = false;
 
     // 严格语义版本比对：只有当服务端最新版本严格高于客户端当前版本时，才判定存在更新
     // 若客户端版本 >= 服务端版本（例如开发/构建的本地新版本），坚决不提示更新，杜绝倒挂反向弹窗！
-    if (isLegacy5x || isLower) {
+    if (isRetired || isLower) {
       hasUpdate = true;
-      if (latest.forceUpdate || isLegacy5x) {
+      if (latest.forceUpdate || isRetired) {
         force = true;
       } else if (
         latest.minSupportedVersion &&
-        this.compareVersions(latest.minSupportedVersion, currentVersion) > 0
+        compareVersions(latest.minSupportedVersion, currentVersion) > 0
       ) {
         force = true;
       }

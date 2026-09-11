@@ -741,6 +741,9 @@ const openDisclaimerModal = () => {
 
 // 免责声明展示完毕后待展示的公告队列（按服务端优先级降序依次弹出）
 let noticeQueue: NoticePayload[] = [];
+// 本次运行已展示过的公告（含非 popupOnce 的）：checkNoticeAndVersion 每 3 分钟轮询一次，
+// 若不记录，非 popupOnce 公告会被反复弹出，并覆盖用户正在阅读的弹窗
+const sessionShownNotices = new Set<string>();
 
 // 已读标记存储键：公告缺失 id 时按标题+内容生成稳定哈希键，
 // 保证同一条公告跨启动的已读状态仍然一致
@@ -805,18 +808,29 @@ const checkNoticeAndVersion = async () => {
         if (!topBanner) topBanner = item;
         continue;
       }
-      const isRead = item.popupOnce && localStorage.getItem(noticeStorageKey(item));
-      if (!isRead) popups.push(item);
+      const key = noticeStorageKey(item);
+      if (item.popupOnce) {
+        // popupOnce：跨启动只弹一次
+        if (localStorage.getItem(key)) continue;
+      } else if (sessionShownNotices.has(key)) {
+        // 非 popupOnce：本次运行内只弹一次，避免轮询期间重复弹出
+        continue;
+      }
+      popups.push(item);
     }
     bannerNotice.value = topBanner;
 
     // 免责声明独立于公告判断：从未同意过免责声明时必须展示（公告排队在其后）
     if (!hasAcceptedDisclaimer) {
+      for (const p of popups) sessionShownNotices.add(noticeStorageKey(p));
       noticeQueue = popups;
       openDisclaimerModal();
     } else if (popups.length > 0) {
+      for (const p of popups) sessionShownNotices.add(noticeStorageKey(p));
       noticeQueue = popups.slice(1);
-      popupNotice.value = popups[0];
+      // 绝不覆盖用户正在阅读的弹窗：当前已有弹窗时改为排队，待其关闭后再展示
+      if (!popupNotice.value) popupNotice.value = popups[0];
+      else noticeQueue.unshift(popups[0]);
     }
 
     const versionRes = await window.electronAPI.checkVersion(appVersion);

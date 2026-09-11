@@ -731,11 +731,17 @@ async fn toolbox_repair_ost(manifest_api: Option<String>, custom_api_url: Option
 
 #[tauri::command]
 async fn toolbox_fix_cloud_redirect() -> ToolboxActionResult {
-    if let Some(steam_path) = steam::detect_steam_path() {
-        toolbox::fix_cloud_redirect(&steam_path).await
-    } else {
-        toolbox_action(false, "未找到 Steam 客户端路径".to_string(), vec!["[失败] 无法定位 Steam 目录".to_string()])
-    }
+    // fix_cloud_redirect 内部含 kill_steam 的阻塞 sleep 与子进程调用，
+    // 必须放到 spawn_blocking，否则会在 Tokio 工作线程上阻塞并冻结界面
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            tauri::async_runtime::block_on(toolbox::fix_cloud_redirect(&steam_path))
+        } else {
+            toolbox_action(false, "未找到 Steam 客户端路径".to_string(), vec!["[失败] 无法定位 Steam 目录".to_string()])
+        }
+    })
+    .await
+    .unwrap_or_else(|e| toolbox::ToolboxActionResult { success: false, message: format!("任务执行失败: {}", e), steps: Some(Vec::new()), cleaned_files_count: None, restarted_steam: None })
 }
 
 // 读取 opensteamtool.toml 中的 server 值
