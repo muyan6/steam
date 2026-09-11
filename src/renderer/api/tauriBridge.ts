@@ -110,6 +110,20 @@ export async function postJson<T = any>(url: string, body?: any, timeoutMs = 800
 
 export const DEFAULT_CHANGELOGS: VersionChangelogItem[] = [
   {
+    version: '2.7.2',
+    releaseDate: '2026-09-11',
+    title: '春风渡 v2.7.2 启动静默自愈与交互体验升级版',
+    forceUpdate: true,
+    changelog: [
+      '🚀 启动环境自检与静默自愈：优化客户端启动流程，Steam 运行状态、网络环境与授权缓存全面改为后台静默自检与自愈，仅在检测到异常时友好提示，日常启动秒速进入、清爽无干扰',
+      '🎯 一键入库交互体验与全局弹窗：新增入库结果全局确认弹窗，明确呈现入库状态与 DLC 详情；入库后完整保留搜索界面状态，默认开启精致皓月主题',
+      '🎁 入库配额与计费规则人性化优化：单款游戏含全部 DLC 统一仅计 1 次入库额度，入库失败时自动返还额度不扣次数，免费额度文案统一为「N 款游戏（含全部 DLC）」',
+      '🛡️ 安全加固与内核完整性校验：上游清单下载严格限制 50MB 上限防御恶性膨胀，强化路径安全防穿透保护，并提升核心服务完整性哈希校验',
+      '⚡ 离线授权与缓存生命周期深度加固：修复离线授权到期放行逻辑、清缓存失效与解绑变相续期问题，优化字典编码内存占用与定时器生命周期管理',
+      '🌐 系统稳定性与前后端契约对齐：全面归一化前后端数据模型、API 参数及 DTO 契约，修复版本比较倒挂缺陷与精选规则覆盖问题'
+    ]
+  },
+  {
     version: '2.7.1',
     releaseDate: '2026-09-10',
     title: '春风渡 v2.7.1 密钥源与清单源解耦及无许可根治版',
@@ -794,7 +808,7 @@ export const createTauriBridge = () => {
 
       // 客户端严格防御语义校验：
       // 核心原则：只有当云端最新版本严格高于当前客户端版本时（cleanLatest > current），才判定存在更新！
-      // 若当前客户端版本 >= 云端版本（例如本地已编译 2.7.1，而云端尚未部署仍为 2.7.0），
+      // 若当前客户端版本 >= 云端版本（例如本地已编译 2.7.2，而云端尚未部署仍为 2.7.1），
       // 坚决判定为无需更新（hasUpdate = false），严禁倒挂/反向降级弹窗！
       if (data && data.latest && data.latest.version) {
         const cleanLatest = String(data.latest.version).replace(/^v/i, '').trim();

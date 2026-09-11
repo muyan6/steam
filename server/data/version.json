@@ -1,21 +1,22 @@
 {
-  "version": "2.7.1",
+  "version": "2.7.2",
   "channel": "stable",
-  "releaseDate": "2026-09-10",
-  "title": "春风渡 v2.7.1 密钥源与清单源解耦及无许可根治版",
+  "releaseDate": "2026-09-11",
+  "title": "春风渡 v2.7.2 启动静默自愈与交互体验升级版",
   "changelog": [
-    "🔑 密钥源与物理清单源架构彻底解耦：恢复旧源（30w 密钥库、苏大猫等）完整分发，无论是否存在物理清单，100% 注入 setDepotKey 与 addappid，彻底根除 Steam 下载提示「无许可」",
-    "🌐 恢复 OpenSteamTool 动态清单调度：解除对第三方清单代码源的封存，恢复春风渡云端中继、wudrm 与 guyunsq 动态清单索码通道，保障 Steam 实时拉取清单能力",
-    "🛡️ 三级轻量探测与非破坏性分级反馈：彻底废除粗暴删除入库规则的逻辑，提供全量就绪、核心就绪与缺少清单的精细分级提示与导入指引",
-    "⚡ 服务端多源清单库与密钥库同步扩容：登记并接入 Remlua AWS CloudFront 全球 CDN 与 SteamML R2 存储桶，提升清单与密钥分发可用性",
-    "✨ 客户端与管理端全链路协同：完善前后端元数据 DTO 与清单探测状态接口，优化界面提示交互"
+    "🚀 启动环境自检与静默自愈：优化客户端启动流程，Steam 运行状态、网络环境与授权缓存全面改为后台静默自检与自愈，仅在检测到异常时友好提示，日常启动秒速进入、清爽无干扰",
+    "🎯 一键入库交互体验与全局弹窗：新增入库结果全局确认弹窗，明确呈现入库状态与 DLC 详情；入库后完整保留搜索界面状态，默认开启精致皓月主题",
+    "🎁 入库配额与计费规则人性化优化：单款游戏含全部 DLC 统一仅计 1 次入库额度，入库失败时自动返还额度不扣次数，免费额度文案统一为「N 款游戏（含全部 DLC）」",
+    "🛡️ 安全加固与内核完整性校验：上游清单下载严格限制 50MB 上限防御恶性膨胀，强化路径安全防穿透保护，并提升核心服务完整性哈希校验",
+    "⚡ 离线授权与缓存生命周期深度加固：修复离线授权到期放行逻辑、清缓存失效与解绑变相续期问题，优化字典编码内存占用与定时器生命周期管理",
+    "🌐 系统稳定性与前后端契约对齐：全面归一化前后端数据模型、API 参数及 DTO 契约，修复版本比较倒挂缺陷与精选规则覆盖问题"
   ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.1/ChunFengDu_2.7.1_x64-setup.exe",
-  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.1/ChunFengDu_2.7.1_x64-setup.exe",
+  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.2/ChunFengDu_2.7.2_x64-setup.exe",
+  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.2/ChunFengDu_2.7.2_x64-setup.exe",
   "forceUpdate": true,
   "minSupportedVersion": "1.0.0",
   "enabled": true,
   "downloadCount": 0,
-  "createdAt": "2026-09-10T06:45:00.000Z",
-  "updatedAt": "2026-09-10T06:45:00.000Z"
+  "createdAt": "2026-09-11T12:00:00.000Z",
+  "updatedAt": "2026-09-11T12:00:00.000Z"
 }
