@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
 import { appSettingsService } from './appSettingsService.js';
-import { licenseService } from './licenseService.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 /**
@@ -157,59 +156,60 @@ class FreeQuotaService {
   }
 
   /**
-   * 按appId 维度的授权检查与计数：
-   * - 该 AppID 当天已获取过：放行且不重复计数
-   * - 尚有剩余额度：扣 1 次并放行
-   * - 额度耗尽：拒绝并返回明确提示
+   * 仅检查是否可用（不扣减），供"成功后才计入"的两段式流程使用。
+   * 计数维度：带 appId 时按 AppID（同一游戏当天只算 1 次，DLC 分包不额外计次）；
+   * 无 appId 时按当日不同 depotId（最多 100 个）。
    */
-  public checkAndConsume(
+  public checkAllowed(
     deviceId: string,
-    appId: number
-  ): { allowed: boolean; consumed: boolean; remaining: number; message?: string } {
+    appId?: number,
+    depotId?: string
+  ): { allowed: boolean; remaining: number; message?: string } {
     const q = this.getOrCreateRecord(deviceId);
-    if (q.appIds.includes(appId)) {
-      return { allowed: true, consumed: false, remaining: Math.max(0, this.limit - q.used) };
+    if (appId && appId > 0) {
+      if (q.appIds.includes(appId)) {
+        return { allowed: true, remaining: Math.max(0, this.limit - q.used) };
+      }
+      if (q.used >= this.limit) {
+        return {
+          allowed: false,
+          remaining: 0,
+          message: `今日免费入库额度已用完（每日 ${this.limit} 次），请激活后不限次使用`
+        };
+      }
+      return { allowed: true, remaining: Math.max(0, this.limit - q.used - 1) };
     }
-    if (q.used >= this.limit) {
-      return {
-        allowed: false,
-        consumed: false,
-        remaining: 0,
-        message: `今日免费入库额度已用完（每日 ${this.limit} 次），请激活后不限次使用`
-      };
+    const normalizedDepot = String(depotId || '').trim();
+    const keyIds = q.keyIds || (q.keyIds = []);
+    if (keyIds.includes(normalizedDepot)) {
+      return { allowed: true, remaining: 0 };
     }
-    q.used += 1;
-    q.appIds.push(appId);
-    this.dirty = true;
-    this.scheduleFlush();
-    return { allowed: true, consumed: true, remaining: Math.max(0, this.limit - q.used) };
+    if (keyIds.length >= 100) {
+      return { allowed: false, remaining: 0, message: '今日免费获取的分包数已达上限，请激活后使用' };
+    }
+    return { allowed: true, remaining: 100 - keyIds.length - 1 };
   }
 
   /**
-   * 无 AppID 的密钥类路由（单 depotKey / 清单下载 / OST 中转）的配额扣减：
-   * 按当日「不同 depotId 数」计数，防止逐 depot 遍历绕过每日配额拿走整库密钥。
-   * - 激活设备：直通
-   * - 当日已请求过该 depotId：放行不重复计数
-   * - 当日不同 depotId 已达 100 个：拒绝
+   * 提交一次配额扣减（应在请求确实成功返回数据后调用）。
+   * 内部再次校验上限，避免并发请求导致超发。
    */
-  public consumeKeyAccess(deviceId: string, depotId: string): boolean {
-    // 激活设备始终放行（幂等保护，正常由路由层提前拦截）
-    if (licenseService.verify(deviceId).isActivated) {
-      return true;
-    }
+  public commit(deviceId: string, appId?: number, depotId?: string): void {
     const q = this.getOrCreateRecord(deviceId);
-    if (!q.keyIds) q.keyIds = [];
-    const normalizedDepot = String(depotId || '').trim();
-    if (q.keyIds.includes(normalizedDepot)) {
-      return true;
+    if (appId && appId > 0) {
+      if (q.appIds.includes(appId)) return; // 同一 AppID 当天只计一次（DLC 不额外计次）
+      if (q.used >= this.limit) return; // 并发下已满则不再扣减
+      q.used += 1;
+      q.appIds.push(appId);
+    } else {
+      const normalizedDepot = String(depotId || '').trim();
+      const keyIds = q.keyIds || (q.keyIds = []);
+      if (keyIds.includes(normalizedDepot)) return;
+      if (keyIds.length >= 100) return;
+      keyIds.push(normalizedDepot);
     }
-    if (q.keyIds.length >= 100) {
-      return false;
-    }
-    q.keyIds.push(normalizedDepot);
     this.dirty = true;
     this.scheduleFlush();
-    return true;
   }
 
   /**

@@ -629,8 +629,10 @@ const unlockGame = async (game: SteamGame) => {
     const res = await window.electronAPI.unlockGame(plainGame);
     if (res.success) {
       let message = res.message;
-      if (!activated) {
-        // 本地额度仅作展示参考，权威计数在服务端（按 AppID 每日去重）
+      // 是否真正拿到达可用数据（分包密钥或清单实体）：没拿到视为"入库未成功"，不扣本地次数
+      const usable = (res.keyCount || 0) > 0 || (res.manifestCount || 0) > 0;
+      if (!activated && usable) {
+        // 本地额度仅作展示参考，权威计数在服务端（按 AppID 每日去重，DLC 不额外计次）
         try {
           const q = await window.electronAPI.consumeFreeUnlockQuota(false);
           if (q && typeof q.remaining === 'number') {

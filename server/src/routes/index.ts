@@ -243,9 +243,11 @@ router.get('/games/:appId/header', getGameHeaderImage);
 router.get('/games/:appId', getGameDetail);
 
 // 一站式元数据与密钥聚合查询
-// 密钥类接口设备授权：激活设备直通；未激活设备按「每日免费入库配额」放行
-// （按 AppID 维度计数，同一 AppID 当天重复请求不重复扣），额度耗尽返回 403。
-// 防止客户端激活拦截被绕过后无限制直接调用云端接口拿走密钥
+// 密钥类接口设备授权：激活设备直通；未激活设备按「每日免费入库配额」放行。
+// 计数维度按「游戏」而非「分包」：同一 AppID 当天只算 1 次，DLC 分包不额外计次；
+// 仅当 URL 无任何 appId（如 OST 中转）时才退化为按 depotId 计。
+// 采用「先检查、成功返回数据后再提交」的两段式：请求失败（403/404/500，
+// 或返回 success:false）绝不扣减次数，避免入库失败仍被扣次数。
 const requireKeyAccess = (req: Request, res: Response, next: any) => {
   // 优先读取请求头（减少 deviceId 经 URL 泄露到访问日志），兼容旧客户端 query 传参
   const headerId = typeof req.headers['x-device-id'] === 'string' ? req.headers['x-device-id'] : '';
@@ -257,34 +259,45 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
   if (info.isActivated) {
     return next();
   }
-  // 未激活：免费配额检查。带 :appId 参数的路由按 AppID 计数；
-  // 其余密钥类路由（如 manifest 文件下载、单 depotKey、OST 中转）按「当日不同 depotId」计数
-  const quotaExhausted = { success: false, message: '', data: { quotaExhausted: true, remaining: 0 } };
   // 二级 IP 限制：同 IP 每日最多 30 台独立未激活设备，防止批量伪造 deviceId 刷免费配额
+  const quotaExhausted = { success: false, message: '', data: { quotaExhausted: true, remaining: 0 } };
   if (!freeQuotaService.consumeIpDevice(req.ip || '', deviceId)) {
     quotaExhausted.message = '当前网络环境下免费设备数已达上限，请激活后使用';
     return res.status(403).json(quotaExhausted);
   }
-  const appIdRaw = req.params && req.params.appId ? String(req.params.appId) : '';
-  const appId = parseInt(appIdRaw, 10);
-  if (!isNaN(appId) && appId > 0) {
-    const r = freeQuotaService.checkAndConsume(deviceId, appId);
-    if (!r.allowed) {
-      quotaExhausted.message = r.message || '今日免费入库额度已用完，请激活后使用';
-      return res.status(403).json(quotaExhausted);
-    }
-    res.setHeader('X-Free-Quota-Remaining', String(r.remaining));
-    return next();
-  }
-  // 无 appId 的密钥类路由：按「当日不同 depotId」扣减配额（每日最多 100 个不同 depotId）
+
+  // 计数维度：优先路径参数 appId，其次 query.appId（清单下载路由由客户端带 ?appId=），
+  // 两者都无（如 OST 中转）才按 depotId 计。这样同一游戏的多个 DLC 分包只算 1 次。
+  const appIdRaw = (req.params && req.params.appId) || req.query.appId || '';
+  const appId = parseInt(String(appIdRaw), 10);
+  const useAppId = !isNaN(appId) && appId > 0;
   const depotId = String(
     (req.params && (req.params.depotId || req.params.asset || req.params.tag)) || 'ost:latest'
   ).trim();
-  if (freeQuotaService.consumeKeyAccess(deviceId, depotId)) {
-    return next();
+
+  const check = freeQuotaService.checkAllowed(deviceId, useAppId ? appId : undefined, depotId);
+  if (!check.allowed) {
+    quotaExhausted.message = check.message || '今日免费入库额度已用完，请激活后使用';
+    return res.status(403).json(quotaExhausted);
   }
-  quotaExhausted.message = '今日免费入库额度已用完，请激活后使用';
-  return res.status(403).json(quotaExhausted);
+  res.setHeader('X-Free-Quota-Remaining', String(check.remaining));
+
+  // 仅在响应确实成功送达数据时提交扣减：
+  // - res.json({success:false})（如云端未收录）视为失败不扣
+  // - 4xx/5xx 状态码视为失败不扣
+  // - 二进制流式下载（清单文件）以 200 正常结束视为成功，正常扣减
+  const originalJson = res.json.bind(res);
+  let explicitFailure = false;
+  res.json = (body: any) => {
+    if (body && body.success === false) explicitFailure = true;
+    return originalJson(body);
+  };
+  res.on('finish', () => {
+    if (explicitFailure) return;
+    if (res.statusCode >= 400) return;
+    freeQuotaService.commit(deviceId, useAppId ? appId : undefined, depotId);
+  });
+  return next();
 };
 
 router.get('/metadata/:appId', requireKeyAccess, getGameMetadata);
