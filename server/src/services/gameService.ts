@@ -568,11 +568,6 @@ export class GameService {
     };
   }
 
-  public async searchGames(query: string, limit: number = 48): Promise<SteamGame[]> {
-    const res = await this.searchGamesPaged({ query, pageSize: limit });
-    return res.items;
-  }
-
   public getTotalGamesCount(): number {
     // 只统计全量库本体，中文缓存与全量库高度重叠，不再叠加造成重复计数
     return this.allGames.length;

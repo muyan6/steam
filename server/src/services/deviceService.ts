@@ -29,6 +29,9 @@ export class DeviceService {
   private devicesMap: Map<string, DeviceRecord> = new Map();
   private filePath: string;
   private degraded: boolean = false;
+  // 设备档案容量上限：心跳接口公开且 deviceId 可任意伪造，
+  // 不设上限会被批量刷量撑爆内存与 devices.json（每次落盘还要全量序列化）
+  private static MAX_DEVICES = 50000;
 
   constructor() {
     this.filePath = path.join(CONFIG.DATA_DIR, 'devices.json');
@@ -165,8 +168,31 @@ export class DeviceService {
     };
 
     this.devicesMap.set(deviceId, record);
+    // 超出容量上限时淘汰最久未活跃、且未绑定卡密的设备档案（与每日清理同一安全策略：
+    // 绑定卡密/已激活的档案绝不因容量压力被丢弃）
+    if (this.devicesMap.size > DeviceService.MAX_DEVICES) {
+      this.evictLruUnbound();
+    }
     this.saveDevices();
     return record;
+  }
+
+  /** 容量超限时淘汰最久未活跃的非授权设备档案 */
+  private evictLruUnbound(): void {
+    const overflow = this.devicesMap.size - DeviceService.MAX_DEVICES;
+    if (overflow <= 0) return;
+    const evictable = Array.from(this.devicesMap.values())
+      .filter((d) => !d.licenseCode && !d.isActivated)
+      .sort((a, b) => new Date(a.lastSeenAt).getTime() - new Date(b.lastSeenAt).getTime());
+    let removed = 0;
+    for (const d of evictable) {
+      if (removed >= overflow) break;
+      this.devicesMap.delete(d.deviceId);
+      removed++;
+    }
+    if (removed > 0) {
+      console.warn(`[DeviceService] 设备档案已达上限 ${DeviceService.MAX_DEVICES}，淘汰 ${removed} 条最久未活跃的非授权档案`);
+    }
   }
 
   /**

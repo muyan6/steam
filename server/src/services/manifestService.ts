@@ -242,60 +242,6 @@ export class ManifestService {
   }
 
   /**
-   * 从 GMRC 清单分发源拉取 AppID 的清单元数据
-   */
-  private async fetchFromGMRC(appId: number): Promise<DepotManifestInfo[]> {
-    const urls = [
-      `https://gmrc.guyunsq.com/${appId}`,
-      `http://gmrc.wudrm.com/manifest/${appId}`,
-      `https://manifest.steam.run/manifest/${appId}`
-    ];
-
-    for (const u of urls) {
-      try {
-        const resp = await axios.get(u, { timeout: 3500 });
-        if (resp.data) {
-          const data = resp.data;
-          const list: DepotManifestInfo[] = [];
-          if (Array.isArray(data)) {
-            for (const item of data) {
-              if (item.depot_id && item.manifest_id) {
-                // 上游 download_url 白名单校验：仅允许 https，或 GMRC 源自身的 http 地址，
-                // 其余一律回落为默认构造地址，防止客户端被引导到任意 http 端点
-                const rawUrl = typeof item.download_url === 'string' ? item.download_url : '';
-                const safeUrl =
-                  rawUrl.startsWith('https://') || rawUrl.startsWith('http://gmrc.wudrm.com/')
-                    ? rawUrl
-                    : `${u}/${item.depot_id}`;
-                list.push({
-                  depotId: item.depot_id.toString(),
-                  manifestId: item.manifest_id.toString(),
-                  downloadUrl: safeUrl,
-                  source: 'gmrc',
-                  key: depotService.getDepotKey(item.depot_id.toString()) || undefined
-                });
-              }
-            }
-          } else if (typeof data === 'object') {
-            for (const [dId, mId] of Object.entries(data)) {
-              if (typeof mId === 'string' || typeof mId === 'number') {
-                list.push({
-                  depotId: dId,
-                  manifestId: mId.toString(),
-                  source: 'gmrc',
-                  key: depotService.getDepotKey(dId) || undefined
-                });
-              }
-            }
-          }
-          if (list.length > 0) return list;
-        }
-      } catch {}
-    }
-    return [];
-  }
-
-  /**
    * 从 GitHub ManifestHub3 加速源检索（并发竞速极速通道：ghfast.top 与 gh-proxy.com）
    */
   private async fetchFromManifestHub(appId: number, depotIds: string[]): Promise<DepotManifestInfo[]> {
@@ -874,7 +820,8 @@ export class ManifestService {
     ) {
       return true;
     }
-    // Protobuf
+    // Protobuf 清单：保持宽松接受（清单格式存在多个世代，过度收紧会误杀有效实体），
+    // 上面的 HTML/错误页特征已覆盖最常见的"文本被当清单"场景
     if ((buf[0] === 0x08 || buf[0] === 0x0a || buf[0] === 0x12) && buf.subarray(0, 32).some((b) => b > 0x7f || b === 0)) {
       return true;
     }
@@ -884,14 +831,21 @@ export class ManifestService {
   private checkAndReturnManifestFile(filePath: string): string | null {
     if (!fs.existsSync(filePath)) return null;
     try {
-      const buf = fs.readFileSync(filePath);
-      if (this.isValidManifestBuffer(buf)) {
-        return filePath;
-      } else {
-        console.warn(`[ManifestService] 清理损坏的非清单实体缓存: ${filePath}`);
-        fs.unlinkSync(filePath);
-        return null;
+      // 只读路径：仅读前 1KB 判断魔数，命中即返回，绝不在此删除文件。
+      // 原实现每次下载都同步读入整个清单（可达上百 MB）并在启发式判无效时删文件；
+      // 启发式存在误判，删除会静默毁掉有效缓存（删除应走显式修复/维护路径）。
+      const fd = fs.openSync(filePath, 'r');
+      try {
+        const head = Buffer.alloc(1024);
+        const read = fs.readSync(fd, head, 0, head.length, 0);
+        if (this.isValidManifestBuffer(head.subarray(0, read))) {
+          return filePath;
+        }
+      } finally {
+        fs.closeSync(fd);
       }
+      console.warn(`[ManifestService] 跳过疑似损坏的清单缓存（保留原文件，不做删除）: ${filePath}`);
+      return null;
     } catch {
       return null;
     }
@@ -1008,8 +962,9 @@ export class ManifestService {
     }
 
     // 1. wudrm 官方清单代码源（全球最大覆盖面与最新数据）
+    // 走 HTTPS：明文 HTTP 可被中间人替换返回任意数字代码，进而被客户端 Lua 内核使用
     try {
-      const resp = await axios.get(`http://gmrc.wudrm.com/manifest/${gid}`, { timeout: 3500, responseType: 'text' });
+      const resp = await axios.get(`https://gmrc.wudrm.com/manifest/${gid}`, { timeout: 3500, responseType: 'text' });
       if (resp.status === 200 && typeof resp.data === 'string') {
         const text = resp.data.trim();
         if (/^\d+$/.test(text)) {

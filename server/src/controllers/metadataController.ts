@@ -213,6 +213,9 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     let dlcIds: string[] = [];
     let depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number }> = [];
     let dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string } }> = [];
+    // SteamCMD 分包元数据的 dlcappid 是权威的「DLC → 分包」关联，
+    // 先记录映射，待分包密钥/GID 全部补全后再生成 dlcDepots
+    const dlcDepotMap = new Map<string, Set<string>>();
 
     // 1. 检查预设热门游戏库
     const isValidKey = (k?: string) => Boolean(k && k.length >= 32 && !/^0+$/.test(k));
@@ -297,12 +300,13 @@ export const getGameMetadata = async (req: Request, res: Response) => {
             // 严格校验分包 ID 必须为纯数字，过滤 branches/workshopdepot 等非分包元字段
             if (!/^\d+$/.test(dId)) continue;
 
-            // 从分包元数据中的 dlcappid 提取关联 DLC
-            if ((info as any).dlcappid && /^\d+$/.test(String((info as any).dlcappid))) {
-              const dlcAppId = String((info as any).dlcappid);
-              if (dlcAppId !== sAppId && !dlcIds.includes(dlcAppId)) {
-                dlcIds.push(dlcAppId);
-              }
+            // 从分包元数据中的 dlcappid 提取关联 DLC（权威关联，用于填充 dlcDepots）
+            const associatedDlc =
+              (info as any).dlcappid && /^\d+$/.test(String((info as any).dlcappid))
+                ? String((info as any).dlcappid)
+                : null;
+            if (associatedDlc && associatedDlc !== sAppId && !dlcIds.includes(associatedDlc)) {
+              dlcIds.push(associatedDlc);
             }
 
             // 过滤非内容分包：共享再发行组件（DirectX / VC++ 等）、0 字节虚拟占位分包
@@ -337,6 +341,11 @@ export const getGameMetadata = async (req: Request, res: Response) => {
               if (depotKey && (!existing.depotKey || !isValidKey(existing.depotKey))) existing.depotKey = depotKey;
             } else {
               depots.push({ depotId: dId, manifestGid, depotKey: depotKey || undefined });
+            }
+            // 记录权威 DLC→分包关联（仅记入实际保留的内容分包）
+            if (associatedDlc && associatedDlc !== sAppId) {
+              if (!dlcDepotMap.has(associatedDlc)) dlcDepotMap.set(associatedDlc, new Set());
+              dlcDepotMap.get(associatedDlc)!.add(dId);
             }
           }
         }
@@ -459,6 +468,19 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       readyCount: readyManifestCount,
       totalCount: depots.length
     };
+
+    // 由权威 dlcappid 关联生成 dlcDepots（此时分包密钥/GID 已全部补全）
+    for (const [dlcAppId, depotIdSet] of dlcDepotMap) {
+      for (const depotId of depotIdSet) {
+        const d = depots.find((x) => x.depotId === depotId);
+        if (d) {
+          dlcDepots.push({
+            dlcAppId,
+            depot: { depotId: d.depotId, depotKey: d.depotKey, manifestGid: d.manifestGid }
+          });
+        }
+      }
+    }
 
     // 7. 异步后台触发清单本地沉淀（非阻塞），确保后续秒级响应
     for (const d of depots) {

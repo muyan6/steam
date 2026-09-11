@@ -45,15 +45,3 @@ export function readJsonOrThrow<T>(filePath: string, label: string): T {
     throw new Error(`${label} 数据文件损坏，已备份到 ${corruptPath}，请修复后重启服务: ${(e as Error).message}`);
   }
 }
-
-/**
- * 读取 JSON 文件（宽松模式，仅用于非关键数据），失败返回 fallback。
- */
-export function readJsonSafe<T>(filePath: string, fallback: T): T {
-  try {
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T;
-    }
-  } catch {}
-  return fallback;
-}

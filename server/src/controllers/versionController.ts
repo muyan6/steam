@@ -103,7 +103,13 @@ export const publishVersionAdmin = (req: Request, res: Response) => {
 
     res.json({ success: true, message: `版本 v${newRelease.version} 已成功发布并上线`, data: newRelease });
   } catch (e: any) {
-    res.status(400).json({ success: false, message: e.message });
+    // 仅校验类错误（如"版本号不能为空"）返回 400 并可透出原因；
+    // 落盘失败等系统异常返回通用 500，避免把内部细节当作客户端错误回显
+    if (e?.message && typeof e.message === 'string' && e.message.includes('不能为空')) {
+      return res.status(400).json({ success: false, message: e.message });
+    }
+    console.error('[VersionController] 发布版本失败:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
 

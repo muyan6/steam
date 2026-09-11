@@ -86,6 +86,14 @@ export class AuthService {
         try {
           this.auditLogs = JSON.parse(fs.readFileSync(this.auditFilePath, 'utf-8'));
         } catch {
+          // fail-closed：损坏时先备份为 .corrupt（保留首次完整备份），
+          // 否则下一次防抖落盘会用空数组覆写、永久销毁历史审计记录
+          try {
+            if (!fs.existsSync(this.auditFilePath + '.corrupt')) {
+              fs.copyFileSync(this.auditFilePath, this.auditFilePath + '.corrupt');
+            }
+          } catch {}
+          console.error('[AuthService] 审计日志文件损坏！已备份到 .corrupt，请修复后重启服务');
           this.auditLogs = [];
         }
       } else {

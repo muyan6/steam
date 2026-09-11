@@ -157,14 +157,6 @@ class FreeQuotaService {
   }
 
   /**
-   * 是否仍有剩余额度（不计数，仅保留给展示/兼容场景；
-   * 密钥类路由的实际放行请使用 consumeKeyAccess 做扣减）
-   */
-  public hasRemaining(deviceId: string): boolean {
-    return this.status(deviceId).remaining > 0;
-  }
-
-  /**
    * 按appId 维度的授权检查与计数：
    * - 该 AppID 当天已获取过：放行且不重复计数
    * - 尚有剩余额度：扣 1 次并放行

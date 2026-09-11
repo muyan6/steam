@@ -108,17 +108,24 @@ export class SponsorService {
   }
 
   public getSponsors(): SponsorDataResponse {
-    let list: SponsorItem[] = [];
-    try {
-      if (fs.existsSync(this.sponsorsFilePath)) {
-        const raw = JSON.parse(fs.readFileSync(this.sponsorsFilePath, 'utf-8'));
-        if (Array.isArray(raw)) {
-          list = raw;
+    // 优先使用内存缓存：赞助榜单是公开接口，避免每次请求都同步读盘并重新解析。
+    // 仅在缓存为空时才首次读盘（写路径 writeJsonAtomic 后都会同步刷新缓存）。
+    let list: SponsorItem[];
+    if (this.sponsorsCache) {
+      list = [...this.sponsorsCache];
+    } else {
+      list = [];
+      try {
+        if (fs.existsSync(this.sponsorsFilePath)) {
+          const raw = JSON.parse(fs.readFileSync(this.sponsorsFilePath, 'utf-8'));
+          if (Array.isArray(raw)) {
+            list = raw;
+          }
         }
+      } catch (e: any) {
+        console.warn('[SponsorService] 读取赞助数据失败:', e.message);
+        list = this.sponsorsCache || [];
       }
-    } catch (e: any) {
-      console.warn('[SponsorService] 读取赞助数据失败:', e.message);
-      list = this.sponsorsCache || [];
     }
 
     // 排序：累计金额降序，次要以最近支付日期降序

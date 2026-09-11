@@ -140,21 +140,6 @@ export const triggerSyncAll = async (req: Request, res: Response) => {
   }
 };
 
-export const getPublicStats = (req: Request, res: Response) => {
-  try {
-    const stats = {
-      status: 'online',
-      gamesCount: gameService.getTotalGamesCount(),
-      depotKeysCount: depotService.getTotalKeysCount(),
-      tokensCount: tokenService.getTotalTokensCount(),
-      time: new Date().toISOString()
-    };
-    res.json({ success: true, data: stats });
-  } catch (e) {
-    internalError(res, '[AdminController] 同步接口异常:', e);
-  }
-};
-
 export const getServerStats = (req: Request, res: Response) => {
   try {
     const mem = process.memoryUsage();

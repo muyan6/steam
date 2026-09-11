@@ -76,10 +76,11 @@ export class OnlineRulesSyncService {
         const parsed: StoredOnlineRulesDb = JSON.parse(raw);
         if (Array.isArray(parsed.data) && parsed.data.length > 0) {
           for (const item of parsed.data) {
-            // 内置优先保留最高精度 notes
-            if (!this.rulesMap.has(item.appId) || (item as any).source !== 'curated') {
-              this.rulesMap.set(item.appId, item);
-            }
+            const existing = this.rulesMap.get(item.appId) as any;
+            // 内置精选规则（source=curated）优先级最高：磁盘/榜单数据绝不覆盖，
+            // 否则旧 DB（不含 source 标记）会在重启后抹掉精选规则的高精度 notes
+            if (existing && existing.source === 'curated') continue;
+            this.rulesMap.set(item.appId, item);
           }
           this.stats = {
             version: parsed.version || this.stats.version,
