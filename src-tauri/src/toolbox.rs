@@ -176,7 +176,8 @@ pub async fn fix_cloud_redirect(steam_path: &Path) -> ToolboxActionResult {
         for url in &download_urls {
             if let Ok(resp) = crate::manifests::http_client().get(*url).timeout(Duration::from_secs(10)).send().await {
                 if resp.status().is_success() {
-                    if let Ok(bytes) = resp.bytes().await {
+                    // 体积上限 50MB，防止超大响应/错误页耗尽内存
+                    if let Ok(bytes) = crate::manifests::read_body_limited(resp, crate::manifests::MAX_ASSET_DOWNLOAD_BYTES).await {
                         if bytes.len() > 10000 {
                             if fs::write(&cli_path, &bytes).is_ok() {
                                 download_ok = true;

@@ -1596,22 +1596,42 @@ async fn download_update(app: tauri::AppHandle, url: String, sha256: Option<Stri
                 return Err(format!("安装包 SHA256 校验失败（期望 {}，实际 {}），已删除下载内容。下载可能被篡改或中断，请重试", expected, actual));
             }
         }
+        // 登记本次下载产物，launch_installer 据此确认"确为本应用所下载"
+        {
+            let mut slot = verified_installer_slot().lock().unwrap_or_else(|e| e.into_inner());
+            *slot = Some(target.clone());
+        }
         Ok(target.to_string_lossy().to_string())
     })
     .await
     .map_err(|e| format!("下载任务失败: {}", e))?
 }
 
+/// 记录本应用刚下载并校验通过的安装包路径，
+/// 供 launch_installer 校验"确为本应用下载"，防止任意本地进程放置的同名 exe 被拉起
+static VERIFIED_INSTALLER: std::sync::OnceLock<std::sync::Mutex<Option<std::path::PathBuf>>> =
+    std::sync::OnceLock::new();
+
+fn verified_installer_slot() -> &'static std::sync::Mutex<Option<std::path::PathBuf>> {
+    VERIFIED_INSTALLER.get_or_init(|| std::sync::Mutex::new(None))
+}
+
 /// 拉起下载好的安装程序并退出本应用（交出 exe 文件锁供安装器替换）
 #[tauri::command]
 fn launch_installer(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
-    // 安全校验：只允许执行位于系统临时目录、刚由 download_update 下载的 exe
-    // （扩展名比较大小写不敏感，Windows 文件系统本身不区分大小写）
+    // 安全校验：只允许执行位于系统临时目录、且确由本应用 download_update 下载并登记的 exe，
+    // 仅凭"位于 %TEMP% 且扩展名 exe"不足以证明来源（任意本地进程都可在 %TEMP% 放置 exe）
     let is_temp_exe = p.extension().map(|e| e.eq_ignore_ascii_case("exe")).unwrap_or(false)
         && p.parent().map(|dir| dir == std::env::temp_dir()).unwrap_or(false);
     if !is_temp_exe {
         return Err("非法的安装包路径".to_string());
+    }
+    {
+        let slot = verified_installer_slot().lock().unwrap_or_else(|e| e.into_inner());
+        if slot.as_ref() != Some(&p) {
+            return Err("该安装包并非本程序本次下载的安装包，已拒绝执行".to_string());
+        }
     }
     if !p.exists() {
         return Err("安装包不存在，请重新下载".to_string());

@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
@@ -866,9 +867,10 @@ fn write_deployed_ost_tag(steam_path: &Path, tag: &str) {
     let _ = std::fs::write(steam_path.join(OST_META_FILE), meta.to_string());
 }
 
-/// 查询 OST 最新 release（tag + Release.zip 资产名）。
+/// 查询 OST 最新 release（tag + Release.zip 资产名 + GitHub 提供的 sha256 摘要）。
 /// api.github.com 直连失败时回退解析 github.com releases/latest 的重定向地址
-fn fetch_latest_ost_release() -> Result<(String, Option<String>, String), String> {
+/// （该回退与服务器中转都无法保证提供摘要，此时摘要为 None）
+fn fetch_latest_ost_release() -> Result<(String, Option<String>, String, Option<String>), String> {
     let api_url = format!("https://api.github.com/repos/{}/releases/latest", OST_REPO);
     if let Ok(resp) = crate::manifests::block_on(
         crate::manifests::http_client()
@@ -885,18 +887,36 @@ fn fetch_latest_ost_release() -> Result<(String, Option<String>, String), String
                     .and_then(|p| p.as_str())
                     .map(|s| s.to_string());
                 // 优先取体积小的 Release 包（Debug 包 28MB 且非分发用途）
-                let asset = json
-                    .get("assets")
-                    .and_then(|a| a.as_array())
-                    .and_then(|list| {
-                        list.iter()
-                            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
-                            .find(|n| n.contains("Release.zip") && !n.contains("Debug"))
-                            .or_else(|| list.iter().filter_map(|a| a.get("name").and_then(|n| n.as_str())).find(|n| n.ends_with(".zip")))
-                    })
-                    .map(|s| s.to_string());
-                if let Some(asset) = asset {
-                    return Ok((tag.to_string(), published, asset));
+                let assets = json.get("assets").and_then(|a| a.as_array());
+                let picked = assets.and_then(|list| {
+                    let by_name = |want_release: bool| {
+                        list.iter().find(|a| {
+                            a.get("name")
+                                .and_then(|n| n.as_str())
+                                .map(|n| {
+                                    if want_release {
+                                        n.contains("Release.zip") && !n.contains("Debug")
+                                    } else {
+                                        n.ends_with(".zip")
+                                    }
+                                })
+                                .unwrap_or(false)
+                        })
+                    };
+                    by_name(true).or_else(|| by_name(false))
+                });
+                if let Some(asset) = picked {
+                    let name = asset.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                    // GitHub API 的 digest 形如 "sha256:<64hex>"；缺失时为 None
+                    let digest = asset
+                        .get("digest")
+                        .and_then(|d| d.as_str())
+                        .and_then(|d| d.strip_prefix("sha256:"))
+                        .map(|s| s.trim().to_ascii_lowercase())
+                        .filter(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()));
+                    if !name.is_empty() {
+                        return Ok((tag.to_string(), published, name, digest));
+                    }
                 }
             }
         }
@@ -926,6 +946,7 @@ fn fetch_latest_ost_release() -> Result<(String, Option<String>, String), String
                     tag.to_string(),
                     None,
                     format!("OpenSteamTool-{}-Release.zip", tag),
+                    None,
                 ));
             }
         }
@@ -952,7 +973,14 @@ fn fetch_latest_ost_release() -> Result<(String, Option<String>, String), String
                             .get("publishedAt")
                             .and_then(|p| p.as_str())
                             .map(|s| s.to_string());
-                        return Ok((tag.to_string(), published, asset.to_string()));
+                        // 服务器中转同样透传 GitHub 摘要（可能缺失），供客户端强校验
+                        let digest = json
+                            .get("digest")
+                            .and_then(|d| d.as_str())
+                            .and_then(|d| d.strip_prefix("sha256:"))
+                            .map(|s| s.trim().to_ascii_lowercase())
+                            .filter(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()));
+                        return Ok((tag.to_string(), published, asset.to_string(), digest));
                     }
                 }
             }
@@ -984,9 +1012,19 @@ fn extract_ost_core_from_zip(zip_bytes: &[u8]) -> Result<Vec<(&'static str, Vec<
             }
             let fname = entry.name().rsplit('/').next().unwrap_or("");
             if fname.eq_ignore_ascii_case(name) {
-                let mut buf = Vec::with_capacity(entry.size() as usize);
-                std::io::Read::read_to_end(&mut entry, &mut buf)
+                // 单条目体积防护：用 take 限制实际读取量，不信任压缩包声明的大小
+                // （Vec::with_capacity(entry.size()) 会被伪造的巨大声明触发巨额分配）
+                let cap = crate::manifests::MAX_ASSET_DOWNLOAD_BYTES;
+                let mut buf = Vec::new();
+                std::io::Read::take(&mut entry, cap + 1)
+                    .read_to_end(&mut buf)
                     .map_err(|e| format!("读取 {} 失败: {}", name, e))?;
+                if buf.len() as u64 > cap {
+                    return Err(format!(
+                        "{} 解压后体积超过上限 {} 字节，压缩包可能异常或为 zip 炸弹",
+                        name, cap
+                    ));
+                }
                 if buf.len() > 1024 && buf.starts_with(b"MZ") {
                     found = Some(buf);
                 }
@@ -1001,8 +1039,14 @@ fn extract_ost_core_from_zip(zip_bytes: &[u8]) -> Result<Vec<(&'static str, Vec<
     Ok(out)
 }
 
-/// 从多个镜像链下载 release zip（官方直链 ➔ ghfast.top ➔ gh-proxy.com）
-fn download_ost_release_zip(tag: &str, asset: &str) -> Result<Vec<u8>, String> {
+/// 从多个镜像链下载 release zip（官方直链 ➔ ghfast.top ➔ gh-proxy.com ➔ 服务器中转）。
+/// expected_sha256 为 GitHub 提供的摘要；存在时对下载内容做强校验，
+/// 防止第三方镜像（或链路中间人）投递被替换的内核 DLL。
+fn download_ost_release_zip(
+    tag: &str,
+    asset: &str,
+    expected_sha256: Option<&str>,
+) -> Result<Vec<u8>, String> {
     let target = ost_release_zip_url(tag, asset);
     let mirrors = [
         target.clone(),
@@ -1024,10 +1068,23 @@ fn download_ost_release_zip(tag: &str, asset: &str) -> Result<Vec<u8>, String> {
                 .send(),
         ) {
             Ok(resp) if resp.status().is_success() => {
-                match crate::manifests::block_on(resp.bytes()) {
-                    Ok(bytes) if bytes.len() > 100 * 1024 => return Ok(bytes.to_vec()),
+                match crate::manifests::read_body_limited_blocking(
+                    resp,
+                    crate::manifests::MAX_ASSET_DOWNLOAD_BYTES,
+                ) {
+                    Ok(bytes) if bytes.len() > 100 * 1024 => {
+                        // 有权威摘要时必须校验：不一致则该镜像内容不可信，尝试下一个
+                        if let Some(expected) = expected_sha256 {
+                            let actual = crate::manifests::sha256_hex(&bytes);
+                            if actual != expected {
+                                last_err = format!("{} 内容校验失败（SHA256 不匹配）", url);
+                                continue;
+                            }
+                        }
+                        return Ok(bytes);
+                    }
                     Ok(_) => last_err = format!("{} 返回内容异常", url),
-                    Err(e) => last_err = format!("{} 下载中断: {}", url, e),
+                    Err(e) => last_err = format!("{} 下载失败: {}", url, e),
                 }
             }
             Ok(resp) => last_err = format!("{} 返回 HTTP {}", url, resp.status()),
@@ -1042,7 +1099,7 @@ pub fn check_ost_sync_status(steam_path: &Path) -> OstSyncInfo {
     let current_tag = read_deployed_ost_tag(steam_path);
     let steam_running = is_steam_running();
     match fetch_latest_ost_release() {
-        Ok((latest_tag, published_at, _asset)) => OstSyncInfo {
+        Ok((latest_tag, published_at, _asset, _digest)) => OstSyncInfo {
             update_available: latest_tag != current_tag,
             current_tag,
             latest_tag: Some(latest_tag),
@@ -1068,13 +1125,13 @@ pub fn sync_ost_latest(steam_path: &Path) -> Result<String, String> {
         return Err("Steam 客户端正在运行，核心 DLL 被锁定无法替换。请先退出 Steam（可在工具箱一键结束进程）后重试。".to_string());
     }
 
-    let (tag, _published, asset) = fetch_latest_ost_release()?;
+    let (tag, _published, asset, digest) = fetch_latest_ost_release()?;
     let current_tag = read_deployed_ost_tag(steam_path);
     if tag == current_tag {
         return Ok(format!("内核已是最新版本（{}），无需同步。", tag));
     }
 
-    let zip_bytes = download_ost_release_zip(&tag, &asset)?;
+    let zip_bytes = download_ost_release_zip(&tag, &asset, digest.as_deref())?;
     let core = extract_ost_core_from_zip(&zip_bytes)?;
 
     for (name, bytes) in &core {

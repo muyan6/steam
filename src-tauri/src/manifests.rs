@@ -31,6 +31,47 @@ pub fn http_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder().user_agent("ChunFengDu-Client")
 }
 
+/// 清单/补丁/内核等资产类下载的统一体积上限（50MB）。
+/// 这些内容来自第三方镜像，必须防止超大响应或 zip 炸弹耗尽内存/磁盘。
+pub const MAX_ASSET_DOWNLOAD_BYTES: u64 = 50 * 1024 * 1024;
+
+/// 游戏字典体积极小（当前约 4MB），但作为检索基线允许适度余量
+pub const MAX_DICT_DOWNLOAD_BYTES: u64 = 50 * 1024 * 1024;
+
+/// 资产类下载（清单/补丁/内核）的请求超时。
+/// 原先这些请求被设为 4~8 秒，大清单在慢链路下会被直接截断而失败；
+/// 这里放宽到 60 秒，真正的兜底由 read_body_limited 的 50MB 上限负责。
+pub const ASSET_REQUEST_TIMEOUT_SECS: u64 = 60;
+
+/// 带体积上限的响应体读取（异步）：
+/// 先校验 Content-Length 提前拒绝，再分块累加，超限立即中止
+/// （有些响应不带 Content-Length，不能只依赖头部判断）。
+pub async fn read_body_limited(resp: reqwest::Response, max: u64) -> Result<Vec<u8>, String> {
+    if let Some(len) = resp.content_length() {
+        if len > max {
+            return Err(format!("响应体积 {} 字节，超过上限 {} 字节", len, max));
+        }
+    }
+    let mut resp = resp;
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?
+    {
+        if buf.len() as u64 + chunk.len() as u64 > max {
+            return Err(format!("响应体积超过上限 {} 字节，已中止下载", max));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
+/// read_body_limited 的阻塞封装，供同步下载路径使用
+pub fn read_body_limited_blocking(resp: reqwest::Response, max: u64) -> Result<Vec<u8>, String> {
+    block_on(read_body_limited(resp, max))
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppManifestStatus {
@@ -524,9 +565,15 @@ pub fn extract_lua_from_zip(zip_bytes: &[u8]) -> Option<String> {
         for i in 0..archive.len() {
             if let Ok(mut entry) = archive.by_index(i) {
                 if !entry.is_dir() && entry.name().ends_with(".lua") {
-                    let mut s = String::new();
-                    if entry.read_to_string(&mut s).is_ok() && !s.is_empty() {
-                        return Some(s);
+                    // 限制单条目读取量，防止 zip 炸弹膨胀
+                    let mut raw = Vec::new();
+                    if std::io::Read::take(&mut entry, MAX_ASSET_DOWNLOAD_BYTES + 1)
+                        .read_to_end(&mut raw)
+                        .is_ok()
+                        && !raw.is_empty()
+                        && raw.len() as u64 <= MAX_ASSET_DOWNLOAD_BYTES
+                    {
+                        return String::from_utf8(raw).ok();
                     }
                 }
             }
@@ -549,7 +596,12 @@ pub fn extract_manifest_from_zip(zip_bytes: &[u8], depot_id: &str, manifest_gid:
                         .unwrap_or("");
                     if file_name.eq_ignore_ascii_case(&target_name) {
                         let mut buf = Vec::new();
-                        if entry.read_to_end(&mut buf).is_ok() && is_valid_manifest_payload(&buf) {
+                        if std::io::Read::take(&mut entry, MAX_ASSET_DOWNLOAD_BYTES + 1)
+                            .read_to_end(&mut buf)
+                            .is_ok()
+                            && buf.len() as u64 <= MAX_ASSET_DOWNLOAD_BYTES
+                            && is_valid_manifest_payload(&buf)
+                        {
                             return Some(buf);
                         }
                     }
@@ -567,7 +619,12 @@ pub fn extract_manifest_from_zip(zip_bytes: &[u8], depot_id: &str, manifest_gid:
                         .unwrap_or("");
                     if file_name.starts_with(&prefix) && file_name.ends_with(".manifest") {
                         let mut buf = Vec::new();
-                        if entry.read_to_end(&mut buf).is_ok() && is_valid_manifest_payload(&buf) {
+                        if std::io::Read::take(&mut entry, MAX_ASSET_DOWNLOAD_BYTES + 1)
+                            .read_to_end(&mut buf)
+                            .is_ok()
+                            && buf.len() as u64 <= MAX_ASSET_DOWNLOAD_BYTES
+                            && is_valid_manifest_payload(&buf)
+                        {
                             return Some(buf);
                         }
                     }
@@ -586,7 +643,7 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
     let sml_url = format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id);
     if let Ok(resp) = block_on(http_client().get(&sml_url).timeout(Duration::from_secs(4)).send()) {
         if resp.status().is_success() {
-            if let Ok(bytes) = block_on(resp.bytes()) {
+            if let Ok(bytes) = read_body_limited_blocking(resp, MAX_ASSET_DOWNLOAD_BYTES) {
                 if let Some(text) = extract_lua_from_zip(&bytes) {
                     lua_content = Some(text);
                 }
@@ -598,7 +655,7 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
         let remlua_url = format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", app_id);
         if let Ok(resp) = block_on(http_client().get(&remlua_url).timeout(Duration::from_secs(4)).send()) {
             if resp.status().is_success() {
-                if let Ok(bytes) = block_on(resp.bytes()) {
+                if let Ok(bytes) = read_body_limited_blocking(resp, MAX_ASSET_DOWNLOAD_BYTES) {
                     if let Some(text) = extract_lua_from_zip(&bytes) {
                         lua_content = Some(text);
                     }
@@ -653,7 +710,7 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
         if let Ok(resp) = block_on(
             http_client()
                 .get(&proxy_url)
-                .timeout(Duration::from_secs(8))
+                .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
                 .header("Referer", "https://steamtools.pages.dev/")
                 .send(),
         ) {
@@ -671,7 +728,7 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
                                         .send(),
                                 ) {
                                     if dl_resp.status().is_success() {
-                                        if let Ok(bytes) = block_on(dl_resp.bytes()) {
+                                        if let Ok(bytes) = read_body_limited_blocking(dl_resp, MAX_ASSET_DOWNLOAD_BYTES) {
                                             if let Some(text) = extract_lua_from_zip(&bytes) {
                                                 lua_content = Some(text);
                                                 break;
@@ -821,6 +878,21 @@ fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
             .and_then(|m| m.as_str())
             .unwrap_or("当前设备未激活或免费额度已用完");
         return Err(format!("云端密钥服务拒绝 (HTTP {}): {}", status.as_u16(), server_msg));
+    }
+
+    // 防御：即便服务端以 HTTP 200 返回配额/授权拒绝（success:false + quotaExhausted），
+    // 也必须视为终态并透传原因，绝不能降级到公开镜像绕过免费配额与激活闸门
+    if json
+        .get("data")
+        .and_then(|d| d.get("quotaExhausted"))
+        .and_then(|q| q.as_bool())
+        == Some(true)
+    {
+        let server_msg = json
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("当前设备未激活或免费额度已用完");
+        return Err(format!("云端密钥服务拒绝: {}", server_msg));
     }
 
     let data = json
@@ -995,14 +1067,14 @@ async fn download_single_manifest(
     );
     if let Ok(resp) = http_client()
         .get(&server_url)
-        .timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
         .header("x-device-id", &device_id)
         .header("User-Agent", "ChunFengDu-Client")
         .send()
         .await
     {
         if resp.status().is_success() {
-            if let Ok(bytes) = resp.bytes().await {
+            if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
                 if !bytes.is_empty() {
                     let payload = extract_manifest_payload(&bytes);
                     if !payload.is_empty() && is_valid_manifest_payload(&payload) {
@@ -1023,9 +1095,9 @@ async fn download_single_manifest(
         format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", depot_id),
     ];
     for sml_url in &sml_candidates {
-        if let Ok(resp) = http_client().get(sml_url).timeout(Duration::from_secs(5)).send().await {
+        if let Ok(resp) = http_client().get(sml_url).timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS)).send().await {
             if resp.status().is_success() {
-                if let Ok(bytes) = resp.bytes().await {
+                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
                     if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
                         fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                         clean_old_manifests(&depot_cache, depot_id, manifest_gid);
@@ -1042,9 +1114,9 @@ async fn download_single_manifest(
         format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", depot_id),
     ];
     for remlua_url in &remlua_candidates {
-        if let Ok(resp) = http_client().get(remlua_url).timeout(Duration::from_secs(5)).send().await {
+        if let Ok(resp) = http_client().get(remlua_url).timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS)).send().await {
             if resp.status().is_success() {
-                if let Ok(bytes) = resp.bytes().await {
+                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
                     if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
                         fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                         clean_old_manifests(&depot_cache, depot_id, manifest_gid);
@@ -1077,12 +1149,12 @@ async fn download_single_manifest(
     for m_url in &mirror_candidates {
         if let Ok(resp) = http_client()
             .get(m_url)
-            .timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
             .send()
             .await
         {
             if resp.status().is_success() {
-                if let Ok(bytes) = resp.bytes().await {
+                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
                     if !bytes.is_empty() {
                         let payload = extract_manifest_payload(&bytes);
                         if !payload.is_empty() && is_valid_manifest_payload(&payload) {
@@ -1110,12 +1182,12 @@ async fn download_single_manifest(
     for r_url in &raw_candidates {
         if let Ok(resp) = http_client()
             .get(r_url)
-            .timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
             .send()
             .await
         {
             if resp.status().is_success() {
-                if let Ok(bytes) = resp.bytes().await {
+                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
                     if !bytes.is_empty() {
                         let payload = extract_manifest_payload(&bytes);
                         if !payload.is_empty() && is_valid_manifest_payload(&payload) {
@@ -1134,7 +1206,7 @@ async fn download_single_manifest(
     let proxy_url = format!("https://api.manifesthub.uk/proxy?id={}", enc_id);
     if let Ok(resp) = http_client()
         .get(&proxy_url)
-        .timeout(Duration::from_secs(6))
+        .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
         .header("Referer", "https://steamtools.pages.dev/")
         .send()
         .await
@@ -1147,13 +1219,13 @@ async fn download_single_manifest(
                             let dl_url = format!("https://api.manifesthub.uk{}", href);
                             if let Ok(dl_resp) = http_client()
                                 .get(&dl_url)
-                                .timeout(Duration::from_secs(8))
+                                .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
                                 .header("Referer", &proxy_url)
                                 .send()
                                 .await
                             {
                                 if dl_resp.status().is_success() {
-                                    if let Ok(bytes) = dl_resp.bytes().await {
+                                    if let Ok(bytes) = read_body_limited(dl_resp, MAX_ASSET_DOWNLOAD_BYTES).await {
                                         if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
                                             fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
                                             clean_old_manifests(&depot_cache, depot_id, manifest_gid);
@@ -1218,7 +1290,12 @@ fn extract_manifest_payload(data: &[u8]) -> Vec<u8> {
             if let Ok(mut entry) = archive.by_index(i) {
                 if !entry.is_dir() {
                     let mut buf = Vec::new();
-                    if entry.read_to_end(&mut buf).is_ok() && !buf.is_empty() {
+                    if std::io::Read::take(&mut entry, MAX_ASSET_DOWNLOAD_BYTES + 1)
+                        .read_to_end(&mut buf)
+                        .is_ok()
+                        && !buf.is_empty()
+                        && buf.len() as u64 <= MAX_ASSET_DOWNLOAD_BYTES
+                    {
                         return buf;
                     }
                 }
@@ -1442,7 +1519,7 @@ fn local_db_state() -> &'static StdMutex<LocalDbState> {
 }
 
 /// 计算字节切片的 SHA256 十六进制小写串（即字典版本号）
-fn sha256_hex(data: &[u8]) -> String {
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     let digest = hasher.finalize();
@@ -1662,7 +1739,8 @@ pub fn check_and_sync_dictionary(resource_dir: Option<&Path>) -> Result<Dictiona
     if !status.is_success() {
         return Err(format!("下载云端字典失败 (HTTP {})", status.as_u16()));
     }
-    let bytes = block_on(resp.bytes()).map_err(|e| format!("读取云端字典响应失败: {}", e))?;
+    let bytes = read_body_limited_blocking(resp, MAX_DICT_DOWNLOAD_BYTES)
+        .map_err(|e| format!("读取云端字典响应失败: {}", e))?;
     let bytes = bytes.as_ref();
 
     // 4. 校验：SHA256 与版本接口一致 + 魔数 CFGD + 解析条目数 > 10 万

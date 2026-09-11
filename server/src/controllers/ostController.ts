@@ -20,11 +20,18 @@ export const getLatestOstRelease = async (_req: Request, res: Response) => {
     }
     const assets: any[] = Array.isArray(resp.data.assets) ? resp.data.assets : [];
     // 优先取体积小的 Release 包（Debug 包 28MB 且非分发用途）
-    const asset =
-      assets.find((a) => typeof a?.name === 'string' && a.name.includes('Release.zip') && !a.name.includes('Debug'))?.name ||
-      assets.find((a) => typeof a?.name === 'string' && a.name.endsWith('.zip'))?.name ||
+    const picked =
+      assets.find((a) => typeof a?.name === 'string' && a.name.includes('Release.zip') && !a.name.includes('Debug')) ||
+      assets.find((a) => typeof a?.name === 'string' && a.name.endsWith('.zip')) ||
       null;
-    res.json({ success: true, tag, publishedAt: resp.data.published_at || null, asset });
+    const asset = picked?.name || null;
+    // 透传 GitHub 提供的 sha256 摘要（形如 "sha256:<64hex>"），供客户端校验镜像内容，
+    // 防止第三方镜像投递被替换的内核 DLL
+    const digest =
+      typeof picked?.digest === 'string' && /^sha256:[0-9a-fA-F]{64}$/.test(picked.digest)
+        ? picked.digest.toLowerCase()
+        : null;
+    res.json({ success: true, tag, publishedAt: resp.data.published_at || null, asset, digest });
   } catch (e: any) {
     console.error('[OstController] 中转查询 GitHub 失败:', e.message);
     res.status(502).json({ success: false, message: '中转查询 GitHub 失败，请稍后重试' });

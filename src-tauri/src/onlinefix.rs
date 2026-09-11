@@ -939,10 +939,11 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
     let dest_resolved = canonicalize_normalized(&dest);
     let mut count = 0usize;
     let mut skipped = 0usize;
-    // zip 炸弹防护：单条目 ≤512MB、累计解压 ≤2GB，超限立即中止。
-    // entry.size() 为声明解压后大小，读取前即可判断，避免先把膨胀内容读进内存
-    const MAX_ENTRY_SIZE: u64 = 512 * 1024 * 1024;
-    const MAX_TOTAL_SIZE: u64 = 2 * 1024 * 1024 * 1024;
+    // zip 炸弹防护：单个文件解压后 ≤50MB、累计解压 ≤200MB。
+    // 关键：按“实际读出字节数”统计，不信任 entry.size() 的声明值——
+    // 声明可被伪造（声明 1KB 却流出数 GB），且入口归档整体已被下载层限制在 50MB。
+    const MAX_ENTRY_SIZE: u64 = 50 * 1024 * 1024;
+    const MAX_TOTAL_SIZE: u64 = 200 * 1024 * 1024;
     let mut total_out: u64 = 0;
 
     for i in 0..archive.len() {
@@ -967,23 +968,25 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
         if entry.is_dir() {
             let _ = fs::create_dir_all(&out_path);
         } else {
-            let entry_size = entry.size();
-            if entry_size > MAX_ENTRY_SIZE || total_out + entry_size > MAX_TOTAL_SIZE {
-                return Err(format!(
-                    "归档解压量超出安全限制（单文件上限 512MB / 总量上限 2GB），已中止：条目 {} 解压后 {} 字节",
-                    safe_name.display(),
-                    entry_size
-                ));
-            }
             if let Some(parent) = out_path.parent() {
                 let _ = fs::create_dir_all(parent);
             }
+            // 用 take 限制实际读出量，超限立即判为异常归档
             let mut buf = Vec::new();
-            if entry.read_to_end(&mut buf).is_ok() {
-                if fs::write(&out_path, &buf).is_ok() {
-                    count += 1;
-                    total_out += entry_size;
-                }
+            let read = std::io::Read::take(&mut entry, MAX_ENTRY_SIZE + 1).read_to_end(&mut buf);
+            if read.is_err() {
+                continue;
+            }
+            let written = buf.len() as u64;
+            if written > MAX_ENTRY_SIZE || total_out + written > MAX_TOTAL_SIZE {
+                return Err(format!(
+                    "归档解压量超出安全限制（单文件上限 50MB / 总量上限 200MB），已中止：条目 {}",
+                    safe_name.display()
+                ));
+            }
+            if fs::write(&out_path, &buf).is_ok() {
+                count += 1;
+                total_out += written;
             }
         }
     }

@@ -5,6 +5,12 @@ import AdmZip from 'adm-zip';
 import { CONFIG } from '../config/index.js';
 import { depotService } from './depotService.js';
 
+/// 上游清单 ZIP 下载体积上限（50MB）：防止超大响应或 zip 炸弹耗尽服务端内存
+const MAX_UPSTREAM_ZIP_BYTES = 50 * 1024 * 1024;
+/// 解压侧限制：单条目 ≤50MB，总条目数 ≤2000，防止声明式膨胀与海量写入阻塞事件循环
+const MAX_ZIP_ENTRY_BYTES = 50 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 2000;
+
 export interface DepotManifestInfo {
   depotId: string;
   manifestId: string;
@@ -423,7 +429,7 @@ export class ManifestService {
   public async fetchFromSteamML(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
     const url = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
     try {
-      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 7000 });
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 7000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
       if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
         return this.unpackZipAndExtractManifests(appId, Buffer.from(resp.data), depotIds, 'steamml');
       }
@@ -437,7 +443,7 @@ export class ManifestService {
   public async fetchFromRemlua(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
     const url = `https://d41hvr6rtvs2p.cloudfront.net/${appId}.zip`;
     try {
-      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 7000 });
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 7000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
       if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
         return this.unpackZipAndExtractManifests(appId, Buffer.from(resp.data), depotIds, 'remlua');
       }
@@ -467,6 +473,7 @@ export class ManifestService {
           const zipResp = await axios.get(dlUrl, {
             responseType: 'arraybuffer',
             timeout: 10000,
+            maxContentLength: MAX_UPSTREAM_ZIP_BYTES,
             headers: {
               'User-Agent': 'Mozilla/5.0',
               Referer: proxyUrl
@@ -534,9 +541,17 @@ export class ManifestService {
       }
 
       // 解压并落盘所有 .manifest 文件
+      let extractedBytes = 0;
       for (const item of manifestEntries) {
+        // 解压体积上限：阻止声明式膨胀（zip 炸弹）
+        const declared = typeof item.entry?.header?.size === 'number' ? item.entry.header.size : 0;
+        if (declared > MAX_ZIP_ENTRY_BYTES || extractedBytes + declared > MAX_UPSTREAM_ZIP_BYTES) {
+          console.warn(`[ManifestService] ZIP 解压量超限，已跳过剩余条目 (已解压 ${extractedBytes} 字节)`);
+          break;
+        }
         const fileData = zip.readFile(item.entry);
         if (fileData && this.isValidManifestBuffer(fileData)) {
+          extractedBytes += fileData.length;
           this.saveManifestFile(item.depotId, item.manifestId, fileData);
           try {
             const appDir = path.join(this.manifestDir, String(appId));
@@ -592,7 +607,7 @@ export class ManifestService {
     // 1. 优先尝试全球顶级边缘 CDN：SteamML (R2) 与 Remlua (CloudFront)
     try {
       const smlUrl = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
-      const resp = await axios.get(smlUrl, { responseType: 'arraybuffer', timeout: 6000 });
+      const resp = await axios.get(smlUrl, { responseType: 'arraybuffer', timeout: 6000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
       if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
         const zipBuf = Buffer.from(resp.data);
         this.unpackZipAndExtractManifests(appId, zipBuf, [], 'steamml');
@@ -605,7 +620,7 @@ export class ManifestService {
 
     try {
       const remluaUrl = `https://d41hvr6rtvs2p.cloudfront.net/${appId}.zip`;
-      const resp = await axios.get(remluaUrl, { responseType: 'arraybuffer', timeout: 6000 });
+      const resp = await axios.get(remluaUrl, { responseType: 'arraybuffer', timeout: 6000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
       if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
         const zipBuf = Buffer.from(resp.data);
         this.unpackZipAndExtractManifests(appId, zipBuf, [], 'remlua');
@@ -630,6 +645,7 @@ export class ManifestService {
         try {
           const zipResp = await axios.get(`https://api.manifesthub.uk${href}`, {
             responseType: 'arraybuffer',
+            maxContentLength: MAX_UPSTREAM_ZIP_BYTES,
             timeout: 8000,
             headers: { 'User-Agent': 'Mozilla/5.0', Referer: proxyUrl }
           });
@@ -663,6 +679,11 @@ export class ManifestService {
     try {
       const zip = new AdmZip(zipBuffer);
       const entries = zip.getEntries();
+      // 条目数上限：本函数只解析 Lua 文本，无需处理海量条目的异常归档
+      if (entries.length > MAX_ZIP_ENTRIES) {
+        console.warn(`[ManifestService] ZIP 条目数超限 (${entries.length} > ${MAX_ZIP_ENTRIES})，已跳过解析`);
+        return null;
+      }
       let lua = '';
       for (const e of entries) {
         if (!e.isDirectory && e.entryName.endsWith('.lua')) {
@@ -753,7 +774,7 @@ export class ManifestService {
     const hubDownloadTask = async (): Promise<string | null> => {
       try {
         const promises = hubManifestUrls.map(async (url) => {
-          const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 3500 });
+          const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 3500, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
           if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
             return Buffer.from(resp.data);
           }
