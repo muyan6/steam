@@ -16,7 +16,8 @@ const getParamStr = (val: any): string => {
 
 export const getLatestNotice = (req: Request, res: Response) => {
   try {
-    const version = req.query.version as string | undefined;
+    // 归一化查询参数，防止数组形式（?version=a&version=b）导致下游 .replace 抛错 500
+    const version = getParamStr(req.query.version) || undefined;
     const notice = noticeService.getLatestNotice(version);
     res.json({ success: true, data: notice });
   } catch (e) {
@@ -27,7 +28,7 @@ export const getLatestNotice = (req: Request, res: Response) => {
 
 export const getActiveNoticesList = (req: Request, res: Response) => {
   try {
-    const version = req.query.version as string | undefined;
+    const version = getParamStr(req.query.version) || undefined;
     const list = noticeService.getActiveNotices(version);
     res.json({ success: true, data: list });
   } catch (e) {

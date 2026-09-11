@@ -47,6 +47,7 @@ export class OnlineRulesSyncService {
   };
   private isSyncing = false;
   private syncTimer: ReturnType<typeof setInterval> | null = null;
+  private initialTimer: ReturnType<typeof setTimeout> | null = null;
 
   // 常见第三方平台与大型发行商（独立账号/自建网络）
   private static THIRDPARTY_PUBLISHERS = [
@@ -114,11 +115,18 @@ export class OnlineRulesSyncService {
    * 启动后台定时同步计划任务（服务启动 5 秒后先拉一次，之后每 24 小时自动更新一次）
    */
   public startScheduledSync(): void {
-    setTimeout(() => {
+    if (this.initialTimer) {
+      clearTimeout(this.initialTimer);
+      this.initialTimer = null;
+    }
+    this.initialTimer = setTimeout(() => {
+      this.initialTimer = null;
       this.syncFromSteamCharts().catch(e => {
         console.warn('[OnlineRulesService] 启动自同步失败:', e);
       });
     }, 5000);
+    // 启动探测计时器不应阻止进程退出（定时同步本身已是常驻 interval）
+    (this.initialTimer as any).unref?.();
 
     // 每 24 小时周期同步
     this.syncTimer = setInterval(() => {

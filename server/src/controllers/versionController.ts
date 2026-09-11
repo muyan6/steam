@@ -17,9 +17,11 @@ const getParamStr = (val: any): string => {
 
 export const checkVersion = (req: Request, res: Response) => {
   try {
+    // 查询参数可能是数组（?version=a&version=b），必须经 getParamStr 归一，
+    // 否则后续 .replace 调用会抛错并放大为 500
     const currentVersion =
-      (req.query.version as string) || (req.query.current as string) || '1.0.0';
-    const channel = (req.query.channel as string) || 'stable';
+      getParamStr(req.query.version) || getParamStr(req.query.current) || '1.0.0';
+    const channel = getParamStr(req.query.channel) || 'stable';
     const result = versionService.checkUpdate(currentVersion, channel);
     res.json({ success: true, data: result });
   } catch (e) {
@@ -30,7 +32,7 @@ export const checkVersion = (req: Request, res: Response) => {
 
 export const getLatestVersionInfo = (req: Request, res: Response) => {
   try {
-    const channel = (req.query.channel as string) || 'stable';
+    const channel = getParamStr(req.query.channel) || 'stable';
     const info = versionService.getLatestVersion(channel);
     res.json({ success: true, data: info });
   } catch (e) {

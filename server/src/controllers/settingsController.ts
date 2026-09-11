@@ -14,7 +14,11 @@ const getClientIp = (req: Request): string => {
  */
 export const getDeviceQuotaStatus = (req: Request, res: Response) => {
   try {
-    const rawDeviceId = (req.headers['x-device-id'] as string) || (req.query.deviceId as string) || '';
+    // 查询参数可能是数组（?deviceId=a&deviceId=b），需归一为字符串
+    const queryDeviceId = Array.isArray(req.query.deviceId) ? req.query.deviceId[0] : req.query.deviceId;
+    const rawDeviceId =
+      (typeof req.headers['x-device-id'] === 'string' ? req.headers['x-device-id'] : '') ||
+      (typeof queryDeviceId === 'string' ? queryDeviceId : '');
     const deviceId = rawDeviceId.trim();
     if (!deviceId) {
       return res.status(400).json({ success: false, message: '缺少 deviceId' });

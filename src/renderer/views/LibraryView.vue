@@ -473,6 +473,8 @@ const handleClearAll = async () => {
     if (res.success) {
       emit('notify', res.message, 'success');
       await loadLibrary();
+    } else {
+      emit('notify', res.message || '清空失败，请查看日志', 'error');
     }
   } catch (e: any) {
     emit('notify', `清空失败: ${formatIpcError(e)}`, 'error');

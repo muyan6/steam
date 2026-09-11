@@ -14,6 +14,7 @@ export class SyncService {
   private readonly httpsAgent = new https.Agent();
   private isSyncing = false;
   private timer: NodeJS.Timeout | null = null;
+  private initialTimer: NodeJS.Timeout | null = null;
 
   private fastMirrors = [
     'https://raw.githubusercontent.com/',
@@ -265,12 +266,18 @@ export class SyncService {
   public startScheduledDailySync(): void {
     if (this.timer) {
       clearInterval(this.timer);
+      this.timer = null;
+    }
+    if (this.initialTimer) {
+      clearTimeout(this.initialTimer);
+      this.initialTimer = null;
     }
 
     console.log('[SyncService] ⏰ 已启动后端每日自动数据定时更新引擎 (周期: 24 小时)');
 
     // 检查本地如果没有任何数据或数据为空，5秒后自动启动首次静默同步
-    setTimeout(() => {
+    this.initialTimer = setTimeout(() => {
+      this.initialTimer = null;
       const keysCount = depotService.getTotalKeysCount();
       const tokensCount = tokenService.getTotalTokensCount();
       if (keysCount < 1000 || tokensCount === 0) {
@@ -278,6 +285,8 @@ export class SyncService {
         this.syncAll().catch(() => {});
       }
     }, 5000);
+    // 初始探测计时器不应阻止进程退出，也不应因重复调用而叠加
+    (this.initialTimer as any).unref?.();
 
     // 每 24 小时定时轮询执行一次同步
     const INTERVAL_24H = 24 * 60 * 60 * 1000;
@@ -287,6 +296,7 @@ export class SyncService {
         console.error('[SyncService] 定时同步失败:', err.message);
       });
     }, INTERVAL_24H);
+    (this.timer as any).unref?.();
   }
 }
 
