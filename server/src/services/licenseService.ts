@@ -317,18 +317,27 @@ export class LicenseService {
       return { success: false, message: '该激活码已过期失效。' };
     }
 
-    // 核销未使用卡密
+    // 核销前先确定到期时间：校验失败时直接返回，避免留下"已绑定但未落盘"的半改状态
+    let nextExpiresAt: string | null;
+    if (key.type === 'lifetime' || key.durationDays === -1) {
+      nextExpiresAt = null;
+    } else if (key.expiresAt && !isNaN(new Date(key.expiresAt).getTime())) {
+      // 已带有效期（多为解绑时保留的绝对到期时间）：固定复用，绝不重新计满整期，
+      // 否则「用一段时间 → 解绑 → 重新激活」可不断刷新有效期、变相无限续期
+      const preserved = new Date(key.expiresAt).getTime();
+      if (preserved <= Date.now()) {
+        return { success: false, message: '该激活码有效期限已过，无法再次激活。' };
+      }
+      nextExpiresAt = new Date(preserved).toISOString();
+    } else {
+      nextExpiresAt = new Date(Date.now() + key.durationDays * 24 * 60 * 60 * 1000).toISOString();
+    }
+
     const now = new Date();
     key.deviceId = cleanDeviceId;
     key.boundAt = now.toISOString();
     key.status = 'active';
-
-    if (key.type === 'lifetime' || key.durationDays === -1) {
-      key.expiresAt = null;
-    } else {
-      const expDate = new Date(now.getTime() + key.durationDays * 24 * 60 * 60 * 1000);
-      key.expiresAt = expDate.toISOString();
-    }
+    key.expiresAt = nextExpiresAt;
 
     // 保存失败时返回失败结果（内存态已变更，但未落盘不能算激活成功）
     if (!this.saveKeys()) {
@@ -667,9 +676,8 @@ export class LicenseService {
     key.deviceId = undefined;
     key.boundAt = undefined;
     key.status = isExpired ? 'expired' : 'unused';
-    if (key.type !== 'lifetime' && !isExpired) {
-      key.expiresAt = undefined;
-    }
+    // 保留 expiresAt（未过期时）：重新激活将复用该到期时间，防止解绑变相续期。
+    // 已过期的卡密本身就会在激活时被状态判定拦截，无需清除。
 
     if (!this.saveKeys()) {
       return { success: false, message: '数据保存失败，请稍后重试' };
@@ -750,6 +758,12 @@ export class LicenseService {
     if (key.status === 'unused') {
       const addDays = clampDays(additionalDays);
       key.durationDays = (key.durationDays || 0) + addDays;
+      // 若携带解绑保留的绝对到期时间，延期时须一并顺延，
+      // 否则重新激活会复用旧的 expiresAt、忽略本次延期
+      const carried = key.expiresAt ? new Date(key.expiresAt).getTime() : NaN;
+      if (!isNaN(carried)) {
+        key.expiresAt = new Date(carried + addDays * 24 * 60 * 60 * 1000).toISOString();
+      }
       if (!this.saveKeys()) {
         return { success: false, message: '数据保存失败，请稍后重试' };
       }

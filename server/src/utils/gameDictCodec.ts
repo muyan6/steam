@@ -38,14 +38,19 @@ export interface DictEntry {
   nameZh: string;
 }
 
-/** 无符号 LEB128 varint 写入（7 bit 一组，最高位为续位标志） */
-function writeVarint(buf: number[], value: number): void {
+/** 无符号 LEB128 varint 编码为 Buffer（7 bit 一组，最高位为续位标志） */
+function encodeVarint(value: number): Buffer {
+  if (!Number.isInteger(value) || value <= 0 || value > 0xffffffff) {
+    throw new Error(`游戏字典 varint 数值非法: ${value}`);
+  }
+  const out: number[] = [];
   let v = value;
   while (v >= 0x80) {
-    buf.push((v & 0x7f) | 0x80);
+    out.push((v & 0x7f) | 0x80);
     v >>>= 7;
   }
-  buf.push(v);
+  out.push(v);
+  return Buffer.from(out);
 }
 
 /**
@@ -81,13 +86,15 @@ export function buildGameDictBinary(allGames: DictSourceGame[], zhGames: DictSou
     .map(([appId, name]) => ({ appId, name, nameZh: zhMap.get(appId) || '' }))
     .sort((a, b) => a.appId - b.appId);
 
-  // 编码条目体
-  const body: number[] = [];
+  // 编码条目体：按 Buffer 分块收集，避免用 number[] + push(...bytes) 展开——
+  // 单个名称最大 65535 字节，展开传参恰好触及 V8 参数上限，且 number[] 会先放大成
+  // 数千万个元素再复制进 Buffer，内存与耗时都不必要
+  const chunks: Buffer[] = [];
   let prev = 0;
   for (const e of entries) {
     const delta = e.appId - prev;
     if (delta <= 0) throw new Error(`游戏字典 appId 非升序: ${prev} -> ${e.appId}`);
-    writeVarint(body, delta);
+    chunks.push(encodeVarint(delta));
     prev = e.appId;
 
     const nameBytes = Buffer.from(e.name, 'utf-8');
@@ -97,11 +104,12 @@ export function buildGameDictBinary(allGames: DictSourceGame[], zhGames: DictSou
     }
     const nameCut = nameBytes.subarray(0, MAX_NAME_BYTES);
     const zhCut = zhBytes.subarray(0, MAX_NAME_BYTES);
-    const lenBuf = Buffer.alloc(2);
-    lenBuf.writeUInt16LE(nameCut.length, 0);
-    body.push(...lenBuf, ...nameCut);
-    lenBuf.writeUInt16LE(zhCut.length, 0);
-    body.push(...lenBuf, ...zhCut);
+    // 严格保持字节序：u16 原名长度 + 原名 + u16 中文长度 + 中文
+    const nameLen = Buffer.alloc(2);
+    nameLen.writeUInt16LE(nameCut.length, 0);
+    const zhLen = Buffer.alloc(2);
+    zhLen.writeUInt16LE(zhCut.length, 0);
+    chunks.push(nameLen, nameCut, zhLen, zhCut);
   }
 
   // 头部：'CFGD' + 版本 1 + 条目数 u32 LE
@@ -110,7 +118,7 @@ export function buildGameDictBinary(allGames: DictSourceGame[], zhGames: DictSou
   header.writeUInt8(DICT_VERSION, 4);
   header.writeUInt32LE(entries.length, 5);
 
-  return Buffer.concat([header, Buffer.from(body)]);
+  return Buffer.concat([header, ...chunks]);
 }
 
 /**
