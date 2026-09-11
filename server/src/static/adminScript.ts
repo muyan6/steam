@@ -820,7 +820,7 @@ async function handleLinksSubmit() {
 
 async function handleFreeQuotaSubmit() {
   var limit = parseInt(document.getElementById('cfgFreeDailyLimit').value, 10);
-  if (isNaN(limit) || limit < 0 || limit > 999) { alert('每日免费次数需在 0 ~ 999 之间'); return; }
+  if (isNaN(limit) || limit < 0 || limit > 999) { alert('每日免费款数需在 0 ~ 999 之间'); return; }
   var btn = document.getElementById('btnSaveQuota');
   if (btn) { btn.disabled = true; btn.innerText = '正在保存...'; }
   try {

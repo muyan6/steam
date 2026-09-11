@@ -602,10 +602,11 @@ const unlockGame = async (game: SteamGame) => {
     const lic = await window.electronAPI.getLicenseInfo();
     activated = !!(lic && lic.isActivated);
     if (!activated) {
-      // 普通用户设备：每日免费体验入库额度（按天刷新，上限与云端后台动态同步）
+      // 普通用户设备：每日免费体验额度（按「游戏」计数，同一游戏含全部 DLC 只算 1 款；
+      // 按天刷新，上限与云端后台动态同步）
       const quota = await window.electronAPI.getFreeUnlockQuota(false);
       if (!quota || !quota.allowed) {
-        const limitStr = quota?.limit ? `（每日 ${quota.limit} 次）` : '';
+        const limitStr = quota?.limit ? `（每日 ${quota.limit} 款游戏，含全部 DLC）` : '';
         emit('notify', `今日免费体验额度已用完${limitStr}，绑定赞助码后可享无限制极速入库。`, 'warning');
         emit('open-license-modal');
         unlockingId.value = null;
@@ -637,13 +638,13 @@ const unlockGame = async (game: SteamGame) => {
       // 是否真正拿到达可用数据（分包密钥或清单实体）：没拿到视为"入库未成功"，不扣本地次数
       const usable = (res.keyCount || 0) > 0 || (res.manifestCount || 0) > 0;
       if (!activated && usable) {
-        // 本地额度仅作展示参考，权威计数在服务端（按 AppID 每日去重，DLC 不额外计次）
+        // 本地额度仅作展示参考，权威计数在服务端（按 AppID/游戏每日去重，DLC 不额外计次）
         try {
           const q = await window.electronAPI.consumeFreeUnlockQuota(false);
           if (q && typeof q.remaining === 'number') {
             message += q.remaining > 0
-              ? `（今日剩余免费入库 ${q.remaining} 次）`
-              : '（今日免费次数已用完，再次入库请激活使用）';
+              ? `（今日剩余免费入库 ${q.remaining} 款游戏，含全部 DLC）`
+              : '（今日免费额度已用完，再次入库请激活使用）';
           }
         } catch {}
       }

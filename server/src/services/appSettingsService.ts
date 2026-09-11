@@ -4,7 +4,7 @@ import { CONFIG } from '../config/index.js';
 import { writeJsonAtomic } from '../utils/atomicJson.js';
 
 export interface AppSettings {
-  /** 未激活设备每日免费入库次数（运行时可在管理后台调整，立即生效） */
+  /** 未激活设备每日免费入库款数（按游戏计数、含全部 DLC；运行时可在管理后台调整，立即生效） */
   freeDailyLimit: number;
   updatedAt: string;
 }
@@ -69,7 +69,7 @@ export class AppSettingsService {
     };
     writeJsonAtomic(this.filePath, next);
     this.cache = next;
-    console.log(`[AppSettings] 未激活每日免费额度已更新为 ${next.freeDailyLimit} 次/日`);
+    console.log(`[AppSettings] 未激活每日免费额度已更新为 ${next.freeDailyLimit} 款游戏/日（含全部 DLC）`);
     return next;
   }
 }

@@ -9,9 +9,10 @@ import { writeJsonAtomic } from '../utils/atomicJson.js';
  *
  * 设计要点：
  * - 以 deviceId（统一 trim + 小写归一化）为维度，每日（服务器本地日期）免费获取
- *   FREE_DAILY_LIMIT 个不同 AppID 的密钥/清单；同一 AppID 当天内重复请求不重复计数。
- * - 无 AppID 的密钥类路由（单 depotKey / 清单文件下载 / OST 中转）按「当日不同
- *   depotId 数」计数（keyIds），防止逐 depot 遍历绕过配额。
+ *   FREE_DAILY_LIMIT 款不同游戏的密钥/清单；计数按「游戏」而非「分包」，
+ *   同一 AppID（含其全部 DLC）当天内重复请求不重复计数。
+ * - 仅当请求 URL 不含任何 appId（如 OST 中转）时才退化为按「当日不同 depotId 数」
+ *   计数（keyIds），防止逐 depot 遍历绕过配额。
  * - 附带同 IP 每日最大独立设备数限制（防单 IP 批量伪造设备刷配额）。
  * - 内存态 + 防抖批量落盘（30 秒），心跳级高频请求不会阻塞事件循环；
  *   落盘数据只保留当日记录，跨天自动清零。
@@ -174,7 +175,7 @@ class FreeQuotaService {
         return {
           allowed: false,
           remaining: 0,
-          message: `今日免费入库额度已用完（每日 ${this.limit} 次），请激活后不限次使用`
+          message: `今日免费入库额度已用完（每日 ${this.limit} 款游戏，含全部 DLC），请激活后不限次使用`
         };
       }
       return { allowed: true, remaining: Math.max(0, this.limit - q.used - 1) };

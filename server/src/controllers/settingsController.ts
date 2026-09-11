@@ -52,7 +52,7 @@ export const getDeviceQuotaStatus = (req: Request, res: Response) => {
 };
 
 /**
- * 读取全局运行时设置（当前：未激活每日免费额度）+ 应用内跳转链接
+ * 读取全局运行时设置（当前：未激活每日免费入库款数，按游戏计、含全部 DLC）+ 应用内跳转链接
  */
 export const getSettingsAdmin = (req: Request, res: Response) => {
   try {
@@ -70,7 +70,7 @@ export const getSettingsAdmin = (req: Request, res: Response) => {
 };
 
 /**
- * 更新未激活设备每日免费入库次数（0~999，立即生效无需重启）
+ * 更新未激活设备每日免费入库款数（0~999，按游戏计数、含全部 DLC，立即生效无需重启）
  */
 export const updateFreeQuotaLimitAdmin = (req: Request, res: Response) => {
   try {
@@ -78,7 +78,7 @@ export const updateFreeQuotaLimitAdmin = (req: Request, res: Response) => {
     const raw = req.body?.limit;
     const limit = typeof raw === 'number' ? Math.floor(raw) : parseInt(String(raw), 10);
     if (isNaN(limit) || limit < 0 || limit > 999) {
-      return res.status(400).json({ success: false, message: '每日免费次数需在 0 ~ 999 之间' });
+      return res.status(400).json({ success: false, message: '每日免费款数需在 0 ~ 999 之间' });
     }
     const before = appSettingsService.getFreeDailyLimit();
     const next = appSettingsService.setFreeDailyLimit(limit);
@@ -87,13 +87,13 @@ export const updateFreeQuotaLimitAdmin = (req: Request, res: Response) => {
       action: 'SETTINGS_FREE_QUOTA',
       operator,
       ip: getClientIp(req),
-      details: `未激活每日免费入库次数: ${before} → ${next.freeDailyLimit}`,
+      details: `未激活每日免费入库款数: ${before} → ${next.freeDailyLimit}`,
       success: true
     });
 
     res.json({
       success: true,
-      message: `已生效：未激活用户每日免费入库 ${next.freeDailyLimit} 次`,
+      message: `已生效：未激活用户每日免费入库 ${next.freeDailyLimit} 款游戏（含全部 DLC）`,
       data: next
     });
   } catch (e) {

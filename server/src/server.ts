@@ -922,9 +922,9 @@ const ADMIN_HTML = `<!DOCTYPE html>
 
           <div class="card">
             <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 4px; display: block;">🧮 未激活用户每日免费额度</strong>
-            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">未激活设备每日可免费入库的不同游戏数（同一游戏当天重复获取不重复计数），保存后立即生效无需重启</div>
+            <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">未激活设备每日可免费入库的游戏款数（含该游戏全部 DLC，同一游戏当天重复获取不重复计数），保存后立即生效无需重启</div>
             <div class="form-group">
-              <label>每日免费入库次数 (0 ~ 999)</label>
+              <label>每日免费入库款数 (0 ~ 999，含全部 DLC)</label>
               <input type="number" id="cfgFreeDailyLimit" class="input-ctrl" min="0" max="999" value="2" />
             </div>
             <div id="quotaMsg" class="alert-box alert-success d-none" style="margin-bottom: 12px;"><span id="quotaMsgText"></span></div>
