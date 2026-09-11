@@ -536,6 +536,12 @@ export const createTauriBridge = () => {
     // Steam 环境与进程
     getSteamInfo: async (): Promise<SteamEnvironmentInfo> => invoke('get_steam_info', { customPath: null }),
     checkEnvironmentHealth: async (): Promise<any> => invoke('check_environment_health'),
+    // 启动环境自愈：只做无损修复（不触碰 Steam 进程），需关 Steam 的问题以 needsAction 返回
+    startupSelfHeal: async (): Promise<{
+      healthy: boolean;
+      healed: string[];
+      needsAction: Array<{ title: string; message: string; action: string }>;
+    }> => invoke('startup_self_heal'),
     setSteamPath: async (path: string): Promise<SteamEnvironmentInfo> => invoke('set_steam_path', { path }),
     restartSteam: async (extraArgs: string[] = []): Promise<boolean> => invoke('restart_steam', { extraArgs }),
     launchOnlineFixSteam: async (): Promise<boolean> => invoke('restart_steam', { extraArgs: ['-onlinefix'] }),

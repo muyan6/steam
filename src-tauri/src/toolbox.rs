@@ -1,10 +1,33 @@
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::steam;
+
+/// 注入核心三件套（缺失即视为注入环境异常）
+const CORE_DLLS: [&str; 3] = ["OpenSteamTool.dll", "dwmapi.dll", "xinput1_4.dll"];
+/// 清单有效性判定只需要文件头部字节（见 manifests::is_valid_manifest_payload，最多用到前 128 字节）
+const MANIFEST_HEADER_PROBE: usize = 128;
+
+/// 只读取文件头部若干字节用于魔数校验。
+/// 清单文件可达数百 MB，整份读入（旧实现）会显著拖慢启动检测与工具箱清理。
+fn read_header(path: &Path, n: usize) -> Option<Vec<u8>> {
+    let mut f = fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; n];
+    let mut filled = 0usize;
+    while filled < n {
+        match f.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(k) => filled += k,
+            Err(_) => return None,
+        }
+    }
+    buf.truncate(filled);
+    Some(buf)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +39,96 @@ pub struct ToolboxActionResult {
     pub cleaned_files_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restarted_steam: Option<bool>,
+}
+
+/// 启动自愈中「需要用户点一下」的问题项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupActionItem {
+    pub title: String,
+    pub message: String,
+    /// 前端据此决定修复动作：repair_injection（需退出/重启 Steam）| set_steam_path
+    pub action: String,
+}
+
+/// 启动自愈结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupHealResult {
+    /// 是否无需用户任何操作（needs_action 为空即视为可正常使用）
+    pub healthy: bool,
+    /// 本次已自动无损修复的项（供轻提示）
+    pub healed: Vec<String>,
+    /// 需要用户确认后才能修复的项（如需关闭 Steam）
+    pub needs_action: Vec<StartupActionItem>,
+}
+
+/// 启动环境自愈：只做无损、幂等、不触碰 Steam 进程的修复；
+/// 任何需要关闭 Steam 才能完成的修复一律只登记到 needs_action，交由用户点击确认。
+/// 开销很低（仅存在性检查 + 小文件读取 + 清单文件头读取），可在启动后台线程安全调用。
+pub fn startup_self_heal() -> StartupHealResult {
+    let mut healed: Vec<String> = Vec::new();
+    let mut needs_action: Vec<StartupActionItem> = Vec::new();
+
+    let Some(steam_path) = steam::detect_steam_path() else {
+        // 未配置路径时同样不打扰：仅在向导未处理的情况下由前端决定是否提示
+        needs_action.push(StartupActionItem {
+            title: "未检测到 Steam 安装路径".to_string(),
+            message: "请在「系统与环境设置」中手动指定 Steam 根目录，否则无法自动修复注入环境。".to_string(),
+            action: "set_steam_path".to_string(),
+        });
+        return StartupHealResult {
+            healthy: false,
+            healed,
+            needs_action,
+        };
+    };
+
+    // 1) 注入三件套：缺失即用内嵌副本重部署（不联网、不改配置）
+    let missing: Vec<&str> = CORE_DLLS
+        .iter()
+        .copied()
+        .filter(|n| !steam_path.join(n).exists())
+        .collect();
+    if !missing.is_empty() {
+        match crate::ost::deploy_core_binaries(&steam_path) {
+            Ok(_) => healed.push(format!("已重新部署注入组件（{}）", missing.join(" / "))),
+            Err(e) => needs_action.push(StartupActionItem {
+                title: "注入组件缺失且无法自动写入".to_string(),
+                message: format!(
+                    "{}。通常是因为 Steam 正在运行（DLL 被占用）或权限不足。点击修复将退出并重启 Steam 后完成部署。",
+                    e
+                ),
+                action: "repair_injection".to_string(),
+            }),
+        }
+    }
+
+    // 2) opensteamtool.toml 关键字段 + manifest.lua 动态清单调度器
+    //    （复用既有幂等修复逻辑，通过「修复前后内容比对」判断是否真的修了东西）
+    let lua_was_stale = crate::ost::manifest_lua_stale(&steam_path);
+    let toml_path = steam_path.join("opensteamtool.toml");
+    let toml_before = fs::read_to_string(&toml_path).ok();
+    crate::ensure_auto_switch_default(&steam_path);
+    let toml_after = fs::read_to_string(&toml_path).ok();
+    if toml_before != toml_after {
+        healed.push("已补全 opensteamtool.toml 清单调度配置".to_string());
+    }
+    if lua_was_stale && !crate::ost::manifest_lua_stale(&steam_path) {
+        healed.push("已重建动态清单调度器 manifest.lua".to_string());
+    }
+
+    // 3) depotcache 损坏文件（0 字节 / HTML 错误页被当成清单），仅读文件头
+    let cleaned = clean_depotcache_garbage(&steam_path);
+    if cleaned > 0 {
+        healed.push(format!("已清理 {} 个损坏的清单缓存文件", cleaned));
+    }
+
+    StartupHealResult {
+        healthy: needs_action.is_empty(),
+        healed,
+        needs_action,
+    }
 }
 
 /// 自动扫描并清理 depotcache/ 目录下已损坏的 0 字节无效文件或 HTML 错误响应文本
@@ -36,9 +149,10 @@ pub fn clean_depotcache_garbage(steam_path: &Path) -> usize {
                             removed += 1;
                         }
                     } else if path.extension().and_then(|ext| ext.to_str()) == Some("manifest") {
-                        // 损坏的非有效 manifest 文件（如 HTML 404/盾拦截文本误当清单写入）
-                        if let Ok(bytes) = fs::read(&path) {
-                            if !crate::manifests::is_valid_manifest_payload(&bytes) {
+                        // 损坏的非有效 manifest 文件（如 HTML 404/盾拦截文本误当清单写入）。
+                        // 只读文件头：有效性判定仅依赖前 128 字节，无需整份读入
+                        if let Some(head) = read_header(&path, MANIFEST_HEADER_PROBE) {
+                            if !crate::manifests::is_valid_manifest_payload(&head) {
                                 if fs::remove_file(&path).is_ok() {
                                     removed += 1;
                                 }

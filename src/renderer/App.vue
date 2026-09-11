@@ -414,6 +414,55 @@
       </div>
     </div>
 
+    <!-- 启动环境异常提示：仅展示「需要用户确认」的项（无损项已自动修好，不打扰）。
+         z 轴低于公告/免责声明(z-50)，确保法律类弹窗始终优先展示 -->
+    <div
+      v-if="startupActions.length > 0"
+      class="fixed inset-0 z-[45] bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
+    >
+      <div class="theme-card-static rounded-2xl w-full max-w-lg p-6 shadow-2xl border animate-in fade-in zoom-in-95 duration-150">
+        <div class="flex items-start gap-3 mb-4">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 bg-amber-500/15 text-amber-400 border border-amber-500/30">
+            <AlertTriangle class="w-5 h-5" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <h3 class="text-sm font-bold text-slate-100">检测到运行环境异常</h3>
+            <p class="text-xs text-slate-400 mt-1">
+              以下问题需要您确认后才能修复（修复过程中会退出并重新启动 Steam 客户端）：
+            </p>
+          </div>
+        </div>
+
+        <div class="space-y-2 mb-5 max-h-64 overflow-y-auto">
+          <div
+            v-for="(item, idx) in startupActions"
+            :key="idx"
+            class="rounded-xl bg-amber-500/5 border border-amber-500/20 p-3"
+          >
+            <div class="text-xs font-bold text-amber-300">{{ item.title }}</div>
+            <p class="text-[11px] text-slate-400 leading-relaxed mt-1 whitespace-pre-line break-words">{{ item.message }}</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button
+            @click="handleStartupRepair"
+            :disabled="repairingEnv"
+            class="flex-1 py-2.5 theme-btn-primary rounded-xl text-xs font-bold transition cursor-pointer active:scale-[0.98] disabled:opacity-60"
+          >
+            {{ repairingEnv ? '正在修复...' : '立即修复' }}
+          </button>
+          <button
+            @click="startupActions = []"
+            :disabled="repairingEnv"
+            class="px-5 py-2.5 btn-soft-action rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-60"
+          >
+            稍后处理
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 全局 Toast 提示 -->
     <Toast :toasts="toasts" />
   </div>
@@ -483,7 +532,59 @@ const appLinks = ref<{ tutorialUrl: string; faqUrl: string; qqGroupUrl: string; 
   sponsorUrl: ''
 });
 
-// 运行环境就绪判断（Steam 目录已检测且 OST 内核就绪）
+// 启动环境自愈：可无损修复的直接修好并轻提示；需关闭 Steam 的登记为待用户确认
+const startupActions = ref<Array<{ title: string; message: string; action: string }>>([]);
+const repairingEnv = ref(false);
+
+const runStartupSelfHeal = async () => {
+  // 首次启动向导期间不重复检测（向导本身会引导修复环境）
+  if (showStartupWizard.value) return;
+  try {
+    const res = await window.electronAPI.startupSelfHeal?.();
+    if (!res) return;
+    // 无损自愈结果：给一条轻提示，不弹窗、不打断
+    if (Array.isArray(res.healed) && res.healed.length > 0) {
+      addToast(`已自动修复运行环境：${res.healed.join('；')}`, 'success');
+    }
+    // 需要用户点一下的问题（如注入 DLL 被运行中的 Steam 占用）
+    if (Array.isArray(res.needsAction) && res.needsAction.length > 0) {
+      startupActions.value = res.needsAction;
+    }
+  } catch (e) {
+    // 自愈失败绝不打扰用户：仅记录，不影响正常使用
+    console.warn('启动环境自愈失败:', formatIpcError(e));
+  }
+};
+
+// 用户点击「立即修复」：调用注入修复（会退出并重启 Steam）或跳转设置页指定路径
+const handleStartupRepair = async () => {
+  const first = startupActions.value[0];
+  if (!first) return;
+  if (first.action === 'set_steam_path') {
+    startupActions.value = [];
+    currentTab.value = 'settings';
+    addToast('请在下方指定 Steam 安装根目录', 'info');
+    return;
+  }
+  repairingEnv.value = true;
+  try {
+    // 带上用户在设置页选择的清单服务器，避免修复时被重置为默认节点
+    const manifestApi = localStorage.getItem('chunfengdu_manifest_api') || undefined;
+    const res = await window.electronAPI.activateInjection({ manifestApi });
+    if (res?.success) {
+      addToast('注入环境已修复，Steam 已重新启动', 'success');
+      startupActions.value = [];
+      await fetchSteamInfo();
+    } else {
+      addToast(`修复失败：${res?.message || '未知原因'}`, 'error');
+    }
+  } catch (e) {
+    addToast(`修复异常：${formatIpcError(e)}`, 'error');
+  } finally {
+    repairingEnv.value = false;
+  }
+};
+
 const isEnvironmentReady = computed(() => {
   return !!(steamInfo.value && steamInfo.value.steamPath && steamInfo.value.ostInstalled);
 });
@@ -964,6 +1065,7 @@ const syncMaximizedState = async () => {
 let steamInfoTimer: ReturnType<typeof setInterval> | null = null;
 let licenseTimer: ReturnType<typeof setInterval> | null = null;
 let versionCheckTimer: ReturnType<typeof setInterval> | null = null;
+let startupHealTimer: ReturnType<typeof setTimeout> | null = null;
 
 onMounted(() => {
   initApp();
@@ -971,6 +1073,9 @@ onMounted(() => {
   syncMaximizedState();
   window.addEventListener('resize', applyUiScale);
   window.addEventListener('resize', syncMaximizedState);
+  // 启动环境自愈：延后 2.5s 在后台执行，绝不阻塞首屏渲染与启动速度；
+  // 检测本身只做存在性检查 + 小文件/文件头读取，开销极低
+  startupHealTimer = setTimeout(runStartupSelfHeal, 2500);
   // 15s 轮询一次 Steam 环境信息即可，5s 过于频繁（纯状态展示无实时性要求）
   steamInfoTimer = setInterval(fetchSteamInfo, 15000);
   licenseTimer = setInterval(() => loadLicenseInfo(false), 30000);
@@ -1001,5 +1106,6 @@ onUnmounted(() => {
   if (steamInfoTimer) { clearInterval(steamInfoTimer); steamInfoTimer = null; }
   if (licenseTimer) { clearInterval(licenseTimer); licenseTimer = null; }
   if (versionCheckTimer) { clearInterval(versionCheckTimer); versionCheckTimer = null; }
+  if (startupHealTimer) { clearTimeout(startupHealTimer); startupHealTimer = null; }
 });
 </script>

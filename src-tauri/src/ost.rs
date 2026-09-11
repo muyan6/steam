@@ -79,9 +79,9 @@ pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
 }
 
 /// 部署官方与国内高速专线清单代码调度器 (manifest.lua)
-/// 彻底根除因上游默认源超时、阻断或 403 导致的 Steam 报错“无互联网连接”
-pub fn deploy_manifest_lua(steam_path: &Path) -> Result<(), String> {
-    let lua_content = r#"function fetch_manifest_code(gid)
+/// 彻底根除因上游默认源超时、阻断或 403 导致的 Steam 报错“无互联网连接”。
+/// 提取为模块常量：启动自愈时需比对现有文件是否与当前版本一致（缺失/过期则重部署）
+pub const MANIFEST_LUA: &str = r#"function fetch_manifest_code(gid)
     -- 第一优先级：春风渡云端官方中继源 (带高可用全网代码缓存)
     local body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
     if status == 200 and body and body:match("^%d+$") then
@@ -115,21 +115,32 @@ function fetch_manifest_code_ex(app_id, depot_id, gid)
 end
 "#;
 
-    let targets = [
+/// manifest.lua 的两份部署目标（config/lua 与 config/stplug-in）
+fn manifest_lua_targets(steam_path: &Path) -> [PathBuf; 2] {
+    [
         steam_path.join("config").join("lua").join("manifest.lua"),
         steam_path.join("config").join("stplug-in").join("manifest.lua"),
-    ];
+    ]
+}
 
-    for target in targets {
+/// 动态清单调度器是否缺失或内容与当前版本不一致（只比对、不写盘，供启动自愈判断）
+pub fn manifest_lua_stale(steam_path: &Path) -> bool {
+    manifest_lua_targets(steam_path)
+        .iter()
+        .any(|t| fs::read_to_string(t).map(|s| s != MANIFEST_LUA).unwrap_or(true))
+}
+
+pub fn deploy_manifest_lua(steam_path: &Path) -> Result<(), String> {
+    for target in manifest_lua_targets(steam_path) {
         if let Ok(existing) = fs::read_to_string(&target) {
-            if existing == lua_content {
+            if existing == MANIFEST_LUA {
                 continue;
             }
         }
         if let Some(parent) = target.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let _ = fs::write(target, lua_content);
+        let _ = fs::write(&target, MANIFEST_LUA);
     }
     Ok(())
 }

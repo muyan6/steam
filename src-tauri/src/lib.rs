@@ -664,6 +664,19 @@ fn toolbox_action(success: bool, message: String, steps: Vec<String>) -> Toolbox
     }
 }
 
+/// 启动环境自愈：后台线程调用，只做无损修复（不触碰 Steam 进程），
+/// 需关闭 Steam 才能处理的问题以 needsAction 返回交前端提示用户确认。
+#[tauri::command]
+async fn startup_self_heal() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        serde_json::to_value(toolbox::startup_self_heal()).unwrap_or_else(|_| {
+            json!({ "healthy": true, "healed": [], "needsAction": [] })
+        })
+    })
+    .await
+    .unwrap_or_else(|_| json!({ "healthy": true, "healed": [], "needsAction": [] }))
+}
+
 #[tauri::command]
 async fn toolbox_clear_cache() -> ToolboxActionResult {
         tauri::async_runtime::spawn_blocking(move || { if let Some(steam_path) = steam::detect_steam_path() {
@@ -768,7 +781,7 @@ fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
 }
 
 // 存量配置迁移：opensteamtool.toml 规范化与 manifest.lua 部署（默认开启清单自动切换）
-fn ensure_auto_switch_default(steam_path: &std::path::Path) {
+pub(crate) fn ensure_auto_switch_default(steam_path: &std::path::Path) {
     let toml_path = steam_path.join("opensteamtool.toml");
     if !toml_path.exists() {
         let _ = ost::generate_toml_config(steam_path, "wudrm");
@@ -1758,6 +1771,7 @@ pub fn run() {
             clear_all_games,
             uninstall_injection,
             check_environment_health,
+            startup_self_heal,
             toolbox_clear_cache,
             toolbox_repair_ost,
             toolbox_fix_cloud_redirect,
