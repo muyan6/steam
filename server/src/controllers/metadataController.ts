@@ -128,8 +128,10 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
   const task = (async (): Promise<ManifestHub3Data | null> => {
     // 采用国内响应最快且稳定的两大镜像：ghfast.top 与 gh-proxy.com，并发竞速探测
     const fastBases = [
+      'https://steam.os.kg/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
       'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://cece.guyunsq.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];
 
     let data: ManifestHub3Data | null = null;

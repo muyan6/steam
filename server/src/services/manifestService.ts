@@ -247,8 +247,10 @@ export class ManifestService {
   private async fetchFromManifestHub(appId: number, depotIds: string[]): Promise<DepotManifestInfo[]> {
     const results: DepotManifestInfo[] = [];
     const fastBases = [
+      'https://steam.os.kg/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
       'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://cece.guyunsq.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];
 
     // 1. 优先并发拉取 {appId}.json
@@ -706,8 +708,10 @@ export class ManifestService {
 
     // 1. 并发竞速回源：ManifestHub3 极速镜像直拉 vs SteamML R2 全包解压沉淀
     const fastBases = [
+      'https://steam.os.kg/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
       'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
+      'https://cece.guyunsq.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];
 
     const hubManifestUrls: string[] = [];
