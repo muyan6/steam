@@ -377,7 +377,12 @@ const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
   (e: 'refresh-status'): void;
   (e: 'open-license-modal'): void;
+  // 入库最终结果：交由 App 层以全局模态框展示，避免切换界面后错过提示
+  (e: 'unlock-result', payload: { message: string; level: 'success' | 'warning' | 'error' }): void;
 }>();
+
+// 显式声明组件名：App 层 KeepAlive include 依赖该名称缓存搜索界面状态
+defineOptions({ name: 'SearchView' });
 
 const searchQuery = ref('');
 const games = ref<SteamGame[]>([]);
@@ -643,19 +648,20 @@ const unlockGame = async (game: SteamGame) => {
         } catch {}
       }
       // 未获取到任何密钥（如免费额度耗尽被云端拒绝）时按警告而非成功提示，
-      // 服务端原因已在 res.message / metadataMessage 中透传
+      // 服务端原因已在 res.message / metadataMessage 中透传。
+      // 使用全局模态框而非易转瞬即逝的 Toast，确保切换界面后仍能看到并要求确认
       const blocked = !res.keyCount && res.metadataMessage;
-      emit('notify', message, blocked ? 'warning' : 'success');
+      emit('unlock-result', { message, level: blocked ? 'warning' : 'success' });
       await loadUnlockedList();
       emit('refresh-status');
     } else {
-      emit('notify', res.message, 'error');
+      emit('unlock-result', { message: res.message, level: 'error' });
       if ((res as any).notActivated) {
         emit('open-license-modal');
       }
     }
   } catch (e: any) {
-    emit('notify', `入库异常: ${formatIpcError(e)}`, 'error');
+    emit('unlock-result', { message: `入库异常: ${formatIpcError(e)}`, level: 'error' });
   } finally {
     unlockingId.value = null;
   }

@@ -73,7 +73,7 @@ export const THEME_LIST: ThemeConfig[] = [
   }
 ];
 
-const currentTheme = ref<AppThemeId>('midnight');
+const currentTheme = ref<AppThemeId>('frost');
 
 // 主题需在应用挂载前初始化，避免浅色主题用户冷启动时看到深色首帧闪变
 export function initThemeEarly() {
@@ -82,7 +82,8 @@ export function initThemeEarly() {
     if (saved && THEME_LIST.some(t => t.id === saved)) {
       currentTheme.value = saved;
     } else {
-      currentTheme.value = 'midnight';
+      // 默认主题：极简皓月（frost，浅色）
+      currentTheme.value = 'frost';
     }
     document.documentElement.setAttribute('data-theme', currentTheme.value);
     // 同步原生窗口背景色：与 applyTheme 保持一致，避免冷启动首帧边缘白缝
@@ -101,7 +102,8 @@ export function useTheme() {
     if (saved && THEME_LIST.some(t => t.id === saved)) {
       currentTheme.value = saved;
     } else {
-      currentTheme.value = 'midnight';
+      // 默认主题：极简皓月（frost，浅色）
+      currentTheme.value = 'frost';
     }
     applyTheme(currentTheme.value);
   };

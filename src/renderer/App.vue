@@ -165,46 +165,51 @@
 
       <!-- 动态视图区域 -->
       <div class="flex-1 overflow-hidden">
-        <SearchView
-          v-if="currentTab === 'search'"
-          @notify="addToast"
-          @refresh-status="fetchSteamInfo"
-          @open-license-modal="showLicenseModal = true"
-        />
-        <LibraryView
-          v-else-if="currentTab === 'library'"
-          @notify="addToast"
-          @refresh-status="fetchSteamInfo"
-          @open-license-modal="showLicenseModal = true"
-        />
-        <OnlineFixView
-          v-else-if="currentTab === 'onlinefix'"
-          @notify="addToast"
-        />
-        <ToolboxView
-          v-else-if="currentTab === 'toolbox'"
-          @notify="addToast"
-          @refresh-status="fetchSteamInfo"
-          @open-license-modal="showLicenseModal = true"
-        />
-        <FeaturesView
-          v-else-if="currentTab === 'features'"
-          @notify="addToast"
-          @open-disclaimer="openDisclaimerModal"
-          @show-version-modal="(val) => (versionModal = val)"
-        />
-        <AboutView
-          v-else-if="currentTab === 'about'"
-          @notify="addToast"
-          @open-disclaimer="openDisclaimerModal"
-          @show-version-modal="(val) => (versionModal = val)"
-        />
-        <SettingsView
-          v-else-if="currentTab === 'settings'"
-          @notify="addToast"
-          @refresh-status="fetchSteamInfo"
-          @relaunch-wizard="openStartupWizard"
-        />
+        <!-- KeepAlive 仅缓存搜索界面：切到其他导航再切回时保留搜索词与结果，
+             不缓存其余视图（它们各自依赖进入时刷新） -->
+        <KeepAlive :include="['SearchView']">
+          <SearchView
+            v-if="currentTab === 'search'"
+            @notify="addToast"
+            @refresh-status="fetchSteamInfo"
+            @open-license-modal="showLicenseModal = true"
+            @unlock-result="handleUnlockResult"
+          />
+          <LibraryView
+            v-else-if="currentTab === 'library'"
+            @notify="addToast"
+            @refresh-status="fetchSteamInfo"
+            @open-license-modal="showLicenseModal = true"
+          />
+          <OnlineFixView
+            v-else-if="currentTab === 'onlinefix'"
+            @notify="addToast"
+          />
+          <ToolboxView
+            v-else-if="currentTab === 'toolbox'"
+            @notify="addToast"
+            @refresh-status="fetchSteamInfo"
+            @open-license-modal="showLicenseModal = true"
+          />
+          <FeaturesView
+            v-else-if="currentTab === 'features'"
+            @notify="addToast"
+            @open-disclaimer="openDisclaimerModal"
+            @show-version-modal="(val) => (versionModal = val)"
+          />
+          <AboutView
+            v-else-if="currentTab === 'about'"
+            @notify="addToast"
+            @open-disclaimer="openDisclaimerModal"
+            @show-version-modal="(val) => (versionModal = val)"
+          />
+          <SettingsView
+            v-else-if="currentTab === 'settings'"
+            @notify="addToast"
+            @refresh-status="fetchSteamInfo"
+            @relaunch-wizard="openStartupWizard"
+          />
+        </KeepAlive>
       </div>
     </main>
 
@@ -374,6 +379,41 @@
       @notify="addToast"
     />
 
+    <!-- 入库结果全局模态框：需用户点击「我知道了」确认，避免切换界面后错过提示 -->
+    <div
+      v-if="unlockResult"
+      class="fixed inset-0 z-[60] bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
+    >
+      <div class="theme-card-static rounded-2xl w-full max-w-md p-6 shadow-2xl border animate-in fade-in zoom-in-95 duration-150">
+        <div class="flex items-start gap-3 mb-4">
+          <div
+            class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+            :class="unlockResult.level === 'success'
+              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+              : unlockResult.level === 'warning'
+              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+              : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'"
+          >
+            <CheckCircle2 v-if="unlockResult.level === 'success'" class="w-5 h-5" />
+            <AlertTriangle v-else-if="unlockResult.level === 'warning'" class="w-5 h-5" />
+            <XCircle v-else class="w-5 h-5" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <h3 class="text-sm font-bold text-slate-100">
+              {{ unlockResult.level === 'success' ? '入库完成' : unlockResult.level === 'warning' ? '入库完成（有提示）' : '入库未成功' }}
+            </h3>
+            <p class="text-xs text-slate-400 leading-relaxed mt-1 whitespace-pre-line break-words">{{ unlockResult.message }}</p>
+          </div>
+        </div>
+        <button
+          @click="unlockResult = null"
+          class="w-full py-2.5 theme-btn-primary rounded-xl text-xs font-bold transition cursor-pointer active:scale-[0.98]"
+        >
+          我知道了
+        </button>
+      </div>
+    </div>
+
     <!-- 全局 Toast 提示 -->
     <Toast :toasts="toasts" />
   </div>
@@ -405,7 +445,9 @@ import {
   Check,
   Info,
   Download,
-  MessageSquare
+  MessageSquare,
+  CheckCircle2,
+  XCircle
 } from 'lucide-vue-next';
 import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
@@ -689,6 +731,12 @@ const installUpdateInPlace = async () => {
 
 const toasts = ref<ToastItem[]>([]);
 let toastId = 0;
+
+// 入库结果全局模态框（需用户确认；切换界面也不会错过）
+const unlockResult = ref<{ message: string; level: 'success' | 'warning' | 'error' } | null>(null);
+const handleUnlockResult = (payload: { message: string; level: 'success' | 'warning' | 'error' }) => {
+  unlockResult.value = payload;
+};
 
 const addToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
   const id = ++toastId;
