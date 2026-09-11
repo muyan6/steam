@@ -223,7 +223,20 @@ fn session_client() -> reqwest::Client {
         }
     }
     // 登录是两次网络请求（最长可达 ~24s），绝不能在持锁状态下执行，
-    // 否则期间所有并发调用 session_client 的线程都会卡在锁上
+    // 否则期间所有并发调用 session_client 的线程都会卡在锁上。
+    // 同时用独立的初始化锁串行化构建过程：否则并发调用会各自登录一次并竞争覆盖缓存，
+    // 造成重复登录与偶发使用未登录会话。
+    static INIT_LOCK: Mutex<()> = Mutex::new(());
+    let _init_guard = INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    // 双检：获得初始化锁后若已有其他线程构建完成，直接复用
+    {
+        let guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(c) = guard.as_ref() {
+            return c.clone();
+        }
+    }
+
     let builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(12))
         .user_agent(UA)

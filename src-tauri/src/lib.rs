@@ -1559,6 +1559,13 @@ async fn download_update(app: tauri::AppHandle, url: String, sha256: Option<Stri
         let target = std::env::temp_dir().join(&safe_name);
 
         let total = resp.content_length();
+        // 体积上限 50MB：发布安装包 ~10MB 以内，上限既留足余量又防止异常超大响应撑爆磁盘
+        let max_update_bytes = manifests::MAX_ASSET_DOWNLOAD_BYTES;
+        if let Some(len) = total {
+            if len > max_update_bytes {
+                return Err(format!("安装包体积 {} 字节，超过上限 {} 字节，已拒绝下载", len, max_update_bytes));
+            }
+        }
         let mut file = std::fs::File::create(&target).map_err(|e| format!("创建临时文件失败: {}", e))?;
         use std::io::Write;
         let mut hasher = Sha256::new();
@@ -1568,9 +1575,14 @@ async fn download_update(app: tauri::AppHandle, url: String, sha256: Option<Stri
         loop {
             let chunk = manifests::block_on(resp.chunk()).map_err(|e| format!("下载中断: {}", e))?;
             let Some(bytes) = chunk else { break };
+            downloaded += bytes.len() as u64;
+            if downloaded > max_update_bytes {
+                // 无 Content-Length 或声明不实时按实际累计判断
+                let _ = std::fs::remove_file(&target);
+                return Err(format!("安装包体积超过上限 {} 字节，已中止下载并删除临时文件", max_update_bytes));
+            }
             file.write_all(&bytes).map_err(|e| format!("写入临时文件失败: {}", e))?;
             hasher.update(&bytes);
-            downloaded += bytes.len() as u64;
             // 每累计 512KB 上报一次进度，避免事件刷屏
             if downloaded - last_emitted >= 512 * 1024 {
                 last_emitted = downloaded;

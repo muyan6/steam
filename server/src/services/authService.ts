@@ -274,6 +274,7 @@ export class AuthService {
     if (isUserValid && isPassValid) {
       this.loginAttempts.delete(lockKey);
 
+      const loginAt = new Date().toISOString();
       // 透明升级：旧迭代次数（10000）的哈希在登录成功时用新迭代次数重哈希落盘
       if (iterations < AuthService.PBKDF2_ITERATIONS) {
         try {
@@ -283,11 +284,20 @@ export class AuthService {
             passwordHash: this.hashPassword(cleanPass, newSalt),
             salt: newSalt,
             pbkdf2Iterations: AuthService.PBKDF2_ITERATIONS,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            lastLoginAt: loginAt,
+            lastLoginIp: ip
           });
           console.log('[AuthService] 已将管理员凭据 PBKDF2 迭代次数透明升级至 210000');
         } catch (e) {
           console.error('[AuthService] 凭据哈希透明升级失败（不影响本次登录）:', e);
+        }
+      } else {
+        // 持久化真实登录时间/IP，供管理端"最后登录"展示
+        try {
+          this.saveCredentials({ ...creds, lastLoginAt: loginAt, lastLoginIp: ip });
+        } catch (e) {
+          console.error('[AuthService] 记录登录时间失败（不影响本次登录）:', e);
         }
       }
 
@@ -295,7 +305,7 @@ export class AuthService {
       const user: AdminUser = {
         username: creds.username,
         role: 'superadmin',
-        lastLoginAt: new Date().toISOString(),
+        lastLoginAt: loginAt,
         lastLoginIp: ip
       };
 
@@ -413,7 +423,9 @@ export class AuthService {
     return {
       username: creds.username,
       role: 'superadmin',
-      lastLoginAt: creds.updatedAt
+      // 展示真实的最近登录时间/IP，而不是凭据更新时间（后者语义完全不同）
+      lastLoginAt: creds.lastLoginAt || creds.updatedAt,
+      lastLoginIp: creds.lastLoginIp
     };
   }
 }

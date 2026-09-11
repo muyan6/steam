@@ -1249,13 +1249,18 @@ app.get(['/admin', '/dashboard'], (req, res) => {
   res.send(ADMIN_HTML);
 });
 
-// 404 处理
+// 404 处理：不回显请求路径，避免反射请求内容
 app.use((req, res) => {
-  res.status(404).json({ success: false, message: `接口不存在: ${req.method} ${req.path}` });
+  res.status(404).json({ success: false, message: '接口不存在' });
 });
 
-// 全局异常捕获
+// 全局异常捕获：区分客户端请求错误（JSON 解析失败 400 / 载荷过大 413）与真实服务端错误
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const status = typeof err?.status === 'number' ? err.status : 500;
+  if (status >= 400 && status < 500) {
+    console.warn('[Request Error]', status, err?.type || err?.message);
+    return res.status(status).json({ success: false, message: status === 413 ? '请求内容过大' : '请求格式错误' });
+  }
   console.error('[Unhandled Error]', err);
   res.status(500).json({ success: false, message: '服务器内部错误' });
 });

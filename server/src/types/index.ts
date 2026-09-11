@@ -107,6 +107,9 @@ export interface AdminCredentials {
   tokenVersion?: number;
   /** PBKDF2 迭代次数；历史凭据无此字段时视为 10000，登录成功后透明升级 */
   pbkdf2Iterations?: number;
+  /** 最近一次登录成功时间与来源 IP（用于管理端准确展示"最后登录"） */
+  lastLoginAt?: string;
+  lastLoginIp?: string;
 }
 
 export interface AdminUser {

@@ -302,9 +302,16 @@ const handlePasteCode = async () => {
       if (text) {
         activationCodeInput.value = text.trim().toUpperCase();
         emit('notify', '已自动粘贴剪贴板内容', 'info');
+      } else {
+        emit('notify', '剪贴板为空，请手动输入赞助码', 'warning');
       }
+    } else {
+      emit('notify', '当前环境不支持读取剪贴板，请手动输入', 'warning');
     }
-  } catch {}
+  } catch (e: any) {
+    // 权限被拒/无剪贴板数据时给出明确反馈，不再静默失败让用户困惑
+    emit('notify', `读取剪贴板失败：${e?.message || '请手动输入赞助码'}`, 'warning');
+  }
 };
 
 const handleActivate = async () => {

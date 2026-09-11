@@ -847,7 +847,7 @@
                     <!-- 安装联机补丁按钮 (自动从 online-fix.me 下载并解压) -->
                     <button
                       @click="handleInstallOnlineFixWebPatch(game)"
-                      :disabled="pendingInstalls.has(game.appId) || actionLoading"
+                      :disabled="pendingInstalls.has(game.appId)"
                       class="flex-1 py-2 px-1.5 theme-btn-primary text-[11px] font-bold rounded-xl transition flex items-center justify-center gap-1 whitespace-nowrap shadow-sm cursor-pointer disabled:opacity-50"
                     >
                       <RotateCw v-if="pendingInstalls.has(game.appId)" class="w-3.5 h-3.5 animate-spin" />
@@ -858,7 +858,7 @@
                     <!-- 还原原版按钮 -->
                     <button
                       @click="handleRestorePatchForGame(game)"
-                      :disabled="pendingInstalls.has(game.appId) || actionLoading || (!game.isPatched && !game.hasBackup)"
+                      :disabled="pendingInstalls.has(game.appId) || (!game.isPatched && !game.hasBackup)"
                       class="py-2 px-2 btn-soft-action hover:bg-rose-900/40 text-[11px] font-semibold rounded-xl flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
                       title="还原原始 DLL 文件"
                     >
@@ -1447,7 +1447,9 @@ const handleInstallOnlineFixWebPatch = async (game: LocalInstalledGame) => {
 
 // 联机补丁模式：还原原版
 const handleRestorePatchForGame = async (game: LocalInstalledGame) => {
-  actionLoading.value = true;
+  // 使用按 appId 的 pending 集合，避免一个游戏的还原操作禁用所有卡片的按钮
+  if (pendingInstalls.value.has(game.appId)) return;
+  addPending(pendingInstalls, game.appId);
   try {
     emit('notify', `正在还原《${game.name}》为原版游戏文件...`, 'info');
     const res = await window.electronAPI.restoreGame(game.fullInstallPath);
@@ -1462,7 +1464,7 @@ const handleRestorePatchForGame = async (game: LocalInstalledGame) => {
   } catch (e: any) {
     emit('notify', `还原失败: ${formatIpcError(e)}`, 'error');
   } finally {
-    actionLoading.value = false;
+    removePending(pendingInstalls, game.appId);
   }
 };
 

@@ -127,13 +127,18 @@ pub fn clear_steam_running_cache() {
 }
 
 pub fn is_steam_running() -> bool {
-    // CREATE_NO_WINDOW：GUI 发布版（windows_subsystem）下不加会闪现控制台黑框
-    let mut guard = RUNNING_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((at, val)) = *guard {
-        if at.elapsed() < RUNNING_CACHE_TTL {
-            return val;
+    // 先只读检查缓存并在持锁期间快速返回；tasklist 子进程调用（0.1~0.3s）绝不持锁执行，
+    // 否则会阻塞 clear_steam_running_cache 等并发调用者
+    {
+        let guard = RUNNING_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((at, val)) = *guard {
+            if at.elapsed() < RUNNING_CACHE_TTL {
+                return val;
+            }
         }
     }
+
+    // CREATE_NO_WINDOW：GUI 发布版（windows_subsystem）下不加会闪现控制台黑框
     let output = Command::new("tasklist")
         .args(["/FI", "IMAGENAME eq steam.exe", "/NH"])
         .creation_flags(0x08000000)
@@ -145,7 +150,9 @@ pub fn is_steam_running() -> bool {
     } else {
         false
     };
-    *guard = Some((std::time::Instant::now(), val));
+    if let Ok(mut guard) = RUNNING_CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), val));
+    }
     val
 }
 

@@ -334,7 +334,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue';
 import { APP_CONFIG } from '../../config/appConfig';
-import { formatIpcError } from '../api/tauriBridge';
+import { formatIpcError, sanitizeSponsorResponse } from '../api/tauriBridge';
 import type { SponsorItem, SponsorDataResponse, VersionChangelogItem } from '../../types';
 import appLogo from '../assets/logo.svg';
 import {
@@ -446,6 +446,13 @@ const loadChangelogs = async () => {
     const logs = await window.electronAPI.getVersionChangelogs();
     if (logs && logs.length > 0) {
       changelogs.value = logs;
+    } else {
+      // 云端不可达/为空时回退本地缓存，避免页面空白（缓存由桥接层写入）
+      const cached = localStorage.getItem('cfd_changelogs_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) changelogs.value = parsed;
+      }
     }
   } catch (e) {
     console.warn('加载更新日志异常:', e);
@@ -454,37 +461,10 @@ const loadChangelogs = async () => {
   }
 };
 
-const isMockSponsor = (s: SponsorItem): boolean => {
-  if (!s) return true;
-  const mockNames = [
-    '星海漫游者', '云水禅心', 'CyberSamurai', '极光幻梦', '风之诺言',
-    '秋水长天', 'NightOwl_99', '浮生若梦', '代码写到天亮', 'Steam重度爱好者'
-  ];
-  return mockNames.includes(s.name) || /^af_(top\d+|\d+)$/.test(s.id || '');
-};
-
-const sanitizeSponsorState = (data: SponsorDataResponse): SponsorDataResponse => {
-  if (!data) {
-    return {
-      totalCount: 0,
-      totalAmount: 0,
-      updatedAt: new Date().toISOString().slice(0, 10),
-      source: 'afdian',
-      sponsorUrl: '',
-      sponsors: []
-    };
-  }
-  const realSponsors = (data.sponsors || []).filter(s => !isMockSponsor(s));
-  const realAmount = realSponsors.reduce((sum, item) => sum + (item.allSumAmount || 0), 0);
-  return {
-    ...data,
-    totalCount: realSponsors.length,
-    totalAmount: Math.round(realAmount * 100) / 100,
-    source: data.source || 'afdian',
-    sponsorUrl: typeof data.sponsorUrl === 'string' ? data.sponsorUrl.trim() : '',
-    sponsors: realSponsors
-  };
-};
+// 赞助数据清洗统一收敛到 tauriBridge.sanitizeSponsorResponse：
+// 原先此处与桥接层各写一份虚拟赞助过滤逻辑，存在两处规则漂移的风险
+const sanitizeSponsorState = (data: SponsorDataResponse): SponsorDataResponse =>
+  sanitizeSponsorResponse(data, data?.sponsorUrl || '');
 
 const loadSponsors = async () => {
   try {
@@ -565,13 +545,10 @@ const checkUpdates = async () => {
 
 onMounted(() => {
   try {
+    // 仅清理历史遗留的虚拟赞助数据（按内容特征识别），更新日志缓存保留用于离线回退
     const cached = localStorage.getItem('cfd_sponsors_cache');
     if (cached && (cached.includes('星海漫游者') || cached.includes('1805') || cached.includes('chunfengdu') || cached.includes('afdian.com'))) {
       localStorage.removeItem('cfd_sponsors_cache');
-    }
-    const cachedLogs = localStorage.getItem('cfd_changelogs_cache');
-    if (cachedLogs && cachedLogs.includes('新版本')) {
-      localStorage.removeItem('cfd_changelogs_cache');
     }
   } catch {}
   loadAppLinks();

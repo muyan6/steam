@@ -1017,7 +1017,7 @@ async function handlePushSubmit() {
 
 async function toggleNotice(id, enable) {
   try {
-    var resp = await fetch('/api/admin/notices/' + id + '/toggle', { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ enabled: enable }) });
+    var resp = await fetch('/api/admin/notices/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ enabled: enable }) });
     if (resp.status === 401) { handleLogout(); return; }
     var res = await resp.json();
     if (res && res.success) {
@@ -1031,7 +1031,7 @@ async function toggleNotice(id, enable) {
 async function deleteNotice(id) {
   if (!confirm('确定删除此公告？')) return;
   try {
-    var resp = await fetch('/api/admin/notices/' + id, { method: 'DELETE', headers: getHeaders() });
+    var resp = await fetch('/api/admin/notices/' + encodeURIComponent(id), { method: 'DELETE', headers: getHeaders() });
     if (resp.status === 401) { handleLogout(); return; }
     var res = await resp.json();
     if (res && res.success) {
@@ -1058,8 +1058,14 @@ async function deleteVersion(ver) {
 
 function formatTime(iso) {
   if (!iso) return '-';
-  try { var d = new Date(iso); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
-  catch(e) { return iso; }
+  // 注意：非法日期字符串得到 Invalid Date（字段为 NaN），必须显式判定并返回 '-'，
+  // 否则会渲染出 NaN-NaN-NaN；catch 分支也绝不回显原始输入（防注入）
+  try {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '-';
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  }
+  catch(e) { return '-'; }
 }
 
 function escapeHtml(str) {

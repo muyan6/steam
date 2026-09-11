@@ -474,18 +474,22 @@ async function searchLocal(q: string, page: number, pageSize: number): Promise<a
   }
 }
 
-const isMockSponsor = (s: SponsorItem): boolean => {
+// 历史虚拟预设赞助榜的唯一识别特征（服务端早已清空预设数据，这里仅作遗留数据兜底）
+// 注意：真实爱发电用户 ID 为十六进制串；服务端在缺 user_id 时回退生成
+// `af_` + 7 位 base36 随机串，因此 id 规则必须限定 1~2 位纯数字，否则可能误伤真实赞助者
+const MOCK_SPONSOR_NAMES = [
+  '星海漫游者', '云水禅心', 'CyberSamurai', '极光幻梦', '风之诺言',
+  '秋水长天', 'NightOwl_99', '浮生若梦', '代码写到天亮', 'Steam重度爱好者'
+];
+
+export const isMockSponsor = (s: SponsorItem): boolean => {
   if (!s) return true;
-  const mockNames = [
-    '星海漫游者', '云水禅心', 'CyberSamurai', '极光幻梦', '风之诺言',
-    '秋水长天', 'NightOwl_99', '浮生若梦', '代码写到天亮', 'Steam重度爱好者'
-  ];
-  if (mockNames.includes(s.name)) return true;
-  if (s.id && /^af_(top\d+|\d+)$/.test(s.id)) return true;
+  if (MOCK_SPONSOR_NAMES.includes(s.name)) return true;
+  if (s.id && (/^af_top\d+$/.test(s.id) || /^af_\d{1,2}$/.test(s.id))) return true;
   return false;
 };
 
-const sanitizeSponsorResponse = (data: any, fallbackUrl = ''): SponsorDataResponse => {
+export const sanitizeSponsorResponse = (data: any, fallbackUrl = ''): SponsorDataResponse => {
   if (!data) {
     return {
       totalCount: 0,
