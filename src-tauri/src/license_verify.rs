@@ -198,10 +198,11 @@ pub fn verify_offline_license() -> Result<VerifiedLicense, String> {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
 
-        if let Some(exp_ms) = parse_iso_time(exp_str) {
-            if exp_ms < now_ms {
-                return Err("您的会员授权已过期，请联网续费后使用！".to_string());
-            }
+        // fail-closed：到期时间无法解析时拒绝放行，绝不静默跳过有效期校验
+        let exp_ms = parse_iso_time(exp_str)
+            .ok_or_else(|| "到期时间格式无法解析，已拒绝离线放行！".to_string())?;
+        if exp_ms < now_ms {
+            return Err("您的会员授权已过期，请联网续费后使用！".to_string());
         }
     }
 
@@ -236,5 +237,14 @@ mod tests {
         let t = parse_iso_time("2026-10-06T12:00:00.000Z");
         assert!(t.is_some());
         assert!(t.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_unparseable_expiry_is_rejected() {
+        // fail-closed：无法解析的到期时间必须返回 None（由调用方拒绝放行），
+        // 不能再像旧实现那样"解析失败即跳过有效期校验"
+        assert!(parse_iso_time("not-a-date").is_none());
+        assert!(parse_iso_time("").is_none());
+        assert!(parse_iso_time("2026-13-45").is_none());
     }
 }

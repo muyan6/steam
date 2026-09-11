@@ -111,6 +111,19 @@ pub fn clear_steam_cache(steam_path: &Path) -> ToolboxActionResult {
     let _ = crate::ost::generate_toml_config(steam_path, "wudrm");
     let _ = crate::ost::deploy_manifest_lua(steam_path);
 
+    // 清理会删除注入 DLL，必须重新部署：否则重启后 Steam 无注入，
+    // 所有已入库游戏都会显示"内容处于加密状态"，直到用户再次入库才自愈
+    let redeployed = match crate::ost::deploy_core_binaries(steam_path) {
+        Ok(_) => {
+            steps.push("✓ 已重新部署 OpenSteamTool 注入内核".to_string());
+            true
+        }
+        Err(e) => {
+            steps.push(format!("⚠ 注入内核重新部署失败：{}", e));
+            false
+        }
+    };
+
     steps.push(format!("✓ 已清理 {} 项内核残留/临时缓存/损坏清单，并刷新系统本地 DNS 解析", cleaned));
 
     // 步骤 3: 重新拉起 Steam
@@ -125,7 +138,11 @@ pub fn clear_steam_cache(steam_path: &Path) -> ToolboxActionResult {
 
     ToolboxActionResult {
         success: true,
-        message: "Steam 缓存与 DLL 内核残留已清理完毕，已自动重启 Steam！请重新入库一个游戏进行测试。".to_string(),
+        message: if redeployed {
+            "Steam 缓存与 DLL 内核残留已清理完毕，注入内核已重新部署并自动重启 Steam！".to_string()
+        } else {
+            "Steam 缓存已清理并自动重启，但注入内核重新部署失败，请查看步骤详情或手动重新入库。".to_string()
+        },
         steps: Some(steps),
         cleaned_files_count: Some(cleaned),
         restarted_steam: Some(restarted),

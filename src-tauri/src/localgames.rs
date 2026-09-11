@@ -68,7 +68,16 @@ pub fn get_steam_library_paths(steam_path: &Path) -> Vec<PathBuf> {
                 if let Some(stripped) = rest.strip_prefix('"') {
                     if let Some(end) = stripped.find('"') {
                         let raw = stripped[..end].replace("\\\\", "\\");
-                        let apps_dir = PathBuf::from(&raw).join("steamapps");
+                        let base = PathBuf::from(&raw);
+                        // 拒绝含父目录组件的路径：被篡改的 VDF 可用 ..\..\ 把扫描
+                        // 以及后续还原/打补丁操作指向任意目录
+                        if base
+                            .components()
+                            .any(|c| matches!(c, std::path::Component::ParentDir))
+                        {
+                            continue;
+                        }
+                        let apps_dir = base.join("steamapps");
                         if apps_dir.exists() && !libraries.contains(&apps_dir) {
                             libraries.push(apps_dir);
                         }
