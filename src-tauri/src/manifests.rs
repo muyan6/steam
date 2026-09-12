@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -42,6 +42,35 @@ pub const MAX_DICT_DOWNLOAD_BYTES: u64 = 50 * 1024 * 1024;
 /// 原先这些请求被设为 4~8 秒，大清单在慢链路下会被直接截断而失败；
 /// 这里放宽到 60 秒，真正的兜底由 read_body_limited 的 50MB 上限负责。
 pub const ASSET_REQUEST_TIMEOUT_SECS: u64 = 60;
+
+/// P-ToyStore 探测超时：该源只收录部分游戏，未收录时必须快速放弃，
+/// 不能占用主下载的长超时（否则未收录游戏的每个分包都要空等一分钟）
+const PTYSTORE_PROBE_TIMEOUT_SECS: u64 = 6;
+
+/// P-ToyStore 镜像前缀（与仓库路径拼接成完整 raw 地址）
+const PTYSTORE_MIRRORS: [&str; 4] = [
+    "https://ghfast.top/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro",
+    "https://gh-proxy.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro",
+    "https://steam.os.kg/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro",
+    "https://cece.guyunsq.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro",
+];
+
+/// 已知不在 P-ToyStore 收录范围的 AppID 负缓存（进程级）：
+/// 一个游戏可能有几十个分包，若不记住，每个分包都会重复探测全部镜像
+static PTYSTORE_ABSENT: Mutex<BTreeSet<u32>> = Mutex::new(BTreeSet::new());
+
+fn ptystore_known_absent(app_id: u32) -> bool {
+    PTYSTORE_ABSENT
+        .lock()
+        .map(|s| s.contains(&app_id))
+        .unwrap_or(false)
+}
+
+fn mark_ptystore_absent(app_id: u32) {
+    if let Ok(mut s) = PTYSTORE_ABSENT.lock() {
+        s.insert(app_id);
+    }
+}
 
 /// 带体积上限的响应体读取（异步）：
 /// 先校验 Content-Length 提前拒绝，再分块累加，超限立即中止
@@ -1057,52 +1086,50 @@ async fn download_single_manifest(
 
     let device_id = crate::device::get_device_id();
 
-    // 1. 第一优先级：P-ToyStore 国内高速镜像专线（覆盖最新付费大作，日更 37.3GB，客户端家宽直连下载免服务器带宽与频控）
-    let ptystore_mirror_candidates = [
-        format!(
-            "https://ghfast.top/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://steam.os.kg/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://cece.guyunsq.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://ghfast.top/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
-            depot_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
-            depot_id, depot_id, manifest_gid
-        ),
-    ];
-    for p_url in &ptystore_mirror_candidates {
-        if let Ok(resp) = http_client()
-            .get(p_url)
-            .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
-            .send()
-            .await
-        {
-            if resp.status().is_success() {
-                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                    if !bytes.is_empty() {
-                        let payload = extract_manifest_payload(&bytes);
-                        if !payload.is_empty() && is_valid_manifest_payload(&payload) {
-                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                            return Ok(format!("已从 P-ToyStore 高速源下载 ({} 字节)", payload.len()));
+    // 1. 第一优先级：P-ToyStore 国内高速镜像专线（覆盖最新付费大作，客户端家宽直连免服务器带宽与频控）
+    //    该源只收录部分游戏，未收录时用短超时快速放弃，绝不占用主下载超时；
+    //    并用进程级负缓存记住"未收录"，避免同一游戏的每个分包都重复探测 8 个必然 404 的地址
+    if !ptystore_known_absent(app_id) {
+        let mut any_response = false;
+        // 4 个镜像 × 2 种路径（按 app_id / 按 depot_id），全部去重后枚举
+        for base in PTYSTORE_MIRRORS {
+            for path_id in [app_id, depot_id.parse::<u32>().unwrap_or(0)] {
+                if path_id == 0 {
+                    continue;
+                }
+                let url = format!(
+                    "{}/{}/{}_{}.manifest",
+                    base, path_id, depot_id, manifest_gid
+                );
+                if let Ok(resp) = http_client()
+                    .get(&url)
+                    .timeout(Duration::from_secs(PTYSTORE_PROBE_TIMEOUT_SECS))
+                    .send()
+                    .await
+                {
+                    any_response = true;
+                    if resp.status().is_success() {
+                        if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
+                            if !bytes.is_empty() {
+                                let payload = extract_manifest_payload(&bytes);
+                                if !payload.is_empty() && is_valid_manifest_payload(&payload) {
+                                    fs::write(&target, &payload)
+                                        .map_err(|e| format!("写入清单失败: {}", e))?;
+                                    clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                                    return Ok(format!(
+                                        "已从 P-ToyStore 高速源下载 ({} 字节)",
+                                        payload.len()
+                                    ));
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+        // 走到这里说明一个都没命中；若确实收到过响应，则该游戏不在本源收录范围 → 记入负缓存
+        if any_response {
+            mark_ptystore_absent(app_id);
         }
     }
 

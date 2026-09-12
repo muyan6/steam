@@ -21,6 +21,8 @@ interface ManifestHub3Data {
   manifestGids: Map<string, string>;
   accessToken?: string;
   dlcIds: string[];
+  /** 该源的构建号（P-ToyStore appinfo.vdf 的 buildid）：用于跨源"取最新"裁决 */
+  buildId?: string;
 }
 
 const manifestHub3Cache = new Map<number, { data: ManifestHub3Data | null; fetchedAt: number }>();
@@ -29,6 +31,52 @@ const MANIFEST_HUB3_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时内存缓存，避�
 const manifestHub3InFlight = new Map<number, Promise<ManifestHub3Data | null>>();
 // 缓存条目硬上限，超限时先清过期再淘汰最旧，防止被脚本灌海量 AppID 撑爆内存
 const MANIFEST_HUB3_CACHE_MAX = 500;
+
+/**
+ * 深拷贝一份源数据。
+ * fetchManifestHub3 命中缓存时返回的必须是副本：否则调用方合并多源数据时
+ * 会对缓存本体就地 set()，把别源 GID 永久写进该 AppID 的缓存条目（TTL 内持续污染）。
+ */
+function cloneHub3Data(d: ManifestHub3Data | null): ManifestHub3Data | null {
+  if (!d) return null;
+  return {
+    depotKeys: new Map(d.depotKeys),
+    manifestGids: new Map(d.manifestGids),
+    dlcIds: [...d.dlcIds],
+    accessToken: d.accessToken,
+    buildId: d.buildId
+  };
+}
+
+function toBuildNum(v?: string): number | null {
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * 跨源 GID 择优裁决。
+ * 铁律：既不能"谁先回应用谁"（旧源会抢答），也不能"后到的无条件覆盖"（过期数据会顶掉正确结果）。
+ * 规则：
+ * - 现有值缺失 → 采纳（补缺）
+ * - 值相同 → 不动作
+ * - 双方 buildid 均可比较 → 取更大者（真正的"取最新"）
+ * - 无法比较（缺 buildid）→ 保持现状，避免误覆盖
+ */
+function pickNewerGid(
+  currentGid?: string,
+  candidateGid?: string,
+  currentBuild?: string,
+  candidateBuild?: string
+): boolean {
+  if (!candidateGid || candidateGid === '0') return false;
+  if (!currentGid || currentGid === '0') return true;
+  if (currentGid === candidateGid) return false;
+  const a = toBuildNum(currentBuild);
+  const b = toBuildNum(candidateBuild);
+  if (a !== null && b !== null) return b > a;
+  return false;
+}
 
 function parseManifestHub3Lua(lua: string, targetAppId?: number): ManifestHub3Data {
   const depotKeys = new Map<string, string>();
@@ -83,6 +131,13 @@ function parseManifestHub3Json(json: any, targetAppId?: number): ManifestHub3Dat
   const depotKeys = new Map<string, string>();
   const manifestGids = new Map<string, string>();
   const dlcIds: string[] = [];
+  // 若上游 JSON 携带 buildid，一并带出用于跨源版本裁决
+  const buildId =
+    json && json.buildid != null && /^\d+$/.test(String(json.buildid))
+      ? String(json.buildid)
+      : json && json.build_id != null && /^\d+$/.test(String(json.build_id))
+      ? String(json.build_id)
+      : undefined;
   if (json && json.depot && typeof json.depot === 'object') {
     for (const [dId, info] of Object.entries<any>(json.depot)) {
       if (!/^\d+$/.test(dId)) continue;
@@ -109,20 +164,21 @@ function parseManifestHub3Json(json: any, targetAppId?: number): ManifestHub3Dat
       }
     }
   }
-  return { depotKeys, manifestGids, dlcIds };
+  return { depotKeys, manifestGids, dlcIds, buildId };
 }
 
 async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null> {
   const now = Date.now();
   const cached = manifestHub3Cache.get(appId);
   if (cached && now - cached.fetchedAt < MANIFEST_HUB3_TTL_MS) {
-    return cached.data;
+    // 返回副本：调用方会就地合并其他源的数据，直接交出缓存本体将造成缓存污染
+    return cloneHub3Data(cached.data);
   }
 
   // 在途请求去重：同一 AppID 的并发请求共享同一次上游拉取
   const pending = manifestHub3InFlight.get(appId);
   if (pending) {
-    return pending;
+    return cloneHub3Data(await pending);
   }
 
   const task = (async (): Promise<ManifestHub3Data | null> => {
@@ -187,7 +243,7 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
       }
     }
     manifestHub3Cache.set(appId, { data, fetchedAt: Date.now() });
-    return data;
+    return cloneHub3Data(data);
   })();
 
   manifestHub3InFlight.set(appId, task);
@@ -387,13 +443,16 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       if (hData && hData.depotKeys && hData.depotKeys.size > 0) {
         hub3Data = hData;
         if (mData) {
-          // 深度智能合并：补充有效分包密钥，并以最新源（P-ToyStore / SteamML）优先覆盖更新 GID
+          // 深度智能合并：补充分包密钥（只补缺），GID 按 buildid 择优而非无条件覆盖。
+          // 无条件覆盖会让过期/错误的 GID 顶掉原本正确的结果；而"谁先回应用谁"
+          // 又会让旧源抢答。只有能证明更新（buildid 更大）时才替换。
           for (const [dId, key] of mData.depotKeys) {
             if (!hub3Data.depotKeys.has(dId)) hub3Data.depotKeys.set(dId, key);
           }
           for (const [dId, gid] of mData.manifestGids) {
-            // P-ToyStore 每日同步最新官方版本，优先采用其最新 GID
-            hub3Data.manifestGids.set(dId, gid);
+            if (pickNewerGid(hub3Data.manifestGids.get(dId), gid, hub3Data.buildId, mData.buildId)) {
+              hub3Data.manifestGids.set(dId, gid);
+            }
           }
           if (Array.isArray(mData.dlcIds)) {
             hub3Data.dlcIds = Array.from(new Set([...hub3Data.dlcIds, ...mData.dlcIds]));

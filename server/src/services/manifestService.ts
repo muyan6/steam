@@ -18,6 +18,8 @@ export interface DepotManifestInfo {
   downloadUrl?: string;
   source?: string;
   key?: string;
+  /** 该分包所属 DLC 的 AppID（P-ToyStore appinfo.vdf 的 dlcappid），用于补齐 dlcIds */
+  dlcAppId?: string;
 }
 
 export interface AppManifestResult {
@@ -65,15 +67,15 @@ export class ManifestService {
 
     // 2. 核心分级检索：优先尝试每日自动同步的 P-ToyStore (涵盖最新热门与付费大作最新 GID)
     try {
-      const pToyList = await this.fetchFromPToyStore(appId, candidateDepotIds);
-      if (pToyList && pToyList.length > 0) {
+      const pToy = await this.fetchFromPToyStore(appId, candidateDepotIds);
+      if (pToy.depots.length > 0) {
         return {
           success: true,
           appId,
           source: 'ptystore',
-          depots: pToyList,
+          depots: pToy.depots,
           keys,
-          message: `从 P-ToyStore 极速检索到 ${pToyList.length} 个最新分包清单！`
+          message: `从 P-ToyStore 极速检索到 ${pToy.depots.length} 个最新分包清单！`
         };
       }
     } catch (err: any) {
@@ -337,9 +339,18 @@ export class ManifestService {
   }
 
   /**
-   * 从 P-ToyStore (SteamManifestCache_Pro) 高速镜像源检索（独立 App 分支，每日自动同步最新付费大作）
+   * 从 P-ToyStore (SteamManifestCache_Pro) 高速镜像源检索（独立 App 分支，每日自动同步最新付费大作）。
+   * 返回 depots 的同时带出 buildId，供上层做跨源"取最新"裁决。
+   *
+   * 注意：本函数**不做**清单沉淀（不调用 ensureManifestCached）。
+   * 它会被 metadata 查询热路径调用，若在此逐个触发下载，等于每次查询都为该游戏所有
+   * depot 起一轮后台回源，既耗服务器带宽又极易触发上游频控。
+   * 沉淀应由明确的下载路径（getManifestsForApp / 客户端请求清单文件）按需触发。
    */
-  public async fetchFromPToyStore(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
+  public async fetchFromPToyStore(
+    appId: number,
+    depotIds: string[] = []
+  ): Promise<{ depots: DepotManifestInfo[]; buildId?: string }> {
     const results: DepotManifestInfo[] = [];
     const fastBases = [
       'https://steam.os.kg/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro',
@@ -348,6 +359,7 @@ export class ManifestService {
       'https://cece.guyunsq.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro'
     ];
 
+    let buildId: string | undefined;
     try {
       const vdfPromises = fastBases.map(async (base) => {
         const resp = await axios.get(`${base}/${appId}/appinfo.vdf`, {
@@ -364,6 +376,7 @@ export class ManifestService {
       const vdfText = await Promise.any(vdfPromises);
       if (vdfText) {
         const parsed = this.parseAppInfoVdf(vdfText);
+        buildId = parsed.buildId;
         for (const [dId, dInfo] of parsed.depots) {
           if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
           if (dInfo.gid && dInfo.gid !== '0' && /^\d+$/.test(dInfo.gid)) {
@@ -374,19 +387,16 @@ export class ManifestService {
               manifestFileName: `${dId}_${dInfo.gid}.manifest`,
               downloadUrl: `/api/manifests/download/${dId}/${dInfo.gid}?appId=${appId}`,
               source: 'ptystore',
-              key
+              key,
+              // 带上 DLC 归属，避免上层丢失 DLC 列表
+              dlcAppId: dInfo.dlcAppId
             });
           }
         }
       }
     } catch {}
 
-    // 异步后台触发沉淀落盘（非阻塞），确保后续秒级响应
-    for (const item of results) {
-      this.ensureManifestCached(item.depotId, item.manifestId, appId).catch(() => {});
-    }
-
-    return results;
+    return { depots: results, buildId };
   }
 
   /**
@@ -699,30 +709,40 @@ export class ManifestService {
     manifestGids: Map<string, string>;
     dlcIds: string[];
     accessToken?: string;
+    /** 源构建号，用于上层跨源"取最新"裁决 */
+    buildId?: string;
   } | null> {
     // 0. 优先尝试每日自动同步的 P-ToyStore (SteamManifestCache_Pro) 提取最新公网 GID
     try {
-      const pToyDepots = await this.fetchFromPToyStore(appId);
-      if (pToyDepots && pToyDepots.length > 0) {
+      const pToy = await this.fetchFromPToyStore(appId);
+      if (pToy.depots.length > 0) {
         const depotKeys = new Map<string, string>();
         const manifestGids = new Map<string, string>();
         const dlcIds: string[] = [];
-        for (const item of pToyDepots) {
+        for (const item of pToy.depots) {
           if (item.manifestId) manifestGids.set(item.depotId, item.manifestId);
           if (item.key) depotKeys.set(item.depotId, item.key);
+          // appinfo.vdf 中的 dlcappid 是权威的 DLC 归属：此前被解析后丢弃，
+          // 导致命中 P-ToyStore 的游戏丢失 DLC 列表
+          if (item.dlcAppId && item.dlcAppId !== appId.toString() && !dlcIds.includes(item.dlcAppId)) {
+            dlcIds.push(item.dlcAppId);
+          }
         }
-        return { depotKeys, manifestGids, dlcIds };
+        return { depotKeys, manifestGids, dlcIds, buildId: pToy.buildId };
       }
     } catch {}
 
     // 1. 优先尝试全球顶级边缘 CDN：SteamML (R2) 与 Remlua (CloudFront)
+    // 注意：本函数运行在 metadata 查询热路径上，这里**只解析、不沉淀**。
+    // 此前每轮查询都会顺带把上游 zip 内全部清单写盘（unpackZipAndExtractManifests
+    // 的返回值本就未使用），等于每次查询都为该游戏做一次全量缓存，
+    // 既耗服务器带宽与磁盘、又容易触发上游频控。沉淀改由客户端真正
+    // 请求某个清单文件时按需触发（/api/manifests/download → ensureManifestCached）。
     try {
       const smlUrl = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
       const resp = await axios.get(smlUrl, { responseType: 'arraybuffer', timeout: 6000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
       if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
-        const zipBuf = Buffer.from(resp.data);
-        this.unpackZipAndExtractManifests(appId, zipBuf, [], 'steamml');
-        const parsed = this.parseLuaFromZip(zipBuf, appId);
+        const parsed = this.parseLuaFromZip(Buffer.from(resp.data), appId);
         if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
           return parsed;
         }
@@ -733,9 +753,7 @@ export class ManifestService {
       const remluaUrl = `https://d41hvr6rtvs2p.cloudfront.net/${appId}.zip`;
       const resp = await axios.get(remluaUrl, { responseType: 'arraybuffer', timeout: 6000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
       if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
-        const zipBuf = Buffer.from(resp.data);
-        this.unpackZipAndExtractManifests(appId, zipBuf, [], 'remlua');
-        const parsed = this.parseLuaFromZip(zipBuf, appId);
+        const parsed = this.parseLuaFromZip(Buffer.from(resp.data), appId);
         if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
           return parsed;
         }
@@ -761,9 +779,8 @@ export class ManifestService {
             headers: { 'User-Agent': 'Mozilla/5.0', Referer: proxyUrl }
           });
           if (zipResp.status === 200 && zipResp.data && zipResp.data.byteLength > 0) {
-            const zipBuf = Buffer.from(zipResp.data);
-            this.unpackZipAndExtractManifests(appId, zipBuf, [], 'manifesthub_uk');
-            const parsed = this.parseLuaFromZip(zipBuf, appId);
+            // 同上：热路径只解析不沉淀
+            const parsed = this.parseLuaFromZip(Buffer.from(zipResp.data), appId);
             if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
               return parsed;
             }
@@ -848,7 +865,32 @@ export class ManifestService {
    * 确保指定清单在服务端本地 manifests/ 目录中就绪
    * 若本地不存在，则从 steamtools-games/ManifestHub3 回源拉取并沉淀落盘（Cache-Through 模式）
    */
+  // 在途沉淀去重：同一 (depotId, manifestId) 并发只回源一次，
+  // 防止多个请求（含 metadata 热路径）同时为该分包起多轮上游下载
+  private manifestInFlight = new Map<string, Promise<string | null>>();
+  // 本地清单缓存目录文件数上限：GID 变化会生成新文件、旧文件不会自动消失，
+  // 不加约束会无限增长；超过上限时按 mtime 淘汰最旧
+  private readonly MANIFEST_DIR_MAX_FILES = 20000;
+  private manifestSaveCounter = 0;
+
   public async ensureManifestCached(depotId: string, manifestId: string, appId?: number): Promise<string | null> {
+    if (!/^\d+$/.test(String(depotId)) || !/^\d+$/.test(String(manifestId))) {
+      return null;
+    }
+    const dedupKey = `${depotId}_${manifestId}`;
+    const running = this.manifestInFlight.get(dedupKey);
+    if (running) return running;
+
+    const task = this.ensureManifestCachedInner(depotId, manifestId, appId);
+    this.manifestInFlight.set(dedupKey, task);
+    try {
+      return await task;
+    } finally {
+      this.manifestInFlight.delete(dedupKey);
+    }
+  }
+
+  private async ensureManifestCachedInner(depotId: string, manifestId: string, appId?: number): Promise<string | null> {
     if (!/^\d+$/.test(String(depotId)) || !/^\d+$/.test(String(manifestId))) {
       return null;
     }
@@ -1091,10 +1133,45 @@ export class ManifestService {
     try {
       const filePath = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
       fs.writeFileSync(filePath, buffer);
+      this.maybePruneManifestDir();
       return true;
     } catch (e) {
       console.error('[ManifestService] 保存清单文件失败:', e);
       return false;
+    }
+  }
+
+  /**
+   * 本地清单缓存目录容量约束。
+   * GID 更新会写入新文件名，旧 GID 文件不会自动消失；若不淘汰，磁盘只增不减。
+   * 为避免每次保存都全量 readdir，每 200 次保存才检查一次。
+   */
+  private maybePruneManifestDir(): void {
+    this.manifestSaveCounter += 1;
+    if (this.manifestSaveCounter % 200 !== 0) return;
+    try {
+      const entries = fs.readdirSync(this.manifestDir, { withFileTypes: true })
+        .filter((e) => e.isFile() && e.name.endsWith('.manifest'));
+      if (entries.length <= this.MANIFEST_DIR_MAX_FILES) return;
+
+      const stats = entries.map((e) => {
+        const p = path.join(this.manifestDir, e.name);
+        let mtime = 0;
+        try {
+          mtime = fs.statSync(p).mtimeMs;
+        } catch {}
+        return { p, mtime };
+      });
+      stats.sort((a, b) => a.mtime - b.mtime);
+      const removeCount = stats.length - this.MANIFEST_DIR_MAX_FILES;
+      for (let i = 0; i < removeCount; i++) {
+        try {
+          fs.unlinkSync(stats[i].p);
+        } catch {}
+      }
+      console.log(`[ManifestService] 清单缓存目录超限，已按最旧优先淘汰 ${removeCount} 个文件（上限 ${this.MANIFEST_DIR_MAX_FILES}）`);
+    } catch (e) {
+      console.warn('[ManifestService] 清单缓存目录清理失败:', e);
     }
   }
 
