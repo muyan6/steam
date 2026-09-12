@@ -202,7 +202,7 @@ export class SponsorService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'User-Agent': 'ChunFengDu-Server/2.7.2'
+            'User-Agent': 'ChunFengDu-Server/2.7.3'
           },
           body: JSON.stringify(requestBody),
           signal: controller.signal

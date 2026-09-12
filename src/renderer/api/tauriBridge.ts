@@ -110,6 +110,19 @@ export async function postJson<T = any>(url: string, body?: any, timeoutMs = 800
 
 export const DEFAULT_CHANGELOGS: VersionChangelogItem[] = [
   {
+    version: '2.7.3',
+    releaseDate: '2026-09-12',
+    title: '春风渡 v2.7.3 P-ToyStore清单多源协同与并发竞速版',
+    forceUpdate: true,
+    changelog: [
+      '🔥 深度集成 P-ToyStore 日更清单源：接入每日自动同步的 P-ToyStore 37.3GB 清单库，博德之门3、幻兽帕鲁、黑神话等热门付费大作优先锁定官方当日最新清单 GID 与实体分包',
+      '⚡ 客户端清单多源并发竞速：单分包清单下载由串行等待全面升级为 Tokio 异步并发竞速，P-ToyStore、SteamML R2、Remlua、ManifestHub3 镜像并行争胜，下载速度提升 3~5 倍',
+      '🛡️ 双轨回退与零虚空 404 保障：以源中真实收录版本为准提取 GID；CS2、Dota 2、Apex 等免费游戏与长尾游戏在 P-ToyStore 无分支时无缝秒级回退至 ManifestHub3 与 SteamML R2',
+      '🌐 分布式家宽直连与防频控优化：95% 清单流量由客户端家宽独立 IP 直连全球高速镜像下载，彻底避免镜像频控封禁，云端服务器退居末位仅作 5% 故障容灾救生圈',
+      '🔒 缓存污染与 DLC 分包防御加固：修复 appinfo.vdf 解析无 GID 占位符引发的缓存污染，严格保证分包魔数与 DLC 完整性，杜绝损坏文件落盘'
+    ]
+  },
+  {
     version: '2.7.2',
     releaseDate: '2026-09-11',
     title: '春风渡 v2.7.2 启动静默自愈与交互体验升级版',

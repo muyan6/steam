@@ -1,22 +1,21 @@
 {
-  "version": "2.7.2",
+  "version": "2.7.3",
   "channel": "stable",
-  "releaseDate": "2026-09-11",
-  "title": "春风渡 v2.7.2 启动静默自愈与交互体验升级版",
+  "releaseDate": "2026-09-12",
+  "title": "春风渡 v2.7.3 P-ToyStore清单多源协同与并发竞速版",
   "changelog": [
-    "🚀 启动环境自检与静默自愈：优化客户端启动流程，Steam 运行状态、网络环境与授权缓存全面改为后台静默自检与自愈，仅在检测到异常时友好提示，日常启动秒速进入、清爽无干扰",
-    "🎯 一键入库交互体验与全局弹窗：新增入库结果全局确认弹窗，明确呈现入库状态与 DLC 详情；入库后完整保留搜索界面状态，默认开启精致皓月主题",
-    "🎁 入库配额与计费规则人性化优化：单款游戏含全部 DLC 统一仅计 1 次入库额度，入库失败时自动返还额度不扣次数，免费额度文案统一为「N 款游戏（含全部 DLC）」",
-    "🛡️ 安全加固与内核完整性校验：上游清单下载严格限制 50MB 上限防御恶性膨胀，强化路径安全防穿透保护，并提升核心服务完整性哈希校验",
-    "⚡ 离线授权与缓存生命周期深度加固：修复离线授权到期放行逻辑、清缓存失效与解绑变相续期问题，优化字典编码内存占用与定时器生命周期管理",
-    "🌐 系统稳定性与前后端契约对齐：全面归一化前后端数据模型、API 参数及 DTO 契约，修复版本比较倒挂缺陷与精选规则覆盖问题"
+    "🔥 深度集成 P-ToyStore 日更清单源：接入每日自动同步的 P-ToyStore 37.3GB 清单库，博德之门3、幻兽帕鲁、黑神话等热门付费大作优先锁定官方当日最新清单 GID 与实体分包",
+    "⚡ 客户端清单多源并发竞速：单分包清单下载由串行等待全面升级为 Tokio 异步并发竞速，P-ToyStore、SteamML R2、Remlua、ManifestHub3 镜像并行争胜，下载速度提升 3~5 倍",
+    "🛡️ 双轨回退与零虚空 404 保障：以源中真实收录版本为准提取 GID；CS2、Dota 2、Apex 等免费游戏与长尾游戏在 P-ToyStore 无分支时无缝秒级回退至 ManifestHub3 与 SteamML R2",
+    "🌐 分布式家宽直连与防频控优化：95% 清单流量由客户端家宽独立 IP 直连全球高速镜像下载，彻底避免镜像频控封禁，云端服务器退居末位仅作 5% 故障容灾救生圈",
+    "🔒 缓存污染与 DLC 分包防御加固：修复 appinfo.vdf 解析无 GID 占位符引发的缓存污染，严格保证分包魔数与 DLC 完整性，杜绝损坏文件落盘"
   ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.2/ChunFengDu_2.7.2_x64-setup.exe",
-  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.2/ChunFengDu_2.7.2_x64-setup.exe",
+  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.3/ChunFengDu_2.7.3_x64-setup.exe",
+  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.3/ChunFengDu_2.7.3_x64-setup.exe",
   "forceUpdate": true,
   "minSupportedVersion": "1.0.0",
   "enabled": true,
   "downloadCount": 0,
-  "createdAt": "2026-09-11T12:00:00.000Z",
-  "updatedAt": "2026-09-11T12:00:00.000Z"
+  "createdAt": "2026-09-12T12:00:00.000Z",
+  "updatedAt": "2026-09-12T12:00:00.000Z"
 }
