@@ -23,7 +23,7 @@ export interface DepotManifestInfo {
 export interface AppManifestResult {
   success: boolean;
   appId: number;
-  source: 'local_cache' | 'gmrc' | 'manifesthub' | 'steamml' | 'remlua' | 'manifesthub_uk' | 'none';
+  source: 'local_cache' | 'gmrc' | 'manifesthub' | 'steamml' | 'remlua' | 'manifesthub_uk' | 'ptystore' | 'none';
   depots: DepotManifestInfo[];
   keys: { [depotId: string]: string };
   message: string;
@@ -63,7 +63,24 @@ export class ManifestService {
       };
     }
 
-    // 2. 核心并发竞速：SteamML (Cloudflare R2) + Remlua (AWS CloudFront) + ManifestHub3 高速镜像并行检索
+    // 2. 核心分级检索：优先尝试每日自动同步的 P-ToyStore (涵盖最新热门与付费大作最新 GID)
+    try {
+      const pToyList = await this.fetchFromPToyStore(appId, candidateDepotIds);
+      if (pToyList && pToyList.length > 0) {
+        return {
+          success: true,
+          appId,
+          source: 'ptystore',
+          depots: pToyList,
+          keys,
+          message: `从 P-ToyStore 极速检索到 ${pToyList.length} 个最新分包清单！`
+        };
+      }
+    } catch (err: any) {
+      console.warn(`[ManifestService] P-ToyStore 检索异常 (${appId}):`, err.message);
+    }
+
+    // 3. 多源并发竞速兜底：SteamML (Cloudflare R2) + Remlua (AWS CloudFront) + ManifestHub3 高速镜像并行检索 (全量与免费游戏)
     try {
       const [steamResult, remluaResult, hubResult] = await Promise.allSettled([
         this.fetchFromSteamML(appId, candidateDepotIds),
@@ -237,6 +254,137 @@ export class ManifestService {
         }
       }
     } catch {}
+
+    return results;
+  }
+
+  /**
+   * 解析 P-ToyStore 的 appinfo.vdf 纯文本，提取各分包的最新 GID、DLC 关联与 buildId
+   */
+  public parseAppInfoVdf(text: string): {
+    depots: Map<string, { gid?: string; dlcAppId?: string }>;
+    buildId?: string;
+  } {
+    const result = {
+      depots: new Map<string, { gid?: string; dlcAppId?: string }>(),
+      buildId: undefined as string | undefined
+    };
+
+    if (!text) return result;
+
+    const buildMatch = text.match(/"buildid"\s+"(\d+)"/i);
+    if (buildMatch) {
+      result.buildId = buildMatch[1];
+    }
+
+    const depotsIndex = text.search(/"depots"\s*\{/i);
+    if (depotsIndex === -1) return result;
+
+    const braceIndex = text.indexOf('{', depotsIndex);
+    if (braceIndex === -1) return result;
+
+    let depth = 0;
+    let endIndex = -1;
+    for (let i = braceIndex; i < text.length; i++) {
+      const char = text[i];
+      if (char === '{') depth++;
+      else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          endIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (endIndex === -1) endIndex = text.length;
+    const depotsContent = text.substring(braceIndex + 1, endIndex);
+
+    const depotRegex = /"(\d+)"\s*\{/g;
+    let match: RegExpExecArray | null;
+    while ((match = depotRegex.exec(depotsContent)) !== null) {
+      const depotId = match[1];
+      const blockStart = match.index + match[0].length - 1;
+      let dDepth = 0;
+      let blockEnd = -1;
+      for (let j = blockStart; j < depotsContent.length; j++) {
+        if (depotsContent[j] === '{') dDepth++;
+        else if (depotsContent[j] === '}') {
+          dDepth--;
+          if (dDepth === 0) {
+            blockEnd = j;
+            break;
+          }
+        }
+      }
+      if (blockEnd !== -1) {
+        const depotBlock = depotsContent.substring(blockStart, blockEnd + 1);
+        let gidMatch = depotBlock.match(/"public"\s*\{[^}]*?"gid"\s*"(\d+)"/s);
+        if (!gidMatch) {
+          gidMatch = depotBlock.match(/"gid"\s*"(\d+)"/);
+        }
+        const dlcMatch = depotBlock.match(/"dlcappid"\s*"(\d+)"/i);
+        const gid = gidMatch && gidMatch[1] !== '0' ? gidMatch[1] : undefined;
+        const dlcAppId = dlcMatch ? dlcMatch[1] : undefined;
+
+        if (gid || dlcAppId) {
+          result.depots.set(depotId, { gid, dlcAppId });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 从 P-ToyStore (SteamManifestCache_Pro) 高速镜像源检索（独立 App 分支，每日自动同步最新付费大作）
+   */
+  public async fetchFromPToyStore(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
+    const results: DepotManifestInfo[] = [];
+    const fastBases = [
+      'https://steam.os.kg/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro',
+      'https://ghfast.top/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro',
+      'https://gh-proxy.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro',
+      'https://cece.guyunsq.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro'
+    ];
+
+    try {
+      const vdfPromises = fastBases.map(async (base) => {
+        const resp = await axios.get(`${base}/${appId}/appinfo.vdf`, {
+          timeout: 2500,
+          responseType: 'text',
+          transformResponse: [(data) => data]
+        });
+        if (resp.status === 200 && typeof resp.data === 'string' && resp.data.includes('"depots"')) {
+          return resp.data;
+        }
+        throw new Error('Invalid appinfo.vdf');
+      });
+
+      const vdfText = await Promise.any(vdfPromises);
+      if (vdfText) {
+        const parsed = this.parseAppInfoVdf(vdfText);
+        for (const [dId, dInfo] of parsed.depots) {
+          if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+          if (dInfo.gid && dInfo.gid !== '0' && /^\d+$/.test(dInfo.gid)) {
+            const key = depotService.getDepotKey(dId) || undefined;
+            results.push({
+              depotId: dId,
+              manifestId: dInfo.gid,
+              manifestFileName: `${dId}_${dInfo.gid}.manifest`,
+              downloadUrl: `/api/manifests/download/${dId}/${dInfo.gid}?appId=${appId}`,
+              source: 'ptystore',
+              key
+            });
+          }
+        }
+      }
+    } catch {}
+
+    // 异步后台触发沉淀落盘（非阻塞），确保后续秒级响应
+    for (const item of results) {
+      this.ensureManifestCached(item.depotId, item.manifestId, appId).catch(() => {});
+    }
 
     return results;
   }
@@ -552,6 +700,21 @@ export class ManifestService {
     dlcIds: string[];
     accessToken?: string;
   } | null> {
+    // 0. 优先尝试每日自动同步的 P-ToyStore (SteamManifestCache_Pro) 提取最新公网 GID
+    try {
+      const pToyDepots = await this.fetchFromPToyStore(appId);
+      if (pToyDepots && pToyDepots.length > 0) {
+        const depotKeys = new Map<string, string>();
+        const manifestGids = new Map<string, string>();
+        const dlcIds: string[] = [];
+        for (const item of pToyDepots) {
+          if (item.manifestId) manifestGids.set(item.depotId, item.manifestId);
+          if (item.key) depotKeys.set(item.depotId, item.key);
+        }
+        return { depotKeys, manifestGids, dlcIds };
+      }
+    } catch {}
+
     // 1. 优先尝试全球顶级边缘 CDN：SteamML (R2) 与 Remlua (CloudFront)
     try {
       const smlUrl = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
@@ -706,18 +869,21 @@ export class ManifestService {
       candidateAppIds.push(depotId);
     }
 
-    // 1. 并发竞速回源：ManifestHub3 极速镜像直拉 vs SteamML R2 全包解压沉淀
-    const fastBases = [
-      'https://steam.os.kg/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3',
-      'https://cece.guyunsq.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
+    // 1. 并发竞速回源：P-ToyStore (日更付费游戏) + ManifestHub3 (全量与免费游戏) 极速镜像直拉 vs SteamML R2 全包解压沉淀
+    const fastMirrors = [
+      'https://steam.os.kg/https://raw.githubusercontent.com',
+      'https://ghfast.top/https://raw.githubusercontent.com',
+      'https://gh-proxy.com/https://raw.githubusercontent.com',
+      'https://cece.guyunsq.com/https://raw.githubusercontent.com'
     ];
 
     const hubManifestUrls: string[] = [];
     for (const targetApp of candidateAppIds) {
-      for (const base of fastBases) {
-        hubManifestUrls.push(`${base}/${targetApp}/${depotId}_${manifestId}.manifest`);
+      for (const mirror of fastMirrors) {
+        // 优先 P-ToyStore（日更最新大作）
+        hubManifestUrls.push(`${mirror}/P-ToyStore/SteamManifestCache_Pro/${targetApp}/${depotId}_${manifestId}.manifest`);
+        // 兜底 ManifestHub3（免费与全量游戏）
+        hubManifestUrls.push(`${mirror}/steamtools-games/ManifestHub3/${targetApp}/${depotId}_${manifestId}.manifest`);
       }
     }
 
@@ -734,7 +900,7 @@ export class ManifestService {
         if (buf && this.isValidManifestBuffer(buf)) {
           const saved = this.saveManifestFile(depotId, manifestId, buf);
           if (saved) {
-            console.log(`[ManifestService] 成功从 ManifestHub3 极速镜像沉淀清单到本地: ${depotId}_${manifestId}.manifest (${buf.byteLength} 字节)`);
+            console.log(`[ManifestService] 成功从云端高速镜像沉淀清单到本地: ${depotId}_${manifestId}.manifest (${buf.byteLength} 字节)`);
             return targetFile;
           }
         }

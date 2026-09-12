@@ -387,12 +387,13 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       if (hData && hData.depotKeys && hData.depotKeys.size > 0) {
         hub3Data = hData;
         if (mData) {
-          // 深度智能合并：补充 SteamML 中更多可用的 DLC 与最新分包密钥
+          // 深度智能合并：补充有效分包密钥，并以最新源（P-ToyStore / SteamML）优先覆盖更新 GID
           for (const [dId, key] of mData.depotKeys) {
             if (!hub3Data.depotKeys.has(dId)) hub3Data.depotKeys.set(dId, key);
           }
           for (const [dId, gid] of mData.manifestGids) {
-            if (!hub3Data.manifestGids.has(dId)) hub3Data.manifestGids.set(dId, gid);
+            // P-ToyStore 每日同步最新官方版本，优先采用其最新 GID
+            hub3Data.manifestGids.set(dId, gid);
           }
           if (Array.isArray(mData.dlcIds)) {
             hub3Data.dlcIds = Array.from(new Set([...hub3Data.dlcIds, ...mData.dlcIds]));

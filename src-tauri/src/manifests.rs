@@ -1027,12 +1027,13 @@ fn get_cdn_hosts() -> Vec<String> {
 }
 
 /// 异步版单清单下载（六级容灾分发）：
-/// 1. 第一优先级：自有云端服务端下载（支持服务端 Cache-Through 自动回源沉淀）
+/// 1. 第一优先级：P-ToyStore 国内高速镜像专线（覆盖最新付费大作，日更 37.3GB，由客户端家宽直连下载免服务器带宽）
 /// 2. 第二优先级：SteamML R2 存储桶直连（Cloudflare 全球 CDN 边缘节点，单次 300ms 直出）
 /// 3. 第三优先级：Remlua AWS CloudFront 直连（全球超低延迟边缘分发，直出完整 Lua 与清单实体）
-/// 4. 第四优先级：ManifestHub3 国内高速镜像专线
-/// 5. 第五优先级：ManifestHub3 GitHub Raw 直连
-/// 6. 第六优先级：ManifestHub.uk 代理下载（末位容灾冷备）
+/// 4. 第四优先级：ManifestHub3 国内高速镜像专线（免费游戏与全量兜底）
+/// 5. 第五优先级：自有云端服务端下载（终极容灾救生圈，支持服务端 Cache-Through 自动回源沉淀）
+/// 6. 第六优先级：ManifestHub3 GitHub Raw 直连
+/// 7. 第七优先级：ManifestHub.uk 代理下载（末位容灾冷备）
 async fn download_single_manifest(
     steam_path: &Path,
     app_id: u32,
@@ -1056,33 +1057,49 @@ async fn download_single_manifest(
 
     let device_id = crate::device::get_device_id();
 
-    // 1. 第一优先级：自有云端服务端下载（带 Cache-Through 自动沉淀机制）
-    let server_url = format!(
-        "{}/api/manifests/download/{}/{}?appId={}&deviceId={}",
-        SERVER_API,
-        depot_id,
-        manifest_gid,
-        app_id,
-        urlencoding_query(&device_id)
-    );
-    if let Ok(resp) = http_client()
-        .get(&server_url)
-        .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
-        .header("x-device-id", &device_id)
-        .header("User-Agent", "ChunFengDu-Client")
-        .send()
-        .await
-    {
-        if resp.status().is_success() {
-            if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                if !bytes.is_empty() {
-                    let payload = extract_manifest_payload(&bytes);
-                    if !payload.is_empty() && is_valid_manifest_payload(&payload) {
-                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                        return Ok(format!("已从自有服务端下载 ({} 字节)", payload.len()));
-                    } else {
-                        log_diag(&format!("自有服务端返回非有效清单实体数据 ({} 字节)，已丢弃", payload.len()));
+    // 1. 第一优先级：P-ToyStore 国内高速镜像专线（覆盖最新付费大作，日更 37.3GB，客户端家宽直连下载免服务器带宽与频控）
+    let ptystore_mirror_candidates = [
+        format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://steam.os.kg/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://cece.guyunsq.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://ghfast.top/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
+            depot_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro/{}/{}_{}.manifest",
+            depot_id, depot_id, manifest_gid
+        ),
+    ];
+    for p_url in &ptystore_mirror_candidates {
+        if let Ok(resp) = http_client()
+            .get(p_url)
+            .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
+                    if !bytes.is_empty() {
+                        let payload = extract_manifest_payload(&bytes);
+                        if !payload.is_empty() && is_valid_manifest_payload(&payload) {
+                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                            return Ok(format!("已从 P-ToyStore 高速源下载 ({} 字节)", payload.len()));
+                        }
                     }
                 }
             }
@@ -1127,7 +1144,7 @@ async fn download_single_manifest(
         }
     }
 
-    // 4. 第四优先级：ManifestHub3 国内高速镜像专线（优先使用 ghfast.top 与 gh-proxy.com）
+    // 4. 第四优先级：ManifestHub3 国内高速镜像专线（覆盖免费游戏与全量游戏兜底）
     let mirror_candidates = [
         format!(
             "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
@@ -1135,6 +1152,14 @@ async fn download_single_manifest(
         ),
         format!(
             "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://steam.os.kg/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+            app_id, depot_id, manifest_gid
+        ),
+        format!(
+            "https://cece.guyunsq.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
             app_id, depot_id, manifest_gid
         ),
         format!(
@@ -1168,7 +1193,40 @@ async fn download_single_manifest(
         }
     }
 
-    // 5. 第五优先级：ManifestHub3 GitHub Raw 直连
+    // 5. 第五优先级：自有云端服务端下载（终极容灾救生圈，带 Cache-Through 自动沉淀机制）
+    let server_url = format!(
+        "{}/api/manifests/download/{}/{}?appId={}&deviceId={}",
+        SERVER_API,
+        depot_id,
+        manifest_gid,
+        app_id,
+        urlencoding_query(&device_id)
+    );
+    if let Ok(resp) = http_client()
+        .get(&server_url)
+        .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
+        .header("x-device-id", &device_id)
+        .header("User-Agent", "ChunFengDu-Client")
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
+                if !bytes.is_empty() {
+                    let payload = extract_manifest_payload(&bytes);
+                    if !payload.is_empty() && is_valid_manifest_payload(&payload) {
+                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                        return Ok(format!("已从自有服务端下载 ({} 字节)", payload.len()));
+                    } else {
+                        log_diag(&format!("自有服务端返回非有效清单实体数据 ({} 字节)，已丢弃", payload.len()));
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. 第六优先级：ManifestHub3 GitHub Raw 直连
     let raw_candidates = [
         format!(
             "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
@@ -1201,7 +1259,7 @@ async fn download_single_manifest(
         }
     }
 
-    // 6. 第六优先级：ManifestHub.uk 代理下载（末位容灾冷备）
+    // 7. 第七优先级：ManifestHub.uk 代理下载（末位容灾冷备）
     let enc_id = encode_manifesthub_uk_cipher(app_id);
     let proxy_url = format!("https://api.manifesthub.uk/proxy?id={}", enc_id);
     if let Ok(resp) = http_client()
