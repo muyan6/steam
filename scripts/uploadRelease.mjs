@@ -119,6 +119,22 @@ async function uploadToGitHub({ version, title, changelog, filePath, fileName, t
   if (getRes.ok) {
     release = await getRes.json();
     console.log(`[GitHub] 找到已有 Release #${release.id} (${release.tag_name})`);
+    try {
+      const updateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/${release.id}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: title,
+          body: changelog,
+        }),
+      });
+      if (updateRes.ok) {
+        release = await updateRes.json();
+        console.log(`[GitHub] Release #${release.id} 描述与标题已同步更新为最新！`);
+      }
+    } catch (e) {
+      console.warn(`[GitHub] 更新 Release 描述失败:`, e);
+    }
   } else if (getRes.status === 404) {
     console.log(`[GitHub] Release 不存在，正在为标签 ${tag} 创建新 Release...`);
     const createRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`, {
@@ -202,6 +218,24 @@ async function uploadToGitee({ version, title, changelog, filePath, fileName, to
     release = list.find(r => r.tag_name === tag || r.tag_name === `v${tag}`);
     if (release) {
       console.log(`[Gitee] 找到已有 Release #${release.id} (${release.tag_name})`);
+      try {
+        const updateRes = await fetch(`https://gitee.com/api/v5/repos/${owner}/${repo}/releases/${release.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            access_token: token,
+            tag_name: release.tag_name,
+            name: title,
+            body: changelog,
+          }),
+        });
+        if (updateRes.ok) {
+          release = await updateRes.json();
+          console.log(`[Gitee] Release #${release.id} 描述与标题已同步更新为最新！`);
+        }
+      } catch (e) {
+        console.warn(`[Gitee] 更新 Release 描述失败:`, e);
+      }
     }
   }
 

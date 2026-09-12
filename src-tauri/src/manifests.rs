@@ -1231,7 +1231,7 @@ async fn download_single_manifest(
                 }
                 ptystore_planned = true;
                 tasks.push(Box::pin(fetch_source(RemoteSource {
-                    label: "P-ToyStore 高速源",
+                    label: "云端日更镜像源",
                     url: format!(
                         "{}/{}/{}_{}.manifest",
                         base, path_id, depot_id, manifest_gid
@@ -1243,13 +1243,13 @@ async fn download_single_manifest(
         }
     }
 
-    // 2) SteamML R2 存储桶直连（Cloudflare 全球 CDN，全包 zip）
+    // 2) 全球边缘节点 A 存储桶直连（全包 zip）
     for target in [app_id, depot_id_num] {
         if target == 0 {
             continue;
         }
         tasks.push(Box::pin(fetch_source(RemoteSource {
-            label: "SteamML 极速源",
+            label: "全球边缘节点 A",
             url: format!(
                 "https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip",
                 target
@@ -1259,27 +1259,27 @@ async fn download_single_manifest(
         })));
     }
 
-    // 3) Remlua AWS CloudFront 直连（全包 zip）
+    // 3) 全球边缘节点 B 直连（全包 zip）
     for target in [app_id, depot_id_num] {
         if target == 0 {
             continue;
         }
         tasks.push(Box::pin(fetch_source(RemoteSource {
-            label: "Remlua 极速源",
+            label: "全球边缘节点 B",
             url: format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", target),
             needs_device_auth: false,
             timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
         })));
     }
 
-    // 4) ManifestHub3 国内高速镜像 + GitHub Raw 直连（免费与全量游戏兜底）
+    // 4) 公共高速镜像 + 公共直连（全量游戏兜底）
     for base in MANIFESTHUB_MIRRORS {
         for target in [app_id, depot_id_num] {
             if target == 0 {
                 continue;
             }
             tasks.push(Box::pin(fetch_source(RemoteSource {
-                label: "ManifestHub3 镜像",
+                label: "公共高速镜像",
                 url: format!(
                     "{}/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
                     base, target, depot_id, manifest_gid
@@ -1294,7 +1294,7 @@ async fn download_single_manifest(
             continue;
         }
         tasks.push(Box::pin(fetch_source(RemoteSource {
-            label: "ManifestHub3 直连",
+            label: "公共直连源",
             url: format!(
                 "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
                 target, depot_id, manifest_gid

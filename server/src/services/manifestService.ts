@@ -75,7 +75,7 @@ export class ManifestService {
           source: 'ptystore',
           depots: pToy.depots,
           keys,
-          message: `从 P-ToyStore 极速检索到 ${pToy.depots.length} 个最新分包清单！`
+          message: `从云端日更清单库极速检索到 ${pToy.depots.length} 个最新分包清单！`
         };
       }
     } catch (err: any) {
