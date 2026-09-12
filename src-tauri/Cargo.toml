@@ -31,6 +31,8 @@ base64 = "0.22"
 ed25519-dalek = { version = "2.1", default-features = false, features = ["fast"] }
 zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots", "cookies"] }
+# 清单并发竞速需要 JoinSet（tokio 本已由 tauri/reqwest 间接引入，此处仅显式启用）
+tokio = { version = "1", features = ["rt"] }
 winreg = "0.52"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",

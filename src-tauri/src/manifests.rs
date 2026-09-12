@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::future::Future;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -54,6 +56,121 @@ const PTYSTORE_MIRRORS: [&str; 4] = [
     "https://steam.os.kg/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro",
     "https://cece.guyunsq.com/https://raw.githubusercontent.com/P-ToyStore/SteamManifestCache_Pro",
 ];
+
+/// ManifestHub3 镜像前缀（含免费游戏与全量游戏兜底）
+const MANIFESTHUB_MIRRORS: [&str; 4] = [
+    "https://steam.os.kg/https://raw.githubusercontent.com",
+    "https://ghfast.top/https://raw.githubusercontent.com",
+    "https://gh-proxy.com/https://raw.githubusercontent.com",
+    "https://cece.guyunsq.com/https://raw.githubusercontent.com",
+];
+
+/// 单个远程候选源
+struct RemoteSource {
+    label: &'static str,
+    url: String,
+    /// 是否携带设备标识（自有服务端中转需要）
+    needs_device_auth: bool,
+    timeout_secs: u64,
+}
+
+/// 竞速任务输出：命中时返回 (源名称, 有效清单实体)
+type SourceResult = Option<(&'static str, Vec<u8>)>;
+
+/// 抓取单个候选源并校验为有效清单实体（失败返回 None，不抛错）
+async fn fetch_source(src: RemoteSource) -> SourceResult {
+    let mut req = http_client()
+        .get(&src.url)
+        .timeout(Duration::from_secs(src.timeout_secs))
+        .header("User-Agent", "ChunFengDu-Client");
+    if src.needs_device_auth {
+        req = req.header("x-device-id", crate::device::get_device_id());
+    }
+    let resp = req.send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let bytes = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await.ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+    let payload = extract_manifest_payload(&bytes);
+    if payload.is_empty() || !is_valid_manifest_payload(&payload) {
+        return None;
+    }
+    Some((src.label, payload))
+}
+
+/// ManifestHub.uk 冷备源：需两步（先取 HTML 找下载链接，再下载并解压出目标清单）
+async fn fetch_manifesthub_uk_manifest(
+    app_id: u32,
+    depot_id: String,
+    manifest_gid: String,
+) -> SourceResult {
+    let enc_id = encode_manifesthub_uk_cipher(app_id);
+    let proxy_url = format!("https://api.manifesthub.uk/proxy?id={}", enc_id);
+    let resp = http_client()
+        .get(&proxy_url)
+        .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
+        .header("Referer", "https://steamtools.pages.dev/")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let html = resp.text().await.ok()?;
+    for part in html.split("href=\"").skip(1) {
+        let Some(href) = part.split('"').next() else { continue };
+        if !href.starts_with("/download?") {
+            continue;
+        }
+        let dl_url = format!("https://api.manifesthub.uk{}", href);
+        let Ok(dl_resp) = http_client()
+            .get(&dl_url)
+            .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
+            .header("Referer", &proxy_url)
+            .send()
+            .await
+        else {
+            continue;
+        };
+        if !dl_resp.status().is_success() {
+            continue;
+        }
+        let Ok(bytes) = read_body_limited(dl_resp, MAX_ASSET_DOWNLOAD_BYTES).await else {
+            continue;
+        };
+        if let Some(payload) = extract_manifest_from_zip(&bytes, &depot_id, &manifest_gid) {
+            return Some(("ManifestHub.uk 备用源", payload));
+        }
+    }
+    None
+}
+
+/// 并发竞速：所有候选源同时发起，任一源返回有效清单实体即立刻采用并取消其余在途请求。
+///
+/// 为什么"并发取最快"在此安全：清单文件名由 (depotId, gid) 决定，而 gid 已由服务端
+/// 按 buildid 完成跨源版本裁决；各源只要持有该文件，内容必然字节一致。下载层只需比"快"，
+/// 不存在"旧源先回应就拿到旧版本"的问题——版本选择发生在 gid 裁决层，不在下载层。
+/// 最坏耗时也从"各源超时之和"（串行时可达十几分钟）降为"单个源的超时"。
+async fn race_sources(tasks: Vec<Pin<Box<dyn Future<Output = SourceResult> + Send>>>) -> SourceResult {
+    if tasks.is_empty() {
+        return None;
+    }
+    let mut set = tokio::task::JoinSet::new();
+    for t in tasks {
+        set.spawn(async move { t.await });
+    }
+    while let Some(joined) = set.join_next().await {
+        if let Ok(Some(hit)) = joined {
+            // 已有源命中：取消其余在途请求，避免白耗带宽
+            set.abort_all();
+            return Some(hit);
+        }
+    }
+    None
+}
 
 /// 已知不在 P-ToyStore 收录范围的 AppID 负缓存（进程级）：
 /// 一个游戏可能有几十个分包，若不记住，每个分包都会重复探测全部镜像
@@ -1055,14 +1172,21 @@ fn get_cdn_hosts() -> Vec<String> {
     }).clone()
 }
 
-/// 异步版单清单下载（六级容灾分发）：
-/// 1. 第一优先级：P-ToyStore 国内高速镜像专线（覆盖最新付费大作，日更 37.3GB，由客户端家宽直连下载免服务器带宽）
-/// 2. 第二优先级：SteamML R2 存储桶直连（Cloudflare 全球 CDN 边缘节点，单次 300ms 直出）
-/// 3. 第三优先级：Remlua AWS CloudFront 直连（全球超低延迟边缘分发，直出完整 Lua 与清单实体）
-/// 4. 第四优先级：ManifestHub3 国内高速镜像专线（免费游戏与全量兜底）
-/// 5. 第五优先级：自有云端服务端下载（终极容灾救生圈，支持服务端 Cache-Through 自动回源沉淀）
-/// 6. 第六优先级：ManifestHub3 GitHub Raw 直连
-/// 7. 第七优先级：ManifestHub.uk 代理下载（末位容灾冷备）
+/// 异步版单清单下载（并发竞速 + 云端末位兜底）：
+///
+/// 第一阶段 —— 全部**直连源**并发竞速，任一返回有效清单实体即采用并取消其余：
+///   1. P-ToyStore 国内高速镜像专线（最新付费大作；未收录时短超时快速放弃）
+///   2. SteamML R2 存储桶直连（Cloudflare 全球 CDN，全包 zip）
+///   3. Remlua AWS CloudFront 直连（全包 zip）
+///   4. ManifestHub3 国内高速镜像专线（免费与全量游戏兜底）
+///   5. ManifestHub3 GitHub Raw 直连
+///   6. ManifestHub.uk 代理下载（两步下载，冷备）
+///
+/// 第二阶段 —— 仅当上述直连源**全部失败**时，才回退到自有云端服务端中转
+///   （带 Cache-Through 沉淀）。云端不参与竞速，确保源可用时零服务器带宽消耗。
+///
+/// 版本正确性：清单文件名由 (depotId, gid) 决定，gid 已由服务端按 buildid 完成跨源裁决，
+/// 因此各源持有的是同一份文件，下载层只比快慢、不存在"旧源先回应拿到旧版本"。
 async fn download_single_manifest(
     steam_path: &Path,
     app_id: u32,
@@ -1086,243 +1210,150 @@ async fn download_single_manifest(
 
     let device_id = crate::device::get_device_id();
 
-    // 1. 第一优先级：P-ToyStore 国内高速镜像专线（覆盖最新付费大作，客户端家宽直连免服务器带宽与频控）
-    //    该源只收录部分游戏，未收录时用短超时快速放弃，绝不占用主下载超时；
-    //    并用进程级负缓存记住"未收录"，避免同一游戏的每个分包都重复探测 8 个必然 404 的地址
+    // ================= 并发竞速下载（替代原先的串行逐级尝试） =================
+    // 所有候选源同时发起，任一源返回有效清单实体即立刻采用并取消其余在途请求。
+    //
+    // 为什么"并发取最快"在这里是安全的：清单文件名由 (depotId, gid) 决定，而 gid 已由
+    // 服务端按 buildid 完成跨源版本裁决；各源只要持有该文件，内容必然字节一致。
+    // 因此下载层只需比"快"，不存在"旧源先回应就拿到旧版本"的问题——版本选择发生在
+    // gid 裁决层而非下载层。最坏耗时也从"各源超时之和"（串行时可达十几分钟）降为
+    // "单个源的超时"。
+    let mut tasks: Vec<Pin<Box<dyn Future<Output = SourceResult> + Send>>> = Vec::new();
+    let depot_id_num = depot_id.parse::<u32>().unwrap_or(0);
+
+    // 1) P-ToyStore 国内高速镜像专线（覆盖最新付费大作；未收录时短超时快速放弃）
+    let mut ptystore_planned = false;
     if !ptystore_known_absent(app_id) {
-        let mut any_response = false;
-        // 4 个镜像 × 2 种路径（按 app_id / 按 depot_id），全部去重后枚举
         for base in PTYSTORE_MIRRORS {
-            for path_id in [app_id, depot_id.parse::<u32>().unwrap_or(0)] {
+            for path_id in [app_id, depot_id_num] {
                 if path_id == 0 {
                     continue;
                 }
-                let url = format!(
-                    "{}/{}/{}_{}.manifest",
-                    base, path_id, depot_id, manifest_gid
-                );
-                if let Ok(resp) = http_client()
-                    .get(&url)
-                    .timeout(Duration::from_secs(PTYSTORE_PROBE_TIMEOUT_SECS))
-                    .send()
-                    .await
-                {
-                    any_response = true;
-                    if resp.status().is_success() {
-                        if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                            if !bytes.is_empty() {
-                                let payload = extract_manifest_payload(&bytes);
-                                if !payload.is_empty() && is_valid_manifest_payload(&payload) {
-                                    fs::write(&target, &payload)
-                                        .map_err(|e| format!("写入清单失败: {}", e))?;
-                                    clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                                    return Ok(format!(
-                                        "已从 P-ToyStore 高速源下载 ({} 字节)",
-                                        payload.len()
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // 走到这里说明一个都没命中；若确实收到过响应，则该游戏不在本源收录范围 → 记入负缓存
-        if any_response {
-            mark_ptystore_absent(app_id);
-        }
-    }
-
-    // 2. 第二优先级：SteamML R2 存储桶直连（Cloudflare 全球 CDN 边缘节点，单次 300ms 直出，支持海量最新独立游戏，免反爬频控）
-    let sml_candidates = [
-        format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id),
-        format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", depot_id),
-    ];
-    for sml_url in &sml_candidates {
-        if let Ok(resp) = http_client().get(sml_url).timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS)).send().await {
-            if resp.status().is_success() {
-                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                    if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
-                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                        return Ok(format!("已从 SteamML 极速源下载 ({} 字节)", payload.len()));
-                    }
-                }
+                ptystore_planned = true;
+                tasks.push(Box::pin(fetch_source(RemoteSource {
+                    label: "P-ToyStore 高速源",
+                    url: format!(
+                        "{}/{}/{}_{}.manifest",
+                        base, path_id, depot_id, manifest_gid
+                    ),
+                    needs_device_auth: false,
+                    timeout_secs: PTYSTORE_PROBE_TIMEOUT_SECS,
+                })));
             }
         }
     }
 
-    // 3. 第三优先级：Remlua AWS CloudFront 直连（全球超低延迟边缘分发，直出完整 Lua 与清单实体）
-    let remlua_candidates = [
-        format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", app_id),
-        format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", depot_id),
-    ];
-    for remlua_url in &remlua_candidates {
-        if let Ok(resp) = http_client().get(remlua_url).timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS)).send().await {
-            if resp.status().is_success() {
-                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                    if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
-                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                        return Ok(format!("已从 Remlua 极速源下载 ({} 字节)", payload.len()));
-                    }
-                }
-            }
+    // 2) SteamML R2 存储桶直连（Cloudflare 全球 CDN，全包 zip）
+    for target in [app_id, depot_id_num] {
+        if target == 0 {
+            continue;
         }
+        tasks.push(Box::pin(fetch_source(RemoteSource {
+            label: "SteamML 极速源",
+            url: format!(
+                "https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip",
+                target
+            ),
+            needs_device_auth: false,
+            timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+        })));
     }
 
-    // 4. 第四优先级：ManifestHub3 国内高速镜像专线（覆盖免费游戏与全量游戏兜底）
-    let mirror_candidates = [
-        format!(
-            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://steam.os.kg/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://cece.guyunsq.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://ghfast.top/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            depot_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            depot_id, depot_id, manifest_gid
-        ),
-    ];
-    for m_url in &mirror_candidates {
-        if let Ok(resp) = http_client()
-            .get(m_url)
-            .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
-            .send()
-            .await
-        {
-            if resp.status().is_success() {
-                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                    if !bytes.is_empty() {
-                        let payload = extract_manifest_payload(&bytes);
-                        if !payload.is_empty() && is_valid_manifest_payload(&payload) {
-                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                            return Ok(format!("已从云端备用源下载 ({} 字节)", payload.len()));
-                        }
-                    }
-                }
-            }
+    // 3) Remlua AWS CloudFront 直连（全包 zip）
+    for target in [app_id, depot_id_num] {
+        if target == 0 {
+            continue;
         }
+        tasks.push(Box::pin(fetch_source(RemoteSource {
+            label: "Remlua 极速源",
+            url: format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", target),
+            needs_device_auth: false,
+            timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+        })));
     }
 
-    // 5. 第五优先级：自有云端服务端下载（终极容灾救生圈，带 Cache-Through 自动沉淀机制）
-    let server_url = format!(
-        "{}/api/manifests/download/{}/{}?appId={}&deviceId={}",
-        SERVER_API,
-        depot_id,
-        manifest_gid,
-        app_id,
-        urlencoding_query(&device_id)
-    );
-    if let Ok(resp) = http_client()
-        .get(&server_url)
-        .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
-        .header("x-device-id", &device_id)
-        .header("User-Agent", "ChunFengDu-Client")
-        .send()
-        .await
+    // 4) ManifestHub3 国内高速镜像 + GitHub Raw 直连（免费与全量游戏兜底）
+    for base in MANIFESTHUB_MIRRORS {
+        for target in [app_id, depot_id_num] {
+            if target == 0 {
+                continue;
+            }
+            tasks.push(Box::pin(fetch_source(RemoteSource {
+                label: "ManifestHub3 镜像",
+                url: format!(
+                    "{}/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+                    base, target, depot_id, manifest_gid
+                ),
+                needs_device_auth: false,
+                timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+            })));
+        }
+    }
+    for target in [app_id, depot_id_num] {
+        if target == 0 {
+            continue;
+        }
+        tasks.push(Box::pin(fetch_source(RemoteSource {
+            label: "ManifestHub3 直连",
+            url: format!(
+                "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
+                target, depot_id, manifest_gid
+            ),
+            needs_device_auth: false,
+            timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+        })));
+    }
+
+    // 5) ManifestHub.uk 代理（两步下载，末位容灾冷备；同属"直连源"）
+    // 注意：自有云端中转**不参与**本轮竞速，见下方失败分支。
     {
-        if resp.status().is_success() {
-            if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                if !bytes.is_empty() {
-                    let payload = extract_manifest_payload(&bytes);
-                    if !payload.is_empty() && is_valid_manifest_payload(&payload) {
-                        fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                        clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                        return Ok(format!("已从自有服务端下载 ({} 字节)", payload.len()));
-                    } else {
-                        log_diag(&format!("自有服务端返回非有效清单实体数据 ({} 字节)，已丢弃", payload.len()));
-                    }
-                }
-            }
-        }
+        let uk_depot = depot_id.to_string();
+        let uk_gid = manifest_gid.to_string();
+        tasks.push(Box::pin(async move {
+            fetch_manifesthub_uk_manifest(app_id, uk_depot, uk_gid).await
+        }));
     }
 
-    // 6. 第六优先级：ManifestHub3 GitHub Raw 直连
-    let raw_candidates = [
-        format!(
-            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            app_id, depot_id, manifest_gid
-        ),
-        format!(
-            "https://raw.githubusercontent.com/steamtools-games/ManifestHub3/{}/{}_{}.manifest",
-            depot_id, depot_id, manifest_gid
-        ),
-    ];
-    for r_url in &raw_candidates {
-        if let Ok(resp) = http_client()
-            .get(r_url)
-            .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
-            .send()
-            .await
-        {
-            if resp.status().is_success() {
-                if let Ok(bytes) = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                    if !bytes.is_empty() {
-                        let payload = extract_manifest_payload(&bytes);
-                        if !payload.is_empty() && is_valid_manifest_payload(&payload) {
-                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                            return Ok(format!("已从 GitHub 直连下载 ({} 字节)", payload.len()));
-                        }
-                    }
-                }
-            }
+    match race_sources(tasks).await {
+        Some((label, payload)) => {
+            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+            return Ok(format!("已从 {} 下载 ({} 字节)", label, payload.len()));
         }
-    }
-
-    // 7. 第七优先级：ManifestHub.uk 代理下载（末位容灾冷备）
-    let enc_id = encode_manifesthub_uk_cipher(app_id);
-    let proxy_url = format!("https://api.manifesthub.uk/proxy?id={}", enc_id);
-    if let Ok(resp) = http_client()
-        .get(&proxy_url)
-        .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
-        .header("Referer", "https://steamtools.pages.dev/")
-        .send()
-        .await
-    {
-        if resp.status().is_success() {
-            if let Ok(html) = resp.text().await {
-                for part in html.split("href=\"").skip(1) {
-                    if let Some(href) = part.split('"').next() {
-                        if href.starts_with("/download?") {
-                            let dl_url = format!("https://api.manifesthub.uk{}", href);
-                            if let Ok(dl_resp) = http_client()
-                                .get(&dl_url)
-                                .timeout(Duration::from_secs(ASSET_REQUEST_TIMEOUT_SECS))
-                                .header("Referer", &proxy_url)
-                                .send()
-                                .await
-                            {
-                                if dl_resp.status().is_success() {
-                                    if let Ok(bytes) = read_body_limited(dl_resp, MAX_ASSET_DOWNLOAD_BYTES).await {
-                                        if let Some(payload) = extract_manifest_from_zip(&bytes, depot_id, manifest_gid) {
-                                            fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
-                                            clean_old_manifests(&depot_cache, depot_id, manifest_gid);
-                                            return Ok(format!("已从 ManifestHub.uk 备用源下载 ({} 字节)", payload.len()));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        None => {
+            // 全部直连源均未命中：若枚举过 P-ToyStore 候选，说明该游戏不在其收录范围，
+            // 记入负缓存，避免同游戏后续分包重复探测（命中时不做标记，防止误伤慢源）
+            if ptystore_planned {
+                mark_ptystore_absent(app_id);
             }
+
+            // 只有在所有直连源都失败后才动用自有云端中转：
+            // 保证源可用时绝不消耗服务器带宽（这正是"云端仅作兜底"的关键），
+            // 也避免与源并发抢答导致云端承担常态流量与上游频控压力。
+            let relay = fetch_source(RemoteSource {
+                label: "自有云端服务端",
+                url: format!(
+                    "{}/api/manifests/download/{}/{}?appId={}&deviceId={}",
+                    SERVER_API,
+                    depot_id,
+                    manifest_gid,
+                    app_id,
+                    urlencoding_query(&device_id)
+                ),
+                needs_device_auth: true,
+                timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+            })
+            .await;
+            if let Some((label, payload)) = relay {
+                fs::write(&target, &payload).map_err(|e| format!("写入清单失败: {}", e))?;
+                clean_old_manifests(&depot_cache, depot_id, manifest_gid);
+                return Ok(format!("已从 {} 兜底下载 ({} 字节)", label, payload.len()));
+            }
+
+            log_diag(&format!(
+                "清单 {}_{} 全部候选源均未命中（appId {}）",
+                depot_id, manifest_gid, app_id
+            ));
         }
     }
 
