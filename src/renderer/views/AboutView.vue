@@ -137,7 +137,7 @@
 
               <!-- 版本标题 -->
               <div v-if="ver.title" class="text-xs font-bold text-slate-200">
-                {{ ver.title }}
+                {{ sanitizeChangelogText(ver.title) }}
               </div>
 
               <!-- 更新要点条目 -->
@@ -148,7 +148,7 @@
                   class="flex items-start gap-2 leading-relaxed text-[11.5px]"
                 >
                   <span class="text-sky-400 font-bold shrink-0 mt-0.5">•</span>
-                  <span class="text-slate-300">{{ item }}</span>
+                  <span class="text-slate-300">{{ sanitizeChangelogText(item) }}</span>
                 </li>
               </ul>
             </div>
@@ -334,7 +334,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue';
 import { APP_CONFIG } from '../../config/appConfig';
-import { formatIpcError, sanitizeSponsorResponse } from '../api/tauriBridge';
+import { formatIpcError, sanitizeSponsorResponse, sanitizeChangelogText } from '../api/tauriBridge';
 import type { SponsorItem, SponsorDataResponse, VersionChangelogItem } from '../../types';
 import appLogo from '../assets/logo.svg';
 import {
@@ -445,13 +445,23 @@ const loadChangelogs = async () => {
   try {
     const logs = await window.electronAPI.getVersionChangelogs();
     if (logs && logs.length > 0) {
-      changelogs.value = logs;
+      changelogs.value = logs.map(l => ({
+        ...l,
+        title: sanitizeChangelogText(l.title || ''),
+        changelog: Array.isArray(l.changelog) ? l.changelog.map(sanitizeChangelogText) : []
+      }));
     } else {
       // 云端不可达/为空时回退本地缓存，避免页面空白（缓存由桥接层写入）
       const cached = localStorage.getItem('cfd_changelogs_cache');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) changelogs.value = parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          changelogs.value = parsed.map((l: any) => ({
+            ...l,
+            title: sanitizeChangelogText(l.title || ''),
+            changelog: Array.isArray(l.changelog) ? l.changelog.map(sanitizeChangelogText) : []
+          }));
+        }
       }
     }
   } catch (e) {

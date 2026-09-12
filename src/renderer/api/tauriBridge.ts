@@ -108,6 +108,27 @@ export async function postJson<T = any>(url: string, body?: any, timeoutMs = 800
   }
 }
 
+export function sanitizeChangelogText(text: string): string {
+  if (!text || typeof text !== 'string') return text || '';
+  return text
+    .replace(/P-ToyStore(\/SteamManifestCache_Pro)?/gi, '云端日更清单源')
+    .replace(/ToyStore/gi, '云端日更源')
+    .replace(/SteamML(\s*R2)?/gi, '全球边缘节点')
+    .replace(/Remlua(\s*AWS\s*CloudFront)?/gi, '全球加速节点')
+    .replace(/ManifestHub3?/gi, '公共高速镜像');
+}
+
+export function sanitizeChangelogItem(item: VersionChangelogItem): VersionChangelogItem {
+  if (!item) return item;
+  return {
+    ...item,
+    title: sanitizeChangelogText(item.title || ''),
+    changelog: Array.isArray(item.changelog)
+      ? item.changelog.map(c => sanitizeChangelogText(c))
+      : []
+  };
+}
+
 export const DEFAULT_CHANGELOGS: VersionChangelogItem[] = [
   {
     version: '2.7.3',
@@ -145,7 +166,7 @@ export const DEFAULT_CHANGELOGS: VersionChangelogItem[] = [
       '🔑 密钥源与物理清单源架构彻底解耦：恢复旧源（30w 密钥库、苏大猫等）完整分发，无论是否存在物理清单，100% 注入 setDepotKey 与 addappid，彻底根除 Steam 下载提示「无许可」',
       '🌐 恢复 OpenSteamTool 动态清单调度：解除对第三方清单代码源的封存，恢复春风渡云端中继、wudrm 与 guyunsq 动态清单索码通道，保障 Steam 实时拉取清单能力',
       '🛡️ 三级轻量探测与非破坏性分级反馈：彻底废除粗暴删除入库规则的逻辑，提供全量就绪、核心就绪与缺少清单的精细分级提示与导入指引',
-      '⚡ 服务端多源清单库与密钥库同步扩容：登记并接入 Remlua AWS CloudFront 全球 CDN 与 SteamML R2 存储桶，提升清单与密钥分发可用性',
+      '⚡ 服务端多源清单库与密钥库同步扩容：登记并接入全球 CDN 与云端高可用存储节点，提升清单与密钥分发可用性',
       '✨ 客户端与管理端全链路协同：完善前后端元数据 DTO 与清单探测状态接口，优化界面提示交互'
     ]
   },
@@ -904,14 +925,15 @@ export const createTauriBridge = () => {
       // 客户端内置 DEFAULT_CHANGELOGS 为权威详尽日志基准（含 16 代完整演进与脱敏说明）
       const logMap = new Map<string, VersionChangelogItem>();
       for (const item of DEFAULT_CHANGELOGS) {
-        logMap.set(item.version, { ...item });
+        logMap.set(item.version, sanitizeChangelogItem(item));
       }
 
       try {
         const json = await getJson<{ success: boolean; data: VersionChangelogItem[] }>(`${API}/api/version/changelogs`, 4000);
         if (json?.success && Array.isArray(json.data) && json.data.length > 0) {
-          for (const remoteItem of json.data) {
-            if (!remoteItem || !remoteItem.version) continue;
+          for (const rawRemote of json.data) {
+            if (!rawRemote || !rawRemote.version) continue;
+            const remoteItem = sanitizeChangelogItem(rawRemote);
             const existing = logMap.get(remoteItem.version);
             if (!existing) {
               // 全新未知版本（例如未来云端发布的版本），加入列表
@@ -932,7 +954,7 @@ export const createTauriBridge = () => {
       }
 
       // 按语义化版本降序排列，确保 v2.7.0 永远在首位
-      const result = Array.from(logMap.values()).sort((a, b) => {
+      const result = Array.from(logMap.values()).map(sanitizeChangelogItem).sort((a, b) => {
         const parseVer = (v: string) => (v || '0').replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
         const pA = parseVer(a.version);
         const pB = parseVer(b.version);

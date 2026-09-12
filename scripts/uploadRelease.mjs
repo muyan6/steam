@@ -262,13 +262,24 @@ async function uploadToGitee({ version, title, changelog, filePath, fileName, to
     console.log(`[Gitee] Release 创建成功 #${release.id}`);
   }
 
-  // 检查是否已有同名附件
-  if (Array.isArray(release.assets)) {
-    const existing = release.assets.find(a => a.name === fileName);
-    if (existing) {
-      console.log(`[Gitee] 资源 ${fileName} 已存在于 Release #${release.id}，直链: ${existing.browser_download_url}`);
-      return existing.browser_download_url;
+  // 检查是否已有同名附件，如果有则清理覆盖
+  try {
+    const attachListRes = await fetch(`https://gitee.com/api/v5/repos/${owner}/${repo}/releases/${release.id}/attach_files?access_token=${token}`);
+    if (attachListRes.ok) {
+      const attachList = await attachListRes.json();
+      if (Array.isArray(attachList)) {
+        for (const attach of attachList) {
+          if (attach.name === fileName && attach.id) {
+            console.log(`[Gitee] 发现同名附件 #${attach.id} (${attach.name})，正在覆盖清理...`);
+            await fetch(`https://gitee.com/api/v5/repos/${owner}/${repo}/releases/${release.id}/attach_files/${attach.id}?access_token=${token}`, {
+              method: 'DELETE',
+            });
+          }
+        }
+      }
     }
+  } catch (err) {
+    console.warn('[Gitee] 检查/清理同名附件异常:', err);
   }
 
   // 上传文件附件 (multipart/form-data)

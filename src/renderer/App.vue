@@ -301,7 +301,7 @@
           <ul class="text-xs text-slate-300 space-y-1.5 bg-slate-950/40 p-4 rounded-2xl border border-white/10 max-h-48 overflow-y-auto">
             <li v-for="(log, idx) in versionModal.latest.changelog" :key="idx" class="flex items-start gap-2">
               <span class="theme-text-accent font-bold">•</span>
-              <span>{{ log }}</span>
+              <span>{{ sanitizeChangelogText(log) }}</span>
             </li>
           </ul>
         </div>
@@ -512,7 +512,7 @@ import Toast, { ToastItem } from './components/Toast.vue';
 import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
 import appLogo from './assets/logo.svg';
-import { formatIpcError } from './api/tauriBridge';
+import { formatIpcError, sanitizeChangelogText } from './api/tauriBridge';
 import { APP_CONFIG } from '../config/appConfig';
 
 const appVersion = APP_CONFIG.VERSION;
