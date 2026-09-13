@@ -238,7 +238,7 @@ pub fn clear_steam_cache(steam_path: &Path) -> ToolboxActionResult {
         }
     };
 
-    steps.push(format!("✓ 已清理 {} 项内核残留/临时缓存/损坏清单，并刷新系统本地 DNS 解析", cleaned));
+    steps.push(format!("✓ 已清理 {} 项内核残留/临时缓存/损坏清单，并刷新系统本地 DNS 解析以修复网络", cleaned));
 
     // 步骤 3: 重新拉起 Steam
     steps.push("正在重新启动 Steam 客户端...".to_string());
@@ -253,7 +253,7 @@ pub fn clear_steam_cache(steam_path: &Path) -> ToolboxActionResult {
     ToolboxActionResult {
         success: true,
         message: if redeployed {
-            "Steam 缓存与 DLL 内核残留已清理完毕，注入内核已重新部署并自动重启 Steam！".to_string()
+            "Steam 缓存与网络错误已修复完毕！坏清单已清扫、本地 DNS 已刷新，注入内核已就绪并自动重启 Steam。".to_string()
         } else {
             "Steam 缓存已清理并自动重启，但注入内核重新部署失败，请查看步骤详情或手动重新入库。".to_string()
         },

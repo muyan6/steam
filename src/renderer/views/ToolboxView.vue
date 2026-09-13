@@ -41,7 +41,7 @@
         <div class="p-5 flex-1 flex flex-col justify-between">
           <div>
             <h3 class="text-base font-bold text-slate-100">清理Steam缓存</h3>
-            <p class="text-xs text-slate-400 mt-1">解决内核报错、入库无效等问题，需重新入库</p>
+            <p class="text-xs text-slate-400 mt-1">解决内核报错、Steam网络错误、下载无连接及入库无效等问题</p>
 
             <!-- 检查清单 -->
             <div class="mt-4 space-y-2 text-xs">
@@ -51,11 +51,15 @@
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
                 <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
-                <span class="text-slate-200">删除DLL内核文件缓存文件相关残留</span>
+                <span class="text-slate-200">清扫depotcache坏清单与DLL内核缓存残留</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
                 <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
-                <span class="text-slate-200">重新Steam，重启完成后需您重新入库一个游戏</span>
+                <span class="text-slate-200">刷新DNS解析并修复Steam网络与下载错误</span>
+              </div>
+              <div class="flex items-center gap-2 text-emerald-400 font-medium">
+                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <span class="text-slate-200">重启Steam，重启完成后需您重新入库一个游戏</span>
               </div>
             </div>
           </div>
@@ -288,9 +292,9 @@
         </div>
       </div>
 
-      <!-- 卡片 5: 修复Steam下载无网络 (CloudRedirect / STFixer 方案) -->
+      <!-- 卡片 5 (已封存): 修复Steam下载无网络 (CloudRedirect / STFixer 方案) -->
+      <!--
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
-        <!-- 头部大图标横幅 -->
         <div class="h-28 tool-banner-f flex items-center justify-center relative overflow-hidden">
           <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
             <Globe class="w-8 h-8" />
@@ -298,13 +302,11 @@
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
         </div>
 
-        <!-- 卡片主体内容 -->
         <div class="p-5 flex-1 flex flex-col justify-between">
           <div>
             <h3 class="text-base font-bold text-slate-100">修复Steam下载网络 (CloudRedirect)</h3>
             <p class="text-xs text-slate-400 mt-1">解决 64位 Steam 下载游戏提示“无网络连接 / 0 字节下载”</p>
 
-            <!-- 检查清单 -->
             <div class="mt-4 space-y-2 text-xs">
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
                 <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
@@ -325,7 +327,6 @@
             </div>
           </div>
 
-          <!-- 执行动作按钮 -->
           <div class="mt-6">
             <button
               @click="handleFixCloudRedirect"
@@ -339,6 +340,7 @@
           </div>
         </div>
       </div>
+      -->
     </div>
 
     <!-- 底部环境状态指示条 -->
