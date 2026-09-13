@@ -1,21 +1,21 @@
 {
-  "version": "2.7.3",
+  "version": "2.7.4",
   "channel": "stable",
-  "releaseDate": "2026-09-12",
-  "title": "春风渡 v2.7.3 云端清单多源协同与并发竞速版",
+  "releaseDate": "2026-09-13",
+  "title": "春风渡 v2.7.4 激活卡种可视与体验卡限额正式版",
   "changelog": [
-    "🔥 深度扩充云端日更清单源：接入每日自动同步的海量清单数据库，博德之门3、幻兽帕鲁、黑神话等热门付费大作优先锁定官方当日最新清单 GID 与实体分包",
-    "⚡ 客户端清单多源并发竞速：单分包清单下载由串行等待全面升级为 Tokio 异步并发竞速，多线路边缘节点并行争胜，单分包下载速度提升 3~5 倍",
-    "🛡️ 双轨回退与零虚空 404 保障：以源中真实收录版本为准提取 GID；热门单机与全量免费游戏均享受多层智能回退与高可用分发，确保 100% 稳定就绪",
-    "🌐 分布式家宽直连与防频控优化：95% 清单流量由客户端家宽独立 IP 直连全球高速镜像下载，彻底避免节点频控封禁，云端服务器退居末位仅作 5% 故障容灾救生圈",
-    "🔒 缓存污染与 DLC 分包防御加固：重构清单元数据解析状态机，严格保证分包魔数校验与 DLC 列表完整性，杜绝损坏文件落盘"
+    "👑 激活设备卡种全面可视与精细化管理：管理后台设备列表全面支持展示已激活卡种（体验卡、月卡、季卡、年卡、永久尊享卡），并支持按卡种精准检索与状态筛选",
+    "🎁 新增体验卡（月卡 30 天）与设备单次限制防刷机制：卡密体系新增 trial 体验卡（默认前缀 CFD-T），引入持久化设备核销防刷记录，每台设备码永久仅限使用一次，正式卡不受限制，杜绝多端重复套刷",
+    "✨ 客户端全场景卡种徽章与交互体验升级：客户端顶栏会员状态、授权管理弹窗与设置页全面透出权威卡种名称（体验卡/月卡/季卡/年卡/永久尊享卡），提升授权感知与状态辨识度",
+    "🛠️ 工具箱下载与网络修复深度整合：封存独立的下载错误卡片，在「清理 Steam 缓存与重置网络」核心功能中深度整合并强化 Steam 下载报错、连接超时与清单冲突的一键自愈指引",
+    "🔒 授权生命周期加固与跨机流转安全防御：严密核验卡密状态变更原子性，强化体验卡防跨机套用限制，保障卡密大盘统计与设备监控数据的实时权威一致"
   ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.3/ChunFengDu_2.7.3_x64-setup.exe",
-  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.3/ChunFengDu_2.7.3_x64-setup.exe",
+  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.4/ChunFengDu_2.7.4_x64-setup.exe",
+  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.4/ChunFengDu_2.7.4_x64-setup.exe",
   "forceUpdate": true,
   "minSupportedVersion": "1.0.0",
   "enabled": true,
   "downloadCount": 0,
-  "createdAt": "2026-09-12T12:00:00.000Z",
-  "updatedAt": "2026-09-12T12:00:00.000Z"
+  "createdAt": "2026-09-13T12:00:00.000Z",
+  "updatedAt": "2026-09-13T12:00:00.000Z"
 }
