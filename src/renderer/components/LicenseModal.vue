@@ -255,8 +255,10 @@ const getLicenseBadgeClass = (status: string, type?: LicenseType) => {
 
 const getLicenseStatusText = (info: ClientLicenseInfo) => {
   if (info.isActivated) {
-    if (info.isLifetime) return '终身赞助者';
-    return `赞助者 (剩 ${info.remainingDays || 0} 天)`;
+    // 显示服务端下发的具体卡种名（体验卡/月卡/季卡/年卡/永久），未识别时回退通用文案
+    if (info.isLifetime) return info.typeName || '终身赞助者';
+    const base = info.typeName || '赞助者';
+    return `${base} (剩 ${info.remainingDays || 0} 天)`;
   }
   if (info.status === 'expired') return '赞助已到期';
   return '普通用户';

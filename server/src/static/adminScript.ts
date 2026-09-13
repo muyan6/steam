@@ -176,6 +176,7 @@ async function loadStats() {
 // ==================== 激活码管理模块 ====================
 
 var TYPE_MAP = {
+  'trial': { label: '体验卡 (30天/设备限1次)', badge: 'badge-purple' },
   'monthly': { label: '月卡 (30天)', badge: 'badge-blue' },
   'quarterly': { label: '季卡 (90天)', badge: 'badge-green' },
   'yearly': { label: '年卡 (365天)', badge: 'badge-amber' },
@@ -222,7 +223,7 @@ async function loadLicensesData(page) {
       var elExpired = document.getElementById('kpiLicExpired'); if (elExpired) elExpired.innerText = ((st.expired || 0) + (st.disabled || 0)).toLocaleString() + ' 张';
       var elBreakdown = document.getElementById('kpiLicTypeBreakdown');
       if (elBreakdown) {
-        elBreakdown.innerText = '月: ' + (st.monthlyCount || 0) + ' · 季: ' + (st.quarterlyCount || 0) + ' · 年: ' + (st.yearlyCount || 0) + ' · 永久: ' + (st.lifetimeCount || 0);
+        elBreakdown.innerText = '体验: ' + (st.trialCount || 0) + ' · 月: ' + (st.monthlyCount || 0) + ' · 季: ' + (st.quarterlyCount || 0) + ' · 年: ' + (st.yearlyCount || 0) + ' · 永久: ' + (st.lifetimeCount || 0);
       }
 
       // 渲染表格
@@ -516,9 +517,16 @@ async function loadDevicesData(page) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:24px;">暂无匹配的客户端设备记录</td></tr>';
       } else {
         tbody.innerHTML = currentDevList.map(function(item) {
-          var licBadge = item.isActivated
-            ? '<span class="badge badge-green">👑 已激活会员</span>'
-            : '<span class="badge badge-gray">未激活 (基础版)</span>';
+          // 激活的设备显示具体卡种（月卡/季卡/年卡/永久/体验卡），未激活显示基础版
+          var licBadge;
+          if (item.isActivated) {
+            var tInfo = TYPE_MAP[item.licenseType];
+            var tLabel = tInfo ? tInfo.label : '已激活会员';
+            var tCls = tInfo ? ('badge ' + tInfo.badge) : 'badge badge-green';
+            licBadge = '<span class="' + tCls + '" title="激活卡种">👑 ' + escapeHtml(tLabel) + '</span>';
+          } else {
+            licBadge = '<span class="badge badge-gray">未激活 (基础版)</span>';
+          }
           var devStr = '<strong style="color:var(--text-strong);font-family:monospace;font-size:12px;">' + escapeHtml(item.deviceId) + '</strong>';
           var ipStr = '<code style="color:var(--text-mid);font-size:11px;">' + escapeHtml(item.ip || '-') + '</code>';
           var verStr = '<span class="badge badge-blue">v' + escapeHtml(item.clientVersion || '1.0.0') + '</span>';

@@ -17,7 +17,7 @@ try {
   baseDir = process.cwd();
 }
 
-export type LicenseType = 'monthly' | 'quarterly' | 'yearly' | 'lifetime';
+export type LicenseType = 'trial' | 'monthly' | 'quarterly' | 'yearly' | 'lifetime';
 export type LicenseStatus = 'unused' | 'active' | 'expired' | 'disabled';
 
 export interface LicenseKey {
@@ -56,6 +56,7 @@ export interface LicenseStats {
   active: number;
   expired: number;
   disabled: number;
+  trialCount: number;
   monthlyCount: number;
   quarterlyCount: number;
   yearlyCount: number;
@@ -63,6 +64,7 @@ export interface LicenseStats {
 }
 
 const TYPE_NAMES: Record<LicenseType, string> = {
+  trial: '体验卡 (30天)',
   monthly: '月卡会员 (30天)',
   quarterly: '季卡会员 (90天)',
   yearly: '年卡会员 (365天)',
@@ -70,6 +72,7 @@ const TYPE_NAMES: Record<LicenseType, string> = {
 };
 
 const TYPE_DAYS: Record<LicenseType, number> = {
+  trial: 30,
   monthly: 30,
   quarterly: 90,
   yearly: 365,
@@ -77,6 +80,7 @@ const TYPE_DAYS: Record<LicenseType, number> = {
 };
 
 const TYPE_PREFIX_MAP: Record<LicenseType, string> = {
+  trial: 'CFD-T',
   monthly: 'CFD-M',
   quarterly: 'CFD-Q',
   yearly: 'CFD-Y',
@@ -94,6 +98,7 @@ export class LicenseService {
 
   constructor() {
     this.dataFilePath = path.join(CONFIG.DATA_DIR, 'license_keys.json');
+    this.trialUsedPath = path.join(CONFIG.DATA_DIR, 'license_trial_used.json');
     this.resolveDataPath();
     this.migrateLegacyFile();
     this.loadKeys();
@@ -199,6 +204,51 @@ export class LicenseService {
         key.status = 'expired';
       }
     }
+  }
+
+  // ==================== 体验卡「每设备码永久仅一次」限制 ====================
+  // 体验卡按「设备码」而非「卡密」限次：换一张新体验卡也不能在同一设备重复激活。
+  // 单独落盘（license_trial_used.json），不随卡密删除而丢失，防止删卡重刷。
+  private trialUsedPath: string = path.join(CONFIG.DATA_DIR, 'license_trial_used.json');
+  private trialUsedDevices: Set<string> | null = null;
+
+  /** 载入体验卡已用设备集合（小写 deviceId） */
+  private loadTrialUsed(): Set<string> {
+    if (this.trialUsedDevices) return this.trialUsedDevices;
+    const set = new Set<string>();
+    try {
+      if (fs.existsSync(this.trialUsedPath)) {
+        const raw = JSON.parse(fs.readFileSync(this.trialUsedPath, 'utf-8'));
+        if (Array.isArray(raw)) {
+          for (const d of raw) {
+            if (typeof d === 'string' && d.trim()) set.add(d.trim().toLowerCase());
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[LicenseService] 读取体验卡使用记录失败，按空库处理:', (e as Error).message);
+    }
+    this.trialUsedDevices = set;
+    return set;
+  }
+
+  private saveTrialUsed(): boolean {
+    try {
+      const dir = path.dirname(this.trialUsedPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      writeJsonAtomic(this.trialUsedPath, Array.from(this.trialUsedDevices || []));
+      return true;
+    } catch (e) {
+      console.error('[LicenseService] 保存体验卡使用记录失败:', (e as Error).message);
+      return false;
+    }
+  }
+
+  /** 该设备码是否已使用过体验卡 */
+  public hasUsedTrial(deviceId: string): boolean {
+    const id = String(deviceId || '').trim().toLowerCase();
+    if (!id) return false;
+    return this.loadTrialUsed().has(id);
   }
 
   /**
@@ -317,6 +367,18 @@ export class LicenseService {
       return { success: false, message: '该激活码已过期失效。' };
     }
 
+    // 体验卡限制：每个设备码永久仅可使用一次。
+    // 先于任何状态变更校验，避免"被拒绝却已写入绑定"的半改状态。
+    if (key.type === 'trial') {
+      const devKey = cleanDeviceId.toLowerCase();
+      if (this.loadTrialUsed().has(devKey)) {
+        return {
+          success: false,
+          message: '本设备已使用过体验卡，每个设备码仅可体验一次，欢迎选购正式卡密。'
+        };
+      }
+    }
+
     // 核销前先确定到期时间：校验失败时直接返回，避免留下"已绑定但未落盘"的半改状态
     let nextExpiresAt: string | null;
     if (key.type === 'lifetime' || key.durationDays === -1) {
@@ -342,6 +404,15 @@ export class LicenseService {
     // 保存失败时返回失败结果（内存态已变更，但未落盘不能算激活成功）
     if (!this.saveKeys()) {
       return { success: false, message: '数据保存失败，请稍后重试' };
+    }
+
+    // 体验卡核销成功后才登记「该设备已用体验卡」（永久一次）。
+    // 登记失败不阻断本次激活，但会记录日志——宁可放行本次也不误伤已成功激活的用户。
+    if (key.type === 'trial') {
+      this.loadTrialUsed().add(cleanDeviceId.toLowerCase());
+      if (!this.saveTrialUsed()) {
+        console.error(`[LicenseService] 体验卡使用记录落盘失败（设备 ${cleanDeviceId}），下次可能重复放行`);
+      }
     }
     console.log(`[LicenseService] 成功为设备 [${cleanDeviceId}] 绑定激活码: ${cleanCode} (${key.type})`);
 
@@ -625,6 +696,7 @@ export class LicenseService {
     let active = 0;
     let expired = 0;
     let disabled = 0;
+    let trialCount = 0;
     let monthlyCount = 0;
     let quarterlyCount = 0;
     let yearlyCount = 0;
@@ -637,7 +709,8 @@ export class LicenseService {
       else if (k.status === 'expired') expired++;
       else if (k.status === 'disabled') disabled++;
 
-      if (k.type === 'monthly') monthlyCount++;
+      if (k.type === 'trial') trialCount++;
+      else if (k.type === 'monthly') monthlyCount++;
       else if (k.type === 'quarterly') quarterlyCount++;
       else if (k.type === 'yearly') yearlyCount++;
       else if (k.type === 'lifetime') lifetimeCount++;
@@ -649,6 +722,7 @@ export class LicenseService {
       active,
       expired,
       disabled,
+      trialCount,
       monthlyCount,
       quarterlyCount,
       yearlyCount,

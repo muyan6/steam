@@ -1022,10 +1022,12 @@ const getLicenseHeaderBadgeClass = (info: ClientLicenseInfo) => {
 const getLicenseHeaderBadgeText = (info: ClientLicenseInfo) => {
   if (info.isActivated) {
     if (info.type === 'lifetime' || info.isLifetime) {
-      return '终身赞助者';
+      return info.typeName || '终身赞助者';
     }
     const days = info.remainingDays ?? 0;
-    return `赞助者 (剩${days}天)`;
+    // 优先显示具体卡种（体验卡/月卡/季卡/年卡）
+    const name = info.typeName || '赞助者';
+    return `${name} (剩${days}天)`;
   }
   if (info.status === 'expired') {
     return '赞助已到期';

@@ -211,10 +211,10 @@ export async function getLicenseStatsAdmin(req: Request, res: Response) {
 export async function generateLicensesAdmin(req: Request, res: Response) {
   try {
     const { type, count, prefix, remark } = req.body;
-    if (!type || !['monthly', 'quarterly', 'yearly', 'lifetime'].includes(type)) {
+    if (!type || !['trial', 'monthly', 'quarterly', 'yearly', 'lifetime'].includes(type)) {
       return res.status(400).json({
         success: false,
-        message: '卡密类型无效，支持: monthly, quarterly, yearly, lifetime'
+        message: '卡密类型无效，支持: trial, monthly, quarterly, yearly, lifetime'
       });
     }
     // 自定义前缀白名单校验：仅允许字母/数字/连字符，最长 16 位

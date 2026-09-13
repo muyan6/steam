@@ -306,6 +306,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
     .badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--c-amber); border: 1px solid rgba(245, 158, 11, 0.35); }
     .badge-rose { background: rgba(244, 63, 94, 0.15); color: var(--c-rose); border: 1px solid rgba(244, 63, 94, 0.35); }
     .badge-gray { background: rgba(100, 116, 139, 0.2); color: var(--text-mid); border: 1px solid rgba(100, 116, 139, 0.35); }
+    .badge-purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); }
 
     /* 提示消息条 */
     .alert-box {
@@ -434,6 +435,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
     html.light .badge-amber { color: #b45309; }
     html.light .badge-rose { color: #be123c; }
     html.light .badge-gray { color: #64748b; }
+    html.light .badge-purple { color: #7e22ce; }
 
     body { font-size: 14px; background-color: var(--bg); color: var(--text); }
     ::-webkit-scrollbar-track { background: var(--scroll-track); }
@@ -675,6 +677,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
               <input type="text" id="licSearchInput" class="input-ctrl" style="max-width: 300px;" placeholder="🔍 搜索卡密 / 设备识别码 / 备注..." onkeydown="if(event.key==='Enter') loadLicensesData(1);" />
               <select id="licTypeFilter" class="input-ctrl" style="max-width: 150px;" onchange="loadLicensesData(1);">
                 <option value="all">全部卡种类型</option>
+                <option value="trial">体验卡 (30天 · 每个设备码仅一次)</option>
                 <option value="monthly">月卡会员 (30天)</option>
                 <option value="quarterly">季卡会员 (90天)</option>
                 <option value="yearly">年卡会员 (365天)</option>
@@ -1175,6 +1178,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
           <div class="form-group">
             <label>卡密类型 (Card Type)</label>
             <select id="genLicType" class="input-ctrl">
+              <option value="trial">体验卡 (30天 · 每个设备码仅一次)</option>
               <option value="monthly">月卡会员 (30天)</option>
               <option value="quarterly">季卡会员 (90天)</option>
               <option value="yearly">年卡会员 (365天)</option>

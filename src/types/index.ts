@@ -271,7 +271,7 @@ export interface IpcResponse<T = any> {
   message?: string;
 }
 
-export type LicenseType = 'monthly' | 'quarterly' | 'yearly' | 'lifetime';
+export type LicenseType = 'trial' | 'monthly' | 'quarterly' | 'yearly' | 'lifetime';
 export type LicenseStatus = 'unused' | 'active' | 'expired' | 'disabled';
 
 export interface LicenseKey {
@@ -310,6 +310,7 @@ export interface LicenseStats {
   active: number;
   expired: number;
   disabled: number;
+  trialCount: number;
   monthlyCount: number;
   quarterlyCount: number;
   yearlyCount: number;
