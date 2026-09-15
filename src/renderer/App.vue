@@ -328,7 +328,7 @@
         <div class="flex items-center justify-end gap-3">
           <button
             v-if="!versionModal.forceUpdate && updateState === 'idle'"
-            @click="versionModal = null"
+            @click="dismissVersionModal"
             class="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-300 text-xs rounded-xl transition"
           >
             稍后更新
@@ -794,6 +794,18 @@ const noticeIconClass = computed(() => {
 const bannerNotice = ref<NoticePayload | null>(null);
 const versionModal = ref<any>(null);
 
+// 「稍后更新」记忆：同一版本的普通更新只提醒一次。
+// 原实现点「稍后更新」只是 versionModal = null，而 checkNoticeAndVersion 每 3 分钟轮询一次，
+// 于是同一个更新窗口反复弹出、用户点几次都关不掉 —— 表现为「一直提示更新」。
+const DISMISSED_UPDATE_KEY = 'dismissed_update_version';
+const dismissVersionModal = () => {
+  const v = versionModal.value?.latest?.version;
+  if (v) {
+    try { localStorage.setItem(DISMISSED_UPDATE_KEY, String(v).replace(/^v/i, '').trim()); } catch {}
+  }
+  versionModal.value = null;
+};
+
 // ---------------- 应用内一键更新 ----------------
 const updateState = ref<'idle' | 'downloading'>('idle');
 const updateProgress = ref({ downloaded: 0, total: 0 });
@@ -984,7 +996,13 @@ const checkNoticeAndVersion = async () => {
 
     const versionRes = await window.electronAPI.checkVersion(appVersion);
     if (versionRes && versionRes.hasUpdate && updateState.value === 'idle') {
-      versionModal.value = versionRes;
+      const latestVer = String(versionRes.latest?.version || '').replace(/^v/i, '').trim();
+      let dismissed = '';
+      try { dismissed = localStorage.getItem(DISMISSED_UPDATE_KEY) || ''; } catch {}
+      // 强制更新不受记忆影响；普通更新同一版本只提醒一次，避免轮询反复弹窗
+      if (versionRes.forceUpdate || !latestVer || dismissed !== latestVer) {
+        versionModal.value = versionRes;
+      }
     }
   } catch (e) {
     console.warn('检查公告与版本失败:', e);

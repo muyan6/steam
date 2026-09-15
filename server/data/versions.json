@@ -1,5 +1,25 @@
 [
   {
+    "version": "2.7.9",
+    "channel": "stable",
+    "releaseDate": "2026-09-15",
+    "title": "春风渡 v2.7.9 更新提示修复版（彻底解决无限提示更新）",
+    "changelog": [
+      "🛠️ 彻底修复装完最新版仍被无限提示更新：根因是前端版本常量 src/config/appConfig.ts 为手写值，v2.7.7 发布时只改了 package.json、tauri.conf.json 与云端版本数据，漏改了该常量，客户端始终以 2.7.6 上报自身版本；服务端据此一直判定存在新版本，用户无论装多少次最新安装包都消除不了更新提示",
+      "🔗 版本号改为单一源头：前端版本号不再手写维护，改由构建期从 src-tauri/tauri.conf.json 自动读取并注入，从机制上杜绝「改了安装包版本、忘了改前端常量」这类版本漂移再次发生",
+      "🖱️ 修复「稍后更新」点了没用：原实现关闭更新窗口后不做任何记忆，而客户端每 3 分钟轮询一次更新，同一个更新窗口会反复弹出、多次点击也关不掉；现已记住已忽略的版本，同一版本的普通更新只提醒一次，强制更新不受影响",
+      "✅ 本版安装后客户端上报版本与安装包版本严格一致，更新提示恢复正常：有新版本才提示，已是最新即提示已是最新"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.9/ChunFengDu_2.7.9_x64-setup.exe",
+    "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.9/ChunFengDu_2.7.9_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-15T19:00:00.000Z",
+    "updatedAt": "2026-09-15T19:00:00.000Z"
+  },
+  {
     "version": "2.7.8",
     "channel": "stable",
     "releaseDate": "2026-09-15",
