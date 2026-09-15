@@ -295,6 +295,11 @@ function readMetadataCache(appId: number, needGid: boolean): CachedMetadata | nu
   return entry;
 }
 
+/** 清除单个 AppID 的响应缓存；返回是否确有条目被清除 */
+function clearMetadataCache(appId: number): boolean {
+  return metadataCache.delete(appId);
+}
+
 function writeMetadataCache(entry: CachedMetadata): void {
   // 写入前先清过期；仍超限则按插入序淘汰最旧
   if (metadataCache.size >= METADATA_CACHE_MAX) {
@@ -561,22 +566,31 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       } catch {}
 
       // 把本次从 SteamCMD 拿到的「稳定数据」落盘，下次同 AppID 即可零上游返回。
-      // 只写 DLC 相关：清单 GID 会随官方更新变化，绝不入索引。
-      try {
-        const dlcDepotRecord: Record<string, string[]> = {};
-        for (const [dlcAppId, set] of dlcDepotMap) {
-          if (dlcAppId === sAppId || set.size === 0) continue;
-          dlcDepotRecord[dlcAppId] = Array.from(set);
+      //
+      // 关键守卫 `if (appRaw)`：SteamCMD 超时/失败时 appRaw 为 null，此时
+      // dlcIds 与 dlcDepotMap 都是残缺的（只剩本地密钥库启发式扫出的几个分包）。
+      // 若照写不误，这份残缺数据会被永久固化 —— 此后每次命中索引都拿不到 DLC，
+      // 而索引命中又会跳过上游，形成「再也修不回来」的死循环。
+      // 不写索引的代价只是下次重查上游，可接受。
+      if (appRaw) {
+        try {
+          const dlcDepotRecord: Record<string, string[]> = {};
+          for (const [dlcAppId, set] of dlcDepotMap) {
+            if (dlcAppId === sAppId || set.size === 0) continue;
+            dlcDepotRecord[dlcAppId] = Array.from(set);
+          }
+          dlcIndexService.set(appId, {
+            name: gameName || undefined,
+            dlcIds: dlcIds.filter((d) => d !== sAppId),
+            dlcDepots: dlcDepotRecord,
+            // 只存 depotId 与密钥：manifestGid 随官方更新变化，绝不入索引
+            depots: depots.map((d) => ({ depotId: d.depotId, depotKey: d.depotKey }))
+          });
+        } catch (e) {
+          console.warn(`[MetadataController] 写入 DLC 索引失败 (${appId}):`, (e as Error).message);
         }
-        dlcIndexService.set(appId, {
-          name: gameName || undefined,
-          dlcIds: dlcIds.filter((d) => d !== sAppId),
-          dlcDepots: dlcDepotRecord,
-          // 只存 depotId 与密钥：manifestGid 随官方更新变化，绝不入索引
-          depots: depots.map((d) => ({ depotId: d.depotId, depotKey: d.depotKey }))
-        });
-      } catch (e) {
-        console.warn(`[MetadataController] 写入 DLC 索引失败 (${appId}):`, (e as Error).message);
+      } else {
+        console.warn(`[MetadataController] SteamCMD 未返回数据 (${appId})，跳过索引写入以免固化残缺结果`);
       }
     }
 
@@ -737,5 +751,74 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     console.error('[MetadataController] 获取游戏元数据异常:', e);
     return res.status(500).json({ success: false, message: '获取元数据失败，请稍后重试' });
 
+  }
+};
+
+// ==================== 管理员：索引维护接口 ====================
+
+/**
+ * 重新采集指定 AppID 的元数据索引。
+ *
+ * 用途：某次采集恰好碰上 SteamCMD 抖动（超时或只回部分字段），索引里
+ * 存下的 DLC 列表会不完整。删除该条目后，下次客户端查询会重新走上游，
+ * 并把结果重新落盘 —— 这是索引唯一的修复出口（否则只能清空整个文件）。
+ *
+ * 同时清除 10 分钟响应缓存：只删索引不清内存缓存的话，请求仍会命中旧结果。
+ */
+export const refreshAppMetadataIndexAdmin = (req: Request, res: Response) => {
+  try {
+    const raw = Array.isArray(req.params.appId) ? req.params.appId[0] : req.params.appId;
+    const appId = parseInt(String(raw), 10);
+    if (isNaN(appId) || appId <= 0) {
+      return res.status(400).json({ success: false, message: '无效的 AppID' });
+    }
+
+    const indexCleared = dlcIndexService.delete(appId);
+    const cacheCleared = clearMetadataCache(appId);
+
+    return res.json({
+      success: true,
+      message:
+        indexCleared || cacheCleared
+          ? `已清除 AppID ${appId} 的索引与响应缓存，下次查询将重新采集`
+          : `AppID ${appId} 原本无索引与缓存记录，下次查询即会采集`,
+      data: { appId, indexCleared, cacheCleared }
+    });
+  } catch (e: any) {
+    console.error('[MetadataController] 清除索引异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+};
+
+/**
+ * 查看索引概览（条目总数 / 指定 AppID 的明细），便于排障。
+ * 带 ?appId=xxx 返回该应用明细，不带则只返回总数。
+ */
+export const getMetadataIndexAdmin = (req: Request, res: Response) => {
+  try {
+    const raw = Array.isArray(req.query.appId) ? req.query.appId[0] : req.query.appId;
+    if (raw !== undefined && String(raw).trim() !== '') {
+      const appId = parseInt(String(raw), 10);
+      if (isNaN(appId)) {
+        return res.status(400).json({ success: false, message: '无效的 AppID' });
+      }
+      const entry = dlcIndexService.get(appId);
+      return res.json({
+        success: true,
+        data: {
+          appId,
+          indexed: !!entry,
+          entry: entry || null,
+          cachedInMemory: !!readMetadataCache(appId, false)
+        }
+      });
+    }
+    return res.json({
+      success: true,
+      data: { totalEntries: dlcIndexService.size() }
+    });
+  } catch (e: any) {
+    console.error('[MetadataController] 查询索引异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };

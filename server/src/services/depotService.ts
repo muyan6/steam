@@ -78,16 +78,25 @@ export class DepotService {
       presetGame.dlcs.forEach((d) => effectiveDlcs.add(d));
     }
 
-    // 2. 候选 DepotID 集合：主游戏本体 0~100 连续分包范围（SteamPipe 规范内 depot 与 app 强相邻，
-    //    该启发式仅用于主游戏；命中后仍由客户端按 depot 元数据归属使用）
+    // 2. 候选 DepotID 集合：主游戏本体 0~200 连续分包范围
+    //
+    // 为什么从 0~100 扩到 0~200：实测 Brotato (1942280) 的 1942381、1942391
+    // 在密钥库里有有效密钥，却因恰好落在 1942380 窗外而被漏掉，导致
+    // 同一游戏不同次入库拿到的分包数不一致（用户观察到「9 个 / 11 个」波动）。
+    // SteamPipe 规范里 depot 与 app 强相邻，但偏移量没有硬上界，200 覆盖面更稳。
+    //
+    // 误配权衡：扩窗后可能命中 AppID 相邻的无关游戏 depot。实际风险很低 ——
+    // 该 depot 还必须在本库有有效密钥，且 Steam 只在真的下载该 depot 时才用密钥，
+    // 不下载则完全无害。相比漏掉真实分包（直接导致内容缺失），这个方向的
+    // 误配代价小得多。
     const candidateDepotIds = new Set<number>();
-    for (let i = 0; i <= 100; i++) {
+    for (let i = 0; i <= 200; i++) {
       candidateDepotIds.add(appId + i);
     }
 
-    // 3. DLC 分包范围收紧为 0~10（原 0~30 会把 AppID 相邻的无关游戏的密钥误配进来）
+    // 3. DLC 分包范围 0~50（原 0~10 对偏移稍大的 DLC 分包会漏）
     for (const dlcId of effectiveDlcs) {
-      for (let j = 0; j <= 10; j++) {
+      for (let j = 0; j <= 50; j++) {
         candidateDepotIds.add(dlcId + j);
       }
     }

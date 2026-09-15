@@ -203,6 +203,22 @@ export class DlcIndexService {
   public size(): number {
     return this.index.size;
   }
+
+  /**
+   * 删除单个 AppID 的索引条目，强制下次查询重新采集上游。
+   *
+   * 使用场景：某次采集恰好碰上 SteamCMD 抖动（超时或只回部分字段），
+   * 导致该条目的 DLC 列表不完整。虽然 writeIndex 已加守卫避免固化残缺数据，
+   * 但已经落盘的条目仍需一个手动出口 —— 否则只能等文件被清空。
+   */
+  public delete(appId: number): boolean {
+    const existed = this.index.delete(appId);
+    if (existed) {
+      this.markDirty();
+      console.log(`[DlcIndex] 已删除 AppID ${appId} 的索引条目，下次查询将重新采集`);
+    }
+    return existed;
+  }
 }
 
 export const dlcIndexService = new DlcIndexService();

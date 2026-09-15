@@ -5,7 +5,11 @@ import { gameService } from '../services/gameService.js';
 import { getPopularGames, searchGames, getGameDetail, getGameHeaderImage, getGameLibraryVersion, downloadGameLibrary } from '../controllers/gameController.js';
 import { getDepotsForGame, getSingleDepotKey } from '../controllers/depotController.js';
 import { licenseSignService } from '../services/licenseSignService.js';
-import { getGameMetadata } from '../controllers/metadataController.js';
+import {
+  getGameMetadata,
+  refreshAppMetadataIndexAdmin,
+  getMetadataIndexAdmin
+} from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
 import { getManifestsForApp, downloadManifestFile, getManifestCode } from '../controllers/manifestController.js';
 import { getLatestOstRelease, downloadOstAsset } from '../controllers/ostController.js';
@@ -481,6 +485,10 @@ router.post('/admin/settings/free-quota', updateFreeQuotaLimitAdmin);
 // 邀请有礼：奖励天数配置与邀请记录概览
 router.get('/admin/invite/overview', getInviteOverviewAdmin);
 router.post('/admin/invite/reward-days', updateInviteRewardDaysAdmin);
+
+// 元数据索引维护：查看与强制重采集（某次碰上 SteamCMD 抖动导致 DLC 残缺时使用）
+router.get('/admin/metadata/index', getMetadataIndexAdmin);
+router.post('/admin/metadata/index/:appId/refresh', refreshAppMetadataIndexAdmin);
 // 管理端读取链接配置（更新复用下方 POST /admin/links）
 router.get('/admin/links', (req, res) => {
   res.json({ success: true, data: appLinksService.getLinks() });
