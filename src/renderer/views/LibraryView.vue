@@ -203,7 +203,7 @@
                 <span
                   v-if="manifestStatuses[game.appId]?.hasManifest || game.hasManifest"
                   class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/30 font-semibold"
-                  title="本地 depotcache 清单文件已就绪"
+                  title="本地 depotcache 实体清单文件已就绪（锁定版本模式）"
                 >
                   <Box class="w-3 h-3" />
                   <span>本地清单</span>
@@ -211,7 +211,7 @@
                 <span
                   v-else
                   class="text-[11px] px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-400 font-mono flex items-center gap-1 border border-sky-500/30 font-semibold"
-                  title="OpenSteamTool 动态清单就绪，点击下载时 DLL 将自动拉取清单"
+                  title="官方清单动态获取：点击下载时 OST 内核自动取当时最新 GID，直连 Valve CDN 拉取，天然支持实时更新与创意工坊"
                 >
                   <Zap class="w-3 h-3" />
                   <span>动态清单</span>
@@ -269,10 +269,10 @@
               </button>
 
               <button
-                v-if="!manifestStatuses[game.appId]?.hasManifest && !game.hasManifest"
+                v-if="isPinned(game) && !manifestStatuses[game.appId]?.hasManifest && !game.hasManifest"
                 @click="handleRepairManifest(game.appId)"
                 :disabled="repairingAppId === game.appId"
-                title="手动将清单预缓存到本地 Steam/depotcache 目录"
+                title="仅「锁定版本」模式需要：手动将实体清单预缓存到本地 Steam/depotcache 目录"
                 class="px-2.5 py-1.5 btn-soft-action text-xs font-semibold rounded-xl flex items-center gap-1.5"
               >
                 <RotateCw v-if="repairingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
@@ -360,8 +360,12 @@ const loadLibrary = async () => {
     });
     emit('refresh-status');
 
-    // 一次批量调用补齐无清单游戏的明细，替代逐游戏请求（depotcache 仅扫描一次）
-    const pendingIds = unlockedGames.value.filter((g) => !g.hasManifest).map((g) => g.appId);
+    // 清单状态查询只对「锁定版本」的游戏有意义：官方优先模式下 Steam 动态拉取清单，
+    // 本地 depotcache 本来就没有（也不需要）实体文件，查了只会得到无用的"无清单"结论。
+    // 一次批量调用补齐，替代逐游戏请求（depotcache 仅扫描一次）。
+    const pendingIds = unlockedGames.value
+      .filter((g) => isPinned(g) && !g.hasManifest)
+      .map((g) => g.appId);
     if (pendingIds.length > 0) {
       try {
         const statuses = await window.electronAPI.checkManifestStatusBatch(pendingIds);
@@ -381,7 +385,7 @@ const loadLibrary = async () => {
 const handleRepairManifest = async (appId: number) => {
   repairingAppId.value = appId;
   try {
-    emit('notify', '正在从 SteamPipe CDN 下载分包清单并解压...', 'info');
+    emit('notify', '正在从 SteamPipe CDN 下载实体清单并解压到 depotcache...', 'info');
     const res = await window.electronAPI.downloadManifest(appId);
     if (res && res.success) {
       emit('notify', res.message || '分包清单已就绪！', 'success');
