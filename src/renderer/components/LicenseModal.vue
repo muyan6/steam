@@ -30,32 +30,34 @@
         </button>
       </div>
 
-      <!-- 标签页切换：激活码 / 邀请有礼 -->
-      <div class="px-6 pt-3 pb-1 flex items-center gap-2 bg-slate-950/20 border-b border-white/5">
-        <button
-          @click="activeTab = 'license'"
-          class="px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-          :class="activeTab === 'license'
-            ? 'bg-slate-900 text-amber-300 border border-white/10 border-b-transparent'
-            : 'text-slate-400 hover:text-slate-200 border border-transparent'"
-        >
-          <Key class="w-3.5 h-3.5" />
-          <span>激活码绑定</span>
-        </button>
-        <button
-          @click="switchToInviteTab"
-          class="px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-          :class="activeTab === 'invite'
-            ? 'bg-slate-900 text-rose-300 border border-white/10 border-b-transparent'
-            : 'text-slate-400 hover:text-slate-200 border border-transparent'"
-        >
-          <Gift class="w-3.5 h-3.5" />
-          <span>邀请有礼</span>
-          <span
-            v-if="inviteStatus && inviteStatus.invitedCount > 0"
-            class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/25 font-mono"
-          >{{ inviteStatus.invitedCount }}</span>
-        </button>
+      <!-- 标签页切换：激活码 / 邀请有礼（分段控件，与弹窗底色自然融合，不再留灰条） -->
+      <div class="px-6 pt-4 pb-1">
+        <div class="p-1 rounded-2xl bg-slate-950/70 border border-white/5 flex items-center gap-1">
+          <button
+            @click="activeTab = 'license'"
+            class="flex-1 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer border"
+            :class="activeTab === 'license'
+              ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border-transparent'"
+          >
+            <Key class="w-3.5 h-3.5" />
+            <span>激活码绑定</span>
+          </button>
+          <button
+            @click="switchToInviteTab"
+            class="flex-1 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer border"
+            :class="activeTab === 'invite'
+              ? 'bg-rose-500/15 text-rose-300 border-rose-500/30 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border-transparent'"
+          >
+            <Gift class="w-3.5 h-3.5" />
+            <span>邀请有礼</span>
+            <span
+              v-if="inviteStatus && inviteStatus.invitedCount > 0"
+              class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-200 font-mono leading-none"
+            >{{ inviteStatus.invitedCount }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- ==================== 标签页 1：激活码绑定 ==================== -->
