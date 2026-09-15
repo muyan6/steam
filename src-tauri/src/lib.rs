@@ -259,34 +259,42 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
 
     match ost::save_lua_rule(steam_path, &payload) {
         Ok(res) => {
-            // 与 Electron 版一致：入库成功后立即预缓存清单到 depotcache（入库即就绪）。
+            // 清单策略：默认「官方清单优先」，不预缓存任何实体清单。
+            // Lua 规则未写 setManifestid，Steam 会经 manifest.lua 的 fetch_manifest_code
+            // 动态取当前 GID 并直连 Valve CDN 拉最新清单，天然支持实时更新与创意工坊，
+            // 也不占用磁盘。仅「锁定版本」模式（lock_version = true）才预缓存 —— 该模式
+            // Lua 已钉死 GID，必须有对应实体文件才能下载。
+            //
             // 预缓存是尽力而为的附加步骤：此时 Lua 规则已写入，无论这里发生什么
-            // （包括 panic）都不能把入库结果翻转为失败
+            // （包括 panic）都不能把入库结果翻转为失败。
+            let lock_mode = payload.lock_version == Some(true);
             let mut precache_text = String::new();
             let mut missing_manifests = false;
             let mut precache_ok_count = 0;
             let mut precache_total = 0;
-            if let Some(meta) = &res.metadata {
-                let pc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    manifests::precache_manifests(steam_path, meta)
-                }));
-                match pc {
-                    Ok(pc) => {
-                        precache_ok_count = pc.ok_count;
-                        precache_total = pc.total;
-                        if pc.total > 0 {
-                            if pc.ok_count == pc.total {
-                                precache_text = format!("，清单预缓存 {}/{} 全部就绪", pc.ok_count, pc.total);
-                            } else {
-                                missing_manifests = true;
-                                precache_text = format!("，清单实体预缓存 {}/{}（云端暂缺 {} 个清单实体）", pc.ok_count, pc.total, pc.total - pc.ok_count);
+            if lock_mode {
+                if let Some(meta) = &res.metadata {
+                    let pc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        manifests::precache_manifests(steam_path, meta)
+                    }));
+                    match pc {
+                        Ok(pc) => {
+                            precache_ok_count = pc.ok_count;
+                            precache_total = pc.total;
+                            if pc.total > 0 {
+                                if pc.ok_count == pc.total {
+                                    precache_text = format!("，清单预缓存 {}/{} 全部就绪", pc.ok_count, pc.total);
+                                } else {
+                                    missing_manifests = true;
+                                    precache_text = format!("，清单实体预缓存 {}/{}（云端暂缺 {} 个清单实体）", pc.ok_count, pc.total, pc.total - pc.ok_count);
+                                }
                             }
                         }
-                    }
-                    Err(panic) => {
-                        let msg = manifests::panic_message(&panic);
-                        manifests::log_diag(&format!("precache 整体 panic: {}", msg));
-                        precache_text = "，清单预缓存异常（可在库中重试预缓存）".to_string();
+                        Err(panic) => {
+                            let msg = manifests::panic_message(&panic);
+                            manifests::log_diag(&format!("precache 整体 panic: {}", msg));
+                            precache_text = "，清单预缓存异常（可在库中重试预缓存）".to_string();
+                        }
                     }
                 }
             }
@@ -295,12 +303,18 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
             // 只有真正注入了分包密钥才提示"可直接下载"；
             // 仅有清单 GID（如 SteamCMD 降级数据）时如实警告下载可能 0 字节
             let message = if res.metadata_ok && res.key_count > 0 {
-                let version_text = if res.manifest_count > 0 {
+                let version_text = if lock_mode && res.manifest_count > 0 {
                     format!("已锁定 {} 条清单 GID", res.manifest_count)
                 } else {
                     "版本跟随官方最新".to_string()
                 };
-                if precache_ok_count > 0 && precache_ok_count == precache_total {
+                if !lock_mode {
+                    // 官方清单优先：清单由 Steam 动态获取，无需任何本地实体文件
+                    format!(
+                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC）！清单由 Steam 动态获取官方最新版本，天然支持实时更新与创意工坊；若下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
+                        name, res.key_count, version_text, res.dlc_count
+                    )
+                } else if precache_ok_count > 0 && precache_ok_count == precache_total {
                     format!(
                         "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！若 Steam 下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
                         name, res.key_count, version_text, res.dlc_count, precache_text

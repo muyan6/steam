@@ -1197,7 +1197,7 @@ export class ManifestService {
 
   /**
    * 获取指定 GID 的清单请求代码（Manifest Request Code）
-   * 优先内存缓存 -> wudrm 官方源 -> 古韵国内镜像源 -> steamrun 亚太源
+   * 优先内存缓存 -> ManifestDeX 直供源 -> wudrm 官方源 -> 古韵国内镜像源 -> steamrun 亚太源
    */
   public async getManifestCode(gid: string): Promise<string | null> {
     if (!gid || !/^\d+$/.test(gid)) return null;
@@ -1208,7 +1208,24 @@ export class ManifestService {
       return cached.code;
     }
 
-    // 1. wudrm 官方清单代码源（全球最大覆盖面与最新数据）
+    // 1. ManifestDeX 清单代码直供源（第一优先级）
+    // 该源经 Cloudflare 保护，必须携带专用 User-Agent，缺失会被返回 403 质询页
+    try {
+      const resp = await axios.get(`https://manifest.manifestdex.com/${gid}`, {
+        timeout: 3500,
+        responseType: 'text',
+        headers: { 'User-Agent': 'ManifestDeX/1.0' }
+      });
+      if (resp.status === 200 && typeof resp.data === 'string') {
+        const text = resp.data.trim();
+        if (/^\d+$/.test(text) && text !== '0') {
+          this.setManifestCodeCache(gid, text);
+          return text;
+        }
+      }
+    } catch {}
+
+    // 2. wudrm 官方清单代码源（全球最大覆盖面与最新数据）
     // 走 HTTPS：明文 HTTP 可被中间人替换返回任意数字代码，进而被客户端 Lua 内核使用
     try {
       const resp = await axios.get(`https://gmrc.wudrm.com/manifest/${gid}`, { timeout: 3500, responseType: 'text' });
@@ -1221,7 +1238,7 @@ export class ManifestService {
       }
     } catch {}
 
-    // 2. 古韵国内镜像源
+    // 3. 古韵国内镜像源
     try {
       const resp = await axios.get(`https://gmrc.guyunsq.com/${gid}`, { timeout: 3000, responseType: 'text' });
       if (resp.status === 200 && typeof resp.data === 'string') {
@@ -1233,7 +1250,7 @@ export class ManifestService {
       }
     } catch {}
 
-    // 3. steamrun 官方镜像源
+    // 4. steamrun 官方镜像源
     try {
       const resp = await axios.get(`https://manifest.steam.run/api/manifest/${gid}`, { timeout: 3000 });
       if (resp.status === 200 && resp.data) {

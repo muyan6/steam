@@ -81,30 +81,44 @@ pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
 /// 部署官方与国内高速专线清单代码调度器 (manifest.lua)
 /// 彻底根除因上游默认源超时、阻断或 403 导致的 Steam 报错“无互联网连接”。
 /// 提取为模块常量：启动自愈时需比对现有文件是否与当前版本一致（缺失/过期则重部署）
-pub const MANIFEST_LUA: &str = r#"function fetch_manifest_code(gid)
-    -- 第一优先级：春风渡云端官方中继源 (带高可用全网代码缓存)
-    local body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
-    if status == 200 and body and body:match("^%d+$") then
-        return body
-    end
+pub const MANIFEST_LUA: &str = r#"-- 纯数字清单请求码提取：容忍首尾空白与换行（不同源返回格式不一）
+local function pick_plain_code(body, status)
+    if status ~= 200 or not body then return nil end
+    local code = body:match("^%s*(%d+)%s*$")
+    if code and code ~= "0" then return code end
+    return nil
+end
 
-    -- 第二优先级：wudrm 官方清单代码源 (动态清单代码分发与兜底)
+function fetch_manifest_code(gid)
+    local body, status
+
+    -- 第一优先级：ManifestDeX 清单代码直供源
+    -- 该源经 Cloudflare 保护，必须携带专用 User-Agent，缺失会被返回 403 质询页
+    body, status = http_get("https://manifest.manifestdex.com/" .. gid,
+                            {["User-Agent"] = "ManifestDeX/1.0"})
+    local code = pick_plain_code(body, status)
+    if code then return code end
+
+    -- 第二优先级：春风渡云端官方中继源 (带高可用全网代码缓存)
+    body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
+    code = pick_plain_code(body, status)
+    if code then return code end
+
+    -- 第三优先级：wudrm 官方清单代码源 (动态清单代码分发与兜底)
     body, status = http_get("http://gmrc.wudrm.com/manifest/" .. gid)
-    if status == 200 and body and body:match("^%d+$") then
-        return body
-    end
+    code = pick_plain_code(body, status)
+    if code then return code end
 
-    -- 第三优先级：古韵高速镜像源 (国内直连专线，毫秒级响应)
+    -- 第四优先级：古韵高速镜像源 (国内直连专线，毫秒级响应)
     body, status = http_get("https://gmrc.guyunsq.com/" .. gid)
-    if status == 200 and body and body:match("^%d+$") then
-        return body
-    end
+    code = pick_plain_code(body, status)
+    if code then return code end
 
-    -- 第四优先级：steamrun 亚太源
+    -- 第五优先级：steamrun 亚太源 (JSON 包裹)
     body, status = http_get("https://manifest.steam.run/api/manifest/" .. gid)
     if status == 200 and body then
-        local code = body:match('"content":"(%d+)"')
-        if code then return code end
+        local s = body:match('"content":"(%d+)"')
+        if s and s ~= "0" then return s end
     end
 
     return nil
@@ -336,16 +350,23 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
         lines.push(format!("addappid({})", dlc_id));
     }
 
-    // 5. 清单 GID 绑定：只要分包具备有效 manifest_id，一律写入 setManifestid。
-    // 在 Valve CM 接口全面限制非拥有者拉取动态清单代码（返回 403 / Access Denied / 报错无互联网连接）
-    // 的新机制下，显式绑定本地清单 GID 可使 Steam 直接载入 depotcache/ 中的解密清单文件，
-    // 零请求绕过 Valve CM 接口风控，实现 100% 稳妥下载。
-    if let Some(depots) = &payload.depots {
-        for depot in depots {
-            if let Some(man) = depot.manifest_id.as_deref() {
-                let man = man.trim();
-                if !man.is_empty() && man != "0" && man.chars().all(|c| c.is_ascii_digit()) {
-                    lines.push(format!("setManifestid({}, \"{}\", 0)", depot.depot_id, man));
+    // 5. 清单 GID 绑定 —— 仅「锁定版本」模式写入，默认不写。
+    //
+    // 默认（lock_version 非 true）：跟随官方最新。不写 setManifestid，Steam 会通过
+    // manifest.lua 的 fetch_manifest_code 动态向各清单码源取当前 GID，再直连 Valve CDN
+    // 拉取当时最新清单 —— 天然支持实时更新与创意工坊，且无需预置任何实体清单文件。
+    //
+    // 锁定版本（lock_version = true）：显式钉死 GID，Steam 直接载入 depotcache/ 中
+    // 对应的解密清单实体，零请求绕过 Valve CM 风控。该模式必须配套预缓存实体清单，
+    // 仅供联机对版本等明确需要固定版本的场景使用。
+    if payload.lock_version == Some(true) {
+        if let Some(depots) = &payload.depots {
+            for depot in depots {
+                if let Some(man) = depot.manifest_id.as_deref() {
+                    let man = man.trim();
+                    if !man.is_empty() && man != "0" && man.chars().all(|c| c.is_ascii_digit()) {
+                        lines.push(format!("setManifestid({}, \"{}\", 0)", depot.depot_id, man));
+                    }
                 }
             }
         }
