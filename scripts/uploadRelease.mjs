@@ -115,22 +115,44 @@ function findInstaller(version) {
     const standardName = `ChunFengDu_${version}_x64-setup.exe`;
     const standardPath = path.join(dir, standardName);
 
-    // 如果已有标准命名文件
-    if (fs.existsSync(standardPath)) {
+    // 收集本版本号的所有 setup.exe（含规范化命名的那份），按修改时间取最新。
+    //
+    // 原实现只要 standardName 已存在就直接复用 —— 但同一版本号常常需要重新编译
+    // （例如修复后又出一次同版本包），此时 standardName 是上一次的旧产物，
+    // 新构建的 春风渡_<ver>_x64-setup.exe 会被忽略，导致「编译成功、上传的却是旧包」。
+    // 这种错误完全静默：Release 页面上二进制更新了，内容却还是旧的。
+    const candidates = files
+      .filter(f => f.includes(version) && f.toLowerCase().endsWith('.exe'))
+      .map(f => {
+        const p = path.join(dir, f);
+        try {
+          return { name: f, path: p, mtime: fs.statSync(p).mtimeMs, size: fs.statSync(p).size };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (candidates.length === 0) continue;
+
+    const newest = candidates[0];
+    console.log(
+      `[Package] 候选安装包 ${candidates.length} 个，选用最新的: ${newest.name}` +
+      ` (${(newest.size / 1048576).toFixed(2)} MB, ${new Date(newest.mtime).toLocaleString()})`
+    );
+
+    // 已是最新且命名规范 → 直接使用
+    if (newest.path === standardPath) {
       return { filePath: standardPath, fileName: standardName };
     }
 
-    // 寻找包含该版本号的任意 setup.exe
-    const matched = files.find(f => f.includes(version) && f.endsWith('.exe'));
-    if (matched) {
-      const matchedPath = path.join(dir, matched);
-      try {
-        fs.copyFileSync(matchedPath, standardPath);
-        console.log(`[Package] 自动从 ${matched} 复制并规范命名为 ${standardName}`);
-        return { filePath: standardPath, fileName: standardName };
-      } catch {
-        return { filePath: matchedPath, fileName: matched };
-      }
+    try {
+      fs.copyFileSync(newest.path, standardPath);
+      console.log(`[Package] 已从 ${newest.name} 覆盖规范命名为 ${standardName}`);
+      return { filePath: standardPath, fileName: standardName };
+    } catch {
+      return { filePath: newest.path, fileName: newest.name };
     }
   }
 
