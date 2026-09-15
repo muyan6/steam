@@ -1,21 +1,26 @@
 {
-  "version": "2.7.5",
+  "version": "2.7.6",
   "channel": "stable",
   "releaseDate": "2026-09-15",
-  "title": "春风渡 v2.7.5 邀请有礼裂变与授权体验焕新版",
+  "title": "春风渡 v2.7.6 官方清单直连与元数据极速响应版",
   "changelog": [
-    "🎁 全新「邀请有礼」裂变激励系统：专属邀请码取设备码后 12 位，支持一键复制与好友分享；被邀请人绑定后双方各得 N 天赞助版时长，自动平滑顺延有效期",
-    "⚙️ 管理后台邀请机制精细化可调：后台配置中心新增邀请赠送天数动态调节（支持随时热调整并秒级生效），全链路记录邀请关系与奖励履约明细",
-    "🛡️ 邀请关系防刷与多重安全拦截：严格限制每台设备永久仅可绑定一次邀请码、严禁自身邀请自身（自环）、跨机绑定原子幂等核验，保障激励大盘健康安全",
-    "🎨 授权管理弹窗交互与分段控件升级：授权弹窗标签栏全面重构为现代分段胶囊控件（Segmented Control），彻底消除生硬灰色横条与边框割裂，界面更加优雅一体",
-    "🚀 系统协同与高可用加固：服务端、客户端 IPC 桥接与数据调度全面对齐，保障全场景卡密、邀请与版本更新服务的高可用"
+    "🚀 清单获取全面转向官方直连：默认入库不再钉死清单 GID，由 Steam 经 manifest.lua 动态取当时最新版本并直连 Valve CDN 拉取，天然支持实时更新与创意工坊，速度更快、永远最新",
+    "⚡ 新增 ManifestDeX 清单代码直供源并提为第一优先级：完整支持自定义 User-Agent 请求头，清单请求码获取链路五级冗余（ManifestDeX → 云端中继 → wudrm → 古韵 → steamrun），单源失效自动顺延",
+    "🛡️ 修复清单调度器静默失效缺陷：manifest.lua 顶层误用 local 声明导致 OST 逐行增量编译时作用域丢失、整个请求码调度器报 nil 调用错误；已改为全局声明并配套 Lua 行为校验脚本防回归",
+    "💾 清单请求码新增正负双向缓存：同一 GID 的请求码在同一次 Steam 运行期内永久复用，第二次起零网络请求；失败 GID 记 120 秒负缓存，不再让各源反复空等超时，多分包大型游戏提速显著",
+    "🔥 元数据接口极速响应改造：新增持久化 DLC 与分包元数据索引（dlc_index.json），命中后零上游请求、毫秒级返回；首次采集约 1 秒，此后完全本地，服务重启后依然生效",
+    "🎯 分包归属权威优先：修正启发式扫描无条件并入导致的邻近 AppID 噪声（实测同一游戏分包数在 9/11/15 之间跳动），改为精修库、元数据索引、SteamCMD 三者任一为权威来源时只补密钥不扩分包，仅在无权威来源时才兜底扫描",
+    "🔁 SteamCMD 权威源失败自动重试：作为不可替代的官方结构来源（实测其分包完整性与 GID 时效性均优于社区归档），失败后 400ms 重试一次，不再降级到不完整的替代源导致分包缺失",
+    "🧩 元数据索引管理接口：管理后台可查询索引明细并对单个 AppID 强制重新采集，应对偶发上游抖动造成的 DLC 列表残缺；索引写入加 SteamCMD 守卫，杜绝残缺数据被永久固化",
+    "🎨 授权管理弹窗交互升级：标签栏重构为现代分段胶囊控件，消除生硬灰色横条与边框割裂，界面更加优雅一体",
+    "🖥️ 运行环境兼容性加固：客户端元数据请求超时由 10 秒放宽至 25 秒，规避服务端实时查询上游时的偶发卡顿触发降级"
   ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.5/ChunFengDu_2.7.5_x64-setup.exe",
-  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.5/ChunFengDu_2.7.5_x64-setup.exe",
-  "forceUpdate": true,
+  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.6/ChunFengDu_2.7.6_x64-setup.exe",
+  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.6/ChunFengDu_2.7.6_x64-setup.exe",
+  "forceUpdate": false,
   "minSupportedVersion": "1.0.0",
   "enabled": true,
   "downloadCount": 0,
-  "createdAt": "2026-09-15T12:00:00.000Z",
-  "updatedAt": "2026-09-15T12:00:00.000Z"
+  "createdAt": "2026-09-15T13:00:00.000Z",
+  "updatedAt": "2026-09-15T13:00:00.000Z"
 }
