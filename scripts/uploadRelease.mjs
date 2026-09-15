@@ -13,8 +13,18 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+// 确保在启用代理/TUN 模式下 Node fetch 能正常访问 Gitee / GitHub
+if (!process.env.__PROXY_READY__) {
+  process.env.__PROXY_READY__ = '1';
+  process.env.HTTPS_PROXY = process.env.HTTPS_PROXY || 'http://127.0.0.1:7897';
+  process.env.HTTP_PROXY = process.env.HTTP_PROXY || 'http://127.0.0.1:7897';
+  process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --use-env-proxy`.trim();
+  const res = spawnSync(process.execPath, process.argv.slice(1), { stdio: 'inherit', env: process.env });
+  process.exit(res.status ?? 0);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

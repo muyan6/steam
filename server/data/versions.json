@@ -1,5 +1,26 @@
 [
   {
+    "version": "2.7.5",
+    "channel": "stable",
+    "releaseDate": "2026-09-15",
+    "title": "春风渡 v2.7.5 邀请有礼裂变与授权体验焕新版",
+    "changelog": [
+      "🎁 全新「邀请有礼」裂变激励系统：专属邀请码取设备码后 12 位，支持一键复制与好友分享；被邀请人绑定后双方各得 N 天赞助版时长，自动平滑顺延有效期",
+      "⚙️ 管理后台邀请机制精细化可调：后台配置中心新增邀请赠送天数动态调节（支持随时热调整并秒级生效），全链路记录邀请关系与奖励履约明细",
+      "🛡️ 邀请关系防刷与多重安全拦截：严格限制每台设备永久仅可绑定一次邀请码、严禁自身邀请自身（自环）、跨机绑定原子幂等核验，保障激励大盘健康安全",
+      "🎨 授权管理弹窗交互与分段控件升级：授权弹窗标签栏全面重构为现代分段胶囊控件（Segmented Control），彻底消除生硬灰色横条与边框割裂，界面更加优雅一体",
+      "🚀 系统协同与高可用加固：服务端、客户端 IPC 桥接与数据调度全面对齐，保障全场景卡密、邀请与版本更新服务的高可用"
+    ],
+    "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.7.5/ChunFengDu_2.7.5_x64-setup.exe",
+    "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.7.5/ChunFengDu_2.7.5_x64-setup.exe",
+    "forceUpdate": true,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-15T12:00:00.000Z",
+    "updatedAt": "2026-09-15T12:00:00.000Z"
+  },
+  {
     "version": "2.7.4",
     "channel": "stable",
     "releaseDate": "2026-09-13",
