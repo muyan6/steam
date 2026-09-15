@@ -16,12 +16,43 @@ import path from 'node:path';
 import { execSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// 确保在启用代理/TUN 模式下 Node fetch 能正常访问 Gitee / GitHub
+// 代理自动探测：仅当代理端口确实可连接时才启用，否则直连。
+//
+// 原实现无条件把 HTTPS_PROXY 指向 127.0.0.1:7897 并加 --use-env-proxy 重新拉起自己：
+// 代理未运行时，GitHub 与 Gitee 的 fetch 会全部失败（连本来直连可通的 Gitee 也被带崩）。
+// 现改为先探测端口，通则走代理，不通则保持直连，两个远端互不牵连。
 if (!process.env.__PROXY_READY__) {
   process.env.__PROXY_READY__ = '1';
-  process.env.HTTPS_PROXY = process.env.HTTPS_PROXY || 'http://127.0.0.1:7897';
-  process.env.HTTP_PROXY = process.env.HTTP_PROXY || 'http://127.0.0.1:7897';
-  process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --use-env-proxy`.trim();
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || 'http://127.0.0.1:7897';
+  let proxyAlive = false;
+  try {
+    const u = new URL(proxyUrl);
+    const probe = spawnSync(
+      process.execPath,
+      [
+        '-e',
+        `const net=require('net');const s=net.connect({host:${JSON.stringify(u.hostname)},port:${JSON.stringify(u.port || '80')}});` +
+          `s.on('connect',()=>{s.destroy();process.exit(0)});s.on('error',()=>process.exit(1));` +
+          `setTimeout(()=>{s.destroy();process.exit(1)},1500);`
+      ],
+      { timeout: 4000 }
+    );
+    proxyAlive = probe.status === 0;
+  } catch {
+    proxyAlive = false;
+  }
+
+  if (proxyAlive) {
+    process.env.HTTPS_PROXY = proxyUrl;
+    process.env.HTTP_PROXY = proxyUrl;
+    process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --use-env-proxy`.trim();
+    console.log(`[Proxy] 检测到代理可用 (${proxyUrl})，已启用代理转发`);
+  } else {
+    delete process.env.HTTPS_PROXY;
+    delete process.env.HTTP_PROXY;
+    console.log(`[Proxy] 代理 ${proxyUrl} 不可用，本次直连上传`);
+  }
+
   const res = spawnSync(process.execPath, process.argv.slice(1), { stdio: 'inherit', env: process.env });
   process.exit(res.status ?? 0);
 }
