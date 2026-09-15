@@ -81,8 +81,27 @@ pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
 /// 部署官方与国内高速专线清单代码调度器 (manifest.lua)
 /// 彻底根除因上游默认源超时、阻断或 403 导致的 Steam 报错“无互联网连接”。
 /// 提取为模块常量：启动自愈时需比对现有文件是否与当前版本一致（缺失/过期则重部署）
-pub const MANIFEST_LUA: &str = r#"-- 纯数字清单请求码提取：容忍首尾空白与换行（不同源返回格式不一）
-local function pick_plain_code(body, status)
+pub const MANIFEST_LUA: &str = r#"-- ===== 清单请求码调度器 (由春风渡生成) =====
+-- 重要: OST 内核是逐行增量编译本文件的 —— 每个语法完整的前缀都会被当作
+-- 独立 chunk 立即执行, 而 Lua 的 local 作用域不跨 chunk。因此顶层一律使用
+-- 全局变量, 绝对不能使用 local, 否则后面的函数会找不到它并报 nil 调用错误。
+-- 校验方式: pwsh -File scripts/check_manifest_lua.ps1
+
+-- 正缓存 gid -> code。清单请求码对同一 GID 稳定不变, 同一次 Steam 运行期内
+-- 永久复用; Steam 会针对同一 GID 反复查询(重试/续传/多分包共用), 这是清单慢的主因。
+if not CFD_CODE_OK then CFD_CODE_OK = {} end
+-- 负缓存 gid -> 失败时间戳。短期抑制, 避免同一 GID 反复空等各源超时。
+if not CFD_CODE_FAIL then CFD_CODE_FAIL = {} end
+if not CFD_CODE_NEG_TTL then CFD_CODE_NEG_TTL = 120 end
+
+function cfd_now()
+    local ok, t = pcall(os.time)
+    if ok and type(t) == "number" then return t end
+    return 0
+end
+
+-- 纯数字请求码提取: 容忍首尾空白与换行(不同源返回格式不一)
+function cfd_pick_code(body, status)
     if status ~= 200 or not body then return nil end
     local code = body:match("^%s*(%d+)%s*$")
     if code and code ~= "0" then return code end
@@ -90,37 +109,48 @@ local function pick_plain_code(body, status)
 end
 
 function fetch_manifest_code(gid)
-    local body, status
+    local cached = CFD_CODE_OK[gid]
+    if cached then return cached end
 
-    -- 第一优先级：ManifestDeX 清单代码直供源
-    -- 该源经 Cloudflare 保护，必须携带专用 User-Agent，缺失会被返回 403 质询页
+    local failedAt = CFD_CODE_FAIL[gid]
+    if failedAt then
+        local nowTs = cfd_now()
+        if nowTs > 0 and (nowTs - failedAt) < CFD_CODE_NEG_TTL then return nil end
+        CFD_CODE_FAIL[gid] = nil
+    end
+
+    local body, status, code
+
+    -- 第一优先级: ManifestDeX 清单代码直供源
+    -- 该源经 Cloudflare 保护, 必须携带专用 User-Agent, 缺失会被返回 403 质询页
     body, status = http_get("https://manifest.manifestdex.com/" .. gid,
                             {["User-Agent"] = "ManifestDeX/1.0"})
-    local code = pick_plain_code(body, status)
-    if code then return code end
+    code = cfd_pick_code(body, status)
+    if code then CFD_CODE_OK[gid] = code; return code end
 
-    -- 第二优先级：春风渡云端官方中继源 (带高可用全网代码缓存)
+    -- 第二优先级: 春风渡云端中继源 (服务端带 2 小时缓存, 命中即毫秒级返回)
     body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
-    code = pick_plain_code(body, status)
-    if code then return code end
+    code = cfd_pick_code(body, status)
+    if code then CFD_CODE_OK[gid] = code; return code end
 
-    -- 第三优先级：wudrm 官方清单代码源 (动态清单代码分发与兜底)
+    -- 第三优先级: wudrm 官方清单代码源 (动态清单代码分发与兜底)
     body, status = http_get("http://gmrc.wudrm.com/manifest/" .. gid)
-    code = pick_plain_code(body, status)
-    if code then return code end
+    code = cfd_pick_code(body, status)
+    if code then CFD_CODE_OK[gid] = code; return code end
 
-    -- 第四优先级：古韵高速镜像源 (国内直连专线，毫秒级响应)
+    -- 第四优先级: 古韵高速镜像源 (国内直连专线, 毫秒级响应)
     body, status = http_get("https://gmrc.guyunsq.com/" .. gid)
-    code = pick_plain_code(body, status)
-    if code then return code end
+    code = cfd_pick_code(body, status)
+    if code then CFD_CODE_OK[gid] = code; return code end
 
-    -- 第五优先级：steamrun 亚太源 (JSON 包裹)
+    -- 第五优先级: steamrun 亚太源 (JSON 包裹)
     body, status = http_get("https://manifest.steam.run/api/manifest/" .. gid)
     if status == 200 and body then
         local s = body:match('"content":"(%d+)"')
-        if s and s ~= "0" then return s end
+        if s and s ~= "0" then CFD_CODE_OK[gid] = s; return s end
     end
 
+    CFD_CODE_FAIL[gid] = cfd_now()
     return nil
 end
 

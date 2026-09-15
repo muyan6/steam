@@ -1,0 +1,167 @@
+-- 复刻 OST 内核的 manifest.lua 增量编译行为，并对清单调度器做行为验证。
+--
+-- 背景（这是本脚本存在的唯一理由）：
+--   OST 的 LuaConfig::ParseFile 是「逐行累积 → 凑成完整语法就 loadstring → 立即执行
+--   → 清空累积缓冲」的循环。Lua 的 local 作用域不跨 chunk，所以文件顶层一旦出现
+--   `local function foo()`，foo 会在该 chunk 结束时消失；后续 chunk 里的
+--   `function bar() ... foo() ... end` 仍能编译通过（foo 被当作全局引用），
+--   但一旦 bar 被调用就报 "attempt to call a nil value"，整个清单调度器静默失效。
+--   静态扫描无法可靠区分「函数体内的 local」与「顶层 local」，故改为行为验证。
+--
+-- 用法: lua54.exe scripts/check_manifest_lua.lua <extracted_manifest.lua>
+-- 退出码: 0 = 通过, 1 = 语法/运行时/符号/缓存 任一失败
+
+local src_path = arg and arg[1]
+if not src_path or src_path == '' then
+    print('FAIL: missing argument <extracted_manifest.lua>')
+    os.exit(1)
+end
+
+local fh = io.open(src_path, 'rb')
+if not fh then
+    print('FAIL: cannot open ' .. src_path)
+    os.exit(1)
+end
+local content = fh:read('*a')
+fh:close()
+
+-- ===== 1. 复刻增量编译：逐行累积，能编译就立即执行，然后清空 =====
+local chunk = ''
+local lineNo = 0
+local executedChunks = 0
+
+-- 按行切分（兼容 CRLF）
+for raw in (content .. '\n'):gmatch('([^\n]*)\n') do
+    lineNo = lineNo + 1
+    local line = raw:gsub('\r$', '')
+    chunk = (chunk == '') and line or (chunk .. '\n' .. line)
+
+    local fn, err = load(chunk)
+    if fn then
+        local ok, runErr = pcall(fn)
+        if not ok then
+            print(string.format('RUNTIME_ERROR at line %d: %s', lineNo, tostring(runErr)))
+            os.exit(1)
+        end
+        chunk = ''
+        executedChunks = executedChunks + 1
+    elseif err and not err:match('<eof>') then
+        -- 非「等待后续行」类的错误即为真实语法错误
+        print(string.format('SYNTAX_ERROR at line %d: %s', lineNo, tostring(err)))
+        os.exit(1)
+    end
+end
+
+if chunk ~= '' then
+    local fn, err = load(chunk)
+    if not fn then
+        print('SYNTAX_ERROR at EOF: ' .. tostring(err))
+        os.exit(1)
+    end
+    local ok, runErr = pcall(fn)
+    if not ok then
+        print('RUNTIME_ERROR at EOF: ' .. tostring(runErr))
+        os.exit(1)
+    end
+    executedChunks = executedChunks + 1
+end
+
+print(string.format('INCREMENTAL_COMPILE_OK chunks=%d lines=%d', executedChunks, lineNo))
+
+-- ===== 2. 全局符号可见性：这一步专门捕获顶层 local 造成的 nil 调用 =====
+for _, name in ipairs({ 'fetch_manifest_code', 'fetch_manifest_code_ex', 'cfd_pick_code', 'cfd_now' }) do
+    if type(_G[name]) ~= 'function' then
+        print(string.format('FAIL: global function %s is %s (likely a top-level `local` lost across chunks)', name, type(_G[name])))
+        os.exit(1)
+    end
+end
+print('GLOBAL_SYMBOLS_OK')
+
+-- ===== 3. cfd_pick_code 单元验证 =====
+local cases = {
+    { body = '  12345\n', status = 200, want = '12345' },
+    { body = '0',         status = 200, want = nil },
+    { body = '',          status = 200, want = nil },
+    { body = '12345',     status = 404, want = nil },
+    { body = nil,         status = 200, want = nil },
+    { body = 'abc',       status = 200, want = nil },
+}
+for i, c in ipairs(cases) do
+    local got = cfd_pick_code(c.body, c.status)
+    if got ~= c.want then
+        print(string.format('FAIL: cfd_pick_code case %d -> %s (want %s)', i, tostring(got), tostring(c.want)))
+        os.exit(1)
+    end
+end
+print('PICK_CODE_OK')
+
+-- ===== 4. 端到端行为验证：打桩 http_get，验证调度与缓存 =====
+local httpCalls = 0
+_G.http_get = function(_url, _headers)
+    httpCalls = httpCalls + 1
+    return '999888777', 200
+end
+
+local r1 = fetch_manifest_code('1000000000000000001')
+if r1 ~= '999888777' then
+    print('FAIL: fetch_manifest_code returned ' .. tostring(r1) .. ' (expected stubbed code)')
+    os.exit(1)
+end
+if httpCalls ~= 1 then
+    print(string.format('FAIL: expected 1 http_get call on first query, got %d', httpCalls))
+    os.exit(1)
+end
+print('DISPATCH_OK')
+
+-- 正缓存：第二次查询必须零网络请求直接命中
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    return nil, 500
+end
+local r2 = fetch_manifest_code('1000000000000000001')
+if r2 ~= '999888777' then
+    print('FAIL: positive cache miss, got ' .. tostring(r2))
+    os.exit(1)
+end
+if httpCalls ~= 1 then
+    print(string.format('FAIL: positive cache not used (http_get called %d times)', httpCalls - 1))
+    os.exit(1)
+end
+print('POSITIVE_CACHE_OK')
+
+-- 负缓存：全部源失败后，短时间内重复查询不应再发请求
+local callsBefore = httpCalls
+local r3 = fetch_manifest_code('2000000000000000002')
+if r3 ~= nil then
+    print('FAIL: expected nil when all sources fail, got ' .. tostring(r3))
+    os.exit(1)
+end
+local callsAfterFirstMiss = httpCalls - callsBefore
+if callsAfterFirstMiss < 1 then
+    print('FAIL: expected at least 1 http_get on a cold miss')
+    os.exit(1)
+end
+local r4 = fetch_manifest_code('2000000000000000002')
+if r4 ~= nil then
+    print('FAIL: negative cache should still return nil')
+    os.exit(1)
+end
+if (httpCalls - callsBefore) ~= callsAfterFirstMiss then
+    print('FAIL: negative cache not used, extra http_get calls were made')
+    os.exit(1)
+end
+print('NEGATIVE_CACHE_OK')
+
+-- ===== 5. 关键源与请求头存在性 =====
+if not content:find('manifest%.manifestdex%.com') then
+    print('FAIL: ManifestDeX endpoint missing')
+    os.exit(1)
+end
+if not content:find('ManifestDeX/1%.0', 1, false) then
+    print('FAIL: ManifestDeX User-Agent missing')
+    os.exit(1)
+end
+print('MANIFESTDEX_CONFIG_OK')
+
+print('ALL_CHECKS_PASSED')
+os.exit(0)
