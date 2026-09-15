@@ -798,11 +798,20 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 7. 异步后台触发清单本地沉淀（非阻塞），确保后续秒级响应。
-    // 默认模式没有社区对齐 GID，此循环自然空转，不会产生任何网络请求。
-    for (const d of depots) {
-      if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
-        manifestService.ensureManifestCached(d.depotId, d.manifestGid, appId).catch(() => {});
+    // 7. 仅「锁定版本」模式才需要把实体清单沉淀到服务端缓存。
+    //
+    // 默认「跟随官方最新」模式下，客户端 Lua 不写 setManifestid，Steam 经
+    // manifest.lua 动态取码后直连 Valve CDN 拉当前最新清单，根本不需要实体文件。
+    // 而 manifestGid 是上面从 SteamCMD 解析出来的（与 needGid 无关），
+    // 原先这个循环没有任何守卫 —— 于是每个默认模式请求都会为全部 depot
+    // 触发一轮实体清单回源下载，纯属浪费服务器带宽、磁盘并推高上游频控风险。
+    // 该注释此前写作「默认模式没有社区对齐 GID，此循环自然空转」，与
+    // SteamCMD 无条件填充 manifestGid 的事实不符，属失效假设。
+    if (needGid) {
+      for (const d of depots) {
+        if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
+          manifestService.ensureManifestCached(d.depotId, d.manifestGid, appId).catch(() => {});
+        }
       }
     }
 
