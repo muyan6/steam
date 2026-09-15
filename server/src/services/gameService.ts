@@ -6,7 +6,7 @@ import { POPULAR_GAMES_DATABASE } from '../data/popularGames.js';
 import { CHINESE_KEYWORD_MAP } from '../data/chineseDictionary.js';
 import { CompactGame, SteamGame, SearchSourceId, SearchPaginationResult } from '../types/index.js';
 import { CONFIG } from '../config/index.js';
-import { writeJsonAtomic } from '../utils/atomicJson.js';
+import { writeJsonAtomicAsync } from '../utils/atomicJson.js';
 import { buildGameDictBinary, hashGameDictBinary } from '../utils/gameDictCodec.js';
 
 export class GameService {
@@ -73,24 +73,30 @@ export class GameService {
     if (this.cacheFlushTimer) return;
     this.cacheFlushTimer = setTimeout(() => {
       this.cacheFlushTimer = null;
-      this.flushChineseCache();
+      void this.flushChineseCache();
     }, 60 * 1000);
     // 计时器不阻止进程退出
     (this.cacheFlushTimer as any).unref?.();
   }
 
-  private flushChineseCache(): void {
-    if (!this.cacheDirty) return;
+  private flushingChineseCache = false;
+
+  private async flushChineseCache(): Promise<void> {
+    if (!this.cacheDirty || this.flushingChineseCache) return;
     this.cacheDirty = false;
+    this.flushingChineseCache = true;
     try {
       const list = Array.from(this.chineseGamesCache.values());
-      writeJsonAtomic(this.cacheFilePath, list);
+      // 异步原子写：最多 50 万条的缓存落盘不再同步阻塞事件循环
+      await writeJsonAtomicAsync(this.cacheFilePath, list);
       // 中文缓存已持久化变更，字典二进制随之失效，下次访问自动重建
       this.libraryCache = null;
       console.log(`[GameService] 已将最新中文游戏沉淀入库，当前持久化总数: ${list.length} 款`);
     } catch (e) {
       this.cacheDirty = true;
       console.error('[GameService] 保存中文游戏缓存失败:', e);
+    } finally {
+      this.flushingChineseCache = false;
     }
   }
 
@@ -101,14 +107,32 @@ export class GameService {
         const content = fs.readFileSync(dbPath, 'utf-8');
         this.allGames = JSON.parse(content);
         this.allGamesById = null; // 数据变动，索引待重建
+        this.allGamesLowerNames = null; // 数据变动，小写名索引待重建
         this.libraryCache = null; // 数据变动，游戏字典二进制待重建
-        this.isLoaded = true;
         console.log(`[GameService] 成功加载全量 Steam 数据库，共收录 ${this.allGames.length} 款游戏！`);
       } else {
         console.warn(`[GameService] 未找到游戏数据库文件: ${dbPath}`);
+        this.allGames = [];
+        this.allGamesById = null;
+        this.allGamesLowerNames = null;
+        this.libraryCache = null;
       }
     } catch (e) {
-      console.error('[GameService] 加载游戏数据库失败:', e);
+      // fail-closed：解析失败也必须结束「未加载」状态。
+      // 原实现在 catch 中不置 isLoaded，导致此后每个 /api/games/search、
+      // /api/games/:appId 都重新同步 readFileSync + JSON.parse 8MB 全量库，
+      // 事件循环被反复阻塞数秒。与 depotService / tokenService / dlcIndexService
+      // 的损坏保护保持一致：降级为空库并告警，等人工修复后重启，绝不反复重试。
+      this.allGames = [];
+      this.allGamesById = null;
+      this.allGamesLowerNames = null;
+      this.libraryCache = null;
+      console.error(
+        '[GameService] 游戏数据库加载失败！已降级为空库，需人工修复 server/data/steam_all_games.json 后重启服务:',
+        e
+      );
+    } finally {
+      this.isLoaded = true;
     }
   }
 
@@ -347,6 +371,19 @@ export class GameService {
     return s === query || s.startsWith(query);
   }
 
+  // 全量库小写名索引：28 万条逐条 toLowerCase 是每个搜索请求的固定开销，
+  // 预计算一次后按索引取值，避免每请求分配 28 万个临时字符串
+  private allGamesLowerNames: string[] | null = null;
+  // 全量线性扫描时间预算：极端无命中查询不再长时间独占事件循环
+  private static readonly FULL_SCAN_BUDGET_MS = 250;
+
+  private getLowerNames(): string[] {
+    if (!this.allGamesLowerNames || this.allGamesLowerNames.length !== this.allGames.length) {
+      this.allGamesLowerNames = this.allGames.map((g) => (g.name || '').toLowerCase());
+    }
+    return this.allGamesLowerNames;
+  }
+
   /**
    * 多数据源综合分页检索系统
    */
@@ -469,13 +506,17 @@ export class GameService {
         }
       }
 
-      // 全量 18 万中检索
-      for (const g of this.allGames) {
+      // 全量 18 万中检索（预计算小写名 + 时间预算，避免长阻塞事件循环）
+      const lowerNames = this.getLowerNames();
+      const scanDeadline = Date.now() + GameService.FULL_SCAN_BUDGET_MS;
+      for (let i = 0; i < this.allGames.length; i++) {
+        const g = this.allGames[i];
         if (seenAppIds.has(g.appId)) continue;
-        const nameLower = g.name.toLowerCase();
+        if ((i & 0x3ff) === 0 && Date.now() > scanDeadline) break;
+        const nameLower = lowerNames[i] || '';
         let matched = false;
         if (isNumber) {
-          matched = g.appId.toString().includes(rawQ);
+          matched = this.matchNumeric(g.appId, rawQ);
         } else {
           matched = searchKeywords.some((kw) => nameLower.includes(kw));
         }
@@ -531,11 +572,15 @@ export class GameService {
         }
       }
 
-      for (const g of this.allGames) {
+      const lowerNames = this.getLowerNames();
+      const scanDeadline = Date.now() + GameService.FULL_SCAN_BUDGET_MS;
+      for (let i = 0; i < this.allGames.length; i++) {
+        const g = this.allGames[i];
         if (allMatched.length >= 200) break;
+        if ((i & 0x3ff) === 0 && Date.now() > scanDeadline) break;
         if (seenAppIds.has(g.appId)) continue;
-        const nameLower = g.name.toLowerCase();
-        if (isNumber ? g.appId.toString().includes(rawQ) : searchKeywords.some((kw) => nameLower.includes(kw))) {
+        const nameLower = lowerNames[i] || '';
+        if (isNumber ? this.matchNumeric(g.appId, rawQ) : searchKeywords.some((kw) => nameLower.includes(kw))) {
           allMatched.push({
             appId: g.appId,
             name: g.name,

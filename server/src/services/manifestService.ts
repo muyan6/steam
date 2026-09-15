@@ -1,15 +1,47 @@
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
+import axios, { AxiosRequestConfig } from 'axios';
 import AdmZip from 'adm-zip';
 import { CONFIG } from '../config/index.js';
 import { depotService } from './depotService.js';
+import { parseLuaManifestText } from '../utils/luaManifestParser.js';
 
 /// 上游清单 ZIP 下载体积上限（50MB）：防止超大响应或 zip 炸弹耗尽服务端内存
 const MAX_UPSTREAM_ZIP_BYTES = 50 * 1024 * 1024;
 /// 解压侧限制：单条目 ≤50MB，总条目数 ≤2000，防止声明式膨胀与海量写入阻塞事件循环
 const MAX_ZIP_ENTRY_BYTES = 50 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 2000;
+/// 单个清单实体落盘上限：清单本体不应达到该量级，超过即为异常/劫持内容
+const MAX_MANIFEST_BYTES = 512 * 1024 * 1024;
+
+/**
+ * 并发竞速下载：首个通过 accept 校验的响应胜出，并在返回前 abort 其余请求。
+ *
+ * 为什么必须 abort：原实现用裸 Promise.any，失败者不会被取消 —— 每次回源
+ * 最坏 16 个 URL（2 个候选 AppID × 4 镜像 × 2 个仓库）各自带 50MB 上限
+ * 继续跑完，单次请求可产生数百 MB 的无用下行，并被上层「每个 depot 一路」
+ * 的沉淀循环再放大一遍。
+ */
+async function raceDownload(
+  urls: string[],
+  config: AxiosRequestConfig,
+  accept: (data: any, response: any) => boolean
+): Promise<any | null> {
+  const controller = new AbortController();
+  const tasks = urls.map(async (url) => {
+    const resp = await axios.get(url, { ...config, signal: controller.signal });
+    if (resp.status === 200 && accept(resp.data, resp)) return resp.data;
+    throw new Error('Upstream response rejected');
+  });
+  try {
+    return await Promise.any(tasks);
+  } catch {
+    return null;
+  } finally {
+    // 胜出/全败后立即取消仍在途的连接，避免带宽与套接字被失败者白占
+    controller.abort();
+  }
+}
 
 export interface DepotManifestInfo {
   depotId: string;
@@ -29,6 +61,8 @@ export interface AppManifestResult {
   depots: DepotManifestInfo[];
   keys: { [depotId: string]: string };
   message: string;
+  /** 上游失败明细：区分「确实未收录」与「上游全挂」，便于排障与客户端降级提示 */
+  upstreamErrors?: Array<{ source: string; error: string }>;
 }
 
 export class ManifestService {
@@ -48,9 +82,52 @@ export class ManifestService {
   /**
    * 获取指定 App 的清单与分包元数据（优先本地缓存 -> 上游公共清单源检索与补全）
    */
+  // 结果缓存 + 在途去重：该端点是完整上游链（P-ToyStore 4 镜像 → SteamML/Remlua/ManifestHub3
+  // 并发 → ManifestHub.uk）的入口，原实现每个请求都重跑一遍全部上游。
+  private manifestResultCache = new Map<string, { ts: number; result: AppManifestResult }>();
+  private manifestResultInFlight = new Map<string, Promise<AppManifestResult>>();
+  private static readonly MANIFEST_RESULT_TTL_MS = 10 * 60 * 1000;
+  private static readonly MANIFEST_RESULT_CACHE_MAX = 500;
+
   public async getManifestsForApp(appId: number, dlcs: number[] = []): Promise<AppManifestResult> {
-    const keys = await depotService.getDepotsForGame(appId, dlcs);
+    const cacheKey = `${appId}|${[...dlcs].sort((a, b) => a - b).join(',')}`;
+    const cached = this.manifestResultCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < ManifestService.MANIFEST_RESULT_TTL_MS) {
+      return cached.result;
+    }
+    const running = this.manifestResultInFlight.get(cacheKey);
+    if (running) return running;
+
+    const task = this.buildManifestsForApp(appId, dlcs);
+    this.manifestResultInFlight.set(cacheKey, task);
+    try {
+      const result = await task;
+      this.setManifestResultCache(cacheKey, result);
+      return result;
+    } finally {
+      this.manifestResultInFlight.delete(cacheKey);
+    }
+  }
+
+  private setManifestResultCache(key: string, result: AppManifestResult): void {
+    this.manifestResultCache.set(key, { ts: Date.now(), result });
+    if (this.manifestResultCache.size <= ManifestService.MANIFEST_RESULT_CACHE_MAX) return;
+    const now = Date.now();
+    for (const [k, v] of this.manifestResultCache) {
+      if (now - v.ts >= ManifestService.MANIFEST_RESULT_TTL_MS) this.manifestResultCache.delete(k);
+    }
+    while (this.manifestResultCache.size > ManifestService.MANIFEST_RESULT_CACHE_MAX) {
+      const oldest = this.manifestResultCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.manifestResultCache.delete(oldest);
+    }
+  }
+
+  private async buildManifestsForApp(appId: number, dlcs: number[] = []): Promise<AppManifestResult> {
+    // 清单链路不需要 Store API 头图：跳过可省去服务器侧 4 秒超时白等
+    const keys = await depotService.getDepotsForGame(appId, dlcs, { skipRemoteHeader: true });
     const candidateDepotIds = Object.keys(keys);
+    const upstreamErrors: Array<{ source: string; error: string }> = [];
 
     // 1. 检查服务端本地 manifests/ 缓存目录（支持扁平与 ManifestHub3 标准 AppID 树形目录）
     const localDepots = this.scanLocalManifests(candidateDepotIds, appId);
@@ -79,59 +156,66 @@ export class ManifestService {
         };
       }
     } catch (err: any) {
-      console.warn(`[ManifestService] P-ToyStore 检索异常 (${appId}):`, err.message);
+      upstreamErrors.push({ source: 'ptystore', error: err?.message || String(err) });
+      console.warn(`[ManifestService] P-ToyStore 检索异常 (${appId}):`, err?.message || err);
     }
 
     // 3. 多源并发竞速兜底：SteamML (Cloudflare R2) + Remlua (AWS CloudFront) + ManifestHub3 高速镜像并行检索 (全量与免费游戏)
-    try {
-      const [steamResult, remluaResult, hubResult] = await Promise.allSettled([
-        this.fetchFromSteamML(appId, candidateDepotIds),
-        this.fetchFromRemlua(appId, candidateDepotIds),
-        this.fetchFromManifestHub(appId, candidateDepotIds)
-      ]);
+    const [steamResult, remluaResult, hubResult] = await Promise.allSettled([
+      this.fetchFromSteamML(appId, candidateDepotIds),
+      this.fetchFromRemlua(appId, candidateDepotIds),
+      this.fetchFromManifestHub(appId, candidateDepotIds)
+    ]);
 
-      const smlList = steamResult.status === 'fulfilled' ? steamResult.value : [];
-      const remluaList = remluaResult.status === 'fulfilled' ? remluaResult.value : [];
-      const hubList = hubResult.status === 'fulfilled' ? hubResult.value : [];
-
-      // 优先采用具备完整实体文件的全球边缘 CDN (SteamML R2 / Remlua CloudFront)
-      if (smlList && smlList.length > 0) {
-        return {
-          success: true,
-          appId,
-          source: 'steamml',
-          depots: smlList,
-          keys,
-          message: `从 SteamML 清单库极速检索到 ${smlList.length} 个分包清单！`
-        };
-      }
-
-      if (remluaList && remluaList.length > 0) {
-        return {
-          success: true,
-          appId,
-          source: 'remlua',
-          depots: remluaList,
-          keys,
-          message: `从 Remlua CloudFront 极速检索到 ${remluaList.length} 个分包清单！`
-        };
-      }
-
-      if (hubList && hubList.length > 0) {
-        return {
-          success: true,
-          appId,
-          source: 'manifesthub',
-          depots: hubList,
-          keys,
-          message: `从云端清单库检索到 ${hubList.length} 个分包清单！`
-        };
-      }
-    } catch (err: any) {
-      console.warn(`[ManifestService] 并发清单检索异常 (${appId}):`, err.message);
+    if (steamResult.status === 'rejected') {
+      upstreamErrors.push({ source: 'steamml', error: steamResult.reason?.message || String(steamResult.reason) });
+    }
+    if (remluaResult.status === 'rejected') {
+      upstreamErrors.push({ source: 'remlua', error: remluaResult.reason?.message || String(remluaResult.reason) });
+    }
+    if (hubResult.status === 'rejected') {
+      upstreamErrors.push({ source: 'manifesthub', error: hubResult.reason?.message || String(hubResult.reason) });
     }
 
-    // 3. 末位冷备容灾：ManifestHub.uk（严格限制触发条件，防止触发单 IP 频控，且一旦命中即落盘本地缓存）
+    const smlList = steamResult.status === 'fulfilled' ? steamResult.value : [];
+    const remluaList = remluaResult.status === 'fulfilled' ? remluaResult.value : [];
+    const hubList = hubResult.status === 'fulfilled' ? hubResult.value : [];
+
+    // 优先采用具备完整实体文件的全球边缘 CDN (SteamML R2 / Remlua CloudFront)
+    if (smlList && smlList.length > 0) {
+      return {
+        success: true,
+        appId,
+        source: 'steamml',
+        depots: smlList,
+        keys,
+        message: `从 SteamML 清单库极速检索到 ${smlList.length} 个分包清单！`
+      };
+    }
+
+    if (remluaList && remluaList.length > 0) {
+      return {
+        success: true,
+        appId,
+        source: 'remlua',
+        depots: remluaList,
+        keys,
+        message: `从 Remlua CloudFront 极速检索到 ${remluaList.length} 个分包清单！`
+      };
+    }
+
+    if (hubList && hubList.length > 0) {
+      return {
+        success: true,
+        appId,
+        source: 'manifesthub',
+        depots: hubList,
+        keys,
+        message: `从云端清单库检索到 ${hubList.length} 个分包清单！`
+      };
+    }
+
+    // 4. 末位冷备容灾：ManifestHub.uk（严格限制触发条件，防止触发单 IP 频控，且一旦命中即落盘本地缓存）
     try {
       const mhUkResult = await this.fetchFromManifestHubUK(appId, candidateDepotIds);
       if (mhUkResult && mhUkResult.length > 0) {
@@ -145,18 +229,151 @@ export class ManifestService {
         };
       }
     } catch (err: any) {
-      console.warn(`[ManifestService] ManifestHub.uk 检索失败 (${appId}):`, err.message);
+      upstreamErrors.push({ source: 'manifesthub_uk', error: err?.message || String(err) });
+      console.warn(`[ManifestService] ManifestHub.uk 检索失败 (${appId}):`, err?.message || err);
     }
 
-    // 若本地缓存与各云端源均未找到清单文件，直接返回未收录提示
+    // 全部来源均失败且确有错误记录 → 这是上游故障，不是「未收录」，必须区分开
+    if (upstreamErrors.length > 0 && this.manifestDirHasNoLocalEvidence(candidateDepotIds)) {
+      return {
+        success: false,
+        appId,
+        source: 'none',
+        depots: [],
+        keys,
+        message: '上游清单源暂时不可用，请稍后重试（并非确认未收录）',
+        upstreamErrors
+      };
+    }
+
     return {
       success: false,
       appId,
       source: 'none',
       depots: [],
       keys,
-      message: '暂时没有这款游戏（云端暂未收录该游戏的清单文件）'
+      message: '暂时没有这款游戏（云端暂未收录该游戏的清单文件）',
+      upstreamErrors: upstreamErrors.length > 0 ? upstreamErrors : undefined
     };
+  }
+
+  /** 本地是否没有任何相关清单实体（用于区分「未收录」与「上游故障」） */
+  private manifestDirHasNoLocalEvidence(depotIds: string[]): boolean {
+    const index = this.getManifestIndex();
+    if (depotIds.length === 0) return index.flat.size === 0;
+    for (const d of depotIds) {
+      if (index.flatByDepot.has(d) || index.appDirByDepot.has(d)) return false;
+    }
+    return true;
+  }
+
+  // ==================== 清单目录内存索引 ====================
+  //
+  // 原实现每次 getLocalManifestFilePath / scanLocalManifests 都同步 readdirSync
+  // 整个 manifests 目录（上限 2 万个文件），而 metadataController.computeManifestInfo
+  // 会为每个 depot 各调用一次 —— 100 分包的游戏 = 上百次同步全目录扫描，
+  // 全部阻塞事件循环。改为启动时建立一次索引、写入时增量维护。
+  private manifestIndex: {
+    flat: Map<string, string>;
+    appDir: Map<string, Map<string, string>>;
+    flatByDepot: Map<string, string[]>;
+    appDirByDepot: Map<string, string[]>;
+  } | null = null;
+
+  private getManifestIndex() {
+    if (this.manifestIndex) return this.manifestIndex;
+    const flat = new Map<string, string>();
+    const appDir = new Map<string, Map<string, string>>();
+    const flatByDepot = new Map<string, string[]>();
+    const appDirByDepot = new Map<string, string[]>();
+
+    const addFlat = (name: string, fullPath: string) => {
+      flat.set(name, fullPath);
+      const depotId = name.split('_')[0];
+      if (/^\d+$/.test(depotId)) {
+        const arr = flatByDepot.get(depotId);
+        if (arr) arr.push(name);
+        else flatByDepot.set(depotId, [name]);
+      }
+    };
+    const addAppDir = (appId: string, name: string, fullPath: string) => {
+      let m = appDir.get(appId);
+      if (!m) { m = new Map(); appDir.set(appId, m); }
+      m.set(name, fullPath);
+      const depotId = name.split('_')[0];
+      if (/^\d+$/.test(depotId)) {
+        const arr = appDirByDepot.get(depotId);
+        if (arr) arr.push(name);
+        else appDirByDepot.set(depotId, [name]);
+      }
+    };
+
+    try {
+      for (const entry of fs.readdirSync(this.manifestDir, { withFileTypes: true })) {
+        if (entry.isFile() && entry.name.endsWith('.manifest')) {
+          addFlat(entry.name, path.join(this.manifestDir, entry.name));
+        } else if (entry.isDirectory() && /^\d+$/.test(entry.name)) {
+          const dir = path.join(this.manifestDir, entry.name);
+          try {
+            for (const f of fs.readdirSync(dir)) {
+              if (f.endsWith('.manifest')) addAppDir(entry.name, f, path.join(dir, f));
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      console.warn('[ManifestService] 建立清单目录索引失败:', e);
+    }
+
+    this.manifestIndex = { flat, appDir, flatByDepot, appDirByDepot };
+    return this.manifestIndex;
+  }
+
+  private indexAddFile(filePath: string, appId?: number | string): void {
+    const index = this.getManifestIndex();
+    const name = path.basename(filePath);
+    if (!name.endsWith('.manifest')) return;
+    const parent = path.dirname(filePath);
+    if (parent === this.manifestDir) {
+      index.flat.set(name, filePath);
+      const depotId = name.split('_')[0];
+      const arr = index.flatByDepot.get(depotId);
+      if (arr) { if (!arr.includes(name)) arr.push(name); }
+      else index.flatByDepot.set(depotId, [name]);
+    } else if (appId !== undefined) {
+      let m = index.appDir.get(String(appId));
+      if (!m) { m = new Map(); index.appDir.set(String(appId), m); }
+      m.set(name, filePath);
+      const depotId = name.split('_')[0];
+      const arr = index.appDirByDepot.get(depotId);
+      if (arr) { if (!arr.includes(name)) arr.push(name); }
+      else index.appDirByDepot.set(depotId, [name]);
+    }
+  }
+
+  private indexRemoveFile(filePath: string): void {
+    const index = this.getManifestIndex();
+    const name = path.basename(filePath);
+    const parent = path.dirname(filePath);
+    if (parent === this.manifestDir) {
+      index.flat.delete(name);
+      const depotId = name.split('_')[0];
+      const arr = index.flatByDepot.get(depotId);
+      if (arr) {
+        const i = arr.indexOf(name);
+        if (i >= 0) arr.splice(i, 1);
+      }
+    } else {
+      const appId = path.basename(parent);
+      const m = index.appDir.get(appId);
+      if (m) m.delete(name);
+      const depotId = name.split('_')[0];
+      const arr = index.appDirByDepot.get(depotId);
+      if (arr) {
+        const i = arr.indexOf(name);
+        if (i >= 0) arr.splice(i, 1);
+      }
+    }
   }
 
   /**
@@ -166,9 +383,10 @@ export class ManifestService {
    * 2. 全局扁平存放：manifests/<depotId>_<manifestId>.manifest
    */
   private scanLocalManifests(depotIds: string[], appId?: number): DepotManifestInfo[] {
-    if (!fs.existsSync(this.manifestDir)) return [];
     const results: DepotManifestInfo[] = [];
     const matchedDepots = new Set<string>();
+    const index = this.getManifestIndex();
+    const want = (dId: string) => depotIds.length === 0 || depotIds.includes(dId);
 
     // 1. 优先检查本地 ManifestHub3 标准 AppID 结构目录: manifests/<appId>/
     if (appId) {
@@ -182,7 +400,7 @@ export class ManifestService {
           const data = JSON.parse(raw);
           if (data && data.depot && typeof data.depot === 'object') {
             for (const [dId, dInfo] of Object.entries<any>(data.depot)) {
-              if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+              if (!want(dId)) continue;
               let gid: string | undefined;
               if (dInfo.manifests && typeof dInfo.manifests === 'object') {
                 gid = dInfo.manifests.public?.gid || Object.values<any>(dInfo.manifests)[0]?.gid;
@@ -190,8 +408,8 @@ export class ManifestService {
               if (gid && gid !== '0' && /^\d+$/.test(gid.toString())) {
                 const manifestFile = path.join(appDir, `${dId}_${gid}.manifest`);
                 const flatFile = path.join(this.manifestDir, `${dId}_${gid}.manifest`);
-                // 无论清单实体在 appDir 还是平铺在 manifestDir，只要存在即可
-                if (fs.existsSync(manifestFile) || fs.existsSync(flatFile)) {
+                // 无论清单实体在 appDir 还是平铺在 manifestDir，只要存在即可（走内存索引）
+                if (index.flat.has(`${dId}_${gid}.manifest`) || index.appDir.get(String(appId))?.has(`${dId}_${gid}.manifest`)) {
                   matchedDepots.add(dId);
                   results.push({
                     depotId: dId,
@@ -210,52 +428,47 @@ export class ManifestService {
         } catch {}
       }
 
-      // 扫描 appId 子目录下的所有 .manifest 实体
-      if (fs.existsSync(appDir) && fs.statSync(appDir).isDirectory()) {
-        try {
-          const files = fs.readdirSync(appDir);
-          for (const file of files) {
-            const match = file.match(/^(\d+)_(\d+)\.manifest$/i);
-            if (match) {
-              const [, dId, mId] = match;
-              if (!matchedDepots.has(dId) && (depotIds.length === 0 || depotIds.includes(dId))) {
-                matchedDepots.add(dId);
-                results.push({
-                  depotId: dId,
-                  manifestId: mId,
-                  manifestFileName: file,
-                  downloadUrl: `/api/manifests/download/${dId}/${mId}?appId=${appId}`,
-                  source: 'local_cache',
-                  key: depotService.getDepotKey(dId) || undefined
-                });
-              }
+      // 扫描 appId 子目录下的所有 .manifest 实体（内存索引，无同步 readdir）
+      const appFiles = index.appDir.get(String(appId));
+      if (appFiles) {
+        for (const file of appFiles.keys()) {
+          const match = file.match(/^(\d+)_(\d+)\.manifest$/i);
+          if (match) {
+            const [, dId, mId] = match;
+            if (!matchedDepots.has(dId) && want(dId)) {
+              matchedDepots.add(dId);
+              results.push({
+                depotId: dId,
+                manifestId: mId,
+                manifestFileName: file,
+                downloadUrl: `/api/manifests/download/${dId}/${mId}?appId=${appId}`,
+                source: 'local_cache',
+                key: depotService.getDepotKey(dId) || undefined
+              });
             }
-          }
-        } catch {}
-      }
-    }
-
-    // 2. 扫描扁平根目录: manifests/<depotId>_<manifestId>.manifest
-    try {
-      const files = fs.readdirSync(this.manifestDir);
-      for (const file of files) {
-        const match = file.match(/^(\d+)_(\d+)\.manifest$/i);
-        if (match) {
-          const [, dId, mId] = match;
-          if (!matchedDepots.has(dId) && (depotIds.length === 0 || depotIds.includes(dId))) {
-            matchedDepots.add(dId);
-            results.push({
-              depotId: dId,
-              manifestId: mId,
-              manifestFileName: file,
-              downloadUrl: `/api/manifests/download/${dId}/${mId}${appId ? `?appId=${appId}` : ''}`,
-              source: 'local_cache',
-              key: depotService.getDepotKey(dId) || undefined
-            });
           }
         }
       }
-    } catch {}
+    }
+
+    // 2. 扫描扁平根目录: manifests/<depotId>_<manifestId>.manifest（内存索引）
+    for (const file of index.flat.keys()) {
+      const match = file.match(/^(\d+)_(\d+)\.manifest$/i);
+      if (match) {
+        const [, dId, mId] = match;
+        if (!matchedDepots.has(dId) && want(dId)) {
+          matchedDepots.add(dId);
+          results.push({
+            depotId: dId,
+            manifestId: mId,
+            manifestFileName: file,
+            downloadUrl: `/api/manifests/download/${dId}/${mId}${appId ? `?appId=${appId}` : ''}`,
+            source: 'local_cache',
+            key: depotService.getDepotKey(dId) || undefined
+          });
+        }
+      }
+    }
 
     return results;
   }
@@ -345,7 +558,6 @@ export class ManifestService {
    * 注意：本函数**不做**清单沉淀（不调用 ensureManifestCached）。
    * 它会被 metadata 查询热路径调用，若在此逐个触发下载，等于每次查询都为该游戏所有
    * depot 起一轮后台回源，既耗服务器带宽又极易触发上游频控。
-   * 沉淀应由明确的下载路径（getManifestsForApp / 客户端请求清单文件）按需触发。
    */
   public async fetchFromPToyStore(
     appId: number,
@@ -360,47 +572,39 @@ export class ManifestService {
     ];
 
     let buildId: string | undefined;
-    try {
-      const vdfPromises = fastBases.map(async (base) => {
-        const resp = await axios.get(`${base}/${appId}/appinfo.vdf`, {
-          timeout: 2500,
-          responseType: 'text',
-          transformResponse: [(data) => data]
-        });
-        if (resp.status === 200 && typeof resp.data === 'string' && resp.data.includes('"depots"')) {
-          return resp.data;
-        }
-        throw new Error('Invalid appinfo.vdf');
-      });
+    const urls = fastBases.map((base) => `${base}/${appId}/appinfo.vdf`);
+    const vdfText = await raceDownload(
+      urls,
+      { timeout: 2500, responseType: 'text', transformResponse: [(data: any) => data] },
+      (data) => typeof data === 'string' && data.includes('"depots"')
+    );
 
-      const vdfText = await Promise.any(vdfPromises);
-      if (vdfText) {
-        const parsed = this.parseAppInfoVdf(vdfText);
-        buildId = parsed.buildId;
-        for (const [dId, dInfo] of parsed.depots) {
-          if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
-          if (dInfo.gid && dInfo.gid !== '0' && /^\d+$/.test(dInfo.gid)) {
-            const key = depotService.getDepotKey(dId) || undefined;
-            results.push({
-              depotId: dId,
-              manifestId: dInfo.gid,
-              manifestFileName: `${dId}_${dInfo.gid}.manifest`,
-              downloadUrl: `/api/manifests/download/${dId}/${dInfo.gid}?appId=${appId}`,
-              source: 'ptystore',
-              key,
-              // 带上 DLC 归属，避免上层丢失 DLC 列表
-              dlcAppId: dInfo.dlcAppId
-            });
-          }
+    if (typeof vdfText === 'string') {
+      const parsed = this.parseAppInfoVdf(vdfText);
+      buildId = parsed.buildId;
+      for (const [dId, dInfo] of parsed.depots) {
+        if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+        if (dInfo.gid && dInfo.gid !== '0' && /^\d+$/.test(dInfo.gid)) {
+          const key = depotService.getDepotKey(dId) || undefined;
+          results.push({
+            depotId: dId,
+            manifestId: dInfo.gid,
+            manifestFileName: `${dId}_${dInfo.gid}.manifest`,
+            downloadUrl: `/api/manifests/download/${dId}/${dInfo.gid}?appId=${appId}`,
+            source: 'ptystore',
+            key,
+            // 带上 DLC 归属，避免上层丢失 DLC 列表
+            dlcAppId: dInfo.dlcAppId
+          });
         }
       }
-    } catch {}
+    }
 
     return { depots: results, buildId };
   }
 
   /**
-   * 从 GitHub ManifestHub3 加速源检索（并发竞速极速通道：ghfast.top 与 gh-proxy.com）
+   * 从 GitHub ManifestHub3 加速源检索（并发竞速极速通道）
    */
   private async fetchFromManifestHub(appId: number, depotIds: string[]): Promise<DepotManifestInfo[]> {
     const results: DepotManifestInfo[] = [];
@@ -411,38 +615,35 @@ export class ManifestService {
       'https://cece.guyunsq.com/https://raw.githubusercontent.com/steamtools-games/ManifestHub3'
     ];
 
-    // 1. 优先并发拉取 {appId}.json
-    try {
-      const jsonPromises = fastBases.map(async (base) => {
-        const resp = await axios.get(`${base}/${appId}/${appId}.json`, { timeout: 2500 });
-        if (resp.status === 200 && resp.data && resp.data.depot && typeof resp.data.depot === 'object') {
-          return resp.data;
+    // 1. 优先并发拉取 {appId}.json（首个成功即取消其余请求）
+    const data = await raceDownload(
+      fastBases.map((base) => `${base}/${appId}/${appId}.json`),
+      { timeout: 2500 },
+      (d) => !!d && typeof d === 'object' && !!d.depot && typeof d.depot === 'object'
+    );
+
+    if (data && data.depot) {
+      for (const [dId, dInfo] of Object.entries<any>(data.depot)) {
+        if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+        let gid: string | undefined;
+        if (dInfo.manifests && typeof dInfo.manifests === 'object') {
+          gid = dInfo.manifests.public?.gid || Object.values<any>(dInfo.manifests)[0]?.gid;
         }
-        throw new Error('Invalid json');
-      });
-      const data = await Promise.any(jsonPromises);
-      if (data && data.depot) {
-        for (const [dId, dInfo] of Object.entries<any>(data.depot)) {
-          if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
-          let gid: string | undefined;
-          if (dInfo.manifests && typeof dInfo.manifests === 'object') {
-            gid = dInfo.manifests.public?.gid || Object.values<any>(dInfo.manifests)[0]?.gid;
-          }
-          if (gid && gid !== '0' && /^\d+$/.test(gid.toString())) {
-            const key = (dInfo.decryptionkey && typeof dInfo.decryptionkey === 'string' && dInfo.decryptionkey.length >= 32)
-              ? dInfo.decryptionkey
-              : (depotService.getDepotKey(dId) || undefined);
-            results.push({
-              depotId: dId,
-              manifestId: gid.toString(),
-              downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
-              source: 'manifesthub',
-              key
-            });
-          }
+        if (gid && gid !== '0' && /^\d+$/.test(gid.toString())) {
+          const key = (dInfo.decryptionkey && typeof dInfo.decryptionkey === 'string' && dInfo.decryptionkey.length >= 32)
+            ? dInfo.decryptionkey
+            : (depotService.getDepotKey(dId) || undefined);
+          results.push({
+            depotId: dId,
+            manifestId: gid.toString(),
+            manifestFileName: `${dId}_${gid}.manifest`,
+            downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
+            source: 'manifesthub',
+            key
+          });
         }
       }
-    } catch {}
+    }
 
     // 2. 若 json 失败，兜底并发尝试拉取 {appId}.lua / {appId}_public.lua
     if (results.length === 0) {
@@ -451,52 +652,33 @@ export class ManifestService {
         luaUrls.push(`${base}/${appId}/${appId}.lua`);
         luaUrls.push(`${base}/${appId}/${appId}_public.lua`);
       }
-      try {
-        const luaPromises = luaUrls.map(async (lu) => {
-          const resp = await axios.get(lu, { timeout: 2500 });
-          const lua = typeof resp.data === 'string' ? resp.data : '';
-          if (lua.includes('setManifestid') || lua.includes('addappid')) {
-            return lua;
-          }
-          throw new Error('Invalid lua');
-        });
-        const lua = await Promise.any(luaPromises);
-        if (lua) {
-          const gidMap = new Map<string, string>();
-          const keyMap = new Map<string, string>();
-
-          for (const rawLine of lua.split('\n')) {
-            const line = rawLine.trim();
-            const mMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d+)"/);
-            if (mMatch && mMatch[2] !== '0') {
-              gidMap.set(mMatch[1], mMatch[2]);
-            }
-            const kMatch = line.match(/^(?:addappid|setDepotKey)\((\d+)\s*,\s*(?:\d+\s*,\s*)?"([0-9a-fA-F]{32,})"/);
-            if (kMatch && !/^0+$/.test(kMatch[2])) {
-              keyMap.set(kMatch[1], kMatch[2]);
-            }
-          }
-
-          for (const [dId, gid] of gidMap) {
-            if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
-            const key = keyMap.get(dId) || depotService.getDepotKey(dId) || undefined;
-            results.push({
-              depotId: dId,
-              manifestId: gid,
-              downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
-              source: 'manifesthub',
-              key
-            });
-          }
+      const lua = await raceDownload(
+        luaUrls,
+        { timeout: 2500 },
+        (d) => typeof d === 'string' && (d.includes('setManifestid') || d.includes('addappid'))
+      );
+      if (typeof lua === 'string') {
+        // 统一解析器：与其它源/其它链路使用完全一致的正则规则
+        const parsed = parseLuaManifestText(lua, appId);
+        for (const [dId, gid] of parsed.manifestGids) {
+          if (depotIds.length > 0 && !depotIds.includes(dId)) continue;
+          const key = parsed.depotKeys.get(dId) || depotService.getDepotKey(dId) || undefined;
+          results.push({
+            depotId: dId,
+            manifestId: gid,
+            manifestFileName: `${dId}_${gid}.manifest`,
+            downloadUrl: `/api/manifests/download/${dId}/${gid}?appId=${appId}`,
+            source: 'manifesthub',
+            key
+          });
         }
-      } catch {}
+      }
     }
 
-    // 3. 异步后台触发沉淀落盘（非阻塞），确保后续下载请求秒级响应
-    for (const item of results) {
-      this.ensureManifestCached(item.depotId, item.manifestId, appId).catch(() => {});
-    }
-
+    // 注意：此处**不**触发沉淀。该函数会被 getManifestsForApp 调用，
+    // 若为每个结果各起一路回源下载，等价于每个清单列表请求都为该 App
+    // 全部 depot 发起一轮上游请求（每路又是多镜像竞速），带宽与频控双爆。
+    // 沉淀只由明确的下载路径（/api/manifests/download → ensureManifestCached）触发。
     return results;
   }
 
@@ -504,9 +686,10 @@ export class ManifestService {
    * ManifestHub.uk 确定性密钥代换加密算法
    */
   public encodeManifestHubUKCipher(appId: number | string): string {
-    const SECRET_KEY = 'N4F1S_FU4D_OWN_SYSTEM_2025';
+    // 密钥可经环境变量覆盖；默认值仅为兼容上游协议的历史常量，不构成安全边界
+    const SECRET_KEY = process.env.MANIFESTHUB_UK_SECRET || 'N4F1S_FU4D_OWN_SYSTEM_2025';
     const str = String(appId);
-    let table = '0123456789'.split('');
+    const table = '0123456789'.split('');
     let seed = 0;
     for (let i = 0; i < SECRET_KEY.length; i++) {
       seed = (seed * 31 + SECRET_KEY.charCodeAt(i)) & 0xffff;
@@ -534,12 +717,14 @@ export class ManifestService {
    */
   public async fetchFromSteamML(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
     const url = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
-    try {
-      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 7000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
-      if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
-        return this.unpackZipAndExtractManifests(appId, Buffer.from(resp.data), depotIds, 'steamml');
-      }
-    } catch {}
+    const data = await raceDownload(
+      [url],
+      { responseType: 'arraybuffer', timeout: 7000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES },
+      (d) => !!d && d.byteLength > 0
+    );
+    if (data) {
+      return this.unpackZipAndExtractManifests(appId, Buffer.from(data), depotIds, 'steamml');
+    }
     return [];
   }
 
@@ -548,14 +733,19 @@ export class ManifestService {
    */
   public async fetchFromRemlua(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
     const url = `https://d41hvr6rtvs2p.cloudfront.net/${appId}.zip`;
-    try {
-      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 7000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
-      if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
-        return this.unpackZipAndExtractManifests(appId, Buffer.from(resp.data), depotIds, 'remlua');
-      }
-    } catch {}
+    const data = await raceDownload(
+      [url],
+      { responseType: 'arraybuffer', timeout: 7000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES },
+      (d) => !!d && d.byteLength > 0
+    );
+    if (data) {
+      return this.unpackZipAndExtractManifests(appId, Buffer.from(data), depotIds, 'remlua');
+    }
     return [];
   }
+
+  /** 单次检索允许跟随的下载链接数上限（防上游 HTML 异常导致无界顺序下载） */
+  private static readonly MAX_UK_DOWNLOAD_LINKS = 8;
 
   /**
    * 从 ManifestHub.uk 检索并解压清单实体
@@ -563,35 +753,36 @@ export class ManifestService {
   public async fetchFromManifestHubUK(appId: number, depotIds: string[] = []): Promise<DepotManifestInfo[]> {
     const encId = this.encodeManifestHubUKCipher(appId);
     const proxyUrl = `https://api.manifesthub.uk/proxy?id=${encId}`;
-    try {
-      const htmlResp = await axios.get(proxyUrl, {
-        timeout: 8000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Referer': 'https://steamtools.pages.dev/'
-        }
-      });
-      const html = typeof htmlResp.data === 'string' ? htmlResp.data : '';
-      const downloadMatches = Array.from(html.matchAll(/href="(\/download\?[^"]+)"/g)).map((m) => m[1]);
-      for (const href of downloadMatches) {
-        try {
-          const dlUrl = `https://api.manifesthub.uk${href}`;
-          const zipResp = await axios.get(dlUrl, {
-            responseType: 'arraybuffer',
-            timeout: 10000,
-            maxContentLength: MAX_UPSTREAM_ZIP_BYTES,
-            headers: {
-              'User-Agent': 'Mozilla/5.0',
-              Referer: proxyUrl
-            }
-          });
-          if (zipResp.status === 200 && zipResp.data && zipResp.data.byteLength > 0) {
-            const list = this.unpackZipAndExtractManifests(appId, Buffer.from(zipResp.data), depotIds, 'manifesthub_uk');
-            if (list.length > 0) return list;
-          }
-        } catch {}
+    const htmlResp = await axios.get(proxyUrl, {
+      timeout: 8000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': 'https://steamtools.pages.dev/'
       }
-    } catch {}
+    });
+    const html = typeof htmlResp.data === 'string' ? htmlResp.data : '';
+    const downloadMatches = Array.from(html.matchAll(/href="(\/download\?[^"]+)"/g))
+      .map((m) => m[1])
+      .slice(0, ManifestService.MAX_UK_DOWNLOAD_LINKS);
+
+    for (const href of downloadMatches) {
+      try {
+        const dlUrl = `https://api.manifesthub.uk${href}`;
+        const zipResp = await axios.get(dlUrl, {
+          responseType: 'arraybuffer',
+          timeout: 10000,
+          maxContentLength: MAX_UPSTREAM_ZIP_BYTES,
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+            Referer: proxyUrl
+          }
+        });
+        if (zipResp.status === 200 && zipResp.data && zipResp.data.byteLength > 0) {
+          const list = this.unpackZipAndExtractManifests(appId, Buffer.from(zipResp.data), depotIds, 'manifesthub_uk');
+          if (list.length > 0) return list;
+        }
+      } catch {}
+    }
     return [];
   }
 
@@ -608,6 +799,13 @@ export class ManifestService {
     try {
       const zip = new AdmZip(zipBuffer);
       const entries = zip.getEntries();
+
+      // 条目数上限：与 parseLuaFromZip 保持一致的入口防护，
+      // 否则几十万条目会被逐个 readFile 解压并写盘
+      if (entries.length > MAX_ZIP_ENTRIES) {
+        console.warn(`[ManifestService] ZIP 条目数超限 (${entries.length} > ${MAX_ZIP_ENTRIES})，已跳过解包 (${appId})`);
+        return results;
+      }
 
       let luaContent = '';
       const manifestEntries: Array<{ depotId: string; manifestId: string; entry: any }> = [];
@@ -629,41 +827,36 @@ export class ManifestService {
         }
       }
 
-      // 解析 Lua 获取 key 和 gid
-      const gidMap = new Map<string, string>();
-      const keyMap = new Map<string, string>();
-      if (luaContent) {
-        for (const rawLine of luaContent.split('\n')) {
-          const line = rawLine.trim();
-          const mMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d+)"/);
-          if (mMatch && mMatch[2] !== '0') {
-            gidMap.set(mMatch[1], mMatch[2]);
-          }
-          const kMatch = line.match(/^(?:addappid|setDepotKey)\((\d+)\s*,\s*(?:\d+\s*,\s*)?"([0-9a-fA-F]{32,})"/);
-          if (kMatch && !/^0+$/.test(kMatch[2])) {
-            keyMap.set(kMatch[1], kMatch[2]);
-          }
-        }
-      }
+      // 解析 Lua 获取 key 和 gid（统一解析器，正则与其它链路一致）
+      const parsedLua = parseLuaManifestText(luaContent, appId);
+      const gidMap = parsedLua.manifestGids;
+      const keyMap = parsedLua.depotKeys;
 
       // 解压并落盘所有 .manifest 文件
       let extractedBytes = 0;
       for (const item of manifestEntries) {
-        // 解压体积上限：阻止声明式膨胀（zip 炸弹）
+        // 解压体积上限：必须在**真实解压后**按 fileData.length 计量。
+        // 原先用 entry.header.size（zip 中央目录里的声明值）判断，攻击者
+        // 可把它伪造成 0 绕过限制，而 readFile 仍会在内存中真实解压出全部内容。
         const declared = typeof item.entry?.header?.size === 'number' ? item.entry.header.size : 0;
         if (declared > MAX_ZIP_ENTRY_BYTES || extractedBytes + declared > MAX_UPSTREAM_ZIP_BYTES) {
-          console.warn(`[ManifestService] ZIP 解压量超限，已跳过剩余条目 (已解压 ${extractedBytes} 字节)`);
+          console.warn(`[ManifestService] ZIP 声明体积超限，已跳过剩余条目 (已解压 ${extractedBytes} 字节)`);
           break;
         }
         const fileData = zip.readFile(item.entry);
-        if (fileData && this.isValidManifestBuffer(fileData)) {
-          extractedBytes += fileData.length;
+        if (!fileData) continue;
+        // 真实体积复核：以解压结果为准累计，声明值不可信
+        if (fileData.length > MAX_ZIP_ENTRY_BYTES || extractedBytes + fileData.length > MAX_UPSTREAM_ZIP_BYTES) {
+          console.warn(`[ManifestService] ZIP 实际解压量超限，已停止解包 (已解压 ${extractedBytes} 字节)`);
+          break;
+        }
+        extractedBytes += fileData.length;
+
+        if (this.isValidManifestBuffer(fileData)) {
+          // 单一落盘位置（扁平目录）：getLocalManifestFilePath 优先查扁平，
+          // 原先再往 manifests/<appId>/ 写一份副本会造成磁盘双份且子目录文件
+          // 不受淘汰上限约束，长期无界增长。
           this.saveManifestFile(item.depotId, item.manifestId, fileData);
-          try {
-            const appDir = path.join(this.manifestDir, String(appId));
-            if (!fs.existsSync(appDir)) fs.mkdirSync(appDir, { recursive: true });
-            fs.writeFileSync(path.join(appDir, `${item.depotId}_${item.manifestId}.manifest`), fileData);
-          } catch {}
 
           if (filterDepotIds.length === 0 || filterDepotIds.includes(item.depotId)) {
             const key = keyMap.get(item.depotId) || depotService.getDepotKey(item.depotId) || undefined;
@@ -713,36 +906,34 @@ export class ManifestService {
     buildId?: string;
   } | null> {
     // 0. 优先尝试每日自动同步的 P-ToyStore (SteamManifestCache_Pro) 提取最新公网 GID
-    try {
-      const pToy = await this.fetchFromPToyStore(appId);
-      if (pToy.depots.length > 0) {
-        const depotKeys = new Map<string, string>();
-        const manifestGids = new Map<string, string>();
-        const dlcIds: string[] = [];
-        for (const item of pToy.depots) {
-          if (item.manifestId) manifestGids.set(item.depotId, item.manifestId);
-          if (item.key) depotKeys.set(item.depotId, item.key);
-          // appinfo.vdf 中的 dlcappid 是权威的 DLC 归属：此前被解析后丢弃，
-          // 导致命中 P-ToyStore 的游戏丢失 DLC 列表
-          if (item.dlcAppId && item.dlcAppId !== appId.toString() && !dlcIds.includes(item.dlcAppId)) {
-            dlcIds.push(item.dlcAppId);
-          }
+    const pToy = await this.fetchFromPToyStore(appId);
+    if (pToy.depots.length > 0) {
+      const depotKeys = new Map<string, string>();
+      const manifestGids = new Map<string, string>();
+      const dlcIds: string[] = [];
+      for (const item of pToy.depots) {
+        if (item.manifestId) manifestGids.set(item.depotId, item.manifestId);
+        if (item.key) depotKeys.set(item.depotId, item.key);
+        // appinfo.vdf 中的 dlcappid 是权威的 DLC 归属：此前被解析后丢弃，
+        // 导致命中 P-ToyStore 的游戏丢失 DLC 列表
+        if (item.dlcAppId && item.dlcAppId !== appId.toString() && !dlcIds.includes(item.dlcAppId)) {
+          dlcIds.push(item.dlcAppId);
         }
-        return { depotKeys, manifestGids, dlcIds, buildId: pToy.buildId };
       }
-    } catch {}
+      return { depotKeys, manifestGids, dlcIds, buildId: pToy.buildId };
+    }
 
     // 1. 优先尝试全球顶级边缘 CDN：SteamML (R2) 与 Remlua (CloudFront)
     // 注意：本函数运行在 metadata 查询热路径上，这里**只解析、不沉淀**。
-    // 此前每轮查询都会顺带把上游 zip 内全部清单写盘（unpackZipAndExtractManifests
-    // 的返回值本就未使用），等于每次查询都为该游戏做一次全量缓存，
-    // 既耗服务器带宽与磁盘、又容易触发上游频控。沉淀改由客户端真正
-    // 请求某个清单文件时按需触发（/api/manifests/download → ensureManifestCached）。
     try {
       const smlUrl = `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${appId}.zip`;
-      const resp = await axios.get(smlUrl, { responseType: 'arraybuffer', timeout: 6000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
-      if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
-        const parsed = this.parseLuaFromZip(Buffer.from(resp.data), appId);
+      const data = await raceDownload(
+        [smlUrl],
+        { responseType: 'arraybuffer', timeout: 6000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES },
+        (d) => !!d && d.byteLength > 0
+      );
+      if (data) {
+        const parsed = this.parseLuaFromZip(Buffer.from(data), appId);
         if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
           return parsed;
         }
@@ -751,9 +942,13 @@ export class ManifestService {
 
     try {
       const remluaUrl = `https://d41hvr6rtvs2p.cloudfront.net/${appId}.zip`;
-      const resp = await axios.get(remluaUrl, { responseType: 'arraybuffer', timeout: 6000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
-      if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
-        const parsed = this.parseLuaFromZip(Buffer.from(resp.data), appId);
+      const data = await raceDownload(
+        [remluaUrl],
+        { responseType: 'arraybuffer', timeout: 6000, maxContentLength: MAX_UPSTREAM_ZIP_BYTES },
+        (d) => !!d && d.byteLength > 0
+      );
+      if (data) {
+        const parsed = this.parseLuaFromZip(Buffer.from(data), appId);
         if (parsed && (parsed.depotKeys.size > 0 || parsed.manifestGids.size > 0)) {
           return parsed;
         }
@@ -769,7 +964,9 @@ export class ManifestService {
         headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://steamtools.pages.dev/' }
       });
       const html = typeof htmlResp.data === 'string' ? htmlResp.data : '';
-      const downloadMatches = Array.from(html.matchAll(/href="(\/download\?[^"]+)"/g)).map((m) => m[1]);
+      const downloadMatches = Array.from(html.matchAll(/href="(\/download\?[^"]+)"/g))
+        .map((m) => m[1])
+        .slice(0, ManifestService.MAX_UK_DOWNLOAD_LINKS);
       for (const href of downloadMatches) {
         try {
           const zipResp = await axios.get(`https://api.manifesthub.uk${href}`, {
@@ -819,43 +1016,8 @@ export class ManifestService {
         }
       }
       if (!lua) return null;
-
-      const depotKeys = new Map<string, string>();
-      const manifestGids = new Map<string, string>();
-      const dlcIds: string[] = [];
-      const sTarget = targetAppId ? targetAppId.toString() : '';
-      let accessToken: string | undefined;
-
-      for (const rawLine of lua.split('\n')) {
-        const line = rawLine.trim();
-        const addMatch = line.match(/^addappid\((\d+)\s*,\s*\d+\s*,\s*"([0-9a-fA-F]{32,})"\s*\)/);
-        const setKeyMatch = line.match(/^setDepotKey\((\d+)\s*,\s*"([0-9a-fA-F]{32,})"\s*\)/);
-        const keyMatch = addMatch || setKeyMatch;
-        if (keyMatch) {
-          const depotId = keyMatch[1];
-          const key = keyMatch[2];
-          if (!/^0+$/.test(key)) depotKeys.set(depotId, key);
-          continue;
-        }
-        const simpleAddMatch = line.match(/^addappid\((\d+)\s*(?:,\s*\d+)?\s*\)/);
-        if (simpleAddMatch) {
-          const id = simpleAddMatch[1];
-          if (id !== sTarget && !dlcIds.includes(id)) {
-            dlcIds.push(id);
-          }
-          continue;
-        }
-        const gidMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d{5,})"/);
-        if (gidMatch && gidMatch[2] !== '0') {
-          manifestGids.set(gidMatch[1], gidMatch[2]);
-          continue;
-        }
-        const tokenMatch = line.match(/^addtoken\((\d+)\s*,\s*"([0-9a-fA-F]+)"\s*\)/);
-        if (tokenMatch) {
-          accessToken = tokenMatch[2];
-        }
-      }
-      return { depotKeys, manifestGids, dlcIds, accessToken };
+      // 统一解析器
+      return parseLuaManifestText(lua, targetAppId);
     } catch {
       return null;
     }
@@ -873,6 +1035,29 @@ export class ManifestService {
   private readonly MANIFEST_DIR_MAX_FILES = 20000;
   private manifestSaveCounter = 0;
 
+  // 进程级回源并发闸门：
+  // 上游放大点有两处 —— metadataController 为每个 depot 各起一路沉淀，
+  // 而每次 ensureManifestCachedInner 内部又展开最多 16 个竞速 URL。
+  // 不设闸门时，一个 100 分包的游戏可瞬间拉起上百路上游请求。
+  private readonly MAX_CONCURRENT_FETCHES = 4;
+  private activeFetches = 0;
+  private fetchWaiters: Array<() => void> = [];
+
+  private async acquireFetchSlot(): Promise<void> {
+    if (this.activeFetches < this.MAX_CONCURRENT_FETCHES) {
+      this.activeFetches++;
+      return;
+    }
+    await new Promise<void>((resolve) => this.fetchWaiters.push(resolve));
+    this.activeFetches++;
+  }
+
+  private releaseFetchSlot(): void {
+    this.activeFetches = Math.max(0, this.activeFetches - 1);
+    const next = this.fetchWaiters.shift();
+    if (next) next();
+  }
+
   public async ensureManifestCached(depotId: string, manifestId: string, appId?: number): Promise<string | null> {
     if (!/^\d+$/.test(String(depotId)) || !/^\d+$/.test(String(manifestId))) {
       return null;
@@ -881,7 +1066,14 @@ export class ManifestService {
     const running = this.manifestInFlight.get(dedupKey);
     if (running) return running;
 
-    const task = this.ensureManifestCachedInner(depotId, manifestId, appId);
+    const task = (async () => {
+      await this.acquireFetchSlot();
+      try {
+        return await this.ensureManifestCachedInner(depotId, manifestId, appId);
+      } finally {
+        this.releaseFetchSlot();
+      }
+    })();
     this.manifestInFlight.set(dedupKey, task);
     try {
       return await task;
@@ -930,23 +1122,20 @@ export class ManifestService {
     }
 
     const hubDownloadTask = async (): Promise<string | null> => {
-      try {
-        const promises = hubManifestUrls.map(async (url) => {
-          const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 3500, maxContentLength: MAX_UPSTREAM_ZIP_BYTES });
-          if (resp.status === 200 && resp.data && resp.data.byteLength > 0) {
-            return Buffer.from(resp.data);
-          }
-          throw new Error('Not found');
-        });
-        const buf = await Promise.any(promises);
-        if (buf && this.isValidManifestBuffer(buf)) {
-          const saved = this.saveManifestFile(depotId, manifestId, buf);
-          if (saved) {
-            console.log(`[ManifestService] 成功从云端高速镜像沉淀清单到本地: ${depotId}_${manifestId}.manifest (${buf.byteLength} 字节)`);
-            return targetFile;
-          }
+      // 单个清单实体不可能达到 50MB 量级：这里用更紧的上限，
+      // 避免 16 路竞速各自在内存里缓冲超大响应
+      const buf = await raceDownload(
+        hubManifestUrls,
+        { responseType: 'arraybuffer', timeout: 3500, maxContentLength: MAX_MANIFEST_BYTES },
+        (d) => !!d && d.byteLength > 0
+      );
+      if (buf && this.isValidManifestBuffer(Buffer.from(buf))) {
+        const saved = this.saveManifestFile(depotId, manifestId, Buffer.from(buf));
+        if (saved) {
+          console.log(`[ManifestService] 成功从云端高速镜像沉淀清单到本地: ${depotId}_${manifestId}.manifest (${buf.byteLength} 字节)`);
+          return targetFile;
         }
-      } catch {}
+      }
       return null;
     };
 
@@ -1032,10 +1221,26 @@ export class ManifestService {
     ) {
       return true;
     }
-    // Protobuf 清单：保持宽松接受（清单格式存在多个世代，过度收紧会误杀有效实体），
-    // 上面的 HTML/错误页特征已覆盖最常见的"文本被当清单"场景
-    if ((buf[0] === 0x08 || buf[0] === 0x0a || buf[0] === 0x12) && buf.subarray(0, 32).some((b) => b > 0x7f || b === 0)) {
-      return true;
+    // Protobuf 清单：收窄判定 —— 原实现只要前 32 字节出现任一 >0x7f 或 0 字节就接受，
+    // 随机二进制/被劫持内容几乎必然满足，等于没有校验。
+    // 现要求首字段是合法 varint 长度前缀（field 1 为长度分隔）且后续长度自洽。
+    if (buf[0] === 0x0a || buf[0] === 0x12 || buf[0] === 0x08) {
+      let offset = 1;
+      let length = 0;
+      let shift = 0;
+      let terminated = false;
+      while (offset < buf.length && shift <= 28) {
+        const b = buf[offset++];
+        length |= (b & 0x7f) << shift;
+        if ((b & 0x80) === 0) { terminated = true; break; }
+        shift += 7;
+      }
+      // 长度分隔字段：声明的长度必须落在剩余缓冲内，否则不是有效清单
+      if (buf[0] === 0x0a || buf[0] === 0x12) {
+        return terminated && length > 0 && offset + length <= buf.length;
+      }
+      // 0x08 为 varint 字段：只需确认后续是可解析的 varint 序列（非全 0 文本）
+      return terminated && buf.subarray(1, 32).some((b) => b === 0 || b > 0x7f);
     }
     return false;
   }
@@ -1070,55 +1275,73 @@ export class ManifestService {
    * 2. ManifestHub3 标准 AppID 分组: manifests/<appId>/<depotId>_<manifestId>.manifest
    * 3. 分包 DepotID 分组: manifests/<depotId>/<depotId>_<manifestId>.manifest
    * 4. 模糊匹配同 depotId 清单实体
+   *
+   * 全部走内存索引，不再同步 readdirSync 整个目录。
    */
   public getLocalManifestFilePath(depotId: string, manifestId: string, appId?: number | string): string | null {
-    // 1. 扁平根目录
-    const candidateFlat = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
-    const validFlat = this.checkAndReturnManifestFile(candidateFlat);
-    if (validFlat) return validFlat;
+    const index = this.getManifestIndex();
+    const fileName = `${depotId}_${manifestId}.manifest`;
+
+    // 1. 扁平根目录（精确）
+    const flat = index.flat.get(fileName);
+    if (flat) {
+      const valid = this.checkAndReturnManifestFile(flat);
+      if (valid) return valid;
+    }
 
     // 2. 按 AppID 子目录 (ManifestHub3 标准仓库目录)
     if (appId) {
-      const candidateAppDir = path.join(this.manifestDir, String(appId), `${depotId}_${manifestId}.manifest`);
-      const validAppDir = this.checkAndReturnManifestFile(candidateAppDir);
-      if (validAppDir) return validAppDir;
+      const appMap = index.appDir.get(String(appId));
+      const p = appMap?.get(fileName);
+      if (p) {
+        const valid = this.checkAndReturnManifestFile(p);
+        if (valid) return valid;
+      }
     }
 
     // 3. 按 DepotID 子目录
-    const candidateDepotDir = path.join(this.manifestDir, String(depotId), `${depotId}_${manifestId}.manifest`);
-    const validDepotDir = this.checkAndReturnManifestFile(candidateDepotDir);
-    if (validDepotDir) return validDepotDir;
+    const depotMap = index.appDir.get(String(depotId));
+    const depotPath = depotMap?.get(fileName);
+    if (depotPath) {
+      const valid = this.checkAndReturnManifestFile(depotPath);
+      if (valid) return valid;
+    }
 
     // 4. 若指定了 appId 子目录，尝试该目录下的同 depotId 模糊匹配
     if (appId) {
-      try {
-        const appDir = path.join(this.manifestDir, String(appId));
-        if (fs.existsSync(appDir) && fs.statSync(appDir).isDirectory()) {
-          const appFiles = fs.readdirSync(appDir);
-          const found = appFiles.find((f) => f.startsWith(`${depotId}_`) && f.endsWith('.manifest'));
-          if (found) {
-            const valid = this.checkAndReturnManifestFile(path.join(appDir, found));
+      const appMap = index.appDir.get(String(appId));
+      if (appMap) {
+        const prefix = `${depotId}_`;
+        for (const [name, p] of appMap) {
+          if (name.startsWith(prefix) && name.endsWith('.manifest')) {
+            const valid = this.checkAndReturnManifestFile(p);
             if (valid) return valid;
+            break;
           }
         }
-      } catch {}
+      }
     }
 
     // 5. 扁平根目录模糊匹配
-    try {
-      const files = fs.readdirSync(this.manifestDir);
-      const found = files.find((f) => f.startsWith(`${depotId}_`) && f.endsWith('.manifest'));
-      if (found) {
-        const valid = this.checkAndReturnManifestFile(path.join(this.manifestDir, found));
+    const candidates = index.flatByDepot.get(depotId);
+    if (candidates) {
+      for (const name of candidates) {
+        if (!name.endsWith('.manifest')) continue;
+        const p = index.flat.get(name);
+        if (!p) continue;
+        const valid = this.checkAndReturnManifestFile(p);
         if (valid) return valid;
+        break;
       }
-    } catch {}
+    }
 
     return null;
   }
 
   /**
-   * 保存清单文件到服务端缓存
+   * 保存清单文件到服务端缓存。
+   * 写入采用「临时文件 + rename」：客户端可能正在读取同一路径下发的清单，
+   * 直接覆盖会写坏在途响应（内容截断/交错）。
    */
   public saveManifestFile(depotId: string, manifestId: string, buffer: Buffer): boolean {
     // depotId/manifestId 必须是纯数字：防止路径穿越等非法 ID 拼进文件名
@@ -1130,12 +1353,19 @@ export class ManifestService {
       console.warn(`[ManifestService] 忽略非清单数据写入: ${depotId}_${manifestId}.manifest`);
       return false;
     }
+    const filePath = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
+    const tmpPath = path.join(
+      this.manifestDir,
+      `.${depotId}_${manifestId}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2, 10)}.tmp`
+    );
     try {
-      const filePath = path.join(this.manifestDir, `${depotId}_${manifestId}.manifest`);
-      fs.writeFileSync(filePath, buffer);
+      fs.writeFileSync(tmpPath, buffer);
+      fs.renameSync(tmpPath, filePath);
+      this.indexAddFile(filePath, undefined);
       this.maybePruneManifestDir();
       return true;
     } catch (e) {
+      try { fs.unlinkSync(tmpPath); } catch {}
       console.error('[ManifestService] 保存清单文件失败:', e);
       return false;
     }
@@ -1145,28 +1375,42 @@ export class ManifestService {
    * 本地清单缓存目录容量约束。
    * GID 更新会写入新文件名，旧 GID 文件不会自动消失；若不淘汰，磁盘只增不减。
    * 为避免每次保存都全量 readdir，每 200 次保存才检查一次。
+   *
+   * 统计范围包含 appId 子目录：原实现只统计根目录文件，子目录（历史上由
+   * unpackZipAndExtractManifests 双写产生）从不计数、从不淘汰。
    */
   private maybePruneManifestDir(): void {
     this.manifestSaveCounter += 1;
     if (this.manifestSaveCounter % 200 !== 0) return;
     try {
-      const entries = fs.readdirSync(this.manifestDir, { withFileTypes: true })
-        .filter((e) => e.isFile() && e.name.endsWith('.manifest'));
-      if (entries.length <= this.MANIFEST_DIR_MAX_FILES) return;
-
-      const stats = entries.map((e) => {
-        const p = path.join(this.manifestDir, e.name);
-        let mtime = 0;
+      const all: Array<{ p: string; mtime: number }> = [];
+      const collect = (dir: string) => {
+        let entries: fs.Dirent[];
         try {
-          mtime = fs.statSync(p).mtimeMs;
-        } catch {}
-        return { p, mtime };
-      });
-      stats.sort((a, b) => a.mtime - b.mtime);
-      const removeCount = stats.length - this.MANIFEST_DIR_MAX_FILES;
+          entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+          return;
+        }
+        for (const e of entries) {
+          const p = path.join(dir, e.name);
+          if (e.isFile() && e.name.endsWith('.manifest')) {
+            let mtime = 0;
+            try { mtime = fs.statSync(p).mtimeMs; } catch {}
+            all.push({ p, mtime });
+          } else if (e.isDirectory() && /^\d+$/.test(e.name)) {
+            collect(p);
+          }
+        }
+      };
+      collect(this.manifestDir);
+      if (all.length <= this.MANIFEST_DIR_MAX_FILES) return;
+
+      all.sort((a, b) => a.mtime - b.mtime);
+      const removeCount = all.length - this.MANIFEST_DIR_MAX_FILES;
       for (let i = 0; i < removeCount; i++) {
         try {
-          fs.unlinkSync(stats[i].p);
+          fs.unlinkSync(all[i].p);
+          this.indexRemoveFile(all[i].p);
         } catch {}
       }
       console.log(`[ManifestService] 清单缓存目录超限，已按最旧优先淘汰 ${removeCount} 个文件（上限 ${this.MANIFEST_DIR_MAX_FILES}）`);
@@ -1179,6 +1423,12 @@ export class ManifestService {
   private readonly MANIFEST_CODE_TTL_MS = 2 * 60 * 60 * 1000; // 2小时内存缓存
   // 容量上限：公开接口可枚举 gid，仅靠 TTL 惰性淘汰不足以防止内存无界增长
   private readonly MANIFEST_CODE_CACHE_MAX = 20000;
+  // 负结果短 TTL 缓存：/api/manifests/code/:gid 是公开接口且 gid 由 URL 决定，
+  // 不缓存负结果时，随机 gid 的每次 miss 都会顺序打满 4 个上游（3.5+3.5+3+3 秒），
+  // 等于把本服务变成对上游的放大器。
+  private negativeCodeCache = new Map<string, number>();
+  private readonly NEGATIVE_CODE_TTL_MS = 60 * 1000;
+  private readonly NEGATIVE_CODE_CACHE_MAX = 20000;
 
   /** 写入清单代码缓存，并在超限时清理过期项/按插入序淘汰 */
   private setManifestCodeCache(gid: string, code: string): void {
@@ -1195,6 +1445,20 @@ export class ManifestService {
     }
   }
 
+  private setNegativeCodeCache(gid: string): void {
+    this.negativeCodeCache.set(gid, Date.now());
+    if (this.negativeCodeCache.size <= this.NEGATIVE_CODE_CACHE_MAX) return;
+    const now = Date.now();
+    for (const [k, ts] of this.negativeCodeCache) {
+      if (now - ts >= this.NEGATIVE_CODE_TTL_MS) this.negativeCodeCache.delete(k);
+    }
+    while (this.negativeCodeCache.size > this.NEGATIVE_CODE_CACHE_MAX) {
+      const oldest = this.negativeCodeCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.negativeCodeCache.delete(oldest);
+    }
+  }
+
   /**
    * 获取指定 GID 的清单请求代码（Manifest Request Code）
    * 优先内存缓存 -> ManifestDeX 直供源 -> wudrm 官方源 -> 古韵国内镜像源 -> steamrun 亚太源
@@ -1206,6 +1470,11 @@ export class ManifestService {
     const cached = this.manifestCodeCache.get(gid);
     if (cached && Date.now() - cached.fetchedAt < this.MANIFEST_CODE_TTL_MS) {
       return cached.code;
+    }
+    // 负缓存命中：短时间内不重复打上游
+    const negTs = this.negativeCodeCache.get(gid);
+    if (negTs && Date.now() - negTs < this.NEGATIVE_CODE_TTL_MS) {
+      return null;
     }
 
     // 1. ManifestDeX 清单代码直供源（第一优先级）
@@ -1263,6 +1532,7 @@ export class ManifestService {
       }
     } catch {}
 
+    this.setNegativeCodeCache(gid);
     return null;
   }
 }

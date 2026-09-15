@@ -7,7 +7,7 @@ import { gameService } from './gameService.js';
 import { depotService } from './depotService.js';
 import { tokenService } from './tokenService.js';
 import { sourceRegistryService } from './sourceRegistryService.js';
-import { writeJsonAtomic } from '../utils/atomicJson.js';
+import { writeJsonAtomicAsync } from '../utils/atomicJson.js';
 
 export class SyncService {
   // 安全策略：不再关闭上游 HTTPS 证书校验
@@ -70,7 +70,9 @@ export class SyncService {
       }
 
       const outPath = path.join(CONFIG.DATA_DIR, 'steam_all_games.json');
-      writeJsonAtomic(outPath, compactGames);
+      // 异步原子写 + 紧凑序列化：8MB 库同步写盘会阻塞事件循环，
+      // 且 JSON.stringify(data, null, 2) 的美化缩进会把文件体积放大数倍
+      await writeJsonAtomicAsync(outPath, compactGames);
 
       // 重新加载内存索引
       await gameService.loadAllGamesDatabase();
@@ -150,7 +152,7 @@ export class SyncService {
         }
       }
 
-      if (!depotService.saveDepotKeys(cleanKeys)) {
+      if (!(await depotService.saveDepotKeys(cleanKeys))) {
         sourceRegistryService.recordSyncError('manifesthub_keys', '落盘失败或数据库处于损坏保护状态');
         return { success: false, message: '密钥数据落盘失败（可能数据库损坏保护已生效），请检查服务端日志。' };
       }
@@ -187,7 +189,7 @@ export class SyncService {
           }
         }
 
-        if (!tokenService.saveTokens(tokens)) {
+        if (!(await tokenService.saveTokens(tokens))) {
           sourceRegistryService.recordSyncError('sudama_tokens', '落盘失败或写入已被禁用');
           return { success: false, message: 'AccessTokens 落盘失败（写入可能已被禁用），请检查服务端日志。' };
         }

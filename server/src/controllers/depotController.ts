@@ -16,7 +16,15 @@ export const getDepotsForGame = async (req: Request, res: Response) => {
       }
     }
 
-    const depots = await depotService.getDepotsForGame(appId, dlcs);
+    // 对外接口默认不返回启发式相邻分包（会把 AppID 邻近的无关游戏 depot 一起下发）；
+    // 需要旧行为的调用方可显式传 ?heuristic=1。
+    // 同时跳过 Store API 头图查询：本接口只返回密钥映射，不需要头图，
+    // 而该上游在服务器侧实测不可达，会白等 4 秒超时。
+    const includeHeuristic = req.query.heuristic === '1';
+    const depots = await depotService.getDepotsForGame(appId, dlcs, {
+      skipRemoteHeader: true,
+      includeHeuristic
+    });
     res.json({ success: true, data: depots });
   } catch (e) {
     console.error(e);

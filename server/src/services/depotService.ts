@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
 import { gameService } from './gameService.js';
-import { writeStringAtomic } from '../utils/atomicJson.js';
+import { writeStringAtomicAsync } from '../utils/atomicJson.js';
 
 /**
  * DepotKey 内存优化说明：
@@ -52,8 +52,21 @@ export class DepotService {
   public async getDepotsForGame(
     appId: number,
     dlcs: number[] = [],
-    opts?: { skipRemoteHeader?: boolean }
+    opts?: {
+      skipRemoteHeader?: boolean;
+      /**
+       * 是否允许返回「appId + 0..100 / dlc + 0..10」启发式扫出的相邻分包。
+       *
+       * 默认 true 以保持既有调用方（manifestService / metadataController）行为；
+       * 但这两个内部调用方都有「权威归属时只用启发式补密钥、绝不新增分包」的守卫，
+       * 而对外接口 /api/depots/:appId 没有这层守卫 —— 它会把相邻游戏的 depot
+       * 一并下发给客户端（实测 Brotato 1942280 多出 10 个非本作 ID）。
+       * 因此对外接口显式传 false，只有显式 ?heuristic=1 才放开。
+       */
+      includeHeuristic?: boolean;
+    }
   ): Promise<{ [depotId: string]: string }> {
+    const includeHeuristic = opts?.includeHeuristic !== false;
     if (!this.isLoaded) {
       this.loadDepotKeysDb();
     }
@@ -76,6 +89,11 @@ export class DepotService {
     const effectiveDlcs = new Set<number>(dlcs);
     if (presetGame && presetGame.dlcs) {
       presetGame.dlcs.forEach((d) => effectiveDlcs.add(d));
+    }
+
+    if (!includeHeuristic) {
+      // 权威模式：只返回预设库/已收录的精确密钥，不做相邻 ID 扫描
+      return matchedKeys;
     }
 
     // 2. 候选 DepotID 集合：主游戏本体 0~100 连续分包范围
@@ -117,39 +135,49 @@ export class DepotService {
     return this.depotKeysDb.get(depotId) || null;
   }
 
-  public saveDepotKeys(newKeys: Record<string, string>): boolean {
+  // 落盘串行化：每日定时同步与手动/增量补写可能并发触发，两路 18MB 写并发
+  // 会争用临时文件并叠加内存尖峰。串行化后「后到者排队等待前一次完成」。
+  private saveChain: Promise<boolean> = Promise.resolve(true);
+
+  public async saveDepotKeys(newKeys: Record<string, string>): Promise<boolean> {
     if (this.saveBlocked) {
       console.error('[DepotService] 数据库处于损坏保护状态，已拒绝写入以免覆写真实密钥库。请修复 steam_depot_keys.json 后重启服务。');
       return false;
     }
-    try {
-      // 原地合并（增量），保留已有有效密钥；不做整库展开复制，避免内存尖峰
-      let added = 0;
-      for (const [k, v] of Object.entries(newKeys)) {
-        if (!this.depotKeysDb.has(k)) added++;
-        this.depotKeysDb.set(k, v);
-      }
+    const run = async (): Promise<boolean> => {
+      try {
+        // 原地合并（增量），保留已有有效密钥；不做整库展开复制，避免内存尖峰
+        let added = 0;
+        for (const [k, v] of Object.entries(newKeys)) {
+          if (!this.depotKeysDb.has(k)) added++;
+          this.depotKeysDb.set(k, v);
+        }
 
-      // 紧凑序列化：分块收集后一次性 join，避免 30 万次字符串 += 累积的
-      // O(n²) 中间串分配，同时免去 Object.fromEntries 构建的大体积中间副本
-      const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json');
-      const chunks: string[] = ['{'];
-      let first = true;
-      for (const [k, v] of this.depotKeysDb) {
-        if (!first) chunks.push(',');
-        chunks.push(JSON.stringify(k), ':', JSON.stringify(v));
-        first = false;
+        // 紧凑序列化：分块收集后一次性 join，避免 30 万次字符串 += 累积的
+        // O(n²) 中间串分配，同时免去 Object.fromEntries 构建的大体积中间副本
+        const dbPath = path.join(CONFIG.DATA_DIR, 'steam_depot_keys.json');
+        const chunks: string[] = ['{'];
+        let first = true;
+        for (const [k, v] of this.depotKeysDb) {
+          if (!first) chunks.push(',');
+          chunks.push(JSON.stringify(k), ':', JSON.stringify(v));
+          first = false;
+        }
+        chunks.push('}');
+        const json = chunks.join('');
+        // 异步原子写：18MB 同步落盘会阻塞事件循环，卡住全部在途请求
+        await writeStringAtomicAsync(dbPath, json);
+        this.isLoaded = true;
+        console.log(`[DepotService] 已成功保存 ${this.depotKeysDb.size} 条 DepotKey（新增 ${added} 条）到 ${dbPath}`);
+        return true;
+      } catch (e: any) {
+        console.error('[DepotService] 保存 DepotKey 数据库失败:', e.message);
+        return false;
       }
-      chunks.push('}');
-      const json = chunks.join('');
-      writeStringAtomic(dbPath, json);
-      this.isLoaded = true;
-      console.log(`[DepotService] 已成功保存 ${this.depotKeysDb.size} 条 DepotKey（新增 ${added} 条）到 ${dbPath}`);
-      return true;
-    } catch (e: any) {
-      console.error('[DepotService] 保存 DepotKey 数据库失败:', e.message);
-      return false;
-    }
+    };
+    const next = this.saveChain.then(run, run);
+    this.saveChain = next.catch(() => false);
+    return next;
   }
 
   public getTotalKeysCount(): number {

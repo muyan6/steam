@@ -6,6 +6,7 @@ import { depotService } from '../services/depotService.js';
 import { tokenService } from '../services/tokenService.js';
 import { manifestService } from '../services/manifestService.js';
 import { dlcIndexService } from '../services/dlcIndexService.js';
+import { parseLuaManifestText } from '../utils/luaManifestParser.js';
 
 // 安全策略：不再关闭上游 HTTPS 证书校验（原 rejectUnauthorized:false 存在 MITM 注入密钥风险）
 const httpsAgent = new https.Agent();
@@ -28,10 +29,57 @@ interface ManifestHub3Data {
 
 const manifestHub3Cache = new Map<number, { data: ManifestHub3Data | null; fetchedAt: number }>();
 const MANIFEST_HUB3_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时内存缓存，避免逐请求拉取
+// 负结果（上游暂时失败）短 TTL：避免把一次抖动固化成 6 小时空窗
+const manifestHub3Negative = new Map<number, number>();
+const MANIFEST_HUB3_NEGATIVE_TTL_MS = 60 * 1000;
 // 同一 AppID 的在途请求去重：并发请求共享同一次上游拉取
 const manifestHub3InFlight = new Map<number, Promise<ManifestHub3Data | null>>();
 // 缓存条目硬上限，超限时先清过期再淘汰最旧，防止被脚本灌海量 AppID 撑爆内存
 const MANIFEST_HUB3_CACHE_MAX = 500;
+
+/**
+ * 并发竞速下载（JSON）：首个通过校验的响应胜出，并取消其余在途请求。
+ * 裸 Promise.any 不会取消失败者，多镜像竞速会留下多个连接空跑。
+ */
+async function raceJsonDownload(
+  urls: string[],
+  accept: (data: any) => boolean
+): Promise<any | null> {
+  const controller = new AbortController();
+  const tasks = urls.map(async (url) => {
+    const resp = await axios.get(url, { httpsAgent, timeout: 2500, signal: controller.signal });
+    if (accept(resp.data)) return resp.data;
+    throw new Error('Not valid json');
+  });
+  try {
+    return await Promise.any(tasks);
+  } catch {
+    return null;
+  } finally {
+    controller.abort();
+  }
+}
+
+/** 并发竞速下载（文本），语义同上 */
+async function raceTextDownload(
+  urls: string[],
+  accept: (text: any) => boolean
+): Promise<string | null> {
+  const controller = new AbortController();
+  const tasks = urls.map(async (url) => {
+    const resp = await axios.get(url, { httpsAgent, timeout: 2500, signal: controller.signal });
+    const text = typeof resp.data === 'string' ? resp.data : '';
+    if (accept(text)) return text;
+    throw new Error('Not valid text');
+  });
+  try {
+    return await Promise.any(tasks);
+  } catch {
+    return null;
+  } finally {
+    controller.abort();
+  }
+}
 
 /**
  * 深拷贝一份源数据。
@@ -79,53 +127,21 @@ function pickNewerGid(
   return false;
 }
 
+/**
+ * ManifestHub3 Lua 解析。
+ *
+ * 复用 utils/luaManifestParser 的单一实现：原先是本文件内联的第四份 Lua 解析
+ * 副本，且正则与 manifestService 里的三份不一致（setManifestid 一处要求
+ * GID ≥5 位、其余只排除 "0"），导致同一份上游 Lua 在不同链路下被判为有效/无效。
+ */
 function parseManifestHub3Lua(lua: string, targetAppId?: number): ManifestHub3Data {
-  const depotKeys = new Map<string, string>();
-  const manifestGids = new Map<string, string>();
-  const dlcIds: string[] = [];
-  const sTarget = targetAppId ? targetAppId.toString() : '';
-  let accessToken: string | undefined;
-
-  for (const rawLine of lua.split('\n')) {
-    const line = rawLine.trim();
-
-    // addappid(<depot>, 0|1, "<key>") / setDepotKey(<depot>, "<key>")
-    const addMatch = line.match(/^addappid\((\d+)\s*,\s*\d+\s*,\s*"([0-9a-fA-F]{32,})"\s*\)/);
-    const setKeyMatch = line.match(/^setDepotKey\((\d+)\s*,\s*"([0-9a-fA-F]{32,})"\s*\)/);
-    const keyMatch = addMatch || setKeyMatch;
-    if (keyMatch) {
-      const depotId = keyMatch[1];
-      const key = keyMatch[2];
-      // 绝不接受全 0 占位符
-      if (!/^0+$/.test(key)) depotKeys.set(depotId, key);
-      continue;
-    }
-
-    // addappid(<id>) 纯挂载行（通常为 DLC 挂载）
-    const simpleAddMatch = line.match(/^addappid\((\d+)\s*(?:,\s*\d+)?\s*\)/);
-    if (simpleAddMatch) {
-      const id = simpleAddMatch[1];
-      if (id !== sTarget && !dlcIds.includes(id)) {
-        dlcIds.push(id);
-      }
-      continue;
-    }
-
-    // setManifestid(<depot>, "<gid>"[, 0])
-    const gidMatch = line.match(/^setManifestid\((\d+)\s*,\s*"(\d{5,})"/);
-    if (gidMatch && gidMatch[2] !== '0') {
-      manifestGids.set(gidMatch[1], gidMatch[2]);
-      continue;
-    }
-
-    // addtoken(<appid>, "<hex>")
-    const tokenMatch = line.match(/^addtoken\((\d+)\s*,\s*"([0-9a-fA-F]+)"\s*\)/);
-    if (tokenMatch) {
-      accessToken = tokenMatch[2];
-    }
-  }
-
-  return { depotKeys, manifestGids, accessToken, dlcIds };
+  const parsed = parseLuaManifestText(lua, targetAppId);
+  return {
+    depotKeys: parsed.depotKeys,
+    manifestGids: parsed.manifestGids,
+    dlcIds: parsed.dlcIds,
+    accessToken: parsed.accessToken
+  };
 }
 
 function parseManifestHub3Json(json: any, targetAppId?: number): ManifestHub3Data {
@@ -172,8 +188,14 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
   const now = Date.now();
   const cached = manifestHub3Cache.get(appId);
   if (cached && now - cached.fetchedAt < MANIFEST_HUB3_TTL_MS) {
-    // 返回副本：调用方会就地合并其他源的数据，直接交出缓存本体将造成缓存污染
-    return cloneHub3Data(cached.data);
+    // 负缓存条目按短 TTL 处理，过期即视为未命中并重试上游
+    if (cached.data === null) {
+      const negTs = manifestHub3Negative.get(appId);
+      if (negTs && now - negTs < MANIFEST_HUB3_NEGATIVE_TTL_MS) return null;
+    } else {
+      // 返回副本：调用方会就地合并其他源的数据，直接交出缓存本体将造成缓存污染
+      return cloneHub3Data(cached.data);
+    }
   }
 
   // 在途请求去重：同一 AppID 的并发请求共享同一次上游拉取
@@ -193,43 +215,51 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
 
     let data: ManifestHub3Data | null = null;
 
-    // 1. 并发探测 {appId}.json
-    try {
-      const jsonPromises = fastBases.map(async (base) => {
-        const resp = await axios.get(`${base}/${appId}/${appId}.json`, { httpsAgent, timeout: 2500 });
-        if (resp.data && resp.data.depot && typeof resp.data.depot === 'object') {
-          return resp.data;
-        }
-        throw new Error('Not valid json');
-      });
-      const jsonData = await Promise.any(jsonPromises);
-      if (jsonData) {
-        data = parseManifestHub3Json(jsonData, appId);
-      }
-    } catch {}
+    // 1. 并发探测 {appId}.json（首个成功即取消其余请求，避免失败者继续跑完）
+    const jsonData = await raceJsonDownload(
+      fastBases.map((base) => `${base}/${appId}/${appId}.json`),
+      (d) => !!d && typeof d === 'object' && !!d.depot && typeof d.depot === 'object'
+    );
+    if (jsonData) {
+      data = parseManifestHub3Json(jsonData, appId);
+    }
 
     // 2. 若 json 未命中，并发探测 {appId}.lua 与 {appId}_public.lua
     if (!data) {
-      try {
-        const luaUrls: string[] = [];
-        for (const base of fastBases) {
-          luaUrls.push(`${base}/${appId}/${appId}.lua`);
-          luaUrls.push(`${base}/${appId}/${appId}_public.lua`);
-        }
-        const luaPromises = luaUrls.map(async (u) => {
-          const resp = await axios.get(u, { httpsAgent, timeout: 2500 });
-          const text = typeof resp.data === 'string' ? resp.data : '';
-          if (text.includes('addappid') || text.includes('setManifestid')) {
-            return text;
-          }
-          throw new Error('Not valid lua');
-        });
-        const luaText = await Promise.any(luaPromises);
-        if (luaText) {
-          data = parseManifestHub3Lua(luaText, appId);
-        }
-      } catch {}
+      const luaUrls: string[] = [];
+      for (const base of fastBases) {
+        luaUrls.push(`${base}/${appId}/${appId}.lua`);
+        luaUrls.push(`${base}/${appId}/${appId}_public.lua`);
+      }
+      const luaText = await raceTextDownload(
+        luaUrls,
+        (t) => typeof t === 'string' && (t.includes('addappid') || t.includes('setManifestid'))
+      );
+      if (luaText) {
+        data = parseManifestHub3Lua(luaText, appId);
+      }
     }
+
+    // 空结果（上游抖动/超时）绝不按 6 小时缓存：
+    // 原实现把 data=null 也写入 6 小时 TTL，一次网络抖动就让该 AppID
+    // 在半天内始终拿不到社区 GID。改为短负缓存，让下一次请求有机会重试。
+    if (!data) {
+      if (manifestHub3Negative.size >= MANIFEST_HUB3_CACHE_MAX) {
+        const ts0 = Date.now();
+        for (const [k, t] of manifestHub3Negative) {
+          if (ts0 - t >= MANIFEST_HUB3_NEGATIVE_TTL_MS) manifestHub3Negative.delete(k);
+        }
+        while (manifestHub3Negative.size >= MANIFEST_HUB3_CACHE_MAX) {
+          const oldestNeg = manifestHub3Negative.keys().next().value;
+          if (oldestNeg === undefined) break;
+          manifestHub3Negative.delete(oldestNeg);
+        }
+      }
+      manifestHub3Negative.set(appId, Date.now());
+      manifestHub3Cache.set(appId, { data: null, fetchedAt: Date.now() });
+      return null;
+    }
+    manifestHub3Negative.delete(appId);
 
     // 写入前先清理：删除全部过期条目；仍超限则按插入序淘汰最旧
     if (manifestHub3Cache.size >= MANIFEST_HUB3_CACHE_MAX) {
@@ -269,9 +299,9 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
 interface CachedMetadata {
   appId: number;
   name: string;
-  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number }>;
+  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean }>;
   dlcIds: string[];
-  dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string } }>;
+  dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean } }>;
   appLevelKey?: string;
   accessToken?: string;
   /** 是否包含社区对齐后的清单 GID（仅 needGid=true 的完整链路为 true） */
@@ -373,25 +403,28 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     // 命中缓存直接返回（manifestInfo 必须重算，depotcache 实时变化）
     const cached = readMetadataCache(appId, needGid);
     if (cached) {
+      // 返回副本：缓存条目在 10 分钟 TTL 内会被反复复用，直接交出内部数组引用
+      // 会让任何下游就地修改永久污染缓存（与 cloneHub3Data 的处理保持一致）
+      const cachedDepots = cached.depots.map((d) => ({ ...d }));
       return res.json({
         success: true,
         data: {
           appId: cached.appId,
           name: cached.name,
-          depots: cached.depots,
-          dlcIds: cached.dlcIds,
-          dlcDepots: cached.dlcDepots,
+          depots: cachedDepots,
+          dlcIds: [...cached.dlcIds],
+          dlcDepots: cached.dlcDepots.map((x) => ({ dlcAppId: x.dlcAppId, depot: { ...x.depot } })),
           appLevelKey: cached.appLevelKey,
           accessToken: cached.accessToken,
-          manifestInfo: computeManifestInfo(appId, cached.depots, !cached.withGid)
+          manifestInfo: computeManifestInfo(appId, cachedDepots, !cached.withGid)
         }
       });
     }
 
     let gameName = hintName;
     let dlcIds: string[] = [];
-    let depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number }> = [];
-    let dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string } }> = [];
+    let depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean }> = [];
+    let dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean } }> = [];
     // SteamCMD 分包元数据的 dlcappid 是权威的「DLC → 分包」关联，
     // 先记录映射，待分包密钥/GID 全部补全后再生成 dlcDepots
     const dlcDepotMap = new Map<string, Set<string>>();
@@ -722,9 +755,18 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 铁律防御：分包必须具备有效解密密钥（非全0、长度>=32），防止 Steam 尝试解密无密钥分包报“内容仍然处于加密状态”
-    // 注意：绝不因为暂无清单 GID 过滤分包，所有拥有密钥的分包必须 100% 注入 Steam，彻底绝迹“无许可”！
-    depots = depots.filter((d) => isValidKey(d.depotKey));
+    // 铁律防御：分包必须具备有效解密密钥（非全0、长度>=32），防止 Steam 尝试解密无密钥分包报“内容仍然处于加密状态”。
+    //
+    // 但**不能静默删行**：原实现直接 filter 掉无密钥分包，导致同一个 AppID 的
+    // depots 数量随上游抖动在 4/9/11 之间跳变，客户端与运营都无法判断是
+    // “本作只有这些分包”还是“这次上游没给全”。改为保留条目并显式标记
+    // keyMissing，由客户端决定是否跳过该分包。
+    for (const d of depots) {
+      if (!isValidKey(d.depotKey)) {
+        d.depotKey = undefined;
+        d.keyMissing = true;
+      }
+    }
 
     // 5. 获取 PICS Access Token 与主游戏本体 Key
     const appLevelKey =
@@ -750,7 +792,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
         if (d) {
           dlcDepots.push({
             dlcAppId,
-            depot: { depotId: d.depotId, depotKey: d.depotKey, manifestGid: d.manifestGid }
+            depot: { depotId: d.depotId, depotKey: d.depotKey, manifestGid: d.manifestGid, keyMissing: d.keyMissing }
           });
         }
       }

@@ -343,7 +343,16 @@ router.get('/tokens/:appId', requireKeyAccess, getTokenForApp);
 router.get('/manifests/:appId', requireKeyAccess, getManifestsForApp);
 router.get('/manifests/download/:depotId/:manifestId', requireKeyAccess, downloadManifestFile);
 // 清单请求代码（Manifest Request Code）高速代理（公开只读，供客户端 Lua 内核秒级直连）
-router.get('/manifests/code/:gid', getManifestCode);
+// gid 完全由 URL 决定；未命中时单次请求要顺序探测 4 个上游（超时预算合计约 13 秒），
+// 不加限流等于把本服务变成对上游的放大器。单列较严的限流器。
+const manifestCodeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '清单代码查询过于频繁，请稍后再试' }
+});
+router.get('/manifests/code/:gid', manifestCodeLimiter, getManifestCode);
 
 // OST 内核中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）
 router.get('/ost/latest', requireKeyAccess, getLatestOstRelease);

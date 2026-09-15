@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
-import { writeStringAtomic } from '../utils/atomicJson.js';
+import { writeStringAtomicAsync } from '../utils/atomicJson.js';
 
 /**
  * 应用元数据索引（data/dlc_index.json）
@@ -63,6 +63,14 @@ export class DlcIndexService {
   constructor() {
     this.filePath = path.join(CONFIG.DATA_DIR, 'dlc_index.json');
     this.load();
+    // 进程退出前落盘：索引只在 2 秒防抖窗口结束后写盘，
+    // 若在此期间崩溃/重启，本次采集到的 DLC 与分包集合会全部丢失
+    const flushOnExit = () => {
+      try { this.flush(); } catch {}
+    };
+    process.once('beforeExit', flushOnExit);
+    process.once('SIGINT', () => { flushOnExit(); process.exit(0); });
+    process.once('SIGTERM', () => { flushOnExit(); process.exit(0); });
   }
 
   private load(): void {
@@ -160,6 +168,9 @@ export class DlcIndexService {
       });
     }
 
+    // 真正的 LRU 语义：Map 对已存在的 key 执行 set 不会改变插入序，
+    // 热点 AppID 会因「插入早」被优先淘汰。这里先删后插把它移到队尾。
+    this.index.delete(appId);
     this.index.set(appId, {
       name: entry.name || prev?.name,
       dlcIds: Array.from(new Set([...(prev?.dlcIds || []), ...entry.dlcIds])),
@@ -175,14 +186,17 @@ export class DlcIndexService {
     if (this.flushTimer) return;
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
-      this.flush();
+      void this.flush();
     }, DlcIndexService.FLUSH_DEBOUNCE_MS);
     (this.flushTimer as any).unref?.();
   }
 
-  /** 立即落盘（进程退出前可由调用方触发） */
-  public flush(): void {
-    if (!this.dirty || this.saveBlocked) return;
+  private flushing = false;
+
+  /** 立即落盘（进程退出前可由调用方触发）。异步实现：不阻塞事件循环 */
+  public async flush(): Promise<void> {
+    if (!this.dirty || this.saveBlocked || this.flushing) return;
+    this.flushing = true;
     try {
       // 超限时按插入序淘汰最旧，防止被脚本灌海量 AppID 撑爆内存与磁盘
       while (this.index.size > DlcIndexService.MAX_ENTRIES) {
@@ -193,10 +207,12 @@ export class DlcIndexService {
       const obj: Record<string, DlcIndexEntry> = {};
       for (const [appId, entry] of this.index) obj[String(appId)] = entry;
       // 紧凑序列化：美格缩进会让这个数万条的索引膨胀数倍
-      writeStringAtomic(this.filePath, JSON.stringify(obj));
+      await writeStringAtomicAsync(this.filePath, JSON.stringify(obj));
       this.dirty = false;
     } catch (e) {
       console.error('[DlcIndex] 保存索引失败:', (e as Error).message);
+    } finally {
+      this.flushing = false;
     }
   }
 
