@@ -5,6 +5,7 @@ import { gameService } from '../services/gameService.js';
 import { depotService } from '../services/depotService.js';
 import { tokenService } from '../services/tokenService.js';
 import { manifestService } from '../services/manifestService.js';
+import { dlcIndexService } from '../services/dlcIndexService.js';
 
 // 安全策略：不再关闭上游 HTTPS 证书校验（原 rejectUnauthorized:false 存在 MITM 注入密钥风险）
 const httpsAgent = new https.Agent();
@@ -393,7 +394,8 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     // 1. 检查预设热门游戏库
     const isValidKey = (k?: string) => Boolean(k && k.length >= 32 && !/^0+$/.test(k));
 
-    const preset = await gameService.getGameByAppId(appId);
+    // 元数据链路不需要头图：跳过 Store API 图片查询，避免白等 4 秒超时
+    const preset = await gameService.getGameByAppId(appId, { skipRemoteHeader: true });
     if (preset) {
       gameName = preset.nameZh || preset.name || gameName;
       if (Array.isArray(preset.dlcs)) {
@@ -409,53 +411,87 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 2/3. Steam Store API 与 SteamCMD API 相互独立（一个补名称/DLC，一个补分包/GID），
-    // 并行发起以减半上游等待延迟；任一失败静默降级，不影响另一个的结果
-    const needStoreInfo = !gameName || dlcIds.length === 0 || depots.length === 0;
-    const storeRequest = needStoreInfo
-      ? axios.get('https://store.steampowered.com/api/appdetails', {
-          params: { appids: sAppId, l: 'zh-CN', cc: 'CN' },
-          httpsAgent,
-          timeout: 4000,
-          headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
-        })
-      : Promise.resolve(null as any);
-    const cmdRequest = axios.get(`https://api.steamcmd.net/v1/info/${sAppId}`, {
-      httpsAgent,
-      timeout: 5000,
-      headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
-    });
-    const [storeSettled, cmdSettled] = await Promise.allSettled([storeRequest, cmdRequest]);
-
-    // 处理 Store API 结果：补全游戏名与 DLC 列表
-    if (storeSettled.status === 'fulfilled' && storeSettled.value) {
-      try {
-        const storeResp = storeSettled.value;
-        if (storeResp.data && storeResp.data[sAppId] && storeResp.data[sAppId].success) {
-          const sData = storeResp.data[sAppId].data;
-          if (!gameName && sData.name) {
-            gameName = sData.name;
-          }
-          if (Array.isArray(sData.dlc)) {
-            const dlcs = sData.dlc.map((d: any) => d.toString());
-            dlcIds = Array.from(new Set([...dlcIds, ...dlcs]));
-          }
-        }
-      } catch {}
+    // 2/3. 游戏名 + DLC 列表：优先本地持久化索引（data/dlc_index.json）
+    //
+    // 为什么不再无条件并行查 Steam Store API + SteamCMD API：
+    // - 两者的产出（游戏名 / DLC 列表）变化极低频，属于可长期缓存的数据；
+    // - Steam Store API 从服务器侧实测 30 秒完全不可达（国内网络），而它给的
+    //   游戏名与 DLC 列表 SteamCMD 全都有；
+    // - 被 Promise.allSettled 包着 = 等最慢的那个 → 每次首访白等 Store 的 4 秒超时，
+    //   这是「首次 8 秒」的主因。
+    //
+    // 现在的分层：
+    //   索引命中且非锁定模式 → 零上游请求，毫秒级返回
+    //   索引未命中          → 只查 SteamCMD（实测 0.3~1.6 秒），结果落盘
+    //   SteamCMD 失败       → 才用 Store API 兜底（唯一保留它的地方）
+    //
+    // 锁定版本（needGid）必须实时查 SteamCMD：清单 GID 随官方更新变化，不入索引。
+    // 索引总是读取：DLC 列表与 DLC→分包关联是稳定数据，锁定模式下也照样能用，
+    // 只是锁定模式仍必须查上游拿实时 GID
+    const indexEntry = dlcIndexService.get(appId);
+    if (indexEntry) {
+      if (!gameName && indexEntry.name) gameName = indexEntry.name;
+      if (indexEntry.dlcIds.length > 0) {
+        dlcIds = Array.from(new Set([...dlcIds, ...indexEntry.dlcIds]));
+      }
+      for (const [dlcAppId, depotIds] of Object.entries(indexEntry.dlcDepots)) {
+        if (dlcAppId === sAppId) continue;
+        if (!dlcDepotMap.has(dlcAppId)) dlcDepotMap.set(dlcAppId, new Set());
+        for (const dId of depotIds) dlcDepotMap.get(dlcAppId)!.add(dId);
+      }
+      // 回填权威分包清单：缺了它，命中索引时只能靠 depotService 的
+      // 「appId + 0..100」启发式扫描，返回的分包集合会与首次请求不一致
+      const known = new Set(depots.map((d) => d.depotId));
+      for (const d of indexEntry.depots) {
+        if (known.has(d.depotId)) continue;
+        depots.push({ depotId: d.depotId, depotKey: d.depotKey });
+        known.add(d.depotId);
+      }
     }
 
-    // 处理 SteamCMD 结果：补全精确的分包与 Manifest GID，并强力兜底游戏名称与 DLC 列表
-    if (cmdSettled.status === 'fulfilled') {
-      try {
-        const cmdResp = cmdSettled.value;
-        const appRaw = cmdResp.data?.data?.[sAppId];
+    // 索引命中且非锁定模式：上游全部跳过（零网络请求）。
+    // 锁定模式必须查上游：清单 GID 随官方更新变化，索引里刻意不存它。
+    const skipUpstream = !!indexEntry && !needGid;
 
-        // 补全游戏名称（Store API 超时或网络失败时由 SteamCMD 兜底）
+    if (!skipUpstream) {
+      // SteamCMD：一次请求同时给出游戏名、listofdlc、分包与 GID
+      let appRaw: any = null;
+      try {
+        const cmdResp = await axios.get(`https://api.steamcmd.net/v1/info/${sAppId}`, {
+          httpsAgent,
+          timeout: 5000,
+          headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
+        });
+        appRaw = cmdResp.data?.data?.[sAppId] || null;
+      } catch {}
+
+      // SteamCMD 完全失败时才动用 Store API 兜底（它只提供名称与 DLC，没有分包/GID）
+      if (!appRaw) {
+        try {
+          const storeResp = await axios.get('https://store.steampowered.com/api/appdetails', {
+            params: { appids: sAppId, l: 'zh-CN', cc: 'CN' },
+            httpsAgent,
+            timeout: 2500,
+            headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
+          });
+          const sData = storeResp.data?.[sAppId];
+          if (sData && sData.success && sData.data) {
+            if (!gameName && sData.data.name) gameName = sData.data.name;
+            if (Array.isArray(sData.data.dlc)) {
+              const dlcs = sData.data.dlc.map((d: any) => d.toString());
+              dlcIds = Array.from(new Set([...dlcIds, ...dlcs]));
+            }
+          }
+        } catch {}
+      }
+
+      try {
+        // 补全游戏名称（本地全量库已有名称时无需覆盖）
         if (!gameName && appRaw?.common?.name) {
           gameName = appRaw.common.name;
         }
 
-        // 从 SteamCMD extended.listofdlc 提取官方全部 DLC 列表（彻底解决商店 API 超时导致的 DLC 漏发）
+        // 从 SteamCMD extended.listofdlc 提取官方全部 DLC 列表
         const listofdlc = appRaw?.extended?.listofdlc;
         if (typeof listofdlc === 'string' && listofdlc.trim()) {
           const parts = listofdlc
@@ -523,12 +559,32 @@ export const getGameMetadata = async (req: Request, res: Response) => {
           }
         }
       } catch {}
+
+      // 把本次从 SteamCMD 拿到的「稳定数据」落盘，下次同 AppID 即可零上游返回。
+      // 只写 DLC 相关：清单 GID 会随官方更新变化，绝不入索引。
+      try {
+        const dlcDepotRecord: Record<string, string[]> = {};
+        for (const [dlcAppId, set] of dlcDepotMap) {
+          if (dlcAppId === sAppId || set.size === 0) continue;
+          dlcDepotRecord[dlcAppId] = Array.from(set);
+        }
+        dlcIndexService.set(appId, {
+          name: gameName || undefined,
+          dlcIds: dlcIds.filter((d) => d !== sAppId),
+          dlcDepots: dlcDepotRecord,
+          // 只存 depotId 与密钥：manifestGid 随官方更新变化，绝不入索引
+          depots: depots.map((d) => ({ depotId: d.depotId, depotKey: d.depotKey }))
+        });
+      } catch (e) {
+        console.warn(`[MetadataController] 写入 DLC 索引失败 (${appId}):`, (e as Error).message);
+      }
     }
 
     // 4. 后端内存密钥库高精度匹配（28.8万/30万条 DepotKeys - 核心旧源）
     const matchedKeys = await depotService.getDepotsForGame(
       appId,
-      dlcIds.map((d) => parseInt(d, 10)).filter((n) => !isNaN(n))
+      dlcIds.map((d) => parseInt(d, 10)).filter((n) => !isNaN(n)),
+      { skipRemoteHeader: true }
     );
 
     // 为已识别分包注入有效密钥，并补入 30w 密钥库命中的其他关联有效分包（杜绝无许可）

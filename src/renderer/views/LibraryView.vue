@@ -199,7 +199,7 @@
                   <span>已锁定</span>
                 </span>
 
-                <!-- 清单状态 -->
+                <!-- 清单状态：本地实体清单仅锁定版本模式才存在，跟随最新时为官方动态获取 -->
                 <span
                   v-if="manifestStatuses[game.appId]?.hasManifest || game.hasManifest"
                   class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/30 font-semibold"

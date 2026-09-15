@@ -28,6 +28,9 @@ server/data/notices.json
 server/data/notice.json
 server/data/chinese_games_cache.json
 server/data/toolbox_logs.json
+# DLC/分包元数据索引：服务端运行时自动积累，绝不入库（部署时需保留，勿覆盖）
+server/data/dlc_index.json
+server/data/dlc_index.json.corrupt
 server/data/license_ed25519_*
 server/data/manifests/*
 !server/data/manifests/.gitkeep

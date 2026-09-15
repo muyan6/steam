@@ -49,7 +49,11 @@ export class DepotService {
     }
   }
 
-  public async getDepotsForGame(appId: number, dlcs: number[] = []): Promise<{ [depotId: string]: string }> {
+  public async getDepotsForGame(
+    appId: number,
+    dlcs: number[] = [],
+    opts?: { skipRemoteHeader?: boolean }
+  ): Promise<{ [depotId: string]: string }> {
     if (!this.isLoaded) {
       this.loadDepotKeysDb();
     }
@@ -58,7 +62,9 @@ export class DepotService {
     const isValidKey = (k?: string) => k && k.length >= 32 && !/^0+$/.test(k);
 
     // 1. 尝试从预设热门库中提取预设好的有效 depot keys 及 DLC 列表
-    const presetGame = await gameService.getGameByAppId(appId);
+    // opts 透传：本方法只用到 presetGame 的 depots/dlcs，不需要头图，
+    // 元数据链路可借此跳过 Store API 的 4 秒超时
+    const presetGame = await gameService.getGameByAppId(appId, opts);
     if (presetGame && presetGame.depots) {
       for (const [dId, key] of Object.entries(presetGame.depots)) {
         if (isValidKey(key)) {

@@ -179,7 +179,10 @@ export class GameService {
     ];
   }
 
-  public async getGameByAppId(appId: number): Promise<SteamGame | null> {
+  public async getGameByAppId(
+    appId: number,
+    opts?: { skipRemoteHeader?: boolean }
+  ): Promise<SteamGame | null> {
     // 1. 优先在精修热门库查找
     const pop = this.popularGames.find((g) => g.appId === appId);
     if (pop) return pop;
@@ -196,7 +199,11 @@ export class GameService {
     }
     const compact = this.allGamesById.get(appId);
     if (compact) {
-      const realHeader = await this.fetchRealSteamHeader(compact.appId);
+      // skipRemoteHeader：调用方只要名称/密钥/DLC（如元数据接口）时跳过 Steam
+      // Store 图片查询 —— 该接口从服务器侧实测 30 秒完全不可达，会白等 4 秒超时。
+      // 名称已由本地全量库提供，头图在元数据链路里根本用不到。
+      // 列表/搜索等需要真实封面的场景不传此参数，行为完全不变。
+      const realHeader = opts?.skipRemoteHeader ? null : await this.fetchRealSteamHeader(compact.appId);
       return {
         appId: compact.appId,
         name: compact.name,
