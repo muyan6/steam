@@ -476,16 +476,28 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     const skipUpstream = !!indexEntry && !needGid;
 
     if (!skipUpstream) {
-      // SteamCMD：一次请求同时给出游戏名、listofdlc、分包与 GID
+      // SteamCMD：一次请求同时给出游戏名、listofdlc、分包与 GID。
+      //
+      // 它是**不可替代的权威源**，不能用 ManifestHub3 顶替：实测 Brotato (1942280)
+      // SteamCMD 报 4 个分包（1942281/1942282/1942283/2868390），而 Hub3 只报 2 个
+      // （缺 1942282、1942283），且 GID 与 Valve 当前 public 分支全部不一致（旧构建）。
+      // 用 Hub3 降级会直接丢掉分包、并把版本钉死在过期快照上。
+      //
+      // 但 api.steamcmd.net 是社区自建裸服务器（DNS 157.180.25.24，无 Cloudflare
+      // 兜底），偶发首包慢或失败。因此失败后重试一次 —— 这比降级到不完整的源
+      // 安全得多：成功一次就拿到完整权威结构，失败也只是多等 400ms。
       let appRaw: any = null;
-      try {
-        const cmdResp = await axios.get(`https://api.steamcmd.net/v1/info/${sAppId}`, {
-          httpsAgent,
-          timeout: 5000,
-          headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
-        });
-        appRaw = cmdResp.data?.data?.[sAppId] || null;
-      } catch {}
+      for (let attempt = 0; attempt < 2 && !appRaw; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 400));
+        try {
+          const cmdResp = await axios.get(`https://api.steamcmd.net/v1/info/${sAppId}`, {
+            httpsAgent,
+            timeout: 5000,
+            headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
+          });
+          appRaw = cmdResp.data?.data?.[sAppId] || null;
+        } catch {}
+      }
 
       // SteamCMD 完全失败时才动用 Store API 兜底（它只提供名称与 DLC，没有分包/GID）
       if (!appRaw) {
