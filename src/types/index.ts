@@ -271,7 +271,7 @@ export interface IpcResponse<T = any> {
   message?: string;
 }
 
-export type LicenseType = 'trial' | 'monthly' | 'quarterly' | 'yearly' | 'lifetime';
+export type LicenseType = 'trial' | 'monthly' | 'quarterly' | 'yearly' | 'lifetime' | 'invite';
 export type LicenseStatus = 'unused' | 'active' | 'expired' | 'disabled';
 
 export interface LicenseKey {
@@ -315,6 +315,7 @@ export interface LicenseStats {
   quarterlyCount: number;
   yearlyCount: number;
   lifetimeCount: number;
+  inviteCount: number;
 }
 
 export interface ToolboxActionResult {
@@ -350,6 +351,23 @@ export interface ToolboxRepairLog {
   deviceId?: string;
   details?: string;
   timestamp: string;
+}
+
+/** 邀请有礼：本机邀请状态（邀请码 = 设备码后 12 位 hex） */
+export interface InviteStatus {
+  deviceId: string;
+  /** 本机邀请码（展示格式 XXXX-XXXX-XXXX） */
+  inviteCode: string;
+  /** 本机成功邀请的设备数 */
+  invitedCount: number;
+  /** 本机作为邀请人累计获得的天数 */
+  earnedDays: number;
+  /** 本机是否已绑定过他人的邀请码（每设备仅一次） */
+  hasBoundInvite: boolean;
+  boundInviteCode: string;
+  boundAt: string;
+  /** 当前后台配置的单次奖励天数（邀请人与被邀请人相同） */
+  rewardDays: number;
 }
 
 export interface SponsorItem {

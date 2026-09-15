@@ -104,5 +104,7 @@ export const CONFIG = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || '',
   TRUST_PROXY: resolveTrustProxy(),
   // 未激活设备每日免费入库款数（按游戏计数，同一游戏含全部 DLC 只算 1 款，不重复计数）
-  FREE_DAILY_LIMIT: process.env.FREE_DAILY_LIMIT ? parseInt(process.env.FREE_DAILY_LIMIT, 10) || 2 : 2
+  FREE_DAILY_LIMIT: process.env.FREE_DAILY_LIMIT ? parseInt(process.env.FREE_DAILY_LIMIT, 10) || 2 : 2,
+  // 邀请有礼：邀请成功后邀请人与被邀请人各得的赞助版天数（后台可随时调整）
+  INVITE_REWARD_DAYS: process.env.INVITE_REWARD_DAYS ? parseInt(process.env.INVITE_REWARD_DAYS, 10) || 3 : 3
 };

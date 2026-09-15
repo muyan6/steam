@@ -76,6 +76,12 @@ import {
   extendLicenseAdmin
 } from '../controllers/licenseController.js';
 import {
+  getInviteStatus,
+  bindInviteCode,
+  getInviteOverviewAdmin,
+  updateInviteRewardDaysAdmin
+} from '../controllers/inviteController.js';
+import {
   getManifestNodes,
   getSha256PackageInfo,
   reportRepairLog,
@@ -372,6 +378,24 @@ router.get('/license/pubkey', (req: Request, res: Response) => {
   res.json({ success: true, data: { publicKeyHex: licenseSignService.getPublicKeyRawHex() } });
 });
 
+// 邀请有礼：邀请码即设备码后 12 位 hex（无需另行生成），每设备仅可绑定一次
+const inviteStatusLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '邀请状态查询过于频繁，请稍后再试' }
+});
+const inviteBindLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '邀请码绑定请求过于频繁，请稍后再试' }
+});
+router.get('/invite/status', inviteStatusLimiter, getInviteStatus);
+router.post('/invite/bind', inviteBindLimiter, bindInviteCode);
+
 // 工具箱 (Toolbox) 与清单高可用节点 (公开接口)
 router.get('/toolbox/nodes', getManifestNodes);
 router.get('/toolbox/sha256-data', getSha256PackageInfo);
@@ -453,6 +477,10 @@ router.post('/admin/devices/cleanup', (req, res) => {
 // 全局运行时设置（未激活每日免费额度）与应用内跳转链接
 router.get('/admin/settings', getSettingsAdmin);
 router.post('/admin/settings/free-quota', updateFreeQuotaLimitAdmin);
+
+// 邀请有礼：奖励天数配置与邀请记录概览
+router.get('/admin/invite/overview', getInviteOverviewAdmin);
+router.post('/admin/invite/reward-days', updateInviteRewardDaysAdmin);
 // 管理端读取链接配置（更新复用下方 POST /admin/links）
 router.get('/admin/links', (req, res) => {
   res.json({ success: true, data: appLinksService.getLinks() });

@@ -9,6 +9,8 @@ var currentLicList = [];
 var currentDevPage = 1;
 var currentDevTotalPages = 1;
 var currentDevList = [];
+var currentInvitePage = 1;
+var currentInviteTotalPages = 1;
 
 function getHeaders() {
   var t = authToken || localStorage.getItem('steammaster_admin_token') || '';
@@ -143,6 +145,7 @@ function switchTab(tabId, el) {
   if (tabId === 'notices') loadNotices();
   if (tabId === 'versions') loadVersions();
   if (tabId === 'sources') loadSources();
+  if (tabId === 'invite') loadInviteData(1);
   if (tabId === 'security') { loadAuditLogs(); loadAdminSettings(); }
 }
 
@@ -180,7 +183,8 @@ var TYPE_MAP = {
   'monthly': { label: '月卡 (30天)', badge: 'badge-blue' },
   'quarterly': { label: '季卡 (90天)', badge: 'badge-green' },
   'yearly': { label: '年卡 (365天)', badge: 'badge-amber' },
-  'lifetime': { label: '永久尊享卡', badge: 'badge-rose' }
+  'lifetime': { label: '永久尊享卡', badge: 'badge-rose' },
+  'invite': { label: '邀请奖励卡', badge: 'badge-amber' }
 };
 
 var STATUS_MAP = {
@@ -223,7 +227,7 @@ async function loadLicensesData(page) {
       var elExpired = document.getElementById('kpiLicExpired'); if (elExpired) elExpired.innerText = ((st.expired || 0) + (st.disabled || 0)).toLocaleString() + ' 张';
       var elBreakdown = document.getElementById('kpiLicTypeBreakdown');
       if (elBreakdown) {
-        elBreakdown.innerText = '体验: ' + (st.trialCount || 0) + ' · 月: ' + (st.monthlyCount || 0) + ' · 季: ' + (st.quarterlyCount || 0) + ' · 年: ' + (st.yearlyCount || 0) + ' · 永久: ' + (st.lifetimeCount || 0);
+        elBreakdown.innerText = '体验: ' + (st.trialCount || 0) + ' · 月: ' + (st.monthlyCount || 0) + ' · 季: ' + (st.quarterlyCount || 0) + ' · 年: ' + (st.yearlyCount || 0) + ' · 永久: ' + (st.lifetimeCount || 0) + ' · 邀请: ' + (st.inviteCount || 0);
       }
 
       // 渲染表格
@@ -732,6 +736,8 @@ async function loadAdminSettings() {
       var faq = document.getElementById('cfgFaqUrl'); if (faq) faq.value = links.faqUrl || '';
       var quota = document.getElementById('cfgFreeDailyLimit');
       if (quota && document.activeElement !== quota) quota.value = String(res.data.freeDailyLimit != null ? res.data.freeDailyLimit : 2);
+      var invDays = document.getElementById('cfgInviteRewardDays');
+      if (invDays && document.activeElement !== invDays && res.data.inviteRewardDays != null) invDays.value = String(res.data.inviteRewardDays);
     }
   } catch(e) { console.warn('loadAdminSettings error:', e); }
 
@@ -842,6 +848,110 @@ async function handleFreeQuotaSubmit() {
     var msgText = document.getElementById('quotaMsgText');
     if (res && res.success) {
       if (msg && msgText) { msg.className = 'alert-box alert-success'; msgText.innerText = res.message || '已保存'; msg.classList.remove('d-none'); }
+    } else {
+      if (msg && msgText) { msg.className = 'alert-box alert-error'; msgText.innerText = res.message || '保存失败'; msg.classList.remove('d-none'); }
+      else { alert('保存失败: ' + (res.message || '未知错误')); }
+    }
+  } catch(e) { alert('请求异常: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.innerText = '保存并立即生效'; } }
+}
+
+// ==================== 邀请有礼模块 ====================
+
+async function loadInviteData(page) {
+  if (page) currentInvitePage = page;
+  var searchInput = document.getElementById('inviteSearchInput');
+  var q = searchInput ? encodeURIComponent(searchInput.value.trim()) : '';
+  var tbody = document.getElementById('inviteTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px;">正在载入邀请记录...</td></tr>';
+  try {
+    var resp = await fetch('/api/admin/invite/overview?page=' + currentInvitePage + '&limit=20&search=' + q, { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
+    var res = await resp.json();
+    if (!res || !res.success || !res.data) return;
+    var d = res.data;
+    var st = d.stats || {};
+    var list = d.list || [];
+    var total = d.total || 0;
+    var limit = d.limit || 20;
+    currentInviteTotalPages = Math.ceil(total / limit) || 1;
+
+    var elTotal = document.getElementById('kpiInviteTotal'); if (elTotal) elTotal.innerText = (st.totalBindings || 0).toLocaleString() + ' 次';
+    var elPeople = document.getElementById('kpiInvitePeople'); if (elPeople) elPeople.innerText = (st.totalInviters || 0) + ' / ' + (st.totalInvitees || 0);
+    var elDays = document.getElementById('kpiInviteDays'); if (elDays) elDays.innerText = (st.totalDaysGranted || 0).toLocaleString() + ' 天';
+    var elToday = document.getElementById('kpiInviteToday'); if (elToday) elToday.innerText = (st.todayBindings || 0) + ' 次';
+    var invDays = document.getElementById('cfgInviteRewardDays');
+    if (invDays && document.activeElement !== invDays && st.rewardDays != null) invDays.value = String(st.rewardDays);
+
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px;">暂无匹配的邀请记录</td></tr>';
+    } else {
+      tbody.innerHTML = list.map(function(item) {
+        return '<tr>' +
+          '<td><strong style="color:var(--text-strong);font-family:monospace;font-size:12px;">' + escapeHtml(item.inviteCodeDisplay || item.inviteCode || '-') + '</strong></td>' +
+          '<td><code style="color:var(--c-blue);font-size:11px;word-break:break-all;">' + escapeHtml(item.inviterDeviceId || '-') + '</code></td>' +
+          '<td><code style="color:var(--c-green);font-size:11px;word-break:break-all;">' + escapeHtml(item.inviteeDeviceId || '-') + '</code></td>' +
+          '<td><span class="badge badge-blue">+' + (item.inviterDays || 0) + ' 天</span></td>' +
+          '<td><span class="badge badge-green">+' + (item.inviteeDays || 0) + ' 天</span></td>' +
+          '<td style="color:var(--text-dim);white-space:nowrap;">' + formatTime(item.createdAt) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    var elPg = document.getElementById('invitePageInfo');
+    if (elPg) elPg.innerText = '第 ' + currentInvitePage + ' / ' + currentInviteTotalPages + ' 页 · 共 ' + total + ' 条记录';
+    var btnPrev = document.getElementById('inviteBtnPrev');
+    var btnNext = document.getElementById('inviteBtnNext');
+    if (btnPrev) btnPrev.disabled = currentInvitePage <= 1;
+    if (btnNext) btnNext.disabled = currentInvitePage >= currentInviteTotalPages;
+
+    var rankBody = document.getElementById('inviteRankBody');
+    var top = st.topInviters || [];
+    if (rankBody) {
+      if (!top.length) {
+        rankBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:24px;">暂无邀请排行数据</td></tr>';
+      } else {
+        rankBody.innerHTML = top.map(function(r, idx) {
+          var rank = idx + 1;
+          var badge = rank === 1 ? 'badge-rose' : rank === 2 ? 'badge-amber' : rank === 3 ? 'badge-blue' : 'badge-gray';
+          return '<tr>' +
+            '<td><span class="badge ' + badge + '">No.' + rank + '</span></td>' +
+            '<td><code style="color:var(--c-blue);font-size:11px;word-break:break-all;">' + escapeHtml(r.deviceId) + '</code></td>' +
+            '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(r.inviteCode || '-') + '</td>' +
+            '<td><strong style="color:var(--c-green);">' + (r.count || 0) + '</strong> 人</td>' +
+            '<td><span class="badge badge-blue">' + (r.days || 0) + ' 天</span></td>' +
+          '</tr>';
+        }).join('');
+      }
+    }
+  } catch(e) {
+    console.error('loadInviteData error:', e);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--c-rose);padding:24px;">载入异常: ' + escapeHtml(e && e.message ? e.message : String(e)) + '</td></tr>';
+  }
+}
+
+function changeInvitePage(delta) {
+  var target = currentInvitePage + delta;
+  if (target >= 1 && target <= currentInviteTotalPages) loadInviteData(target);
+}
+
+async function handleInviteRewardSubmit() {
+  var days = parseInt(document.getElementById('cfgInviteRewardDays').value, 10);
+  if (isNaN(days) || days < 1 || days > 3650) { alert('邀请奖励天数需在 1 ~ 3650 之间'); return; }
+  var btn = document.getElementById('btnSaveInviteDays');
+  var msg = document.getElementById('inviteCfgMsg');
+  var msgText = document.getElementById('inviteCfgMsgText');
+  if (btn) { btn.disabled = true; btn.innerText = '正在保存...'; }
+  try {
+    var resp = await fetch('/api/admin/invite/reward-days', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ days: days })
+    });
+    var res = await resp.json();
+    if (res && res.success) {
+      if (msg && msgText) { msg.className = 'alert-box alert-success'; msgText.innerText = res.message || '已保存'; msg.classList.remove('d-none'); }
+      loadInviteData(1);
     } else {
       if (msg && msgText) { msg.className = 'alert-box alert-error'; msgText.innerText = res.message || '保存失败'; msg.classList.remove('d-none'); }
       else { alert('保存失败: ' + (res.message || '未知错误')); }

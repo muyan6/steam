@@ -60,6 +60,7 @@ export const getSettingsAdmin = (req: Request, res: Response) => {
       success: true,
       data: {
         freeDailyLimit: appSettingsService.getFreeDailyLimit(),
+        inviteRewardDays: appSettingsService.getInviteRewardDays(),
         links: appLinksService.getLinks()
       }
     });

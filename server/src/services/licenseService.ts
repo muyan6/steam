@@ -17,7 +17,7 @@ try {
   baseDir = process.cwd();
 }
 
-export type LicenseType = 'trial' | 'monthly' | 'quarterly' | 'yearly' | 'lifetime';
+export type LicenseType = 'trial' | 'monthly' | 'quarterly' | 'yearly' | 'lifetime' | 'invite';
 export type LicenseStatus = 'unused' | 'active' | 'expired' | 'disabled';
 
 export interface LicenseKey {
@@ -61,6 +61,7 @@ export interface LicenseStats {
   quarterlyCount: number;
   yearlyCount: number;
   lifetimeCount: number;
+  inviteCount: number;
 }
 
 const TYPE_NAMES: Record<LicenseType, string> = {
@@ -68,7 +69,8 @@ const TYPE_NAMES: Record<LicenseType, string> = {
   monthly: '月卡会员 (30天)',
   quarterly: '季卡会员 (90天)',
   yearly: '年卡会员 (365天)',
-  lifetime: '永久尊享卡 (终身有效)'
+  lifetime: '永久尊享卡 (终身有效)',
+  invite: '邀请奖励卡'
 };
 
 const TYPE_DAYS: Record<LicenseType, number> = {
@@ -76,7 +78,9 @@ const TYPE_DAYS: Record<LicenseType, number> = {
   monthly: 30,
   quarterly: 90,
   yearly: 365,
-  lifetime: -1
+  lifetime: -1,
+  // 邀请奖励实际天数由邀请配置决定，此处仅为兜底默认值
+  invite: 3
 };
 
 const TYPE_PREFIX_MAP: Record<LicenseType, string> = {
@@ -84,7 +88,8 @@ const TYPE_PREFIX_MAP: Record<LicenseType, string> = {
   monthly: 'CFD-M',
   quarterly: 'CFD-Q',
   yearly: 'CFD-Y',
-  lifetime: 'CFD-L'
+  lifetime: 'CFD-L',
+  invite: 'CFD-I'
 };
 
 export class LicenseService {
@@ -425,6 +430,120 @@ export class LicenseService {
   }
 
   /**
+   * 邀请有礼：为指定设备发放 N 天赞助版天数。
+   *
+   * 规则：
+   * - 该设备若已有在期卡密（非永久、未过期），直接在原到期时间上顺延 days 天；
+   * - 若为永久卡，则无需发放（返回 alreadyLifetime）；
+   * - 若没有任何在期卡密，则自动生成一张 `invite` 类型的奖励卡并直接绑定到该设备，
+   *   使其立刻获得 days 天赞助版权限。
+   *
+   * 该方法由邀请服务在「绑定邀请码成功」后调用（邀请人与被邀请人各调用一次）。
+   */
+  public grantInviteDays(deviceId: string, days: number, remark?: string): {
+    success: boolean;
+    message: string;
+    grantedDays: number;
+    alreadyLifetime?: boolean;
+    license?: ClientLicenseInfo;
+  } {
+    const cleanDeviceId = String(deviceId || '').trim();
+    if (!cleanDeviceId) {
+      return { success: false, message: '未获取到有效设备码，无法发放邀请奖励。', grantedDays: 0 };
+    }
+    // 天数夹取：1~3650，非法值一律回落 3 天
+    const n = Number(days);
+    const grantDays = Math.min(3650, Math.max(1, isNaN(n) || n <= 0 ? 3 : Math.floor(n)));
+
+    const boundCodes = this.getDeviceIndex().get(cleanDeviceId.toLowerCase()) || [];
+    const actives: LicenseKey[] = [];
+    for (const code of boundCodes) {
+      const key = this.keysCache.get(code);
+      if (!key) continue;
+      this.checkAndExpireKey(key);
+      if (key.status === 'active') actives.push(key);
+    }
+
+    // 永久卡直接免发：延长毫无意义，避免无谓写入
+    if (actives.some(k => k.type === 'lifetime' || k.durationDays === -1)) {
+      return {
+        success: true,
+        message: '该设备已是永久授权，无需发放邀请奖励天数。',
+        grantedDays: 0,
+        alreadyLifetime: true
+      };
+    }
+
+    // 选到期时间最晚的在期卡密作为顺延目标（与 verify 的特权选取规则保持一致）
+    actives.sort((a, b) => {
+      const tA = a.expiresAt ? new Date(a.expiresAt).getTime() : 0;
+      const tB = b.expiresAt ? new Date(b.expiresAt).getTime() : 0;
+      return tB - tA;
+    });
+
+    if (actives.length > 0) {
+      const key = actives[0];
+      const prevExpiresAt = key.expiresAt;
+      const prevDuration = key.durationDays;
+      const baseMs =
+        key.expiresAt && new Date(key.expiresAt).getTime() > Date.now()
+          ? new Date(key.expiresAt).getTime()
+          : Date.now();
+      key.expiresAt = new Date(baseMs + grantDays * 24 * 60 * 60 * 1000).toISOString();
+      key.durationDays = (key.durationDays || 0) + grantDays;
+      key.status = 'active';
+
+      if (!this.saveKeys()) {
+        // 落盘失败必须回滚内存态，避免"重启后奖励消失"的静默数据不一致
+        key.expiresAt = prevExpiresAt;
+        key.durationDays = prevDuration;
+        return { success: false, message: '数据保存失败，请稍后重试', grantedDays: 0 };
+      }
+      console.log(`[LicenseService] 邀请奖励已发放：设备 [${cleanDeviceId}] 顺延 ${grantDays} 天 (卡密 ${key.code})`);
+      return {
+        success: true,
+        message: `邀请奖励已到账：赞助有效期顺延 ${grantDays} 天！`,
+        grantedDays: grantDays,
+        license: this.buildClientLicenseInfo(key, cleanDeviceId, false)
+      };
+    }
+
+    // 无任何在期卡密：生成一张邀请奖励卡并即时绑定
+    let code = this.generateRandomCode('invite');
+    while (this.keysCache.has(code)) {
+      code = this.generateRandomCode('invite');
+    }
+    const nowMs = Date.now();
+    const nowStr = new Date(nowMs).toISOString();
+    const keyItem: LicenseKey = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `lic_inv_${nowMs}`,
+      code,
+      type: 'invite',
+      durationDays: grantDays,
+      status: 'active',
+      createdAt: nowStr,
+      deviceId: cleanDeviceId,
+      boundAt: nowStr,
+      expiresAt: new Date(nowMs + grantDays * 24 * 60 * 60 * 1000).toISOString(),
+      remark: remark || '邀请有礼奖励',
+      createdBy: 'invite'
+    };
+    this.keysCache.set(code, keyItem);
+
+    if (!this.saveKeys()) {
+      this.keysCache.delete(code);
+      return { success: false, message: '数据保存失败，请稍后重试', grantedDays: 0 };
+    }
+    console.log(`[LicenseService] 邀请奖励已发放：为设备 [${cleanDeviceId}] 新建 ${grantDays} 天奖励卡 ${code}`);
+    return {
+      success: true,
+      message: `邀请奖励已到账：已获得 ${grantDays} 天赞助版！`,
+      grantedDays: grantDays,
+      license: this.buildClientLicenseInfo(keyItem, cleanDeviceId, false)
+    };
+  }
+
+  /**
    * 换机迁移：将卡密绑定从旧设备迁移到新设备。
    * 安全约束：必须持有卡密且原设备码与绑定记录完全匹配才放行；
    * 剩余有效期沿用原到期时间（迁移不重置计时）。
@@ -481,6 +600,19 @@ export class LicenseService {
       message: `绑定已成功迁移到本机！有效期不变${key.expiresAt ? `（至 ${key.expiresAt.slice(0, 10)}）` : ''}。`,
       license: this.buildClientLicenseInfo(key, cleanNew, true)
     };
+  }
+
+  /**
+   * 全量已绑定卡密的设备码（保留原始大小写）。
+   * 邀请服务据此构建「邀请码 -> 邀请人设备码」索引，
+   * 即便某设备尚未上报心跳（不在 devices.json 中）也能被反查到。
+   */
+  public getBoundDeviceIds(): string[] {
+    const out: string[] = [];
+    for (const key of this.keysCache.values()) {
+      if (key.deviceId) out.push(key.deviceId);
+    }
+    return out;
   }
 
   /** 构建/获取 deviceId -> codes 反向索引 */
@@ -701,6 +833,7 @@ export class LicenseService {
     let quarterlyCount = 0;
     let yearlyCount = 0;
     let lifetimeCount = 0;
+    let inviteCount = 0;
 
     for (const k of this.keysCache.values()) {
       this.checkAndExpireKey(k);
@@ -714,6 +847,7 @@ export class LicenseService {
       else if (k.type === 'quarterly') quarterlyCount++;
       else if (k.type === 'yearly') yearlyCount++;
       else if (k.type === 'lifetime') lifetimeCount++;
+      else if (k.type === 'invite') inviteCount++;
     }
 
     return {
@@ -726,7 +860,8 @@ export class LicenseService {
       monthlyCount,
       quarterlyCount,
       yearlyCount,
-      lifetimeCount
+      lifetimeCount,
+      inviteCount
     };
   }
 

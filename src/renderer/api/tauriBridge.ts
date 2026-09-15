@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
-import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult, LocalGamesScanResult, SponsorItem, SponsorDataResponse, VersionChangelogItem } from '../../types';
+import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult, LocalGamesScanResult, SponsorItem, SponsorDataResponse, VersionChangelogItem, InviteStatus } from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
 import { APP_CONFIG } from '../../config/appConfig';
@@ -1169,6 +1169,74 @@ export const createTauriBridge = () => {
       } catch {}
       void sendTauriHeartbeatNow();
       return { success: true, message: '已清除本地赞助码与授权缓存' };
+    },
+
+    // ==================== 邀请有礼（邀请码 = 设备码后 12 位，无需另行生成） ====================
+
+    /**
+     * 由设备码派生邀请码：去掉 CFD- 前缀与连字符后取末尾 12 位 hex，
+     * 格式化为 XXXX-XXXX-XXXX。必须与服务端 inviteService.deriveInviteCode 完全一致。
+     * 本地派生仅用于即时展示，不参与任何校验。
+     */
+    deriveInviteCode: (deviceId: string): string => {
+      const hex = (deviceId || '')
+        .toUpperCase()
+        .replace(/^CFD-/, '')
+        .replace(/[^0-9A-F]/g, '');
+      if (hex.length < 12) return '';
+      const tail = hex.slice(-12);
+      return `${tail.slice(0, 4)}-${tail.slice(4, 8)}-${tail.slice(8, 12)}`;
+    },
+    /** 查询本机邀请状态（邀请码 / 已邀请人数 / 累计获得天数 / 是否已绑定） */
+    getInviteStatus: async (): Promise<InviteStatus | null> => {
+      try {
+        const devId = await invoke<string>('get_device_id');
+        const json = await getJson<{ success: boolean; data: InviteStatus }>(
+          `${API}/api/invite/status?deviceId=${encodeURIComponent(devId)}`,
+          5000
+        );
+        if (json?.success && json.data) return json.data;
+      } catch (e) {
+        console.warn('获取邀请状态异常:', e);
+      }
+      return null;
+    },
+    /** 绑定邀请码：本机与邀请人各获得后台配置的天数（赞助版） */
+    bindInviteCode: async (code: string): Promise<any> => {
+      const devId = await invoke<string>('get_device_id');
+      try {
+        const resp = await httpFetch(`${API}/api/invite/bind`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, deviceId: devId })
+        });
+        const json = await resp.json();
+        if (json?.success) {
+          // 奖励到账后立即刷新本地授权缓存：让用户无需重启即可看到赞助版状态
+          try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 3500);
+            const verifyResp = await httpFetch(`${API}/api/license/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ deviceId: devId }),
+              signal: ctrl.signal
+            });
+            clearTimeout(timer);
+            const verifyJson = await verifyResp.json();
+            if (verifyJson?.success && verifyJson?.data) {
+              const str = JSON.stringify(verifyJson.data);
+              localStorage.setItem('cfd_license_cache', str);
+              await invoke('save_license_cache', { data: str });
+            }
+          } catch {}
+          void sendTauriHeartbeatNow();
+          return { success: true, message: json.message || '邀请码绑定成功！', status: json.data };
+        }
+        return { success: false, message: json?.message || '邀请码绑定失败' };
+      } catch (e: any) {
+        return { success: false, message: `邀请码绑定请求异常: ${e?.message || String(e)}` };
+      }
     },
 
     // 未激活设备每日免费入库额度（动态上限支持后台随时调整，按本地日期刷新）

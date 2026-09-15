@@ -30,8 +30,36 @@
         </button>
       </div>
 
-      <!-- 弹窗主体内容 -->
-      <div class="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 text-xs">
+      <!-- 标签页切换：激活码 / 邀请有礼 -->
+      <div class="px-6 pt-3 pb-1 flex items-center gap-2 bg-slate-950/20 border-b border-white/5">
+        <button
+          @click="activeTab = 'license'"
+          class="px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+          :class="activeTab === 'license'
+            ? 'bg-slate-900 text-amber-300 border border-white/10 border-b-transparent'
+            : 'text-slate-400 hover:text-slate-200 border border-transparent'"
+        >
+          <Key class="w-3.5 h-3.5" />
+          <span>激活码绑定</span>
+        </button>
+        <button
+          @click="switchToInviteTab"
+          class="px-4 py-2 rounded-t-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+          :class="activeTab === 'invite'
+            ? 'bg-slate-900 text-rose-300 border border-white/10 border-b-transparent'
+            : 'text-slate-400 hover:text-slate-200 border border-transparent'"
+        >
+          <Gift class="w-3.5 h-3.5" />
+          <span>邀请有礼</span>
+          <span
+            v-if="inviteStatus && inviteStatus.invitedCount > 0"
+            class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/25 font-mono"
+          >{{ inviteStatus.invitedCount }}</span>
+        </button>
+      </div>
+
+      <!-- ==================== 标签页 1：激活码绑定 ==================== -->
+      <div v-show="activeTab === 'license'" class="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 text-xs">
         <!-- 1. 本机唯一设备识别码 (Device ID) -->
         <div class="p-4 rounded-2xl bg-slate-950/60 border border-white/5 space-y-2">
           <div class="flex items-center justify-between">
@@ -172,6 +200,128 @@
         </div>
       </div>
 
+      <!-- ==================== 标签页 2：邀请有礼 ==================== -->
+      <div v-show="activeTab === 'invite'" class="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 text-xs">
+        <!-- 活动说明 -->
+        <div class="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 space-y-2">
+          <div class="flex items-center gap-2 text-rose-300 font-bold text-xs">
+            <Gift class="w-4 h-4 text-rose-400 shrink-0" />
+            <span>邀请有礼 · 多邀多得</span>
+          </div>
+          <p class="text-[11.5px] text-slate-300 leading-relaxed">
+            把你的邀请码发给好友，好友在本页填写后：
+            <strong class="text-rose-300 font-semibold">好友立即获得 {{ inviteRewardDays }} 天赞助版</strong>，
+            <strong class="text-rose-300 font-semibold">你也同步获得 {{ inviteRewardDays }} 天</strong>。
+          </p>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            邀请人数不设上限，多邀多得；每个设备<strong class="text-amber-300">仅能绑定一次</strong>邀请码，
+            且不能填写自己的邀请码。奖励天数由官方统一配置，如有调整双方同步生效。
+          </p>
+        </div>
+
+        <!-- 我的邀请码 -->
+        <div class="p-4 rounded-2xl bg-slate-950/60 border border-white/5 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400 font-medium flex items-center gap-1.5">
+              <Share2 class="w-3.5 h-3.5 text-rose-400" />
+              <span>我的邀请码</span>
+            </span>
+            <span class="text-[10px] text-slate-400 font-mono">设备码后 12 位 · 无需另行生成</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex-1 bg-slate-900/90 px-3.5 py-2.5 rounded-xl border border-white/10 font-mono text-sm text-rose-300 font-black select-all tracking-[0.2em] text-center">
+              {{ myInviteCode || '正在生成邀请码...' }}
+            </div>
+            <button
+              @click="handleCopyInviteCode"
+              :disabled="!myInviteCode"
+              class="px-3.5 py-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 font-medium rounded-xl border border-white/10 transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            >
+              <Copy class="w-3.5 h-3.5" />
+              <span>{{ copiedInviteCode ? '已复制' : '复制' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 邀请战绩 -->
+        <div class="grid grid-cols-3 gap-3">
+          <div class="p-3 rounded-2xl bg-slate-950/60 border border-white/5 text-center">
+            <div class="text-[11px] text-slate-400 mb-1">成功邀请</div>
+            <div class="font-mono font-black text-base text-emerald-300">{{ inviteStatus?.invitedCount ?? 0 }} <span class="text-[10px] font-normal text-slate-400">人</span></div>
+          </div>
+          <div class="p-3 rounded-2xl bg-slate-950/60 border border-white/5 text-center">
+            <div class="text-[11px] text-slate-400 mb-1">累计获得</div>
+            <div class="font-mono font-black text-base text-rose-300">{{ inviteStatus?.earnedDays ?? 0 }} <span class="text-[10px] font-normal text-slate-400">天</span></div>
+          </div>
+          <div class="p-3 rounded-2xl bg-slate-950/60 border border-white/5 text-center">
+            <div class="text-[11px] text-slate-400 mb-1">单次奖励</div>
+            <div class="font-mono font-black text-base text-amber-300">{{ inviteRewardDays }} <span class="text-[10px] font-normal text-slate-400">天</span></div>
+          </div>
+        </div>
+
+        <!-- 填写邀请码 -->
+        <div class="space-y-2">
+          <label class="font-bold text-slate-200 text-xs flex items-center justify-between">
+            <span class="flex items-center gap-1.5">
+              <Ticket class="w-3.5 h-3.5 text-amber-400" />
+              <span>填写好友的邀请码</span>
+            </span>
+            <button
+              v-if="!inviteStatus?.hasBoundInvite"
+              @click="handlePasteInviteCode"
+              class="text-[11px] text-sky-400 hover:text-sky-300 transition font-normal"
+            >
+              从剪贴板粘贴
+            </button>
+          </label>
+
+          <!-- 已绑定：只读展示，防止重复领取 -->
+          <div
+            v-if="inviteStatus?.hasBoundInvite"
+            class="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-1"
+          >
+            <div class="flex items-center gap-2 text-emerald-300 font-bold text-xs">
+              <CheckCircle2 class="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>已绑定邀请码</span>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-300 pt-1">
+              <span class="text-slate-400">邀请码:</span>
+              <span class="font-mono font-bold text-emerald-300">{{ inviteStatus.boundInviteCode || '-' }}</span>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-300">
+              <span class="text-slate-400">绑定时间:</span>
+              <span class="font-mono text-slate-400">{{ formatDateTime(inviteStatus.boundAt) }}</span>
+            </div>
+            <p class="text-[10.5px] text-slate-500 pt-1">每个设备仅能绑定一次邀请码，奖励已发放到本机账户。</p>
+          </div>
+
+          <!-- 未绑定：可输入 -->
+          <template v-else>
+            <div class="flex items-center gap-2">
+              <input
+                v-model="inviteCodeInput"
+                type="text"
+                placeholder="例如: A1B2-C3D4-E5F6"
+                class="flex-1 bg-slate-950/80 border border-white/10 rounded-2xl px-4 py-3 text-xs font-mono text-slate-100 uppercase tracking-widest focus:outline-none focus:border-amber-400/80 focus:ring-1 focus:ring-amber-400/30"
+                @keydown.enter="handleBindInvite"
+              />
+              <button
+                @click="handleBindInvite"
+                :disabled="bindingInvite || !inviteCodeInput.trim()"
+                class="theme-btn-primary px-5 py-3 rounded-2xl font-bold text-xs disabled:opacity-50 transition shadow flex items-center gap-1.5 shrink-0"
+              >
+                <RotateCw v-if="bindingInvite" class="w-3.5 h-3.5 animate-spin" />
+                <Gift v-else class="w-3.5 h-3.5" />
+                <span>{{ bindingInvite ? '正在领取...' : `领取 ${inviteRewardDays} 天` }}</span>
+              </button>
+            </div>
+            <p class="text-[10.5px] text-slate-500 leading-tight">
+              绑定成功后本机立即获得 {{ inviteRewardDays }} 天赞助版（无卡密设备将自动发放奖励卡），邀请人同步获得 {{ inviteRewardDays }} 天。
+            </p>
+          </template>
+        </div>
+      </div>
+
       <!-- 弹窗底部操作栏 -->
       <div class="px-6 py-4 border-t border-white/5 flex items-center justify-between bg-slate-950/40">
         <button
@@ -206,9 +356,13 @@ import {
   Key,
   RotateCw,
   Zap,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Gift,
+  Share2,
+  Ticket,
+  CheckCircle2
 } from 'lucide-vue-next';
-import { ClientLicenseInfo, LicenseType } from '../../types';
+import { ClientLicenseInfo, LicenseType, InviteStatus } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
 
 const props = defineProps<{
@@ -222,6 +376,8 @@ const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
 }>();
 
+const activeTab = ref<'license' | 'invite'>('license');
+
 const deviceId = ref('');
 const copiedDeviceId = ref(false);
 const activationCodeInput = ref('');
@@ -229,6 +385,15 @@ const activating = ref(false);
 const showRebind = ref(false);
 const rebindOldDeviceId = ref('');
 const rebinding = ref(false);
+
+// 邀请有礼状态
+const myInviteCode = ref('');
+const copiedInviteCode = ref(false);
+const inviteCodeInput = ref('');
+const bindingInvite = ref(false);
+const inviteStatus = ref<InviteStatus | null>(null);
+// 单次奖励天数：优先取服务端下发值，离线时回退 3 天（仅用于展示）
+const inviteRewardDays = ref(3);
 
 const handleOpenSponsorPage = async () => {
   const url = props.sponsorUrl && props.sponsorUrl.trim();
@@ -255,7 +420,7 @@ const getLicenseBadgeClass = (status: string, type?: LicenseType) => {
 
 const getLicenseStatusText = (info: ClientLicenseInfo) => {
   if (info.isActivated) {
-    // 显示服务端下发的具体卡种名（体验卡/月卡/季卡/年卡/永久），未识别时回退通用文案
+    // 显示服务端下发的具体卡种名（体验卡/月卡/季卡/年卡/永久/邀请奖励），未识别时回退通用文案
     if (info.isLifetime) return info.typeName || '终身赞助者';
     const base = info.typeName || '赞助者';
     return `${base} (剩 ${info.remainingDays || 0} 天)`;
@@ -264,36 +429,78 @@ const getLicenseStatusText = (info: ClientLicenseInfo) => {
   return '普通用户';
 };
 
-const formatDateTime = (iso: string) => {
+const formatDateTime = (iso?: string) => {
+  if (!iso) return '-';
   try {
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   } catch {
     return iso;
   }
 };
 
+/** 复制通用逻辑：失败时给出明确反馈而非静默 */
+const copyText = async (text: string, okMsg: string): Promise<boolean> => {
+  if (!text) return false;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      emit('notify', okMsg, 'success');
+      return true;
+    } catch {
+      emit('notify', '复制失败：剪贴板不可用，请手动选择复制', 'error');
+      return false;
+    }
+  }
+  emit('notify', '剪贴板不可用，请手动选择复制', 'error');
+  return false;
+};
+
 const loadDeviceId = async () => {
   try {
     const id = await window.electronAPI.getDeviceId();
-    if (id) deviceId.value = id;
+    if (id) {
+      deviceId.value = id;
+      // 邀请码由设备码本地派生（与服务端算法一致），无需额外请求即可展示
+      myInviteCode.value = window.electronAPI.deriveInviteCode(id);
+    }
   } catch (e: any) {
     console.warn('获取设备码异常:', formatIpcError(e));
   }
 };
 
-const handleCopyDeviceId = () => {
-  if (!deviceId.value) return;
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(deviceId.value).then(() => {
-      copiedDeviceId.value = true;
-      emit('notify', '设备码已成功复制到剪贴板！', 'success');
-      setTimeout(() => { copiedDeviceId.value = false; }, 2000);
-    }).catch(() => {
-      emit('notify', '复制失败：剪贴板不可用，请手动选择复制', 'error');
-    });
-  } else {
-    emit('notify', '剪贴板不可用，请手动选择复制', 'error');
+const loadInviteStatus = async () => {
+  try {
+    const st = await window.electronAPI.getInviteStatus();
+    if (st) {
+      inviteStatus.value = st;
+      if (st.inviteCode) myInviteCode.value = st.inviteCode;
+      if (typeof st.rewardDays === 'number' && st.rewardDays > 0) {
+        inviteRewardDays.value = st.rewardDays;
+      }
+    }
+  } catch (e: any) {
+    console.warn('获取邀请状态异常:', formatIpcError(e));
+  }
+};
+
+const switchToInviteTab = async () => {
+  activeTab.value = 'invite';
+  if (!inviteStatus.value) await loadInviteStatus();
+};
+
+const handleCopyDeviceId = async () => {
+  if (await copyText(deviceId.value, '设备码已成功复制到剪贴板！')) {
+    copiedDeviceId.value = true;
+    setTimeout(() => { copiedDeviceId.value = false; }, 2000);
+  }
+};
+
+const handleCopyInviteCode = async () => {
+  if (await copyText(myInviteCode.value, '邀请码已复制，快发给好友吧！')) {
+    copiedInviteCode.value = true;
+    setTimeout(() => { copiedInviteCode.value = false; }, 2000);
   }
 };
 
@@ -313,6 +520,24 @@ const handlePasteCode = async () => {
   } catch (e: any) {
     // 权限被拒/无剪贴板数据时给出明确反馈，不再静默失败让用户困惑
     emit('notify', `读取剪贴板失败：${e?.message || '请手动输入赞助码'}`, 'warning');
+  }
+};
+
+const handlePasteInviteCode = async () => {
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        inviteCodeInput.value = text.trim().toUpperCase();
+        emit('notify', '已自动粘贴剪贴板内容', 'info');
+      } else {
+        emit('notify', '剪贴板为空，请手动输入邀请码', 'warning');
+      }
+    } else {
+      emit('notify', '当前环境不支持读取剪贴板，请手动输入', 'warning');
+    }
+  } catch (e: any) {
+    emit('notify', `读取剪贴板失败：${e?.message || '请手动输入邀请码'}`, 'warning');
   }
 };
 
@@ -371,6 +596,31 @@ const handleRebind = async () => {
   }
 };
 
+const handleBindInvite = async () => {
+  const code = inviteCodeInput.value.trim().toUpperCase();
+  if (!code) {
+    emit('notify', '请输入好友的邀请码后再领取', 'warning');
+    return;
+  }
+  bindingInvite.value = true;
+  try {
+    const res = await window.electronAPI.bindInviteCode(code);
+    if (res.success) {
+      emit('notify', res.message || '邀请码绑定成功，奖励已到账！', 'success');
+      inviteCodeInput.value = '';
+      await loadInviteStatus();
+      // 奖励可能新建了邀请奖励卡：刷新授权状态让顶栏徽章立即更新
+      emit('refresh');
+    } else {
+      emit('notify', res.message || '邀请码绑定失败', 'error');
+    }
+  } catch (e: any) {
+    emit('notify', `邀请码绑定失败: ${formatIpcError(e)}`, 'error');
+  } finally {
+    bindingInvite.value = false;
+  }
+};
+
 const handleUnbindLocal = async () => {
   if (!confirm('确定要清除本机的赞助授权缓存吗？')) return;
   try {
@@ -385,6 +635,7 @@ const handleUnbindLocal = async () => {
 };
 
 onMounted(() => {
-  loadDeviceId();
+  void loadDeviceId();
+  void loadInviteStatus();
 });
 </script>

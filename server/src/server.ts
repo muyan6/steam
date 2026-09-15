@@ -573,6 +573,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
         <button class="tab-btn" onclick="switchTab('versions', this)">🚀 版本与推送</button>
         <button class="tab-btn" onclick="switchTab('keys', this)">🔍 密钥检索</button>
         <button class="tab-btn" onclick="switchTab('sources', this)">🌐 多源调度</button>
+        <button class="tab-btn" onclick="switchTab('invite', this)">🎁 邀请有礼</button>
         <button class="tab-btn" onclick="switchTab('security', this)">⚙️ 链接与系统设置</button>
       </div>
 
@@ -625,8 +626,11 @@ const ADMIN_HTML = `<!DOCTYPE html>
             <button onclick="triggerSyncAll()" id="btnSyncAll" class="btn btn-primary" style="padding: 11px 22px; font-size: 14px;">
               <span>🔄 立即触发全量多源聚合同步</span>
             </button>
-            <button onclick="switchTab('security', document.querySelectorAll('.tab-btn')[7])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: var(--c-amber);">
+            <button onclick="switchTab('security', document.querySelectorAll('.tab-btn')[8])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: var(--c-amber);">
               <span>💖 配置赞助与反馈群链接 ➔</span>
+            </button>
+            <button onclick="switchTab('invite', document.querySelectorAll('.tab-btn')[7])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: var(--c-rose);">
+              <span>🎁 邀请有礼与奖励天数 ➔</span>
             </button>
             <button onclick="switchTab('devices', document.querySelectorAll('.tab-btn')[2])" class="btn btn-secondary" style="padding: 11px 20px; font-size: 14px; color: var(--c-purple);">
               <span>💻 查看客户端设备监控 ➔</span>
@@ -682,6 +686,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
                 <option value="quarterly">季卡会员 (90天)</option>
                 <option value="yearly">年卡会员 (365天)</option>
                 <option value="lifetime">永久尊享卡 (终身)</option>
+                <option value="invite">邀请奖励卡 (邀请有礼发放)</option>
               </select>
               <select id="licStatusFilter" class="input-ctrl" style="max-width: 140px;" onchange="loadLicensesData(1);">
                 <option value="all">全部授权状态</option>
@@ -898,7 +903,105 @@ const ADMIN_HTML = `<!DOCTYPE html>
         <div id="sourcesGrid" class="grid-2"></div>
       </div>
 
-      <!-- ==================== Tab 7: 安全配置 ==================== -->
+      <!-- ==================== Tab 7: 邀请有礼 ==================== -->
+      <div id="tab-invite" class="tab-content d-none" style="display: none;">
+        <div class="grid-4" style="margin-bottom: 24px;">
+          <div class="card kpi-card" style="border-left-color: var(--c-green);">
+            <div class="kpi-title"><span>累计邀请绑定</span> <span>🎁</span></div>
+            <div class="kpi-val" id="kpiInviteTotal" style="color: var(--c-green);">0</div>
+            <div class="kpi-sub">被邀请设备成功绑定邀请码的总次数</div>
+          </div>
+          <div class="card kpi-card" style="border-left-color: var(--c-blue);">
+            <div class="kpi-title"><span>邀请人 / 被邀请人</span> <span>👥</span></div>
+            <div class="kpi-val" id="kpiInvitePeople" style="color: var(--c-blue);">0 / 0</div>
+            <div class="kpi-sub">参与邀请的设备数（去重）</div>
+          </div>
+          <div class="card kpi-card" style="border-left-color: var(--c-purple);">
+            <div class="kpi-title"><span>累计发放天数</span> <span>⏱️</span></div>
+            <div class="kpi-val" id="kpiInviteDays" style="color: var(--c-purple);">0 天</div>
+            <div class="kpi-sub">邀请人与被邀请人双侧合计</div>
+          </div>
+          <div class="card kpi-card" style="border-left-color: var(--c-amber);">
+            <div class="kpi-title"><span>今日新增邀请</span> <span>🔥</span></div>
+            <div class="kpi-val" id="kpiInviteToday" style="color: var(--c-amber);">0</div>
+            <div class="kpi-sub">今日成功绑定的邀请次数</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 4px; display: block;">🎁 邀请奖励天数配置</strong>
+          <div style="color: var(--text-dim); font-size: 12px; margin-bottom: 14px;">
+            邀请码即「设备码的后 12 位」，无需另行生成；每个设备仅能绑定一次邀请码，邀请人不限制邀请人数，多邀多得。
+            此处修改后<strong style="color: var(--c-amber);">邀请人与被邀请人获得的天数同步生效</strong>，已发放的奖励不受影响。
+          </div>
+          <div class="form-row" style="align-items: flex-end;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>邀请人与被邀请人各获得天数 (1 ~ 3650)</label>
+              <input type="number" id="cfgInviteRewardDays" class="input-ctrl" min="1" max="3650" value="3" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <button type="button" id="btnSaveInviteDays" onclick="handleInviteRewardSubmit()" class="btn btn-primary" style="width: 100%; justify-content: center;">保存并立即生效</button>
+            </div>
+          </div>
+          <div id="inviteCfgMsg" class="alert-box alert-success d-none" style="margin-top: 12px;"><span id="inviteCfgMsgText"></span></div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 12px;">
+            <strong style="color: var(--text-strong); font-size: 15px;">📜 邀请绑定记录</strong>
+            <div style="display: flex; gap: 12px;">
+              <input type="text" id="inviteSearchInput" class="input-ctrl" style="max-width: 280px;" placeholder="🔍 搜索邀请码 / 邀请人设备码 / 被邀请人设备码..." onkeydown="if(event.key==='Enter') loadInviteData(1);" />
+              <button onclick="loadInviteData(1)" class="btn btn-secondary">🔍 筛选</button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>邀请码</th>
+                  <th>邀请人设备码</th>
+                  <th>被邀请人设备码</th>
+                  <th>邀请人获得</th>
+                  <th>被邀请人获得</th>
+                  <th>绑定时间</th>
+                </tr>
+              </thead>
+              <tbody id="inviteTableBody">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 32px; font-size: 14px;">正在载入邀请记录...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+            <div id="invitePageInfo" style="font-size: 13px; color: var(--text-mid);">第 1 / 1 页 · 共 0 条记录</div>
+            <div style="display: flex; gap: 10px;">
+              <button id="inviteBtnPrev" onclick="changeInvitePage(-1)" class="btn btn-secondary btn-sm">上一页</button>
+              <button id="inviteBtnNext" onclick="changeInvitePage(1)" class="btn btn-secondary btn-sm">下一页</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <strong style="color: var(--text-strong); font-size: 15px; margin-bottom: 14px; display: block;">🏆 邀请排行榜 (Top 10)</strong>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>排名</th>
+                  <th>邀请人设备码</th>
+                  <th>邀请码</th>
+                  <th>成功邀请人数</th>
+                  <th>累计获得天数</th>
+                </tr>
+              </thead>
+              <tbody id="inviteRankBody">
+                <tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 24px;">暂无邀请排行数据</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Tab 8: 安全配置 ==================== -->
       <div id="tab-security" class="tab-content d-none" style="display: none;">
         <div class="grid-2" style="margin-bottom: 24px;">
           <div class="card">

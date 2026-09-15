@@ -288,6 +288,13 @@ export class DeviceService {
     }
   }
 
+  /**
+   * 全量设备码列表（仅供服务端内部模块使用，如邀请码反查邀请人设备码）。
+   */
+  public getAllDeviceIds(): string[] {
+    return Array.from(this.devicesMap.keys());
+  }
+
   public getDeviceStats(): DeviceStats {
     const now = Date.now();
     const oneDayMs = 24 * 3600 * 1000;
