@@ -1460,8 +1460,18 @@ export class ManifestService {
   }
 
   /**
-   * 获取指定 GID 的清单请求代码（Manifest Request Code）
-   * 优先内存缓存 -> ManifestDeX 直供源 -> wudrm 官方源 -> 古韵国内镜像源 -> steamrun 亚太源
+   * 获取指定 GID 的清单请求代码（Manifest Request Code）。
+   *
+   * ManifestDeX 是唯一权威源 —— 实测同一 depot+gid 下，wudrm / 古韵 / steamrun
+   * 返回的请求码与 ManifestDeX 并不一致（例：depot 1086941 / gid 2613374344895573127，
+   * ManifestDeX 给 16792007641517249214，而 wudrm 与 steamrun 一致给
+   * 5615254503045846791）。旧实现按 ManifestDeX → wudrm → 古韵 → steamrun 逐级降级，
+   * 且把首个成功结果写进 2 小时正缓存：一旦 ManifestDeX 抖动，错码就会被固化并
+   * 经 /api/manifests/code/:gid 下发给所有客户端，客户端用它向 Valve CDN 拉清单
+   * 必然 404，表现为入库即报「无网络连接 / 0 字节下载」。
+   *
+   * 因此这里只保留权威源：拿不到就返回 null（客户端会走自己的直连源），
+   * 绝不回退到会返回错值的第三方源，更不把错值写进正缓存。
    */
   public async getManifestCode(gid: string): Promise<string | null> {
     if (!gid || !/^\d+$/.test(gid)) return null;
@@ -1477,8 +1487,8 @@ export class ManifestService {
       return null;
     }
 
-    // 1. ManifestDeX 清单代码直供源（第一优先级）
-    // 该源经 Cloudflare 保护，必须携带专用 User-Agent，缺失会被返回 403 质询页
+    // 唯一权威源：ManifestDeX 清单代码直供源。
+    // 该源经 Cloudflare 保护，必须携带专用 User-Agent，缺失会被返回 403 质询页。
     try {
       const resp = await axios.get(`https://manifest.manifestdex.com/${gid}`, {
         timeout: 3500,
@@ -1490,44 +1500,6 @@ export class ManifestService {
         if (/^\d+$/.test(text) && text !== '0') {
           this.setManifestCodeCache(gid, text);
           return text;
-        }
-      }
-    } catch {}
-
-    // 2. wudrm 官方清单代码源（全球最大覆盖面与最新数据）
-    // 走 HTTPS：明文 HTTP 可被中间人替换返回任意数字代码，进而被客户端 Lua 内核使用
-    try {
-      const resp = await axios.get(`https://gmrc.wudrm.com/manifest/${gid}`, { timeout: 3500, responseType: 'text' });
-      if (resp.status === 200 && typeof resp.data === 'string') {
-        const text = resp.data.trim();
-        if (/^\d+$/.test(text)) {
-          this.setManifestCodeCache(gid, text);
-          return text;
-        }
-      }
-    } catch {}
-
-    // 3. 古韵国内镜像源
-    try {
-      const resp = await axios.get(`https://gmrc.guyunsq.com/${gid}`, { timeout: 3000, responseType: 'text' });
-      if (resp.status === 200 && typeof resp.data === 'string') {
-        const text = resp.data.trim();
-        if (/^\d+$/.test(text)) {
-          this.setManifestCodeCache(gid, text);
-          return text;
-        }
-      }
-    } catch {}
-
-    // 4. steamrun 官方镜像源
-    try {
-      const resp = await axios.get(`https://manifest.steam.run/api/manifest/${gid}`, { timeout: 3000 });
-      if (resp.status === 200 && resp.data) {
-        const code = typeof resp.data === 'string' ? resp.data.match(/"content":"(\d+)"/)?.[1] : (resp.data as any).content;
-        if (code && /^\d+$/.test(String(code))) {
-          const sCode = String(code);
-          this.setManifestCodeCache(gid, sCode);
-          return sCode;
         }
       }
     } catch {}

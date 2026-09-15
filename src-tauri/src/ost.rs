@@ -121,34 +121,27 @@ function fetch_manifest_code(gid)
 
     local body, status, code
 
-    -- 第一优先级: ManifestDeX 清单代码直供源
-    -- 该源经 Cloudflare 保护, 必须携带专用 User-Agent, 缺失会被返回 403 质询页
+    -- 第一优先级: ManifestDeX 清单代码直供源 —— 实测唯一能给出
+    -- 「Valve 实际接受」的清单请求码的源, 因此它是唯一权威源。
+    -- 该源经 Cloudflare 保护, 必须携带专用 User-Agent, 缺失会被返回 403 质询页。
     body, status = http_get("https://manifest.manifestdex.com/" .. gid,
                             {["User-Agent"] = "ManifestDeX/1.0"})
     code = cfd_pick_code(body, status)
     if code then CFD_CODE_OK[gid] = code; return code end
 
-    -- 第二优先级: 春风渡云端中继源 (服务端带 2 小时缓存, 命中即毫秒级返回)
+    -- 第二优先级: 春风渡云端中继源。服务端同样只以 ManifestDeX 为准
+    -- (见 server 端 getManifestCode), 带 2 小时缓存, 命中即毫秒级返回。
     body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
     code = cfd_pick_code(body, status)
     if code then CFD_CODE_OK[gid] = code; return code end
 
-    -- 第三优先级: wudrm 官方清单代码源 (动态清单代码分发与兜底)
-    body, status = http_get("http://gmrc.wudrm.com/manifest/" .. gid)
-    code = cfd_pick_code(body, status)
-    if code then CFD_CODE_OK[gid] = code; return code end
-
-    -- 第四优先级: 古韵高速镜像源 (国内直连专线, 毫秒级响应)
-    body, status = http_get("https://gmrc.guyunsq.com/" .. gid)
-    code = cfd_pick_code(body, status)
-    if code then CFD_CODE_OK[gid] = code; return code end
-
-    -- 第五优先级: steamrun 亚太源 (JSON 包裹)
-    body, status = http_get("https://manifest.steam.run/api/manifest/" .. gid)
-    if status == 200 and body then
-        local s = body:match('"content":"(%d+)"')
-        if s and s ~= "0" then CFD_CODE_OK[gid] = s; return s end
-    end
+    -- 已移除 wudrm / 古韵 / steamrun 三个第三方源。
+    -- 原因: 实测同一 depot+gid 下它们返回的请求码与 ManifestDeX 不一致
+    -- (例如 depot 1086941 / gid 2613374344895573127: ManifestDeX 给
+    -- 16792007641517249214, wudrm 与 steamrun 一致给 5615254503045846791)。
+    -- 错码一旦被写进 CFD_CODE_OK 就会在整个 Steam 运行期内持续命中,
+    -- 表现为入库即报「无网络连接 / 0 字节下载」且重启才可能恢复。
+    -- 宁可返回 nil 也不返回错码 —— 上游失败应当尽快暴露, 而不是被掩盖成错值。
 
     CFD_CODE_FAIL[gid] = cfd_now()
     return nil
