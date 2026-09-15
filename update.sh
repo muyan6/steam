@@ -6,6 +6,11 @@
 # 用途: 自动拉取最新代码、增量安装依赖、重新编译并无缝重载服务
 # 注意: 服务端运行时数据（卡密/凭据/设备档案等）已移出版本控制，
 #       本脚本在重置代码前会自动备份并恢复这些数据文件。
+#
+# 环境变量:
+#   KEEP_LOCAL_VERSION_DATA=1  保留本地 version.json / versions.json 不被仓库覆盖
+#                              （默认 0 = 版本数据跟随仓库，见下方第 [1/5] 步注释）
+#   AUTO_SWITCH_REMOTE=1       把 origin 从 GitHub 改写为 Gitee 镜像（默认关闭）
 # ==============================================================================
 
 set -e
@@ -43,6 +48,10 @@ cd "$PROJECT_ROOT"
 
 if [ -d ".git" ]; then
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+    # detached HEAD 时 --abbrev-ref 返回字面量 HEAD，直接拿去 fetch 必然失败，回退到 main
+    if [ "$CURRENT_BRANCH" = "HEAD" ]; then
+        CURRENT_BRANCH="main"
+    fi
     echo -e "   -> 当前分支: ${CYAN}$CURRENT_BRANCH${NC}"
 
     # 切换 Gitee 加速源：默认关闭（仓库主远端是 GitHub，静默切换会造成困扰），
@@ -58,7 +67,19 @@ if [ -d ".git" ]; then
     BACKUP_DIR=$(mktemp -d)
     mkdir -p "$DATA_DIR"
     cp -a "$DATA_DIR"/*.json "$BACKUP_DIR"/ 2>/dev/null || true
-    BACKUP_COUNT=$(ls "$BACKUP_DIR"/*.json 2>/dev/null | wc -l)
+    # 版本发布数据默认跟随仓库，不参与"本地覆盖仓库"的恢复：
+    # version.json / versions.json 是随每次发版一起提交的，若被本地旧副本盖回，
+    # 就会出现"代码已更新到最新、云端下发的却还是旧版本号"的静默不一致
+    # （表现为用户永远收不到新版本更新提示）。
+    # 若你的发布流程完全依赖后台控制台写库（版本数据不在 git 里），
+    # 以 KEEP_LOCAL_VERSION_DATA=1 bash update.sh 保留旧行为。
+    if [ "${KEEP_LOCAL_VERSION_DATA:-0}" = "1" ]; then
+        echo -e "   -> ${YELLOW}KEEP_LOCAL_VERSION_DATA=1，版本数据保留本地副本${NC}"
+    else
+        rm -f "$BACKUP_DIR/version.json" "$BACKUP_DIR/versions.json"
+    fi
+    # 用 find 而非 ls | wc：目录为空时 ls 返回非 0，在 set -e 下会中断脚本
+    BACKUP_COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -name '*.json' | wc -l)
     echo -e "   -> 已备份 ${GREEN}${BACKUP_COUNT}${NC} 个运行时数据文件"
 
     # fetch + reset：服务器不产生本地提交，强制与远端对齐（解决分叉历史导致的 pull 冲突）
