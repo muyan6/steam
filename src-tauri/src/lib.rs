@@ -393,7 +393,9 @@ async fn update_game_rules(
         let Some(steam_path) = steam::detect_steam_path() else {
             return json!({ "success": false, "message": "未找到 Steam 客户端路径" });
         };
-        if let Err(e) = manifests::parse_metadata(app_id) {
+        // lock=true 要钉死 GID，必须拿社区对齐的真实 GID；lock=false 只是
+        // 重写为「跟随官方最新」规则，不需要 GID，可走轻量链路
+        if let Err(e) = manifests::parse_metadata(app_id, lock) {
             return json!({
                 "success": false,
                 "message": format!("获取最新版本信息失败，已保留原规则未做任何改动。原因：{}", e)

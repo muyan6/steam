@@ -430,7 +430,11 @@ fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload
     let mut metadata = None;
     let mut metadata_message: Option<String> = None;
 
-    match crate::manifests::parse_metadata(payload.app_id) {
+    // 清单 GID 只服务「锁定版本」模式（Lua 里会写 setManifestid）。
+    // 默认「跟随官方最新」时不需要 GID，跳过服务端与客户端的社区 GID 探测，
+    // 省下数秒上游等待；密钥与 DLC 完全不受影响。
+    let need_gid = payload.lock_version == Some(true);
+    match crate::manifests::parse_metadata(payload.app_id, need_gid) {
         Ok(meta) => {
             metadata_ok = true;
             for m in &meta.depots {
@@ -843,7 +847,8 @@ pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateSta
         };
     }
 
-    match crate::manifests::parse_metadata(app_id) {
+    // 版本检查的本质就是比对「钉死的 GID」与云端最新 GID，必须拿真实 GID
+    match crate::manifests::parse_metadata(app_id, true) {
         Ok(meta) => {
             let mut changed = Vec::new();
             for d in &meta.depots {

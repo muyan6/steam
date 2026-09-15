@@ -254,6 +254,99 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
   }
 }
 
+// ==================== 元数据响应缓存 ====================
+// 同一 AppID 的 DepotKey / DLC / GID 元数据在官方出新版本前是稳定的。
+// 加缓存后重复请求从 5~7 秒降到毫秒级，同时大幅削减对 SteamCMD 与
+// ManifestHub3 镜像的上游压力。
+//
+// withGid 标记至关重要：
+// - 「跟随官方最新」模式（needGid=false）：清单 GID 由 Steam 经 manifest.lua
+//   动态获取，服务端跳过 ManifestHub3 社区对齐（省 2.5~4 秒）；
+// - 「锁定版本」模式（needGid=true）：必须拿到社区对齐过的 GID，否则钉死的
+//   清单实体在镜像里不存在，会下不动。
+// 因此锁定模式绝不能复用 withGid=false 的轻量缓存条目。
+interface CachedMetadata {
+  appId: number;
+  name: string;
+  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number }>;
+  dlcIds: string[];
+  dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string } }>;
+  appLevelKey?: string;
+  accessToken?: string;
+  /** 是否包含社区对齐后的清单 GID（仅 needGid=true 的完整链路为 true） */
+  withGid: boolean;
+  fetchedAt: number;
+}
+
+const metadataCache = new Map<number, CachedMetadata>();
+const METADATA_TTL_MS = 10 * 60 * 1000; // 10 分钟
+const METADATA_CACHE_MAX = 500;
+
+function readMetadataCache(appId: number, needGid: boolean): CachedMetadata | null {
+  const entry = metadataCache.get(appId);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt >= METADATA_TTL_MS) {
+    metadataCache.delete(appId);
+    return null;
+  }
+  // 锁定版本必须有社区对齐过的 GID，轻量缓存不可复用
+  if (needGid && !entry.withGid) return null;
+  return entry;
+}
+
+function writeMetadataCache(entry: CachedMetadata): void {
+  // 写入前先清过期；仍超限则按插入序淘汰最旧
+  if (metadataCache.size >= METADATA_CACHE_MAX) {
+    const now = Date.now();
+    for (const [k, v] of metadataCache) {
+      if (now - v.fetchedAt >= METADATA_TTL_MS) metadataCache.delete(k);
+    }
+    while (metadataCache.size >= METADATA_CACHE_MAX) {
+      const oldest = metadataCache.keys().next().value;
+      if (oldest === undefined) break;
+      metadataCache.delete(oldest);
+    }
+  }
+  metadataCache.set(entry.appId, entry);
+}
+
+/**
+ * 本地清单就绪状态（纯本地文件检查，微秒级）。
+ * 命中缓存时必须重算：depotcache 会随后台沉淀与手动预缓存实时变化，
+ * 把它一起缓存会让界面长期停留在过期状态。
+ *
+ * dynamicByDefault：默认「跟随官方最新」模式下清单由 OST 动态调度，
+ * 本地没有实体文件属于正常状态，应报 dynamic 而非 missing。
+ */
+function computeManifestInfo(
+  appId: number,
+  depots: Array<{ depotId: string; manifestGid?: string }>,
+  dynamicByDefault: boolean
+): { status: 'ready' | 'dynamic' | 'missing'; hasPhysicalManifest: boolean; readyCount: number; totalCount: number } {
+  let readyManifestCount = 0;
+  let hasGidCount = 0;
+  for (const d of depots) {
+    if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
+      hasGidCount++;
+      if (manifestService.getLocalManifestFilePath(d.depotId, d.manifestGid, appId)) {
+        readyManifestCount++;
+      }
+    }
+  }
+  const status: 'ready' | 'dynamic' | 'missing' =
+    readyManifestCount > 0 && readyManifestCount >= depots.length
+      ? 'ready'
+      : hasGidCount > 0 || dynamicByDefault
+      ? 'dynamic'
+      : 'missing';
+  return {
+    status,
+    hasPhysicalManifest: readyManifestCount > 0,
+    readyCount: readyManifestCount,
+    totalCount: depots.length
+  };
+}
+
 export const getGameMetadata = async (req: Request, res: Response) => {
   try {
     const rawAppId = Array.isArray(req.params.appId) ? req.params.appId[0] : req.params.appId;
@@ -266,6 +359,28 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     // 客户端自报的游戏名只作提示回显：去除控制字符并截断，防止反射注入与超大参数
     const rawHint = typeof req.query.name === 'string' ? req.query.name : '';
     const hintName = rawHint.replace(/[\x00-\x1F\x7F]/g, '').slice(0, 64);
+
+    // needGid=1 → 「锁定版本」模式，走完整链路拿社区对齐 GID；
+    // 缺省 → 「跟随官方最新」模式，跳过纯 GID 的社区源探测
+    const needGid = req.query.needGid === '1' || req.query.needGid === 'true';
+
+    // 命中缓存直接返回（manifestInfo 必须重算，depotcache 实时变化）
+    const cached = readMetadataCache(appId, needGid);
+    if (cached) {
+      return res.json({
+        success: true,
+        data: {
+          appId: cached.appId,
+          name: cached.name,
+          depots: cached.depots,
+          dlcIds: cached.dlcIds,
+          dlcDepots: cached.dlcDepots,
+          appLevelKey: cached.appLevelKey,
+          accessToken: cached.accessToken,
+          manifestInfo: computeManifestInfo(appId, cached.depots, !cached.withGid)
+        }
+      });
+    }
 
     let gameName = hintName;
     let dlcIds: string[] = [];
@@ -431,8 +546,15 @@ export const getGameMetadata = async (req: Request, res: Response) => {
 
     // 4.5 社区实体清单库并发竞速对齐（ManifestHub3 镜像 + SteamML R2 并发并行提取）：
     // 关键原理：优先采用社区归档的清单 GID，保障物理清单下载成功率与密钥完整性
+    //
+    // 仅在「锁定版本」（needGid=true）时执行：该模式要钉死 GID 并从 depotcache
+    // 载入实体清单，社区归档的 GID 才对应得上镜像里的文件。
+    // 「跟随官方最新」模式下清单由 Steam 动态获取，这两轮纯 GID 的上游探测
+    // （合计 2.5~4 秒）纯属浪费 —— 跳过它，密钥仍由本地 28.8 万条库与 SteamCMD
+    // 完整提供。代码完整保留在 needGid 分支内（封存而非删除），
+    // 点一下「锁定版本」即回到旧版完整行为。
     let hub3Data: ManifestHub3Data | null = null;
-    try {
+    if (needGid) try {
       const [hub3Res, multiRes] = await Promise.allSettled([
         fetchManifestHub3(appId),
         manifestService.extractParsedDataFromMultiSources(appId)
@@ -505,31 +627,8 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       });
     }
 
-    // 6. 物理清单可用性非破坏性轻量探针（Pre-flight Probe）
-    let readyManifestCount = 0;
-    for (const d of depots) {
-      if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
-        const localPath = manifestService.getLocalManifestFilePath(d.depotId, d.manifestGid, appId);
-        if (localPath) {
-          readyManifestCount++;
-        }
-      }
-    }
-
-    const hasGidCount = depots.filter((d) => d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0').length;
-    const manifestStatus: 'ready' | 'dynamic' | 'missing' =
-      readyManifestCount > 0 && readyManifestCount >= depots.length
-        ? 'ready'
-        : hasGidCount > 0
-        ? 'dynamic'
-        : 'missing';
-
-    const manifestInfo = {
-      status: manifestStatus,
-      hasPhysicalManifest: readyManifestCount > 0,
-      readyCount: readyManifestCount,
-      totalCount: depots.length
-    };
+    // 6. 物理清单可用性非破坏性轻量探针（Pre-flight Probe，纯本地文件检查）
+    const manifestInfo = computeManifestInfo(appId, depots, !needGid);
 
     // 由权威 dlcappid 关联生成 dlcDepots（此时分包密钥/GID 已全部补全）
     for (const [dlcAppId, depotIdSet] of dlcDepotMap) {
@@ -544,12 +643,26 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 7. 异步后台触发清单本地沉淀（非阻塞），确保后续秒级响应
+    // 7. 异步后台触发清单本地沉淀（非阻塞），确保后续秒级响应。
+    // 默认模式没有社区对齐 GID，此循环自然空转，不会产生任何网络请求。
     for (const d of depots) {
       if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
         manifestService.ensureManifestCached(d.depotId, d.manifestGid, appId).catch(() => {});
       }
     }
+
+    // 8. 写入响应缓存（10 分钟 TTL）
+    writeMetadataCache({
+      appId,
+      name: gameName || `AppID ${sAppId}`,
+      depots,
+      dlcIds,
+      dlcDepots,
+      appLevelKey,
+      accessToken,
+      withGid: needGid,
+      fetchedAt: Date.now()
+    });
 
     return res.json({
       success: true,

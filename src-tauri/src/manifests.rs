@@ -488,11 +488,24 @@ pub struct AppMetadata {
     pub access_token: Option<String>,
 }
 
-pub fn parse_metadata(app_id: u32) -> Result<AppMetadata, String> {
-    match parse_metadata_from_server(app_id) {
+/// 获取 App 元数据（分包密钥 + DLC + 可选清单 GID）。
+///
+/// `need_gid` 决定是否付出「清单 GID」的获取成本：
+/// - `false`（默认，「跟随官方最新」）：清单由 Steam 经 manifest.lua 动态获取，
+///   本地不需要 GID。此时服务端跳过 ManifestHub3 社区对齐，客户端也不做
+///   align_manifest_gids_with_hub3 —— 省下 2.5~4 秒纯 GID 上游探测。
+///   分包密钥、DLC 列表、accessToken 完全不受影响（均来自本地库与 SteamCMD）。
+/// - `true`（「锁定版本」/ 手动预缓存 / 版本检查）：必须拿到社区对齐的 GID，
+///   否则钉死的清单实体在镜像里不存在，会下不动。
+///
+/// 两条路径的代码都完整保留，仅以本开关分流；回退成本为点击一次「锁定版本」。
+pub fn parse_metadata(app_id: u32, need_gid: bool) -> Result<AppMetadata, String> {
+    match parse_metadata_from_server(app_id, need_gid) {
         Ok(mut m) if !m.depots.is_empty() => {
-            // 双端防御：客户端自动与 ManifestHub3 对齐真实存在的清单实体 GID
-            align_manifest_gids_with_hub3(&mut m, app_id);
+            if need_gid {
+                // 与 ManifestHub3 对齐真实存在的清单实体 GID（仅锁定模式需要）
+                align_manifest_gids_with_hub3(&mut m, app_id);
+            }
             // 只要服务端成功返回分包与密钥，直接返回元数据，100% 确保密钥注入 Steam
             Ok(m)
         }
@@ -996,20 +1009,26 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
     })
 }
 
-fn parse_metadata_from_server(app_id: u32) -> Result<AppMetadata, String> {
+fn parse_metadata_from_server(app_id: u32, need_gid: bool) -> Result<AppMetadata, String> {
     // deviceId 同时经请求头与 query 传递：新服务端优先读头，
-    // 旧服务端（未升级）仍可从 query 兜底，保证向前兼容
+    // 旧服务端（未升级）仍可从 query 兜底，保证向前兼容。
+    // needGid 仅新服务端识别：旧服务端会忽略它并走完整链路，
+    // 属安全降级（只是慢一些，不会缺数据）
     let device_id = crate::device::get_device_id();
     let url = format!(
-        "{}/api/metadata/{}?deviceId={}",
+        "{}/api/metadata/{}?deviceId={}{}",
         SERVER_API,
         app_id,
-        urlencoding_query(&device_id)
+        urlencoding_query(&device_id),
+        if need_gid { "&needGid=1" } else { "" }
     );
+    // 超时放宽到 25 秒：服务端在「锁定版本」模式下要实时查 SteamCMD 与
+    // 四个 ManifestHub3 镜像（实测 5~7 秒，偶发更高）。原先的 10 秒余量过紧，
+    // 会让偶发卡顿直接触发降级，日志里刷出大量「云端服务不可达」。
     let resp = block_on(
         http_client()
             .get(&url)
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(25))
             .header("x-device-id", device_id)
             .send(),
     )
@@ -1447,7 +1466,8 @@ pub fn download_depot_manifests(
     app_id: u32,
     _dlcs: &[u32],
 ) -> ManifestInstallResult {
-    let meta = match parse_metadata(app_id) {
+    // 预缓存实体清单必须有真实 GID 才能定位镜像文件，固定走完整链路
+    let meta = match parse_metadata(app_id, true) {
         Ok(v) => v,
         Err(e) => {
             return ManifestInstallResult {
