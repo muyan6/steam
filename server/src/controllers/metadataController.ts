@@ -396,6 +396,19 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     // 先记录映射，待分包密钥/GID 全部补全后再生成 dlcDepots
     const dlcDepotMap = new Map<string, Set<string>>();
 
+    // 是否已获得**权威分包归属**（SteamCMD depots / 精修预设库 / 索引回填）。
+    //
+    // 这个标志决定启发式扫描的角色：
+    // - true ：启发式只用于给「已列出的分包」补密钥，绝不新增 depot
+    // - false：无任何权威来源，才用启发式扫描兜底补分包
+    //
+    // 为什么必须区分：密钥库的启发式扫描按「appId + 0..100」取邻近 ID，
+    // 相邻不等于属于本作。实测 Brotato (1942280) 权威分包仅 4 个
+    // （1942281/1942282/1942283/2868390），但启发式会额外捞入
+    // 1942291/1942321/1942361/1942381/1942391/1942440... 等 10 个非本作 ID，
+    // 表现为「同一游戏每次入库分包数在 9/11/15 之间跳动」。
+    let authoritativeDepotSource = false;
+
     // 1. 检查预设热门游戏库
     const isValidKey = (k?: string) => Boolean(k && k.length >= 32 && !/^0+$/.test(k));
 
@@ -412,6 +425,8 @@ export const getGameMetadata = async (req: Request, res: Response) => {
             depotId: dId,
             depotKey: isValidKey(key) ? key : undefined
           });
+          // 精修预设库是人工维护的权威归属
+          authoritativeDepotSource = true;
         }
       }
     }
@@ -452,6 +467,8 @@ export const getGameMetadata = async (req: Request, res: Response) => {
         depots.push({ depotId: d.depotId, depotKey: d.depotKey });
         known.add(d.depotId);
       }
+      // 索引里的分包是首次采集时从 SteamCMD 落盘的，同样属权威归属
+      if (indexEntry.depots.length > 0) authoritativeDepotSource = true;
     }
 
     // 索引命中且非锁定模式：上游全部跳过（零网络请求）。
@@ -507,6 +524,9 @@ export const getGameMetadata = async (req: Request, res: Response) => {
         }
 
         const depotsData = appRaw?.depots;
+        // 统计本段实际采纳的权威分包数：为 0 说明 SteamCMD 没给出分包归属，
+        // 此时才允许启发式扫描兜底补分包
+        let steamCmdDepotAccepted = 0;
         if (depotsData && typeof depotsData === 'object') {
           const skipPatterns = ['config', 'sharedinstall', 'shareddepot', 'redist'];
           for (const [dId, info] of Object.entries(depotsData)) {
@@ -556,6 +576,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
             } else {
               depots.push({ depotId: dId, manifestGid, depotKey: depotKey || undefined });
             }
+            steamCmdDepotAccepted++;
             // 记录权威 DLC→分包关联（仅记入实际保留的内容分包）
             if (associatedDlc && associatedDlc !== sAppId) {
               if (!dlcDepotMap.has(associatedDlc)) dlcDepotMap.set(associatedDlc, new Set());
@@ -563,6 +584,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
             }
           }
         }
+        if (steamCmdDepotAccepted > 0) authoritativeDepotSource = true;
       } catch {}
 
       // 把本次从 SteamCMD 拿到的「稳定数据」落盘，下次同 AppID 即可零上游返回。
@@ -601,16 +623,25 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       { skipRemoteHeader: true }
     );
 
-    // 为已识别分包注入有效密钥，并补入 30w 密钥库命中的其他关联有效分包（杜绝无许可）
+    // 4.1 为已识别分包注入有效密钥（只补缺失的 key，不改分包集合）
     for (const d of depots) {
       if ((!d.depotKey || !isValidKey(d.depotKey)) && matchedKeys[d.depotId]) {
         d.depotKey = matchedKeys[d.depotId];
       }
     }
-    for (const [dId, key] of Object.entries(matchedKeys)) {
-      if (!isValidKey(key)) continue;
-      if (!depots.some((d) => d.depotId === dId)) {
-        depots.push({ depotId: dId, depotKey: key });
+
+    // 4.2 仅在**无权威分包归属**时，才用启发式扫描结果补充分包。
+    //
+    // 有权威来源时绝不并入：启发式按 ID 邻近取值，会把 AppID 相邻的
+    // 无关游戏 depot 一起带进来（Brotato 实测多出 10 个非本作 ID），
+    // 表现为同一游戏每次入库分包数不一致。少挂几个无害，
+    // 挂错却可能让 Steam 去下载并不属于本作的内容。
+    if (!authoritativeDepotSource) {
+      for (const [dId, key] of Object.entries(matchedKeys)) {
+        if (!isValidKey(key)) continue;
+        if (!depots.some((d) => d.depotId === dId)) {
+          depots.push({ depotId: dId, depotKey: key });
+        }
       }
     }
 
