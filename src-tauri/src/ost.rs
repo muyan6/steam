@@ -87,12 +87,40 @@ pub const MANIFEST_LUA: &str = r#"-- ===== 清单请求码调度器 (由春风�
 -- 全局变量, 绝对不能使用 local, 否则后面的函数会找不到它并报 nil 调用错误。
 -- 校验方式: pwsh -File scripts/check_manifest_lua.ps1
 
--- 正缓存 gid -> code。清单请求码对同一 GID 稳定不变, 同一次 Steam 运行期内
--- 永久复用; Steam 会针对同一 GID 反复查询(重试/续传/多分包共用), 这是清单慢的主因。
+-- 正缓存 gid -> {code=..., ts=...}。Steam 会针对同一 GID 反复查询(重试/续传/多分包共用),
+-- 缓存能把重复请求降为 0 次网络往返。
+-- 但**不能永久缓存**: 实测同一 depot+gid 的清单请求码会随时间轮换 ——
+-- gid 2613374344895573127 在一小时内从 16792007641517249214 变成 1790064358646451831。
+-- 旧实现写死「同一次 Steam 运行期内永久复用」, 一旦码轮换, 缓存的旧码会让后续
+-- 所有分包都拉不到清单, 表现为入库即报「无网络连接」且只有重启 Steam 才可能恢复。
+-- 故给正缓存加 TTL, 过期后重新取码。
 if not CFD_CODE_OK then CFD_CODE_OK = {} end
 -- 负缓存 gid -> 失败时间戳。短期抑制, 避免同一 GID 反复空等各源超时。
 if not CFD_CODE_FAIL then CFD_CODE_FAIL = {} end
 if not CFD_CODE_NEG_TTL then CFD_CODE_NEG_TTL = 120 end
+if not CFD_CODE_TTL then CFD_CODE_TTL = 900 end
+
+-- 读正缓存: 命中且未过期才返回 code, 过期即清除并返回 nil
+function cfd_cache_get(gid)
+    local entry = CFD_CODE_OK[gid]
+    if not entry then return nil end
+    -- 兼容旧格式(裸字符串): 无时间戳, 视为已过期, 强制重新取码
+    if type(entry) == "string" then
+        CFD_CODE_OK[gid] = nil
+        return nil
+    end
+    local nowTs = cfd_now()
+    if nowTs > 0 and entry.ts and (nowTs - entry.ts) >= CFD_CODE_TTL then
+        CFD_CODE_OK[gid] = nil
+        return nil
+    end
+    return entry.code
+end
+
+-- 写正缓存: 连同取码时间一起存, 供 cfd_cache_get 判定是否过期
+function cfd_cache_put(gid, code)
+    CFD_CODE_OK[gid] = { code = code, ts = cfd_now() }
+end
 
 function cfd_now()
     local ok, t = pcall(os.time)
@@ -109,7 +137,7 @@ function cfd_pick_code(body, status)
 end
 
 function fetch_manifest_code(gid)
-    local cached = CFD_CODE_OK[gid]
+    local cached = cfd_cache_get(gid)
     if cached then return cached end
 
     local failedAt = CFD_CODE_FAIL[gid]
@@ -127,21 +155,28 @@ function fetch_manifest_code(gid)
     body, status = http_get("https://manifest.manifestdex.com/" .. gid,
                             {["User-Agent"] = "ManifestDeX/1.0"})
     code = cfd_pick_code(body, status)
-    if code then CFD_CODE_OK[gid] = code; return code end
+    if code then cfd_cache_put(gid, code); return code end
 
-    -- 第二优先级: 春风渡云端中继源。服务端同样只以 ManifestDeX 为准
-    -- (见 server 端 getManifestCode), 带 2 小时缓存, 命中即毫秒级返回。
+    -- 第二优先级: 春风渡云端中继源(薄代理)。
+    --
+    -- 它不产生新值, 只转发 ManifestDeX 的结果(见 server 端 getManifestCode);
+    -- 服务端缓存已压到 5 分钟, 因此它给出的是「最多 5 分钟前」的值 —— 足够新鲜,
+    -- 同时能吸收大量客户端对同一 gid 的并发查询, 并在弱网/被质询时救急。
+    --
+    -- 定位说明: 它**不能替代**第一优先级 —— 中继自己也是从 ManifestDeX 取值的,
+    -- 本地直连可用时, 直连永远比绕一圈更快也更权威。因此顺序必须是
+    -- ManifestDeX → 云端中继, 绝不可颠倒(颠倒会让所有请求都绕远, 且多一层过期风险)。
     body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
     code = cfd_pick_code(body, status)
-    if code then CFD_CODE_OK[gid] = code; return code end
+    if code then cfd_cache_put(gid, code); return code end
 
     -- 已移除 wudrm / 古韵 / steamrun 三个第三方源。
-    -- 原因: 实测同一 depot+gid 下它们返回的请求码与 ManifestDeX 不一致
-    -- (例如 depot 1086941 / gid 2613374344895573127: ManifestDeX 给
-    -- 16792007641517249214, wudrm 与 steamrun 一致给 5615254503045846791)。
-    -- 错码一旦被写进 CFD_CODE_OK 就会在整个 Steam 运行期内持续命中,
-    -- 表现为入库即报「无网络连接 / 0 字节下载」且重启才可能恢复。
-    -- 宁可返回 nil 也不返回错码 —— 上游失败应当尽快暴露, 而不是被掩盖成错值。
+    -- 原因: 实测它们的刷新节奏落后于权威源, 同一 depot+gid 在同一时刻会给出
+    -- 与 ManifestDeX 不同的值(depot 1086941 / gid 2613374344895573127 上,
+    -- ManifestDeX 与云端给 16792007641517249214, wudrm 与 steamrun 给
+    -- 5615254503045846791)。这类滞后值一旦被缓存并交给 Steam, 该分包就拉不到清单,
+    -- 表现为入库即报「无网络连接 / 0 字节下载」。
+    -- 宁可返回 nil 也不返回滞后值 —— 上游失败应当尽快暴露, 而不是被掩盖成错值。
 
     CFD_CODE_FAIL[gid] = cfd_now()
     return nil

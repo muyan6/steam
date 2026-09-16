@@ -1420,7 +1420,15 @@ export class ManifestService {
   }
 
   private manifestCodeCache = new Map<string, { code: string; fetchedAt: number }>();
-  private readonly MANIFEST_CODE_TTL_MS = 2 * 60 * 60 * 1000; // 2小时内存缓存
+  // 缓存时长必须短：实测同一 depot+gid 的清单请求码会随时间变化
+  // （gid 2613374344895573127 在数小时内从 16792007641517249214 变为
+  // 1790064358646451831），且各上游刷新节奏不一致 —— 落后的源在同一时刻会给出
+  // 与权威源不同的值。缓存越久，把过期码下发给客户端的窗口越长，客户端用它向
+  // Valve CDN 拉清单会直接失败（表现为「无网络连接 / 0 字节下载」）。
+  // 原为 2 小时，过长；改为 5 分钟。
+  // 新客户端已封存云端降级（不再调用本接口），但**旧客户端仍会调用**：
+  // 对它们而言本接口是 ManifestDeX 直连失败后的唯一来源，缓存越短越安全。
+  private readonly MANIFEST_CODE_TTL_MS = 5 * 60 * 1000;
   // 容量上限：公开接口可枚举 gid，仅靠 TTL 惰性淘汰不足以防止内存无界增长
   private readonly MANIFEST_CODE_CACHE_MAX = 20000;
   // 负结果短 TTL 缓存：/api/manifests/code/:gid 是公开接口且 gid 由 URL 决定，

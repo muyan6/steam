@@ -129,6 +129,55 @@ if httpCalls ~= 1 then
 end
 print('POSITIVE_CACHE_OK')
 
+-- 正缓存 TTL：清单请求码会随时间轮换，缓存必须过期重新取码。
+-- 打桩 cfd_now 以便在不等待真实时间的情况下验证过期行为。
+local real_cfd_now = cfd_now
+-- 同时保存 http_get 桩：后面的负缓存用例依赖上面那个「返回 nil, 500」的桩，
+-- 本段结束后必须还原，否则会把负缓存用例一起带偏。
+local real_http_get = _G.http_get
+local fakeNow = 1000000
+_G.cfd_now = function() return fakeNow end
+
+local ttlGid = '3000000000000000003'
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    return '111222333', 200
+end
+local t1 = fetch_manifest_code(ttlGid)
+if t1 ~= '111222333' then
+    print('FAIL: TTL case first fetch got ' .. tostring(t1))
+    os.exit(1)
+end
+local callsAfterFirst = httpCalls
+
+-- 未过期：第二次必须走缓存，零网络请求
+local t2 = fetch_manifest_code(ttlGid)
+if t2 ~= '111222333' or httpCalls ~= callsAfterFirst then
+    print('FAIL: TTL case should hit cache before expiry')
+    os.exit(1)
+end
+
+-- 推进到超过 CFD_CODE_TTL 之后：必须重新取码（这正是「请求码轮换后仍在用旧码」的回归保护）
+fakeNow = fakeNow + CFD_CODE_TTL + 1
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    return '444555666', 200
+end
+local t3 = fetch_manifest_code(ttlGid)
+if t3 ~= '444555666' then
+    print('FAIL: TTL case should refetch after expiry, got ' .. tostring(t3))
+    os.exit(1)
+end
+if httpCalls ~= callsAfterFirst + 1 then
+    print(string.format('FAIL: TTL expiry did not trigger a refetch (http_get total %d)', httpCalls))
+    os.exit(1)
+end
+print('POSITIVE_CACHE_TTL_OK')
+
+_G.cfd_now = real_cfd_now
+_G.http_get = real_http_get
+_G.http_get = real_http_get
+
 -- 负缓存：全部源失败后，短时间内重复查询不应再发请求
 local callsBefore = httpCalls
 local r3 = fetch_manifest_code('2000000000000000002')
@@ -162,6 +211,28 @@ if not content:find('ManifestDeX/1%.0', 1, false) then
     os.exit(1)
 end
 print('MANIFESTDEX_CONFIG_OK')
+
+-- 源优先级：ManifestDeX 必须排在云端中继之前。
+--
+-- 为什么这条是回归保护：云端中继不产生新值，它自己也是从 ManifestDeX 取值的
+-- （见 server 端 getManifestCode），服务端另有缓存。一旦顺序被颠倒，所有请求
+-- 都会绕远一层，并且多引入一层缓存过期风险 —— 而请求码是会随时间轮换的，
+-- 旧码会让分包彻底拉不到清单（「无网络连接 / 0 字节下载」）。
+local dexPos = content:find('manifest.manifestdex.com', 1, true)
+local cloudPos = content:find('steam.myil.top/api/manifests/code', 1, true)
+if not dexPos then
+    print('FAIL: ManifestDeX endpoint missing')
+    os.exit(1)
+end
+if not cloudPos then
+    print('FAIL: cloud relay endpoint missing (expected as 2nd-priority fallback)')
+    os.exit(1)
+end
+if cloudPos < dexPos then
+    print('FAIL: cloud relay must NOT be tried before ManifestDeX (order inverted)')
+    os.exit(1)
+end
+print('SOURCE_ORDER_OK')
 
 print('ALL_CHECKS_PASSED')
 os.exit(0)
