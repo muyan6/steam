@@ -12,8 +12,8 @@
     "🖱️ 修复「稍后更新」点了没用：原实现关闭更新窗口后不做任何记忆，而客户端每 3 分钟轮询一次更新，同一个更新窗口会反复弹出、多次点击也关不掉；现已记住已忽略的版本，同一版本的普通更新只提醒一次，强制更新不受影响",
     "🔧 发布流程加固：安装包选择改为按修改时间取最新，避免同一版本号重新编译后仍上传旧包（该缺陷曾导致一次修复静默未发布）"
   ],
-  "downloadUrl": "https://github.com/muyan6/steam/releases/download/v2.8.0/ChunFengDu_2.8.0_x64-setup.exe",
-  "downloadUrlBackup": "https://gitee.com/muyan6/steam/releases/download/2.8.0/ChunFengDu_2.8.0_x64-setup.exe",
+  "downloadUrl": "https://gitee.com/muyan6/steam/releases/download/2.8.0/ChunFengDu_2.8.0_x64-setup.exe",
+  "downloadUrlBackup": "https://github.com/muyan6/steam/releases/download/v2.8.0/ChunFengDu_2.8.0_x64-setup.exe",
   "forceUpdate": false,
   "minSupportedVersion": "1.0.0",
   "enabled": true,
