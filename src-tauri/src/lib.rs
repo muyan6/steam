@@ -309,10 +309,17 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                     "版本跟随官方最新".to_string()
                 };
                 if !lock_mode {
-                    // 官方清单优先：清单由 Steam 动态获取，无需任何本地实体文件
+                    // 官方清单优先：清单由 Steam 动态获取，无需任何本地实体文件。
+                    // warmed_codes > 0 说明清单请求码已随规则预置，首次点击下载时
+                    // 取码零网络往返（此前首次必报「无网络」、第二次才正常的根因）。
+                    let code_text = if res.warmed_codes > 0 {
+                        format!("已预置 {} 个分包的清单请求码，首次点击下载即可直接开始", res.warmed_codes)
+                    } else {
+                        "清单请求码将在首次下载时按需获取".to_string()
+                    };
                     format!(
-                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC）！清单由 Steam 动态获取官方最新版本，天然支持实时更新与创意工坊；若下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
-                        name, res.key_count, version_text, res.dlc_count
+                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC，{}）！清单由 Steam 动态获取官方最新版本，天然支持实时更新与创意工坊；若下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
+                        name, res.key_count, version_text, res.dlc_count, code_text
                     )
                 } else if precache_ok_count > 0 && precache_ok_count == precache_total {
                     format!(
@@ -352,6 +359,7 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                 "scriptPath": res.lua_path.to_string_lossy(),
                 "keyCount": res.key_count,
                 "manifestCount": res.manifest_count,
+                "warmedCodes": res.warmed_codes,
                 "metadataOk": res.metadata_ok,
                 "metadataMessage": res.metadata_message,
                 "precacheOk": precache_ok_count,

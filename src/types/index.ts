@@ -221,6 +221,26 @@ export interface AppManifestStatus {
   manifestFiles: string[];
 }
 
+/** 一键入库结果（与 Rust 侧 execute_unlock 的 JSON 响应字段一一对应） */
+export interface UnlockGameResult {
+  success: boolean;
+  message: string;
+  scriptPath?: string;
+  keyCount?: number;
+  manifestCount?: number;
+  /**
+   * 已随 Lua 规则预置的清单请求码数量（仅「跟随官方最新」模式可能 > 0）。
+   * 每个已预置的码都消除一次 Steam 首次下载时 2~7 秒的冷路径取码，
+   * 是「首次点击下载不再报无网络」的直接依据。
+   */
+  warmedCodes?: number;
+  metadataOk?: boolean;
+  metadataMessage?: string | null;
+  precacheOk?: number;
+  precacheTotal?: number;
+  missingManifests?: boolean;
+}
+
 export interface ManifestInstallResult {
   success: boolean;
   appId: number;

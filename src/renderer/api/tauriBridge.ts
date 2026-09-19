@@ -661,7 +661,7 @@ export const createTauriBridge = () => {
         customApiUrl: options?.customApiUrl,
         restartSteam: options?.restartSteam ?? true
       }),
-    unlockGame: async (game: SteamGame): Promise<{ success: boolean; message: string; scriptPath?: string; keyCount?: number; manifestCount?: number; metadataOk?: boolean; metadataMessage?: string | null }> => {
+    unlockGame: async (game: SteamGame): Promise<{ success: boolean; message: string; scriptPath?: string; keyCount?: number; manifestCount?: number; warmedCodes?: number; metadataOk?: boolean; metadataMessage?: string | null }> => {
       const depots = game.depots ? Object.entries(game.depots).map(([k, v]) => ({
         depotId: parseInt(k, 10),
         depotKey: v

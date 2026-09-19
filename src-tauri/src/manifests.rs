@@ -1614,6 +1614,122 @@ pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResu
     }
 }
 
+// ==================== 清单请求码预取（消除首次下载「无网络」） ====================
+//
+// 「跟随官方最新」模式下 Lua 不写 setManifestid，Steam 首次下载时要为每个分包
+// 现场回调 manifest.lua 的 fetch_manifest_code 取码。冷路径（DNS + TLS +
+// Cloudflare 质询）下单 GID 要 2~7 秒，几十个分包串行累加会超出 Steam 的等待
+// 预算，Steam 便以「无网络连接 / 0 字节下载」报错；用户再点一次时码已进
+// CFD_CODE_OK 缓存，于是瞬间正常 —— 这正是「第一次失败、第二次正常」的根因。
+//
+// 这里在入库时就按与 manifest.lua 完全相同的第一/第二优先级源把码取回来，
+// 由 generate_lua_script_with_codes 写进规则文件的 CFD_CODE_OK 预置块：
+// 等价于把「用户第二次点击时的缓存状态」提前到「第一次点击之前」。
+//
+// 只取码（几十字节的数字），绝不下载清单实体 —— 默认模式仍然完全依赖 Steam
+// 经 Valve CDN 动态拉取当前最新清单，不占磁盘、不牺牲自动更新与创意工坊。
+
+/// 预取 GID 数量上限：真实游戏分包通常 4~11 个，16 足够覆盖；
+/// 设上限是为了让入库耗时可控（每批 8 并发，单请求 3 秒超时，最坏 2 批 6 秒）
+const PREFETCH_MAX_GIDS: usize = 16;
+const PREFETCH_CONCURRENCY: usize = 8;
+const PREFETCH_TIMEOUT_SECS: u64 = 3;
+
+/// 纯数字请求码提取：与内核 cfd_pick_code 同规则（容忍首尾空白，排除 0）
+fn pick_manifest_code(body: &str) -> Option<String> {
+    let t = body.trim();
+    if t.is_empty() || t == "0" || !t.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(t.to_string())
+}
+
+/// 单个 GID 取码：源顺序、UA、校验与 manifest.lua 的 fetch_manifest_code 完全一致。
+/// 第一优先级 ManifestDeX 直连（该源经 Cloudflare 保护，缺失专用 UA 会被 403），
+/// 第二优先级春风渡云端中继（薄代理，仅在直连不可用时救急）。
+async fn fetch_manifest_code_for_gid(gid: &str) -> Option<String> {
+    let direct = http_client()
+        .get(format!("https://manifest.manifestdex.com/{}", gid))
+        .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
+        .header("User-Agent", "ManifestDeX/1.0")
+        .send()
+        .await;
+    if let Ok(resp) = direct {
+        if resp.status().is_success() {
+            if let Ok(text) = resp.text().await {
+                if let Some(code) = pick_manifest_code(&text) {
+                    return Some(code);
+                }
+            }
+        }
+    }
+
+    let relay = http_client()
+        .get(format!("{}/api/manifests/code/{}", SERVER_API, gid))
+        .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
+        .send()
+        .await;
+    if let Ok(resp) = relay {
+        if resp.status().is_success() {
+            if let Ok(text) = resp.text().await {
+                if let Some(code) = pick_manifest_code(&text) {
+                    return Some(code);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 预取一批分包的清单请求码，返回 gid -> code。
+///
+/// 入参是原始 GID 字符串列表（可能含重复、空值、"0" 或非数字脏值），
+/// 清洗与去重都在本函数内完成 —— 调用方（ost.rs）只需把元数据里的 GID 摊平传进来，
+/// 不必各自复制一遍校验逻辑。
+///
+/// 尽力而为：任何失败、超时或上游拒绝都只让对应 GID 缺席，绝不向调用方报错 ——
+/// 缺席的 GID 在 Steam 首次请求时会回退到 manifest.lua 的现场取码（原行为），
+/// 因此本函数的输出只可能是纯增益，不会让任何原本可用的场景变差。
+pub fn prefetch_manifest_codes(raw_gids: &[String]) -> BTreeMap<String, String> {
+    let mut gids: Vec<String> = Vec::new();
+    for raw in raw_gids {
+        let g = raw.trim();
+        // gid 会参与 Lua 字面量拼接，必须是纯数字非 0，脏值一律丢弃
+        if g.is_empty() || g == "0" || !g.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        if !gids.iter().any(|x| x == g) {
+            gids.push(g.to_string());
+        }
+    }
+    gids.truncate(PREFETCH_MAX_GIDS);
+    if gids.is_empty() {
+        return BTreeMap::new();
+    }
+
+    let mut out = BTreeMap::new();
+    for chunk in gids.chunks(PREFETCH_CONCURRENCY) {
+        let mut handles = Vec::new();
+        for gid in chunk {
+            let gid = gid.clone();
+            handles.push(tauri::async_runtime::spawn(async move {
+                let code = fetch_manifest_code_for_gid(&gid).await;
+                (gid, code)
+            }));
+        }
+        for h in handles {
+            match block_on(h) {
+                Ok((gid, Some(code))) => {
+                    out.insert(gid, code);
+                }
+                Ok((_, None)) => {}
+                Err(e) => log_diag(&format!("清单码预取任务 join 失败: {}", e)),
+            }
+        }
+    }
+    out
+}
+
 // ==================== 本地 18万+ 全量库检索（内嵌二进制字典 + 云端同步） ====================
 
 use std::sync::Mutex as StdMutex;

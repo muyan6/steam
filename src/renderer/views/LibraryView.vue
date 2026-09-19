@@ -70,6 +70,7 @@
       <div class="leading-relaxed flex-1">
         <strong class="text-sky-300 font-semibold">入库即时生效提示：</strong>
         本项目添加游戏后<strong class="text-emerald-400 font-bold">无须重启 Steam</strong>，会自动出现在库中，搜索进行下载即可。如果没有，则可能是注入环境出现问题，请在「系统与环境设置」中检测环境。
+        <span class="block mt-1 text-sky-300/70">若首次点击下载提示「无网络连接 / 0 字节下载」，属清单请求码尚在获取中，等 5~10 秒<strong class="text-sky-200">再点一次下载</strong>即可正常开始。</span>
       </div>
       <button
         @click="showGuide = !showGuide"

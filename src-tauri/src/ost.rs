@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -346,11 +347,20 @@ fn lua_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " ").replace('\r', " ")
 }
 
+/// 内核 manifest.lua 的清单请求码正缓存表名（实现细节耦合，刻意集中在此一处）。
+///
+/// manifest.lua 由 deploy_manifest_lua 在每次入库前同步部署，且 manifest_lua_stale
+/// 会在启动自愈时比对新旧，因此生成规则时该表的结构必然与本常量一致。
+/// 若日后内核改用别的表名，只需同步修改本常量与 MANIFEST_LUA 两处。
+const MANIFEST_CODE_CACHE_TABLE: &str = "CFD_CODE_OK";
+
 /// 生成 Lua 入库规则（双方言兼容，最大化内嵌 DLL 版本适配面）：
 /// - 密钥同时以 `addappid(id, 1, "key")` 与 `setDepotKey(id, "key")` 双写：
 ///   第二参数沿用实测可用的 1；setDepotKey 是 37a6d0e 版本验证过可解密的挂载方式
 /// - `addtoken` 提供 PICS 访问令牌，`setManifestid` 固定清单 GID
-pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
+/// - `codes` 为可选预取结果（gid -> 清单请求码）：非空时预填内核的 CFD_CODE_OK
+///   正缓存，使 Steam 首次下载取码零网络往返；空表则完全不写该段
+pub fn generate_lua_script(payload: &UnlockGamePayload, codes: &BTreeMap<String, String>) -> String {
     let app_id = payload.app_id;
     let name = payload.name_zh.as_deref().unwrap_or(&payload.name);
 
@@ -430,6 +440,47 @@ pub fn generate_lua_script(payload: &UnlockGamePayload) -> String {
         }
     }
 
+    // 6. 清单请求码预置 —— 只在「跟随官方最新」模式且确有预取结果时写入。
+    //
+    // 为什么必须放在最后、且用裸全局赋值（不带 local）：OST 内核是**逐行增量
+    // 编译**本规则文件的，每个语法完整的前缀都会被立即执行；而 manifest.lua
+    // 对该表用的是 `if not CFD_CODE_OK then CFD_CODE_OK = {} end` 惰性建表 ——
+    // 因此本文件无论先于还是晚于 manifest.lua 加载，两者引用的都是同一张全局表：
+    // 先加载则 manifest.lua 复用它，后加载则直接往里补写。两种顺序都安全。
+    // 一旦某个 GID 命中该表，fetch_manifest_code 就直接返回、零网络往返 ——
+    // 这正是用户「第二次点击下载」时才有的状态，现在提前到第一次点击之前。
+    //
+    // 只写码、不写 setManifestid、不落任何清单实体：默认模式依旧由 Steam 经
+    // Valve CDN 动态拉取当前最新清单，自动更新与创意工坊能力完全不受影响。
+    //
+    // 锁定版本模式跳过：该模式已钉死 GID 并预缓存实体，本就不走取码路径，
+    // 写进去反而是无害但多余的噪声。
+    if payload.lock_version != Some(true) && !codes.is_empty() {
+        lines.push("-- 预置清单请求码缓存（入库时预取，使首次下载零网络往返）".to_string());
+        lines.push(format!("if not {} then {} = {{}} end", MANIFEST_CODE_CACHE_TABLE, MANIFEST_CODE_CACHE_TABLE));
+        // 时间戳同样取「本文件被内核编译执行的那一刻」（即 Steam 启动 / 规则热加载时），
+        // 而不是我们写盘的时刻 —— 否则规则文件可能先于 Steam 启动数小时就已落盘，
+        // 内核的 900 秒 TTL 会在用户还没点下载前就把它判为过期。
+        //
+        // 用匿名函数包住 os.time 的 pcall：os 缺失时 `pcall(os.time)` 会在求值
+        // os.time 时就越界抛错（pcall 保护不到参数求值），必须延迟到函数体内。
+        // os.time 不可用时退回 0 —— 内核 cfd_cache_get 会把 ts=0 判为已过期并
+        // 回退到现场取码，即完全回到本次改动前的行为，属安全降级。
+        lines.push(format!(
+            "{0}_TS = (function() local ok, t = pcall(function() return os.time() end); if ok and type(t) == \"number\" then return t end; return 0 end)()",
+            MANIFEST_CODE_CACHE_TABLE
+        ));
+        for (gid, code) in codes {
+            // 双保险：即便上游返回了脏值也绝不写进 Lua，避免破坏规则文件语法
+            if gid.chars().all(|c| c.is_ascii_digit()) && code.chars().all(|c| c.is_ascii_digit()) {
+                lines.push(format!(
+                    "{0}[\"{1}\"] = {{ code = \"{2}\", ts = {0}_TS }}",
+                    MANIFEST_CODE_CACHE_TABLE, gid, code
+                ));
+            }
+        }
+    }
+
     lines.join("\n") + "\n"
 }
 
@@ -438,6 +489,10 @@ pub struct SaveRuleResult {
     pub depot_count: usize,
     pub key_count: usize,
     pub manifest_count: usize,
+    /// 已随规则预置的清单请求码数量（仅「跟随官方最新」模式可能 > 0）。
+    /// 它是「首次点击下载不再报无网络」的直接依据：每个已预置的码都省掉一次
+    /// Steam 首次下载时 2~7 秒的冷路径取码，故需透传到 UI 供用户确认。
+    pub warmed_codes: usize,
     pub dlc_count: usize,
     pub metadata_ok: bool,
     pub metadata: Option<crate::manifests::AppMetadata>,
@@ -558,9 +613,32 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
         }));
     }
 
+    // 清单请求码预取：在写规则之前把每个分包的码取回来，随规则一起下发。
+    //
+    // 只服务「跟随官方最新」模式：锁定版本模式 Lua 已钉死 GID 并预缓存实体清单，
+    // Steam 走 depotcache 本地文件、根本不经过 fetch_manifest_code，
+    // 此时预取纯属浪费一轮网络往返，故直接跳过。
+    //
+    // 失败不抛错（prefetch_manifest_codes 内部吞掉所有错误并返回部分结果）：
+    // 缺席的 GID 在 Steam 首次请求时仍会由 manifest.lua 现场取码，即改动前的行为。
+    let codes = if merged.lock_version == Some(true) {
+        BTreeMap::new()
+    } else {
+        // 清洗/去重/限量在 prefetch_manifest_codes 内完成，这里只负责把 GID 摊平
+        let raw_gids: Vec<String> = merged
+            .depots
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|d| d.manifest_id.clone())
+            .collect();
+        crate::manifests::prefetch_manifest_codes(&raw_gids)
+    };
+    let warmed_codes = codes.len();
+
     let lua_dir = ensure_lua_dir(steam_path)?;
     let lua_file = lua_dir.join(format!("{}.lua", payload.app_id));
-    let content = generate_lua_script(&merged);
+    let content = generate_lua_script(&merged, &codes);
     fs::write(&lua_file, &content).map_err(|e| format!("写入 Lua 规则失败: {}", e))?;
 
     // 双轨兼容：镜像到 st_scripts/（旧模式目录）
@@ -578,6 +656,7 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
         depot_count,
         key_count,
         manifest_count,
+        warmed_codes,
         dlc_count,
         metadata_ok,
         metadata,
