@@ -914,16 +914,47 @@ button.theme-card:active:not(:disabled),
     transition-duration: 0.15s;
   }
 
+  /* 悬停反馈：统一补一档亮度。
+     为什么用 brightness 而不是给每个按钮写具体色：全项目 137 个按钮有 116 种
+     互不相同的 class 组合，其中 56 个的 hover 只把背景透明度从 /10 提到 /20，
+     在深色底上肉眼几乎看不出差异。逐个改要动 100 多处，且新增按钮时必然重演。
+     brightness 是唯一与配色无关的通用手段：无论按钮是琥珀、玫红、天蓝还是
+     纯 slate，悬停都会亮一档，与它自己已有的 hover:bg-* 叠加后变化清晰可辨。
+
+     注意这会产生一个 stacking context —— 对按钮无影响（内部没有需要突破
+     层叠的绝对定位元素），代价可忽略。 */
+  :where(button:not(:disabled)):hover,
+  :where([role="button"]:not([aria-disabled="true"])):hover {
+    filter: brightness(1.12);
+  }
+
   /* 按下反馈：0.97 与 .btn-soft-action 手动写的值一致，视觉上是同一档。
      用 :where() 把特异性压到 0，确保任何显式的 active:scale-* 或
-     .theme-btn-primary:active 都能覆盖它，不会互相打架。 */
+     .theme-btn-primary:active 都能覆盖它，不会互相打架。
+     压暗一档与 scale 配合：缩是「按下去」，暗是「被按实」。 */
   :where(button:not(:disabled):active),
   :where([role="button"]:not([aria-disabled="true"]):active) {
     transform: scale(0.97);
+    filter: brightness(0.94);
+  }
+
+  /* 浅色主题下「变亮」几乎不可见（浅底本就接近白），改为压暗一档 ——
+     这也符合浅色界面「悬停变深」的通行习惯。
+     这三条带属性选择器，特异性 (0,1,1) 高于上面的 :where() (0,0,0)，
+     因此能正常覆盖。 */
+  [data-theme="frost"] :where(button:not(:disabled)):hover,
+  [data-theme="dawn"] :where(button:not(:disabled)):hover,
+  [data-theme="mint"] :where(button:not(:disabled)):hover,
+  [data-theme="frost"] :where([role="button"]:not([aria-disabled="true"])):hover,
+  [data-theme="dawn"] :where([role="button"]:not([aria-disabled="true"])):hover,
+  [data-theme="mint"] :where([role="button"]:not([aria-disabled="true"])):hover {
+    filter: brightness(0.96);
   }
 
   /* 尊重系统「减少动态效果」设置：关掉过渡与缩放，只保留即时状态变化。
-     无障碍要求，此前整个样式表里一条都没有。 */
+     无障碍要求，此前整个样式表里一条都没有。
+     这里也必须把 filter 的 hover/active 变化一并清掉 —— 否则「减少动态效果」
+     只关掉了过渡时长，亮度突变仍在，等于设置没生效。 */
   @media (prefers-reduced-motion: reduce) {
     :where(button:not(:disabled)),
     :where([role="button"]:not([aria-disabled="true"])) {
@@ -932,6 +963,11 @@ button.theme-card:active:not(:disabled),
     :where(button:not(:disabled):active),
     :where([role="button"]:not([aria-disabled="true"]):active) {
       transform: none;
+      filter: none;
+    }
+    :where(button:not(:disabled)):hover,
+    :where([role="button"]:not([aria-disabled="true"])):hover {
+      filter: none;
     }
   }
 }

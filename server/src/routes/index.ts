@@ -128,7 +128,18 @@ router.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().to
 // 权威联机规则库（公开接口，供客户端热同步）
 router.get('/online-rules', getOnlineRules);
 // 触发从 SteamDB / Steam 双榜更新规则库 (支持热更新)
-router.post('/online-rules/sync-charts', syncOnlineRulesFromCharts);
+//
+// 必须限流：本接口零鉴权（客户端启动时自动调用），一次请求会向 SteamDB /
+// Steam 双榜发起多轮上游抓取。不设限等于把服务端变成对上游的放大器，
+// 被脚本刷即可打满出网带宽并连带触发上游风控（封的是服务器 IP）。
+const onlineRulesSyncLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '联机规则同步过于频繁，请稍后再试' }
+});
+router.post('/online-rules/sync-charts', onlineRulesSyncLimiter, syncOnlineRulesFromCharts);
 
 // 客户端设备心跳与活跃度上报 (公开接口，限流防刷)
 const heartbeatLimiter = rateLimit({

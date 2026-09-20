@@ -131,6 +131,16 @@ pub fn startup_self_heal() -> StartupHealResult {
     }
 }
 
+/// 判定文件头是否为确凿的 HTTP/HTML 错误响应（垃圾清单）。
+/// 只认「一定是错误页」的特征，不做任何正向魔数推断，宁放过不误杀。
+fn looks_like_error_payload(head: &[u8]) -> bool {
+    let s = String::from_utf8_lossy(head).to_lowercase();
+    s.contains("<!doctype")
+        || s.contains("<html")
+        || s.contains("404: not found")
+        || s.contains("domain is for sale")
+}
+
 /// 自动扫描并清理 depotcache/ 目录下已损坏的 0 字节无效文件或 HTML 错误响应文本
 pub fn clean_depotcache_garbage(steam_path: &Path) -> usize {
     let depot_cache = steam_path.join("depotcache");
@@ -149,10 +159,15 @@ pub fn clean_depotcache_garbage(steam_path: &Path) -> usize {
                             removed += 1;
                         }
                     } else if path.extension().and_then(|ext| ext.to_str()) == Some("manifest") {
-                        // 损坏的非有效 manifest 文件（如 HTML 404/盾拦截文本误当清单写入）。
-                        // 只读文件头：有效性判定仅依赖前 128 字节，无需整份读入
+                        // 只删「明确是 HTTP 错误页」的垃圾清单（HTML 404/域名停放页）。
+                        //
+                        // 这里刻意**不**复用 manifests::is_valid_manifest_payload：
+                        // 它的「既非 zip 也非已知魔数即无效」分支自带有误判空间，
+                        // manifests.rs 的只读查询路径因此明令「绝不删除」。而本函数
+                        // 每次入库（ost::deploy_core_binaries）都会跑，误判一次就是
+                        // 永久删除用户的清单缓存 —— 必须只按确凿证据删。
                         if let Some(head) = read_header(&path, MANIFEST_HEADER_PROBE) {
-                            if !crate::manifests::is_valid_manifest_payload(&head) {
+                            if looks_like_error_payload(&head) {
                                 if fs::remove_file(&path).is_ok() {
                                     removed += 1;
                                 }

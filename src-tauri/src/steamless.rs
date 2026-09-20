@@ -201,6 +201,16 @@ fn unpack_single(
         if !backup.exists() {
             if fs::copy(exe_path, &backup).is_ok() {
                 backup_created = true;
+            } else {
+                // 备份失败时绝不能继续覆盖：原 exe 被替换后无任何回滚手段，
+                // 玩家将永久失去可运行的原文件（磁盘满/杀软锁定时最易触发）。
+                let _ = fs::remove_file(&unpacked);
+                return (
+                    false,
+                    format!("备份 {} 失败，已放弃解密替换（原文件保持未改动）", file_label),
+                    "error",
+                    false,
+                );
             }
         }
         if fs::copy(&unpacked, exe_path).is_ok() {

@@ -476,6 +476,9 @@ pub fn apply_goldberg_fix(dir_path: &Path, app_id: u32, player_name: &str) -> Re
         safe_name
     );
     fs::write(settings.join("settings.ini"), ini).map_err(|e| e.to_string())?;
+    // 归属标记：restore_original_game 据此判定该 steam_settings 由本工具创建，
+    // 避免以「存在 settings.ini」为据误删用户自建的 Goldberg 配置目录
+    let _ = fs::write(settings.join(".cfd_goldberg"), "1");
     Ok(format!("成功配置 Goldberg 局域网联机环境（玩家名: {}）！", safe_name))
 }
 
@@ -507,12 +510,14 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
         let _ = fs::copy(&appid_bak, &appid_file);
         let _ = fs::remove_file(&appid_bak);
     }
-    // steam_settings：仅当包含本工具 Goldberg 修复写入的标记文件时才删除，
-    // 保留用户自建的 Goldberg 配置
+    // steam_settings：**只**在带有本工具写入的归属标记时才整体删除，
+    // 保留用户自建的 Goldberg 配置。
+    //
+    // 旧实现以「存在 settings.ini 或 force_account_name.txt」为据删除整个目录 ——
+    // 而这两个恰恰是标准 Goldberg 的默认文件名，玩家自己配的联机环境（含存档/账号
+    // 配置）会被整目录抹掉且不可恢复。
     let settings_dir = dir_path.join("steam_settings");
-    if settings_dir.exists()
-        && (settings_dir.join("force_account_name.txt").exists() || settings_dir.join("settings.ini").exists())
-    {
+    if settings_dir.join(".cfd_goldberg").exists() {
         let _ = fs::remove_dir_all(&settings_dir);
     }
 
@@ -666,12 +671,37 @@ fn scan_single_manifest(lib: &Path, acf_path: &Path, app_id: u32) -> Option<Loca
             let base_target = clean_name(&install_dir);
             if base_target.len() >= 3 {
                 if let Ok(entries) = fs::read_dir(&common_dir) {
+                    // 两轮匹配：先精确命中，再只接受「差异部分恰为版本/平台标记」的包含匹配。
+                    //
+                    // 旧实现 clean.contains(base) || base.contains(clean) 过宽：
+                    // installdir="DOOM" 会命中 "DOOM Eternal"，随后打补丁、还原、
+                    // 写 steam_appid.txt 全部落到**错误的游戏目录**上，属破坏性误操作。
+                    const EDITION_TOKENS: [&str; 11] = [
+                        "win64", "x64", "64bit", "deluxe", "ultimate", "definitive",
+                        "complete", "gold", "goty", "enhanced", "remastered",
+                    ];
+                    let mut candidate: Option<PathBuf> = None;
                     for e in entries.filter_map(|e| e.ok()) {
                         let clean = clean_name(&e.file_name().to_string_lossy());
-                        if clean == base_target || (clean.len() >= 3 && (clean.contains(&base_target) || base_target.contains(&clean))) {
-                            full_path = e.path();
+                        if clean == base_target {
+                            candidate = Some(e.path());
                             break;
                         }
+                        if candidate.is_none() && clean.len() >= 3 {
+                            let extra = clean
+                                .strip_prefix(&base_target)
+                                .or_else(|| base_target.strip_prefix(&clean));
+                            if let Some(rest) = extra {
+                                if !rest.is_empty()
+                                    && EDITION_TOKENS.iter().any(|t| rest.contains(t))
+                                {
+                                    candidate = Some(e.path());
+                                }
+                            }
+                        }
+                    }
+                    if let Some(p) = candidate {
+                        full_path = p;
                     }
                 }
             }
@@ -868,7 +898,15 @@ fn clean_steam_appid_txt_all_locations(game_path: &Path) {
             let _ = fs::copy(&bak, &appid_file);
             let _ = fs::remove_file(&bak);
         } else if appid_file.exists() {
-            let _ = fs::remove_file(&appid_file);
+            // 无备份时**只能**删除本工具 Spacewar 模式写入的 480。
+            // 旧实现无条件删除，而本函数在每次「Open 内核联机」启动前都会跑，
+            // 会把游戏自带或玩家自建的 steam_appid.txt 一并抹掉（不可恢复）。
+            let is_ours = fs::read_to_string(&appid_file)
+                .map(|c| c.trim() == "480")
+                .unwrap_or(false);
+            if is_ours {
+                let _ = fs::remove_file(&appid_file);
+            }
         }
     }
 }

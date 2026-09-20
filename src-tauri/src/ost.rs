@@ -1041,7 +1041,14 @@ pub fn sync_greenluma_app_list(steam_path: &Path) {
             name
         })
         .collect();
-    let _ = fs::write(&managed_file, serde_json::to_string_pretty(&written).unwrap_or_default());
+    // 序列化失败时绝不能落空串：那会让 .cfd_managed.json 变成空文件，
+    // 旧 AppList 文件因不在「已管理」清单里而永远得不到清理
+    match serde_json::to_string_pretty(&written) {
+        Ok(text) => {
+            let _ = fs::write(&managed_file, text);
+        }
+        Err(e) => eprintln!("[OST] 序列化 AppList 管理清单失败，跳过写入: {}", e),
+    }
 }
 
 pub fn get_unlocked_app_ids(steam_path: &Path) -> Vec<u32> {
@@ -1568,6 +1575,20 @@ pub fn check_ost_sync_status(steam_path: &Path) -> OstSyncInfo {
     }
 }
 
+/// 回滚一次失败的内核切换：把已移走的 .old 备份逐个还原回原文件名，
+/// 并清理尚未提交的 .new 暂存文件。尽力而为，失败只记录不抛出。
+fn rollback_ost_swap(
+    committed: &[(PathBuf, PathBuf)],
+    staged: &[(&'static str, PathBuf, PathBuf)],
+) {
+    for (old_path, target) in committed {
+        let _ = std::fs::rename(old_path, target);
+    }
+    for (_, new_path, _) in staged {
+        let _ = std::fs::remove_file(new_path);
+    }
+}
+
 /// 在线同步最新内核：下载 release zip、校验三件套、覆盖部署到 Steam 目录并记录版本。
 /// 须在 spawn_blocking 调用；Steam 运行中时 DLL 被锁定，必须先退出
 pub fn sync_ost_latest(steam_path: &Path) -> Result<String, String> {
@@ -1584,10 +1605,60 @@ pub fn sync_ost_latest(steam_path: &Path) -> Result<String, String> {
     let zip_bytes = download_ost_release_zip(&tag, &asset, digest.as_deref())?;
     let core = extract_ost_core_from_zip(&zip_bytes)?;
 
+    // 三件套必须**整体**切换：旧实现逐个 std::fs::write 覆盖，第 2 个失败时
+    // 磁盘上就是「新 DLL + 旧 DLL」的混合版本。OST 三件套互相有版本契约，
+    // 混合态会让 Steam 加载失败甚至崩溃，且用户没有任何回滚手段。
+    //
+    // 改为两阶段提交：先全部写成 .new 暂存（任一失败即刻清理退出，正式文件
+    // 保持原样），全部就绪后再逐个 rename 替换；替换途中失败则用 .old 备份
+    // 逐个还原，保证最终是「原版本」或「新版本」，绝不出现混合态。
+    let mut staged: Vec<(&'static str, PathBuf, PathBuf)> = Vec::new(); // (name, new, old)
     for (name, bytes) in &core {
-        std::fs::write(steam_path.join(name), bytes)
-            .map_err(|e| format!("写入 {} 失败: {}（权限不足时请以管理员身份运行本程序）", name, e))?;
+        let new_path = steam_path.join(format!("{}.new", name));
+        let old_path = steam_path.join(format!("{}.old", name));
+        if let Err(e) = std::fs::write(&new_path, bytes) {
+            for (_, n, _) in &staged {
+                let _ = std::fs::remove_file(n);
+            }
+            let _ = std::fs::remove_file(&new_path);
+            return Err(format!(
+                "写入 {} 暂存文件失败: {}（权限不足时请以管理员身份运行本程序）",
+                name, e
+            ));
+        }
+        staged.push((*name, new_path, old_path));
     }
+
+    let mut committed: Vec<(PathBuf, PathBuf)> = Vec::new(); // (old, target)
+    for (name, new_path, old_path) in &staged {
+        let target = steam_path.join(name);
+        let had_old = target.exists();
+        if had_old {
+            if let Err(e) = std::fs::rename(&target, old_path) {
+                rollback_ost_swap(&committed, &staged);
+                return Err(format!("备份原 {} 失败: {}，已回滚到原版本", name, e));
+            }
+        }
+        if let Err(e) = std::fs::rename(new_path, &target) {
+            if had_old {
+                let _ = std::fs::rename(old_path, &target);
+            }
+            rollback_ost_swap(&committed, &staged);
+            return Err(format!("替换 {} 失败: {}，已回滚到原版本", name, e));
+        }
+        if had_old {
+            committed.push((old_path.clone(), target.clone()));
+        }
+    }
+
+    // 提交成功：清理备份与可能残留的暂存文件
+    for (old_path, _) in &committed {
+        let _ = std::fs::remove_file(old_path);
+    }
+    for (_, new_path, _) in &staged {
+        let _ = std::fs::remove_file(new_path);
+    }
+
     write_deployed_ost_tag(steam_path, &tag);
 
     Ok(format!(
