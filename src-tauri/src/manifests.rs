@@ -500,7 +500,28 @@ pub struct AppMetadata {
 ///
 /// 两条路径的代码都完整保留，仅以本开关分流；回退成本为点击一次「锁定版本」。
 pub fn parse_metadata(app_id: u32, need_gid: bool) -> Result<AppMetadata, String> {
-    match parse_metadata_from_server(app_id, need_gid) {
+    // 只要 GID 的场景（入库预取）由 parse_metadata_with_gids 显式调用；
+    // 这里保持原语义：need_gid 同时决定「要 GID」与「做 Hub3 对齐」。
+    parse_metadata_ex(app_id, need_gid, need_gid)
+}
+
+/// 只要清单 GID、但不需要社区对齐（也不下载任何实体清单）的轻量取元数据。
+///
+/// 专供入库时预取清单请求码使用：预取只需要 manifestGid 这个数字去换码，
+/// 而 Hub3 对齐（align_manifest_gids_with_hub3）是为「锁定版本」把 GID 钉到
+/// 镜像里真实存在的实体上，对本场景纯属多余的网络等待。
+pub fn parse_metadata_with_gids(app_id: u32) -> Result<AppMetadata, String> {
+    parse_metadata_ex(app_id, false, true)
+}
+
+/// `need_gid` 与 `with_gids` 的分工：
+/// - `need_gid`  → 是否执行 ManifestHub3 社区对齐（钉死实体 GID 时才需要）
+/// - `with_gids` → 是否向服务端索取 manifestGid 字段（客户端预取需要）
+///
+/// 二者必须分开：入库预取要 GID 但不要 Hub3 对齐的 2.5~4 秒探测；
+/// 而默认模式两者都为 false，才真正是「零上游请求」的快路径。
+fn parse_metadata_ex(app_id: u32, need_gid: bool, with_gids: bool) -> Result<AppMetadata, String> {
+    match parse_metadata_from_server(app_id, with_gids) {
         Ok(mut m) if !m.depots.is_empty() => {
             if need_gid {
                 // 与 ManifestHub3 对齐真实存在的清单实体 GID（仅锁定模式需要）
@@ -1009,10 +1030,16 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
     })
 }
 
-fn parse_metadata_from_server(app_id: u32, need_gid: bool) -> Result<AppMetadata, String> {
+/// `with_gids` 决定是否向服务端索取 manifestGid 字段（用 `withGids=1`）。
+///
+/// 它**不等于** `needGid=1`：后者会让服务端走完整的社区对齐链路，并把每个分包的
+/// 实体清单都下载沉淀到服务端缓存（见 metadataController 第 7 步）。入库预取只要
+/// GID 这个数字去换请求码，绝不能顺带把实体清单拉下来 —— 这正是单独开
+/// `withGids` 参数的原因。
+fn parse_metadata_from_server(app_id: u32, with_gids: bool) -> Result<AppMetadata, String> {
     // deviceId 同时经请求头与 query 传递：新服务端优先读头，
     // 旧服务端（未升级）仍可从 query 兜底，保证向前兼容。
-    // needGid 仅新服务端识别：旧服务端会忽略它并走完整链路，
+    // withGids 仅新服务端识别：旧服务端会忽略它并走完整链路，
     // 属安全降级（只是慢一些，不会缺数据）
     let device_id = crate::device::get_device_id();
     let url = format!(
@@ -1020,7 +1047,7 @@ fn parse_metadata_from_server(app_id: u32, need_gid: bool) -> Result<AppMetadata
         SERVER_API,
         app_id,
         urlencoding_query(&device_id),
-        if need_gid { "&needGid=1" } else { "" }
+        if with_gids { "&withGids=1" } else { "" }
     );
     // 超时放宽到 25 秒：服务端在「锁定版本」模式下要实时查 SteamCMD 与
     // 四个 ManifestHub3 镜像（实测 5~7 秒，偶发更高）。原先的 10 秒余量过紧，
@@ -1623,17 +1650,25 @@ pub fn precache_manifests(steam_path: &Path, meta: &AppMetadata) -> PrecacheResu
 // CFD_CODE_OK 缓存，于是瞬间正常 —— 这正是「第一次失败、第二次正常」的根因。
 //
 // 这里在入库时就按与 manifest.lua 完全相同的第一/第二优先级源把码取回来，
-// 由 generate_lua_script_with_codes 写进规则文件的 CFD_CODE_OK 预置块：
+// 由 generate_lua_script 写进规则文件的 CFD_CODE_OK 预置块：
 // 等价于把「用户第二次点击时的缓存状态」提前到「第一次点击之前」。
 //
 // 只取码（几十字节的数字），绝不下载清单实体 —— 默认模式仍然完全依赖 Steam
 // 经 Valve CDN 动态拉取当前最新清单，不占磁盘、不牺牲自动更新与创意工坊。
 
-/// 预取 GID 数量上限：真实游戏分包通常 4~11 个，16 足够覆盖；
-/// 设上限是为了让入库耗时可控（每批 8 并发，单请求 3 秒超时，最坏 2 批 6 秒）
+/// 预取 GID 数量上限：真实游戏分包通常 4~11 个，16 足够覆盖。
+/// 设上限是为了让入库耗时可控（并发 3，单请求最长 12 秒，最坏 6 批 72 秒；
+/// 但正常路径是中继命中，实测毫秒级返回）。
 const PREFETCH_MAX_GIDS: usize = 16;
-const PREFETCH_CONCURRENCY: usize = 8;
-const PREFETCH_TIMEOUT_SECS: u64 = 3;
+/// 并发必须压到很低：ManifestDeX 官方限流是 **60 次/分钟**，而这是每台客户端
+/// 入库时都会跑一遍的路径。原先的 8 并发等于瞬时打满额度的 13%，几个人同时入库
+/// 就会把整个服务推进 429 —— 那是我上一轮引入的问题。现在预取默认走中继
+/// （服务端有 5 分钟缓存 + 单航班去重），并发 3 只用于兜底直连。
+const PREFETCH_CONCURRENCY: usize = 3;
+/// 超时必须覆盖上游真实响应时间：实测 ManifestDeX 的 ttfb 是 **4.5~18.6 秒**。
+/// 原先的 3 秒意味着即便上游健康，预取也**必然全部超时**（等于白跑一趟网络）。
+/// 中继侧已把上游超时设为 15 秒并带重试，这里取 12 秒与之匹配。
+const PREFETCH_TIMEOUT_SECS: u64 = 12;
 
 /// 纯数字请求码提取：与内核 cfd_pick_code 同规则（容忍首尾空白，排除 0）
 fn pick_manifest_code(body: &str) -> Option<String> {
@@ -1644,17 +1679,19 @@ fn pick_manifest_code(body: &str) -> Option<String> {
     Some(t.to_string())
 }
 
-/// 单个 GID 取码：源顺序、UA、校验与 manifest.lua 的 fetch_manifest_code 完全一致。
-/// 第一优先级 ManifestDeX 直连（该源经 Cloudflare 保护，缺失专用 UA 会被 403），
-/// 第二优先级春风渡云端中继（薄代理，仅在直连不可用时救急）。
+/// 单个 GID 取码：源顺序、校验与 manifest.lua 的 fetch_manifest_code 保持一致。
+///
+/// 中继优先（与内核 Lua 同序）：服务端带 5 分钟正缓存 + 单航班去重，
+/// 能把「N 客户端 x M 分包」收敛成「每 gid 每 5 分钟 1 次上游请求」。
+/// 直连 ManifestDeX 仅作兜底 —— 它按 IP 限流 60 次/分钟，客户端各自直连
+/// 等于把额度除以客户端数，人一多就集体 429。
 async fn fetch_manifest_code_for_gid(gid: &str) -> Option<String> {
-    let direct = http_client()
-        .get(format!("https://manifest.manifestdex.com/{}", gid))
+    let relay = http_client()
+        .get(format!("{}/api/manifests/code/{}", SERVER_API, gid))
         .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
-        .header("User-Agent", "ManifestDeX/1.0")
         .send()
         .await;
-    if let Ok(resp) = direct {
+    if let Ok(resp) = relay {
         if resp.status().is_success() {
             if let Ok(text) = resp.text().await {
                 if let Some(code) = pick_manifest_code(&text) {
@@ -1664,12 +1701,13 @@ async fn fetch_manifest_code_for_gid(gid: &str) -> Option<String> {
         }
     }
 
-    let relay = http_client()
-        .get(format!("{}/api/manifests/code/{}", SERVER_API, gid))
+    let direct = http_client()
+        .get(format!("https://manifest.manifestdex.com/{}", gid))
         .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
+        .header("User-Agent", "ManifestDeX/1.0")
         .send()
         .await;
-    if let Ok(resp) = relay {
+    if let Ok(resp) = direct {
         if resp.status().is_success() {
             if let Ok(text) = resp.text().await {
                 if let Some(code) = pick_manifest_code(&text) {

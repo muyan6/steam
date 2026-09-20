@@ -808,7 +808,7 @@ fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
 pub(crate) fn ensure_auto_switch_default(steam_path: &std::path::Path) {
     let toml_path = steam_path.join("opensteamtool.toml");
     if !toml_path.exists() {
-        let _ = ost::generate_toml_config(steam_path, "wudrm");
+        let _ = ost::generate_toml_config(steam_path, ost::DEFAULT_MANIFEST_SERVER);
         return;
     }
     // 读-判-写必须与字段级更新互斥（后台迁移线程 vs 工具箱命令并发），
@@ -830,12 +830,15 @@ pub(crate) fn ensure_auto_switch_default(steam_path: &std::path::Path) {
             steam_path,
             &[
                 ("auto_switch", "true"),
-                ("url", "\"wudrm\""),
-                ("server", "\"wudrm\""),
-                ("timeout_resolve_ms", "3000"),
-                ("timeout_connect_ms", "3000"),
-                ("timeout_send_ms", "5000"),
-                ("timeout_recv_ms", "5000"),
+                // 默认清单节点与超时必须与 ost 侧常量同源：实测上游 ttfb 4.5~18.6 秒，
+                // 旧的 3000/3000/5000/5000 会让内核在拿到码之前就放弃（这是「中继几乎
+                // 缓存不到码」的成因之一）；而 "wudrm" 已确认返回滞后码，不能再写。
+                ("url", &format!("\"{}\"", ost::DEFAULT_MANIFEST_SERVER)),
+                ("server", &format!("\"{}\"", ost::DEFAULT_MANIFEST_SERVER)),
+                ("timeout_resolve_ms", &ost::MANIFEST_TIMEOUT_RESOLVE_MS.to_string()),
+                ("timeout_connect_ms", &ost::MANIFEST_TIMEOUT_CONNECT_MS.to_string()),
+                ("timeout_send_ms", &ost::MANIFEST_TIMEOUT_SEND_MS.to_string()),
+                ("timeout_recv_ms", &ost::MANIFEST_TIMEOUT_RECV_MS.to_string()),
             ],
         );
     }
@@ -967,21 +970,28 @@ async fn auto_switch_manifest() -> ToolboxActionResult {
     steps.push("✓ Steam 进程已安全退出".to_string());
 
     steps.push("2. 正在写入多节点高可用清单自动切换配置与调度脚本...".to_string());
+    // 节点与超时必须与 ost.rs 的常量保持一致：wudrm 已确认不可用（返回滞后码），
+    // 而 3000/3000/5000/5000 会让内核在上游（实测 ttfb 4.5~18.6 秒）应答前放弃。
+    let resolve_ms = ost::MANIFEST_TIMEOUT_RESOLVE_MS.to_string();
+    let connect_ms = ost::MANIFEST_TIMEOUT_CONNECT_MS.to_string();
+    let send_ms = ost::MANIFEST_TIMEOUT_SEND_MS.to_string();
+    let recv_ms = ost::MANIFEST_TIMEOUT_RECV_MS.to_string();
+    let server_field = format!("\"{}\"", ost::DEFAULT_MANIFEST_SERVER);
     let updates: [(&str, &str); 7] = [
         ("auto_switch", "true"),
-        ("url", "\"wudrm\""),
-        ("server", "\"wudrm\""),
-        ("timeout_resolve_ms", "3000"),
-        ("timeout_connect_ms", "3000"),
-        ("timeout_send_ms", "5000"),
-        ("timeout_recv_ms", "5000"),
+        ("url", server_field.as_str()),
+        ("server", server_field.as_str()),
+        ("timeout_resolve_ms", resolve_ms.as_str()),
+        ("timeout_connect_ms", connect_ms.as_str()),
+        ("timeout_send_ms", send_ms.as_str()),
+        ("timeout_recv_ms", recv_ms.as_str()),
     ];
     if let Err(e) = update_toml_manifest_fields(&steam_path, &updates) {
         steps.push(format!("[错误] 写入配置失败: {}", e));
         return toolbox_action(false, format!("开启清单服务器自动切换失败: {}", e), steps);
     }
     let _ = ost::deploy_manifest_lua(&steam_path);
-    steps.push("✓ 已同步部署古韵国内直连专线与官方多节点调度策略 (manifest.lua)".to_string());
+    steps.push("✓ 已同步部署清单请求码调度策略与超时配置 (manifest.lua)".to_string());
 
     steps.push("3. 正在重新启动 Steam 客户端...".to_string());
     let restarted = steam::launch_steam(&steam_path, &[]);

@@ -137,6 +137,14 @@ function cfd_pick_code(body, status)
     return nil
 end
 
+-- 瞬时故障状态码: 这些代表「上游此刻过载/不可用」, 而不是「这个 gid 没有码」。
+-- 对它们绝不写负缓存 —— 否则一次 429 抖动会把该 gid 冻结 CFD_CODE_NEG_TTL 秒,
+-- 表现为「第一次点下载报无网络, 等一两分钟再点才行」, 而实际上游几秒后就恢复了。
+function cfd_is_transient(status)
+    if status == nil or status == 0 then return true end
+    return status == 429 or status == 500 or status == 502 or status == 503 or status == 504
+end
+
 function fetch_manifest_code(gid)
     local cached = cfd_cache_get(gid)
     if cached then return cached end
@@ -149,27 +157,30 @@ function fetch_manifest_code(gid)
     end
 
     local body, status, code
+    local transient = false
 
-    -- 第一优先级: ManifestDeX 清单代码直供源 —— 实测唯一能给出
-    -- 「Valve 实际接受」的清单请求码的源, 因此它是唯一权威源。
+    -- 第一优先级: 春风渡云端中继源。
+    --
+    -- 为什么中继排第一(而不是直连第一):
+    -- ManifestDeX 对客户端侧限流很紧(官方文档写明 60 次/分钟), 而 Steam 是
+    -- **逐分包**回调本函数的 —— 一个 28 分包的游戏点一次下载就是 28 次请求,
+    -- 点两次 56 次, 第三次必然撞限流。每个客户端各自直连, 等于把限流额度
+    -- 除以客户端数, 人一多就集体失败。
+    -- 中继带 5 分钟正缓存, 能把「N 客户端 x M 分包」收敛成「每 gid 每 5 分钟
+    -- 1 次上游请求」, 这是唯一能让多客户端共存的顺序。绕一跳的延迟远小于
+    -- 撞限流后空等的代价。
+    body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
+    code = cfd_pick_code(body, status)
+    if code then cfd_cache_put(gid, code); return code end
+    if cfd_is_transient(status) then transient = true end
+
+    -- 第二优先级: ManifestDeX 清单代码直供源(直连兜底)。
     -- 该源经 Cloudflare 保护, 必须携带专用 User-Agent, 缺失会被返回 403 质询页。
     body, status = http_get("https://manifest.manifestdex.com/" .. gid,
                             {["User-Agent"] = "ManifestDeX/1.0"})
     code = cfd_pick_code(body, status)
     if code then cfd_cache_put(gid, code); return code end
-
-    -- 第二优先级: 春风渡云端中继源(薄代理)。
-    --
-    -- 它不产生新值, 只转发 ManifestDeX 的结果(见 server 端 getManifestCode);
-    -- 服务端缓存已压到 5 分钟, 因此它给出的是「最多 5 分钟前」的值 —— 足够新鲜,
-    -- 同时能吸收大量客户端对同一 gid 的并发查询, 并在弱网/被质询时救急。
-    --
-    -- 定位说明: 它**不能替代**第一优先级 —— 中继自己也是从 ManifestDeX 取值的,
-    -- 本地直连可用时, 直连永远比绕一圈更快也更权威。因此顺序必须是
-    -- ManifestDeX → 云端中继, 绝不可颠倒(颠倒会让所有请求都绕远, 且多一层过期风险)。
-    body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
-    code = cfd_pick_code(body, status)
-    if code then cfd_cache_put(gid, code); return code end
+    if cfd_is_transient(status) then transient = true end
 
     -- 已移除 wudrm / 古韵 / steamrun 三个第三方源。
     -- 原因: 实测它们的刷新节奏落后于权威源, 同一 depot+gid 在同一时刻会给出
@@ -179,7 +190,11 @@ function fetch_manifest_code(gid)
     -- 表现为入库即报「无网络连接 / 0 字节下载」。
     -- 宁可返回 nil 也不返回滞后值 —— 上游失败应当尽快暴露, 而不是被掩盖成错值。
 
-    CFD_CODE_FAIL[gid] = cfd_now()
+    -- 只有「确认查不到」才写负缓存; 瞬时故障交给 Steam 立刻重试,
+    -- 绝不能让一次抖动冻结该 gid 两分钟。
+    if not transient then
+        CFD_CODE_FAIL[gid] = cfd_now()
+    end
     return nil
 end
 
@@ -224,6 +239,27 @@ pub fn deploy_manifest_lua(steam_path: &Path) -> Result<(), String> {
 /// 并发交错会导致配置互相覆盖丢失字段
 pub static TOML_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// opensteamtool.toml 的默认清单节点。
+///
+/// 原为 "wudrm"，但该源已确认不可用（返回滞后码，会让分包拉不到清单），
+/// 且 manifest.lua 的取码源是硬编码的、根本不读这两个字段 —— 留着只会误导排查。
+pub const DEFAULT_MANIFEST_SERVER: &str = "manifestdex";
+
+/// opensteamtool.toml 的清单请求超时（毫秒）。
+///
+/// 原为 3000/3000/5000/5000，而实测 ManifestDeX 的 ttfb 是 **4.5~18.6 秒** ——
+/// 也就是上游还在计算，Lua 的 http_get 就已按 5 秒超时放弃。这是「中继几乎
+/// 缓存不到码」和「首次下载报无网络」的直接成因之一，必须放宽到覆盖上游 P99。
+///
+/// 取值参照第三方修复包（DaKaR 的 Steam_Fix_Manifests）实测可用的
+/// 5000/5000/10000/10000：解析与连接 5 秒足够（DNS+TCP+TLS 实测 <1 秒），
+/// 收发放宽到 10 秒以覆盖上游慢响应。不宜再大 —— Steam 在下载路径上同步
+/// 等待本回调，超时过长会让「上游真的挂了」时用户界面卡住更久。
+pub const MANIFEST_TIMEOUT_RESOLVE_MS: u32 = 5000;
+pub const MANIFEST_TIMEOUT_CONNECT_MS: u32 = 5000;
+pub const MANIFEST_TIMEOUT_SEND_MS: u32 = 10000;
+pub const MANIFEST_TIMEOUT_RECV_MS: u32 = 10000;
+
 pub fn generate_toml_config(steam_path: &Path, manifest_server: &str) -> Result<(), String> {
     // 防注入校验：manifest_server 会被原样拼进 TOML 的双引号字符串，
     // 仅放行 URL 安全字符集 [A-Za-z0-9:./_-]，其余一律回退默认节点
@@ -232,7 +268,7 @@ pub fn generate_toml_config(steam_path: &Path, manifest_server: &str) -> Result<
         && server
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '.' | '/' | '_' | '-'));
-    let server = if server_is_safe { server } else { "wudrm" };
+    let server = if server_is_safe { server } else { DEFAULT_MANIFEST_SERVER };
 
     let toml_path = steam_path.join("opensteamtool.toml");
     let content = format!(
@@ -247,10 +283,10 @@ pub fn generate_toml_config(steam_path: &Path, manifest_server: &str) -> Result<
         auto_switch = true\n\
         url = \"{}\"\n\
         server = \"{}\"\n\
-        timeout_resolve_ms = 3000\n\
-        timeout_connect_ms = 3000\n\
-        timeout_send_ms = 5000\n\
-        timeout_recv_ms = 5000\n",
+        timeout_resolve_ms = {MANIFEST_TIMEOUT_RESOLVE_MS}\n\
+        timeout_connect_ms = {MANIFEST_TIMEOUT_CONNECT_MS}\n\
+        timeout_send_ms = {MANIFEST_TIMEOUT_SEND_MS}\n\
+        timeout_recv_ms = {MANIFEST_TIMEOUT_RECV_MS}\n",
         server, server
     );
     // 整文件覆写同样必须持锁，避免与字段级更新交错丢字段
@@ -264,7 +300,7 @@ pub fn generate_toml_config(steam_path: &Path, manifest_server: &str) -> Result<
 pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
     let toml_path = steam_path.join("opensteamtool.toml");
     if !toml_path.exists() {
-        return generate_toml_config(steam_path, "wudrm");
+        return generate_toml_config(steam_path, DEFAULT_MANIFEST_SERVER);
     }
     let _guard = TOML_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let content = fs::read_to_string(&toml_path).unwrap_or_default();
@@ -284,12 +320,12 @@ pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
     if !content.contains("url =") {
         lines.push("\n[manifest]".to_string());
         lines.push("auto_switch = true".to_string());
-        lines.push("url = \"wudrm\"".to_string());
-        lines.push("server = \"wudrm\"".to_string());
-        lines.push("timeout_resolve_ms = 3000".to_string());
-        lines.push("timeout_connect_ms = 3000".to_string());
-        lines.push("timeout_send_ms = 5000".to_string());
-        lines.push("timeout_recv_ms = 5000".to_string());
+        lines.push(format!("url = \"{}\"", DEFAULT_MANIFEST_SERVER));
+        lines.push(format!("server = \"{}\"", DEFAULT_MANIFEST_SERVER));
+        lines.push(format!("timeout_resolve_ms = {}", MANIFEST_TIMEOUT_RESOLVE_MS));
+        lines.push(format!("timeout_connect_ms = {}", MANIFEST_TIMEOUT_CONNECT_MS));
+        lines.push(format!("timeout_send_ms = {}", MANIFEST_TIMEOUT_SEND_MS));
+        lines.push(format!("timeout_recv_ms = {}", MANIFEST_TIMEOUT_RECV_MS));
         updated = true;
     } else if !content.contains("auto_switch") {
         let mut new_lines = Vec::new();
@@ -308,6 +344,30 @@ pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
         }
         lines = new_lines;
         updated = true;
+    }
+
+    // 存量配置迁移：老版本写下的 `url/server = "wudrm"` 与 3000/3000/5000/5000 超时
+    // 会一直留在用户机器上（上面的 `if !content.contains("url =")` 只在**缺失**时补写，
+    // 已存在的坏值永远不会被纠正）。而实测上游 ttfb 达 4.5~18.6 秒，5 秒收发超时
+    // 会让内核在拿到码之前就放弃 —— 必须就地改写，不能只对新装生效。
+    for line in lines.iter_mut() {
+        let t = line.trim();
+        if t == "url = \"wudrm\"" || t == "server = \"wudrm\"" {
+            *line = format!("{} = \"{}\"", t.split('=').next().unwrap_or("url").trim(), DEFAULT_MANIFEST_SERVER);
+            updated = true;
+        } else if t.starts_with("timeout_resolve_ms") && t != format!("timeout_resolve_ms = {}", MANIFEST_TIMEOUT_RESOLVE_MS) {
+            *line = format!("timeout_resolve_ms = {}", MANIFEST_TIMEOUT_RESOLVE_MS);
+            updated = true;
+        } else if t.starts_with("timeout_connect_ms") && t != format!("timeout_connect_ms = {}", MANIFEST_TIMEOUT_CONNECT_MS) {
+            *line = format!("timeout_connect_ms = {}", MANIFEST_TIMEOUT_CONNECT_MS);
+            updated = true;
+        } else if t.starts_with("timeout_send_ms") && t != format!("timeout_send_ms = {}", MANIFEST_TIMEOUT_SEND_MS) {
+            *line = format!("timeout_send_ms = {}", MANIFEST_TIMEOUT_SEND_MS);
+            updated = true;
+        } else if t.starts_with("timeout_recv_ms") && t != format!("timeout_recv_ms = {}", MANIFEST_TIMEOUT_RECV_MS) {
+            *line = format!("timeout_recv_ms = {}", MANIFEST_TIMEOUT_RECV_MS);
+            updated = true;
+        }
     }
 
     if updated {
@@ -458,24 +518,36 @@ pub fn generate_lua_script(payload: &UnlockGamePayload, codes: &BTreeMap<String,
     if payload.lock_version != Some(true) && !codes.is_empty() {
         lines.push("-- 预置清单请求码缓存（入库时预取，使首次下载零网络往返）".to_string());
         lines.push(format!("if not {} then {} = {{}} end", MANIFEST_CODE_CACHE_TABLE, MANIFEST_CODE_CACHE_TABLE));
-        // 时间戳同样取「本文件被内核编译执行的那一刻」（即 Steam 启动 / 规则热加载时），
-        // 而不是我们写盘的时刻 —— 否则规则文件可能先于 Steam 启动数小时就已落盘，
-        // 内核的 900 秒 TTL 会在用户还没点下载前就把它判为过期。
+
+        // ts 必须写「我们真正取到码的那一刻」，绝不能写「本文件被内核载入的那一刻」。
         //
-        // 用匿名函数包住 os.time 的 pcall：os 缺失时 `pcall(os.time)` 会在求值
-        // os.time 时就越界抛错（pcall 保护不到参数求值），必须延迟到函数体内。
-        // os.time 不可用时退回 0 —— 内核 cfd_cache_get 会把 ts=0 判为已过期并
-        // 回退到现场取码，即完全回到本次改动前的行为，属安全降级。
-        lines.push(format!(
-            "{0}_TS = (function() local ok, t = pcall(function() return os.time() end); if ok and type(t) == \"number\" then return t end; return 0 end)()",
-            MANIFEST_CODE_CACHE_TABLE
-        ));
+        // 内核的过期判定是 `nowTs - entry.ts >= CFD_CODE_TTL`（900 秒）。若 ts 取
+        // 载入时刻，则无论码多老，它在每次 Steam 启动时都显得「刚取的」—— 于是
+        // 「今天入库、明天才点下载」这条最常见的路径，会把一天前的码当成新鲜码
+        // 喂给 Steam。而同一 depot+gid 的码实测 5~6 分钟就轮换一次，旧码必然拉
+        // 不到清单（表现为「无网络连接」，且要等 900 秒 TTL 走完才自愈）。
+        //
+        // 写真实取码时刻的代价是：文件放置超过 900 秒后预置自然失效、内核回退到
+        // 现场取码 —— 那正是本次改动之前的既有行为，属**安全**退化；
+        // 写成载入时刻则是**危险**退化（用已轮换的错码顶替正确码），两者不可混谈。
+        //
+        // 当前 Unix 秒，与内核 cfd_now() 的 os.time() 同单位。SystemTime 早于
+        // UNIX_EPOCH（异常时钟）时退回 0 —— 内核把 ts=0 判为过期并回退现场取码，
+        // 同样是安全降级。
+        fn unix_now_secs() -> u64 {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        }
+        let fetched_at = unix_now_secs();
+
         for (gid, code) in codes {
             // 双保险：即便上游返回了脏值也绝不写进 Lua，避免破坏规则文件语法
             if gid.chars().all(|c| c.is_ascii_digit()) && code.chars().all(|c| c.is_ascii_digit()) {
                 lines.push(format!(
-                    "{0}[\"{1}\"] = {{ code = \"{2}\", ts = {0}_TS }}",
-                    MANIFEST_CODE_CACHE_TABLE, gid, code
+                    "{0}[\"{1}\"] = {{ code = \"{2}\", ts = {3} }}",
+                    MANIFEST_CODE_CACHE_TABLE, gid, code, fetched_at
                 ));
             }
         }
@@ -513,11 +585,23 @@ fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload
     let mut metadata = None;
     let mut metadata_message: Option<String> = None;
 
-    // 清单 GID 只服务「锁定版本」模式（Lua 里会写 setManifestid）。
-    // 默认「跟随官方最新」时不需要 GID，跳过服务端与客户端的社区 GID 探测，
-    // 省下数秒上游等待；密钥与 DLC 完全不受影响。
+    // GID 的两种用途必须分开，否则会掉进「预取静默空转」的坑：
+    //
+    // - 锁定版本：需要 GID 去写 setManifestid，且必须经 ManifestHub3 社区对齐，
+    //   确保钉死的实体在镜像里真实存在。走 parse_metadata(app_id, true)。
+    // - 默认「跟随最新」：Lua 不写 setManifestid，但**入库预取清单请求码需要
+    //   manifestGid 这个数字去换码**。此前这里传 need_gid=false，服务端命中
+    //   dlc_index 时会 skipUpstream，而索引里刻意不存 GID，于是响应里 GID 全空、
+    //   预取一个码都拿不到（实测 2054970 的规则文件 warmed=0）。
+    //   现在改走 parse_metadata_with_gids：要 GID，但**不做** Hub3 对齐
+    //   （省下 2.5~4 秒纯探测），也绝不触发任何实体清单下载。
     let need_gid = payload.lock_version == Some(true);
-    match crate::manifests::parse_metadata(payload.app_id, need_gid) {
+    let meta_result = if need_gid {
+        crate::manifests::parse_metadata(payload.app_id, true)
+    } else {
+        crate::manifests::parse_metadata_with_gids(payload.app_id)
+    };
+    match meta_result {
         Ok(meta) => {
             metadata_ok = true;
             for m in &meta.depots {

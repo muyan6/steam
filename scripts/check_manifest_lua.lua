@@ -176,13 +176,17 @@ print('POSITIVE_CACHE_TTL_OK')
 
 _G.cfd_now = real_cfd_now
 _G.http_get = real_http_get
-_G.http_get = real_http_get
 
--- 负缓存：全部源失败后，短时间内重复查询不应再发请求
+-- 负缓存（确定性未命中）：上游明确回答「没有这个码」时必须抑制重复请求。
+-- 用 404 + 非数字响应体模拟 —— 它属于「确认查不到」，而非「上游过载」。
 local callsBefore = httpCalls
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    return 'not-a-code', 404
+end
 local r3 = fetch_manifest_code('2000000000000000002')
 if r3 ~= nil then
-    print('FAIL: expected nil when all sources fail, got ' .. tostring(r3))
+    print('FAIL: expected nil on definitive miss, got ' .. tostring(r3))
     os.exit(1)
 end
 local callsAfterFirstMiss = httpCalls - callsBefore
@@ -196,10 +200,40 @@ if r4 ~= nil then
     os.exit(1)
 end
 if (httpCalls - callsBefore) ~= callsAfterFirstMiss then
-    print('FAIL: negative cache not used, extra http_get calls were made')
+    print('FAIL: definitive-miss negative cache not used, extra http_get calls were made')
     os.exit(1)
 end
 print('NEGATIVE_CACHE_OK')
+
+-- 瞬时故障（429/5xx）**绝不**写负缓存。
+-- 这是「第一次点下载报无网络、等一两分钟再点才行」的根因：一次 429 抖动会把
+-- 该 gid 冻结 CFD_CODE_NEG_TTL 秒。改成不缓存后，第二次调用必须重新发起网络
+-- 请求，而不是直接返回上一次缓存的 nil。
+local transientBefore = httpCalls
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    return nil, 429
+end
+local t429a = fetch_manifest_code('4000000000000000004')
+if t429a ~= nil then
+    print('FAIL: expected nil on 429, got ' .. tostring(t429a))
+    os.exit(1)
+end
+local callsAfter429 = httpCalls - transientBefore
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    return nil, 429
+end
+local t429b = fetch_manifest_code('4000000000000000004')
+if t429b ~= nil then
+    print('FAIL: expected nil on second 429, got ' .. tostring(t429b))
+    os.exit(1)
+end
+if (httpCalls - transientBefore) <= callsAfter429 then
+    print('FAIL: 429 must NOT be negative-cached (second call should retry the network)')
+    os.exit(1)
+end
+print('TRANSIENT_NOT_NEGATIVE_CACHED_OK')
 
 -- ===== 5. 关键源与请求头存在性 =====
 if not content:find('manifest%.manifestdex%.com') then
@@ -212,24 +246,27 @@ if not content:find('ManifestDeX/1%.0', 1, false) then
 end
 print('MANIFESTDEX_CONFIG_OK')
 
--- 源优先级：ManifestDeX 必须排在云端中继之前。
+-- 源优先级：云端中继必须排在 ManifestDeX 直连**之前**。
 --
--- 为什么这条是回归保护：云端中继不产生新值，它自己也是从 ManifestDeX 取值的
--- （见 server 端 getManifestCode），服务端另有缓存。一旦顺序被颠倒，所有请求
--- 都会绕远一层，并且多引入一层缓存过期风险 —— 而请求码是会随时间轮换的，
--- 旧码会让分包彻底拉不到清单（「无网络连接 / 0 字节下载」）。
+-- 为什么这条是回归保护（与旧断言相反，属有意反转）：
+-- Steam 是**逐分包**回调 fetch_manifest_code 的 —— 一个 28 分包的游戏点一次
+-- 下载就是 28 次请求，点两次 56 次，而 ManifestDeX 按 IP 限流实测 60 次/分钟。
+-- 每个客户端各自直连，等于把限流额度除以客户端数，人一多就集体 429
+-- （实测 429/502/200 交替出现）。中继带 5 分钟正缓存 + 单航班去重，能把
+-- 「N 客户端 x M 分包」收敛成「每 gid 每 5 分钟 1 次上游请求」，
+-- 这是唯一能让多客户端共存的顺序；绕一跳的延迟远小于撞限流后空等的代价。
 local dexPos = content:find('manifest.manifestdex.com', 1, true)
 local cloudPos = content:find('steam.myil.top/api/manifests/code', 1, true)
 if not dexPos then
-    print('FAIL: ManifestDeX endpoint missing')
+    print('FAIL: ManifestDeX endpoint missing (needed as direct fallback)')
     os.exit(1)
 end
 if not cloudPos then
-    print('FAIL: cloud relay endpoint missing (expected as 2nd-priority fallback)')
+    print('FAIL: cloud relay endpoint missing (must be first priority)')
     os.exit(1)
 end
-if cloudPos < dexPos then
-    print('FAIL: cloud relay must NOT be tried before ManifestDeX (order inverted)')
+if cloudPos > dexPos then
+    print('FAIL: cloud relay must be tried BEFORE ManifestDeX direct (order inverted)')
     os.exit(1)
 end
 print('SOURCE_ORDER_OK')

@@ -1420,23 +1420,31 @@ export class ManifestService {
   }
 
   private manifestCodeCache = new Map<string, { code: string; fetchedAt: number }>();
-  // 缓存时长必须短：实测同一 depot+gid 的清单请求码会随时间变化
-  // （gid 2613374344895573127 在数小时内从 16792007641517249214 变为
-  // 1790064358646451831），且各上游刷新节奏不一致 —— 落后的源在同一时刻会给出
-  // 与权威源不同的值。缓存越久，把过期码下发给客户端的窗口越长，客户端用它向
-  // Valve CDN 拉清单会直接失败（表现为「无网络连接 / 0 字节下载」）。
-  // 原为 2 小时，过长；改为 5 分钟。
-  // 新客户端已封存云端降级（不再调用本接口），但**旧客户端仍会调用**：
-  // 对它们而言本接口是 ManifestDeX 直连失败后的唯一来源，缓存越短越安全。
+  // 缓存时长：请求码确实会随时间轮换 —— 从本机 Steam 日志解析出的 158 个
+  // (depot,gid) 组合里有 34 个先后出现过多个不同值，最频繁的
+  // depot 281992 / gid 3306222774754384885 在 28 分钟内换了 6 个码
+  // （08:44→08:49→08:56→09:01→09:06→09:12），即约 5~6 分钟一换。
+  // 但同一份日志里所有历史码当时都返回了 200 —— 旧码不会立刻失效。
+  // 故 5 分钟 TTL 既能贴合轮换节奏，又不会因偶发命中旧码而失败。
   private readonly MANIFEST_CODE_TTL_MS = 5 * 60 * 1000;
   // 容量上限：公开接口可枚举 gid，仅靠 TTL 惰性淘汰不足以防止内存无界增长
   private readonly MANIFEST_CODE_CACHE_MAX = 20000;
   // 负结果短 TTL 缓存：/api/manifests/code/:gid 是公开接口且 gid 由 URL 决定，
-  // 不缓存负结果时，随机 gid 的每次 miss 都会顺序打满 4 个上游（3.5+3.5+3+3 秒），
+  // 不缓存负结果时随机 gid 的每次 miss 都会打上游（实测单次 4.5~18.6 秒），
   // 等于把本服务变成对上游的放大器。
+  // 但**只对「确认查不到」写入**：429/5xx 属上游瞬时过载，写进去会让一次抖动
+  // 冻结该 gid 60 秒，期间所有客户端都拿到 404（这正是「再点一次也不行」的成因）。
   private negativeCodeCache = new Map<string, number>();
   private readonly NEGATIVE_CODE_TTL_MS = 60 * 1000;
   private readonly NEGATIVE_CODE_CACHE_MAX = 20000;
+  // 单航班去重：本中继存在的全部价值就是「把 N 客户端 x M 分包收敛成
+  // 每 gid 每 5 分钟 1 次上游请求」。没有它，同一瞬间 N 个客户端请求同一 gid
+  // 会各自打一遍上游，收敛效果归零 —— 而上游限流实测仅 60 次/分钟。
+  private manifestCodeInFlight = new Map<string, Promise<string | null>>();
+  // 上游实测 ttfb 4.5~18.6 秒。原实现超时 3500ms，意味着**从未等到过答案**，
+  // 这才是「中继几乎没有缓存到码」的真正原因 —— 不是上游没码，是我们先放弃了。
+  private readonly MANIFEST_CODE_UPSTREAM_TIMEOUT_MS = 15000;
+  private readonly MANIFEST_CODE_MAX_ATTEMPTS = 2;
 
   /** 写入清单代码缓存，并在超限时清理过期项/按插入序淘汰 */
   private setManifestCodeCache(gid: string, code: string): void {
@@ -1495,25 +1503,75 @@ export class ManifestService {
       return null;
     }
 
-    // 唯一权威源：ManifestDeX 清单代码直供源。
-    // 该源经 Cloudflare 保护，必须携带专用 User-Agent，缺失会被返回 403 质询页。
-    try {
-      const resp = await axios.get(`https://manifest.manifestdex.com/${gid}`, {
-        timeout: 3500,
-        responseType: 'text',
-        headers: { 'User-Agent': 'ManifestDeX/1.0' }
-      });
-      if (resp.status === 200 && typeof resp.data === 'string') {
-        const text = resp.data.trim();
-        if (/^\d+$/.test(text) && text !== '0') {
-          this.setManifestCodeCache(gid, text);
-          return text;
-        }
-      }
-    } catch {}
+    // 单航班：并发请求同一 gid 只打一次上游，其余等同一个 Promise。
+    // 这是中继相对「客户端各自直连」的核心优势，缺了它收敛效果归零。
+    const running = this.manifestCodeInFlight.get(gid);
+    if (running) return running;
 
-    this.setNegativeCodeCache(gid);
+    const task = this.fetchManifestCodeFromUpstream(gid);
+    this.manifestCodeInFlight.set(gid, task);
+    try {
+      return await task;
+    } finally {
+      this.manifestCodeInFlight.delete(gid);
+    }
+  }
+
+  /**
+   * 向唯一权威源取码，带有限重试。
+   *
+   * 关键区分：
+   * - 200 + 合法纯数字码 → 写正缓存返回
+   * - 200 + 非码内容（如 HTML 质询页）→ 视为「确认查不到」，写负缓存
+   * - 429 / 5xx / 网络异常 → 属**瞬时过载**，退避后重试；重试仍失败则直接返回
+   *   null 且**不写负缓存**，让下一次调用立刻重试（而不是被冻结 60 秒）
+   * - 其余 4xx（如 403 质询）→ 不写负缓存：Cloudflare 质询往往是临时的
+   */
+  private async fetchManifestCodeFromUpstream(gid: string): Promise<string | null> {
+    let sawDefinitiveMiss = false;
+
+    for (let attempt = 1; attempt <= this.MANIFEST_CODE_MAX_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        await this.sleepCodeRetry(attempt);
+      }
+      try {
+        const resp = await axios.get(`https://manifest.manifestdex.com/${gid}`, {
+          timeout: this.MANIFEST_CODE_UPSTREAM_TIMEOUT_MS,
+          responseType: 'text',
+          headers: { 'User-Agent': 'ManifestDeX/1.0' },
+          // 不让 axios 对 4xx/5xx 抛异常：必须看到状态码才能区分
+          // 「上游过载」与「这个 gid 确实没有码」
+          validateStatus: () => true
+        });
+        if (resp.status === 200 && typeof resp.data === 'string') {
+          const text = resp.data.trim();
+          if (/^\d+$/.test(text) && text !== '0') {
+            this.setManifestCodeCache(gid, text);
+            return text;
+          }
+          // 200 但内容不是码：上游明确回答「没有」，重试无意义
+          sawDefinitiveMiss = true;
+          break;
+        }
+        // 429 / 5xx：上游过载，可重试
+        if (resp.status !== 429 && resp.status < 500) {
+          // 其余 4xx（403 质询等）：重试无意义，但也**不写负缓存**
+          return null;
+        }
+      } catch {
+        // 网络层异常（超时 / 连接重置）：同样属瞬时故障，继续重试
+      }
+    }
+
+    if (sawDefinitiveMiss) {
+      this.setNegativeCodeCache(gid);
+    }
     return null;
+  }
+
+  /** 重试退避：优先读上游 Retry-After，缺失时按 3 秒递增 */
+  private async sleepCodeRetry(attempt: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(3000 * (attempt - 1), 6000)));
   }
 }
 

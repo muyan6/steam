@@ -1,0 +1,13 @@
+﻿hooks 1
+info 1
+logs 1
+objects 1
+refs 1
+COMMIT_EDITMSG 1623
+config 490
+description 73
+FETCH_HEAD 398
+HEAD 21
+index 22434
+ORIG_HEAD 41
+packed-refs 46

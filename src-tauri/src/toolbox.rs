@@ -222,7 +222,7 @@ pub fn clear_steam_cache(steam_path: &Path) -> ToolboxActionResult {
     // 重建 config/lua 与 depotcache 骨架并注入高可用清单调度
     let _ = fs::create_dir_all(steam_path.join("config").join("lua"));
     let _ = fs::create_dir_all(steam_path.join("depotcache"));
-    let _ = crate::ost::generate_toml_config(steam_path, "wudrm");
+    let _ = crate::ost::generate_toml_config(steam_path, crate::ost::DEFAULT_MANIFEST_SERVER);
     let _ = crate::ost::deploy_manifest_lua(steam_path);
 
     // 清理会删除注入 DLL，必须重新部署：否则重启后 Steam 无注入，

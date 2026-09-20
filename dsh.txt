@@ -1,0 +1,4 @@
+﻿DSH_HOME=C:\Users\lenovo\.dsh
+DSH_SESSION_ID=session-019a209b-7f2b-4aea-bda8-07f57f44d54e
+DSH_SHELL=1
+DSH_WEB_URL=http://127.0.0.1:3080

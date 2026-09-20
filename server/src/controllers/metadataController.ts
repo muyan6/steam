@@ -399,9 +399,18 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     // needGid=1 → 「锁定版本」模式，走完整链路拿社区对齐 GID；
     // 缺省 → 「跟随官方最新」模式，跳过纯 GID 的社区源探测
     const needGid = req.query.needGid === '1' || req.query.needGid === 'true';
+    // withGids=1 → 「只要 GID，不要实体清单」的轻量模式，专供客户端入库时预取
+    // 清单请求码使用。它与 needGid 的关键差别是**不触发 ensureManifestCached**：
+    // 我们只要 manifestGid 这个数字去换请求码，绝不把清单实体下载到服务端。
+    //
+    // 为什么必须有这个独立参数：默认模式命中 dlc_index 时会 skipUpstream，
+    // 而索引里刻意不存 manifestGid（GID 随官方更新变化），于是响应里 GID 全为空 ——
+    // 客户端的预取函数拿不到输入，静默空转。用 needGid=1 代替则会把实体清单
+    // 一起拉下来（见下方第 7 步），既有磁盘代价也不是我们想要的。
+    const withGids = needGid || req.query.withGids === '1' || req.query.withGids === 'true';
 
     // 命中缓存直接返回（manifestInfo 必须重算，depotcache 实时变化）
-    const cached = readMetadataCache(appId, needGid);
+    const cached = readMetadataCache(appId, withGids);
     if (cached) {
       // 返回副本：缓存条目在 10 分钟 TTL 内会被反复复用，直接交出内部数组引用
       // 会让任何下游就地修改永久污染缓存（与 cloneHub3Data 的处理保持一致）
@@ -504,9 +513,10 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       if (indexEntry.depots.length > 0) authoritativeDepotSource = true;
     }
 
-    // 索引命中且非锁定模式：上游全部跳过（零网络请求）。
-    // 锁定模式必须查上游：清单 GID 随官方更新变化，索引里刻意不存它。
-    const skipUpstream = !!indexEntry && !needGid;
+    // 索引命中且不需要 GID：上游全部跳过（零网络请求）。
+    // 需要 GID（锁定版本 或 客户端预取）时必须查上游：清单 GID 随官方更新变化，
+    // 索引里刻意不存它 —— 这正是客户端预取曾静默空转的原因。
+    const skipUpstream = !!indexEntry && !withGids;
 
     if (!skipUpstream) {
       // SteamCMD：一次请求同时给出游戏名、listofdlc、分包与 GID。
@@ -824,7 +834,10 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       dlcDepots,
       appLevelKey,
       accessToken,
-      withGid: needGid,
+      // 用 withGids 而非 needGid 作为标记：只要本次响应里带了真实 GID，
+      // 就应当能被下一次「需要 GID」的请求（含客户端预取）复用 ——
+      // 否则预取每次都要重跑一遍 SteamCMD 上游，白等 0.3~1.6 秒。
+      withGid: withGids,
       fetchedAt: Date.now()
     });
 
