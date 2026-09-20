@@ -12,6 +12,7 @@ import {
 } from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
 import { getManifestsForApp, downloadManifestFile, getManifestCode } from '../controllers/manifestController.js';
+import { manifestService } from '../services/manifestService.js';
 import { getLatestOstRelease, downloadOstAsset } from '../controllers/ostController.js';
 import {
   getLatestNotice,
@@ -350,6 +351,11 @@ const manifestCodeLimiter = rateLimit({
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  // 命中正缓存的请求不消耗额度：它零上游流量，限它只会误伤合法用户。
+  // Steam 逐分包回调取码，一个 28 分包游戏点一次下载就是 28 次请求、
+  // 点两次 56 次，而其中绝大多数在 5 分钟 TTL 内是缓存命中 —— 额度应该
+  // 只用来约束「真的要去打上游」的那些请求，否则用户重试几次就先把自己限死。
+  skip: (req) => manifestService.hasFreshCode(String(req.params.gid || '')),
   message: { success: false, message: '清单代码查询过于频繁，请稍后再试' }
 });
 router.get('/manifests/code/:gid', manifestCodeLimiter, getManifestCode);

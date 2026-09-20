@@ -1493,6 +1493,19 @@ export class ManifestService {
     }
   }
 
+  /**
+   * 该 GID 是否已有新鲜正缓存 —— 供限流器放行「必然零上游流量」的请求。
+   *
+   * 限流器的目的是防止公开接口被用来枚举随机 GID、把中继变成对上游的放大器。
+   * 但命中正缓存的请求**根本不碰上游**，把它计入额度只会让合法用户先撞墙：
+   * 一个 28 分包的游戏，Steam 是逐分包回调取码的，点一次下载就是 28 次请求，
+   * 点两次 56 次 —— 120/分钟的额度撑不住几轮重试，而其中绝大多数是缓存命中。
+   */
+  public hasFreshCode(gid: string): boolean {
+    const cached = this.manifestCodeCache.get(gid);
+    return !!cached && Date.now() - cached.fetchedAt < this.MANIFEST_CODE_TTL_MS;
+  }
+
   private setNegativeCodeCache(gid: string): void {
     this.negativeCodeCache.set(gid, Date.now());
     if (this.negativeCodeCache.size <= this.NEGATIVE_CODE_CACHE_MAX) return;
