@@ -690,6 +690,13 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 12px 28px -5px var(--color-accent-glow);
 }
 
+/* 可点击的主题卡片（整卡当按钮用）需要按下反馈。
+   只给 <button> 或 [role=button]/[data-clickable] 加，避免纯展示卡片被按下时抖动。 */
+button.theme-card:active:not(:disabled),
+[role="button"].theme-card:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
 .theme-card-static {
   background-color: var(--color-bg-card);
   backdrop-filter: blur(16px);
@@ -813,13 +820,30 @@
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #e2e8f0;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.btn-soft-action:hover {
+.btn-soft-action:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.35);
+}
+
+/* 按下反馈：此前 btn-soft-action 只有 :hover 没有 :active，点下去毫无触感。
+   transition 里刻意加了 transform —— 原先写的是 `transition: all`，
+   在部分浏览器上与 Tailwind 的 active:scale-* 组合会互相覆盖。 */
+.btn-soft-action:active:not(:disabled) {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-soft-action:disabled {
+  cursor: not-allowed;
 }
 
 [data-theme="frost"] .btn-soft-action,
@@ -836,6 +860,12 @@
   background: #e2e8f0 !important;
   border-color: #cbd5e1 !important;
   color: #0f172a !important;
+}
+
+[data-theme="frost"] .btn-soft-action:active,
+[data-theme="dawn"] .btn-soft-action:active,
+[data-theme="mint"] .btn-soft-action:active {
+  background: #cbd5e1 !important;
 }
 
 /* ==========================================================================

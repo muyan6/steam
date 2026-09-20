@@ -502,8 +502,30 @@ pub fn generate_lua_script(payload: &UnlockGamePayload, codes: &BTreeMap<String,
     }
 
     // 4. DLC 挂载（升序去重，排除本体与分包中已挂载过的 AppID，避免覆盖已注入的密钥参数）
+    //
+    // 关键：必须排除**全部** depot id，而不只是 `seen`（已成功挂载密钥的那些）。
+    //
+    // 实测事故（AppID 2054970）：服务端 dlcIds 里混入了本身就是分包的 id ——
+    // 2757100 同时出现在 depots（无密钥）与 dlcIds 中。它在第 2 步被正确地跳过了
+    // （无密钥不挂载），于是也不在 seen 里；结果第 4 步又把它当普通 DLC
+    // `addappid(2757100)` 挂了上去。Steam 随即要求初始化该分包并索取解密密钥，
+    // 而密钥根本不存在：
+    //   Failed to initialize depot 2757100, manifest 2163371650537928331
+    //   (Missing decryption key)
+    //   AppID 2054970 update canceled ... (Missing decryption key)
+    // 整个游戏被一个无密钥的 DLC 分包拖垮，表现为「已入库却提示内容仍处于加密状态」。
+    // 因此凡是出现在 depots 里的 id，一律归第 2 步管辖：有密钥才挂，无密钥彻底不碰。
+    let mut all_depot_ids: Vec<u32> = vec![app_id];
+    if let Some(depots) = &payload.depots {
+        for depot in depots {
+            if !all_depot_ids.contains(&depot.depot_id) {
+                all_depot_ids.push(depot.depot_id);
+            }
+        }
+    }
+
     let mut dlcs: Vec<u32> = payload.dlcs.clone().unwrap_or_default();
-    dlcs.retain(|d| *d != app_id && !seen.contains(d));
+    dlcs.retain(|d| *d != app_id && !seen.contains(d) && !all_depot_ids.contains(d));
     dlcs.sort_unstable();
     dlcs.dedup();
     for dlc_id in &dlcs {
