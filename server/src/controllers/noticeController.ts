@@ -98,7 +98,15 @@ export const updateNoticeAdmin = (req: Request, res: Response) => {
     });
 
     res.json({ success: true, message: '公告信息已更新', data: updated });
-  } catch (e) {
+  } catch (e: any) {
+    // noticeService.updateNotice 在 ID 不存在时抛「公告 ID 不存在」。
+    // 这是**客户端请求错误**（404），不是服务端故障 —— 必须与 versionController
+    // 和 adminController.updateNotice 的同类处理保持一致。此前一律回 500，
+    // 管理台对已删除的公告点保存会看到「服务器内部错误」，把可自愈的
+    // 状态漂移（列表未刷新）伪装成后端故障，误导排查。
+    if (e?.message && typeof e.message === 'string' && e.message.includes('不存在')) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
     console.error('[NoticeController] 公告接口异常:', e);
     res.status(500).json({ success: false, message: '服务器内部错误' });
   }
