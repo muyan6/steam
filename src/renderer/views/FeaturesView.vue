@@ -20,7 +20,7 @@
       <div class="flex items-center gap-2.5">
         <button
           @click="handleOpenFeedback"
-          class="px-4 py-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 hover:text-sky-200 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer"
+          class="px-4 py-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:border-sky-400/50 text-sky-300 hover:text-sky-100 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer hover-lift"
           title="加入官方 QQ 交流反馈群"
         >
           <MessageSquare class="w-3.5 h-3.5 text-sky-400" />

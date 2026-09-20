@@ -20,7 +20,7 @@
           v-if="unlockedGames.length > 0"
           @click="handleCheckUpdates(false)"
           :disabled="checkingUpdates"
-          class="px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-sm disabled:opacity-60"
+          class="px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/25 hover:border-amber-400/50 border border-amber-500/30 text-amber-300 hover:text-amber-200 rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed hover-lift"
           title="逐个对比已入库规则的清单版本与云端最新版本（实时查询，游戏越多耗时越长）"
         >
           <ArrowUpCircle v-if="checkingUpdates" class="w-4 h-4 animate-pulse" />
@@ -37,7 +37,7 @@
         <button
           v-if="unlockedGames.length > 0"
           @click="handleClearAll"
-          class="px-4 py-2.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-semibold transition flex items-center gap-2"
+          class="px-4 py-2.5 bg-rose-950/40 hover:bg-rose-900/70 hover:border-rose-500/60 hover:text-rose-200 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-sm hover-lift"
         >
           <Trash2 class="w-4 h-4" />
           <span>清空所有</span>
@@ -45,7 +45,7 @@
 
         <button
           @click="loadLibrary"
-          class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-xs font-semibold text-slate-200 transition flex items-center gap-2 shadow-sm"
+          class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 hover:border-white/25 border border-white/10 rounded-xl text-xs font-semibold text-slate-200 transition flex items-center gap-2 shadow-sm hover-lift"
         >
           <RotateCw class="w-4 h-4" />
           <span>刷新列表</span>

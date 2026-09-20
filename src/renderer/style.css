@@ -718,8 +718,18 @@ button.theme-card:active:not(:disabled),
   transform: translateY(-1px);
 }
 
+/* 按下要同时「落回原位」和「轻微内缩」—— 只写 translateY(0) 会让按下感觉
+   比 hover 还轻（回到静止态），反而没有触感。scale 才是按下的语汇。 */
 .theme-btn-primary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.97);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 8px 0 var(--color-accent-glow);
+}
+
+/* disabled 态统一给「不可用」的指针，而不是让用户以为是可点的普通文字。
+   Tailwind 的 disabled:opacity-* 只管视觉，指针得单独写。 */
+.theme-btn-primary:disabled,
+.btn-soft-action:disabled {
+  cursor: not-allowed;
 }
 
 .theme-text-accent {
@@ -866,6 +876,81 @@ button.theme-card:active:not(:disabled),
 [data-theme="dawn"] .btn-soft-action:active,
 [data-theme="mint"] .btn-soft-action:active {
   background: #cbd5e1 !important;
+}
+
+/* ==========================================================================
+   全局按钮交互基线 (Global Button Interaction Baseline)
+
+   为什么要有这一层：此前 137 个 <button> 里有 74 个没有任何 active: 反馈、
+   56 个没有 hover: 变化、18 个连 transition 都没写。逐个补 class 既易漏又
+   会在后续新增按钮时重演，所以改为在基线上兜底：
+
+     * 所有可用按钮默认带 transition —— 这样即便某个按钮忘了写
+       `transition`，颜色变化也不会是硬切。
+     * 所有可用按钮按下时轻微缩放 —— 提供最基本的触感。
+
+   放在 @layer base 里是关键：base 层排在 utilities 之前，因此
+     - Tailwind 的 `transition` / `transition-transform` / `transition-all`
+       仍然可以覆盖这里的 transition 声明（比如需要只过渡 transform 的场景）
+     - Tailwind 的 `active:scale-95` 之类也能覆盖这里的 transform
+   即「提供默认值，而不是强制值」。
+
+   刻意不用 `transition: all`：那会把 layout 属性也纳入过渡，在长列表上
+   触发无谓的重排。只列真正会变的那些。
+
+   也不给 [data-theme] 浅色主题写单独覆盖 —— 这里只管动画，不碰配色，
+   浅色适配由上面的 .btn-soft-action / .theme-btn-primary 各自负责。
+   ========================================================================== */
+@layer base {
+  /* 必须整条包在 :where() 里 —— 特异性压到 0 才能被 Tailwind 的
+     `.transition` / `.duration-*` (特异性 0,1,0) 正常覆盖。
+     若写成 `button:not(:disabled)` 就是 0,1,1，**高于**单类选择器，
+     会反过来把每个按钮显式写的 transition 全部吃掉 ——
+     与「提供默认值」的意图正好相反。 */
+  :where(button:not(:disabled)),
+  :where([role="button"]:not([aria-disabled="true"])) {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform, filter;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 0.15s;
+  }
+
+  /* 按下反馈：0.97 与 .btn-soft-action 手动写的值一致，视觉上是同一档。
+     用 :where() 把特异性压到 0，确保任何显式的 active:scale-* 或
+     .theme-btn-primary:active 都能覆盖它，不会互相打架。 */
+  :where(button:not(:disabled):active),
+  :where([role="button"]:not([aria-disabled="true"]):active) {
+    transform: scale(0.97);
+  }
+
+  /* 尊重系统「减少动态效果」设置：关掉过渡与缩放，只保留即时状态变化。
+     无障碍要求，此前整个样式表里一条都没有。 */
+  @media (prefers-reduced-motion: reduce) {
+    :where(button:not(:disabled)),
+    :where([role="button"]:not([aria-disabled="true"])) {
+      transition-duration: 0.01ms;
+    }
+    :where(button:not(:disabled):active),
+    :where([role="button"]:not([aria-disabled="true"]):active) {
+      transform: none;
+    }
+  }
+}
+
+/* ==========================================================================
+   弱对比按钮的 hover 强度补偿
+
+   有几个按钮的 hover 只把背景透明度从 /10 提到 /20 —— 在深色底上这点差异
+   几乎看不出来，用户的体感就是「移上去没反应」。这里统一补一档边框/文字
+   亮度，让状态变化可被察觉，同时保持原有的低饱和风格。
+   ========================================================================== */
+button.hover-lift:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.45);
+}
+
+button.hover-lift:not(:disabled):active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.4);
 }
 
 /* ==========================================================================
