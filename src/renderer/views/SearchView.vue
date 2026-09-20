@@ -485,6 +485,27 @@ let searchRequestId = 0;
 let searchSessionKey = '';
 const sessionSeenIds = new Set<number>();
 
+// 自动换源顺序：从当前源起，按 searchSources 声明顺序环形展开。
+//
+// 只在「第 1 页 + 有关键词」时启用。翻页时换源是破坏性的 —— 用户看到的
+// 第 2 页与第 1 页会来自不同数据源，分页总数也对不上，宁可不换。
+const orderedSourcesFrom = (current: SearchSourceId): SearchSourceId[] => {
+  const idx = searchSources.findIndex(s => s.id === current);
+  const start = idx < 0 ? 0 : idx;
+  const out: SearchSourceId[] = [];
+  for (let i = 0; i < searchSources.length; i++) {
+    out.push(searchSources[(start + i) % searchSources.length].id);
+  }
+  return out;
+};
+
+// 从各种返回形态里抽出条目数组：桥接层既可能回 {items:[...]}，也可能直接回数组。
+// 这里刻意不做类型标注 —— SteamSearchItem 是桥接层的私有接口，未对外导出。
+const itemsOf = (r: any): any[] => {
+  if (r && Array.isArray(r.items)) return r.items;
+  return Array.isArray(r) ? r : [];
+};
+
 // 执行搜索
 const handleSearch = async (page = 1) => {
   const requestId = ++searchRequestId;
@@ -492,32 +513,66 @@ const handleSearch = async (page = 1) => {
   currentPage.value = page;
   showSourceDropdown.value = false;
 
-  // 关键词或数据源变化视为新搜索会话，重置跨页去重集合
-  const sessionKey = `${currentSource.value}|${searchQuery.value.trim()}`;
-  if (sessionKey !== searchSessionKey) {
-    searchSessionKey = sessionKey;
-    sessionSeenIds.clear();
-  }
+  const query = searchQuery.value.trim();
+  // 中文游戏名在本地库里可能压根没收录（本地库只有同步过的那批），
+  // 而 Steam 官方商店接口能实搜到 —— 所以「本地零结果」不该是终点。
+  const chain: SearchSourceId[] = (page === 1 && query)
+    ? orderedSourcesFrom(currentSource.value)
+    : [currentSource.value];
 
-  // 当前页的结果不能参与本次去重，否则回退到已看过的页会被全部剔除（页面为空）。
-  // 关键：不直接把 sessionSeenIds 交给桥接层就地过滤，而是传入请求时刻的快照，
-  // 返回后再并入，这样「回访旧页」不会被自己上一次的 id 过滤掉。
-  const seenBefore = new Set(sessionSeenIds);
+  const fromSource = currentSource.value;
+  const fromName = currentSourceConfig.value.name;
 
   try {
-    const res = await window.electronAPI.searchGames({
-      query: searchQuery.value,
-      source: currentSource.value,
-      page,
-      pageSize: pageSize.value,
-      seenIds: seenBefore
-    });
+    let chosen: SearchSourceId | null = null;
+    let res: any = null;
+    let firstRes: any = null;
 
-    if (requestId !== searchRequestId) return; // 已有更新的请求，丢弃过期结果
+    for (const src of chain) {
+      // 每个源各自判定会话：换源即换结果集，不能把上一个源的跨页去重集合带进来
+      const sessionKey = `${src}|${query}`;
+      if (sessionKey !== searchSessionKey) {
+        searchSessionKey = sessionKey;
+        sessionSeenIds.clear();
+      }
 
-    // 桥接层会就地扩充传入的 seenBefore（含被 pageSize 截断的条目），
-    // 把它并回会话集合即可保持原有的跨页去重累积语义
-    for (const id of seenBefore) sessionSeenIds.add(id);
+      // 当前页的结果不能参与本次去重，否则回退到已看过的页会被全部剔除（页面为空）。
+      // 关键：不直接把 sessionSeenIds 交给桥接层就地过滤，而是传入请求时刻的快照，
+      // 返回后再并入，这样「回访旧页」不会被自己上一次的 id 过滤掉。
+      const seenBefore = new Set(sessionSeenIds);
+
+      res = await window.electronAPI.searchGames({
+        query: searchQuery.value,
+        source: src,
+        page,
+        pageSize: pageSize.value,
+        seenIds: seenBefore
+      });
+
+      if (requestId !== searchRequestId) return; // 已有更新的请求，丢弃过期结果
+
+      // 桥接层会就地扩充传入的 seenBefore（含被 pageSize 截断的条目），
+      // 把它并回会话集合即可保持原有的跨页去重累积语义
+      for (const id of seenBefore) sessionSeenIds.add(id);
+
+      if (firstRes === null) firstRes = res;
+
+      // 该源有结果 → 停在此源；零结果 → 继续试下一个
+      if (itemsOf(res).length > 0) {
+        chosen = src;
+        break;
+      }
+    }
+
+    // 全部源都零结果：保持原源与原结果（空列表），不要因为「试过 hybrid」就悄悄改源
+    if (chosen === null) {
+      chosen = fromSource;
+      res = firstRes;
+    } else if (chosen !== fromSource) {
+      const toName = searchSources.find(s => s.id === chosen)?.name || chosen;
+      currentSource.value = chosen;
+      emit('notify', `「${fromName}」未找到结果，已自动切换至「${toName}」`, 'info');
+    }
 
     if (res && res.items) {
       games.value = res.items;
