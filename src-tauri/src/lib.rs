@@ -805,44 +805,22 @@ fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
 }
 
 // 存量配置迁移：opensteamtool.toml 规范化与 manifest.lua 部署（默认开启清单自动切换）
+//
+// 全部委托给 ost::ensure_toml_optimized —— 它已完整覆盖本函数原本的职责：
+// 缺失则整份生成、缺 auto_switch 则补写、末尾部署 manifest.lua，
+// 并且额外带「坏清单节点与旧超时就地迁移」。
+//
+// 为什么不在这里再维护一份：两处都只做「读-判-写 opensteamtool.toml」，
+// 各写一份必然漂移 —— 本次修复的 steamrun 残留就只落在 ensure_toml_optimized 里，
+// 而启动路径走的正是本函数，于是用户机器上的 url = "steamrun" 在启动时永远不会被纠正，
+// 只有等下一次入库才顺带修好。委托之后，启动即完成全量规范化。
+//
+// 注意：不可在持有 ost::TOML_LOCK 之后再调用它 —— ensure_toml_optimized 内部会再次
+// 加锁，而 std::sync::Mutex 不可重入，会直接死锁。本函数因此不再自行加锁。
 pub(crate) fn ensure_auto_switch_default(steam_path: &std::path::Path) {
-    let toml_path = steam_path.join("opensteamtool.toml");
-    if !toml_path.exists() {
-        let _ = ost::generate_toml_config(steam_path, ost::DEFAULT_MANIFEST_SERVER);
-        return;
+    if let Err(e) = ost::ensure_toml_optimized(steam_path) {
+        eprintln!("[OST] 启动配置规范化失败: {}", e);
     }
-    // 读-判-写必须与字段级更新互斥（后台迁移线程 vs 工具箱命令并发），
-    // 在锁内完成整个序列；update_toml_manifest_fields_locked 不再加锁
-    let _guard = ost::TOML_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let content = std::fs::read_to_string(&toml_path).unwrap_or_default();
-
-    let has_auto_switch = content.lines().any(|line| {
-        let line = line.split('#').next().unwrap_or("").trim();
-        if let Some((k, v)) = line.split_once('=') {
-            k.trim() == "auto_switch" && v.trim().trim_matches('"').trim().eq_ignore_ascii_case("true")
-        } else {
-            false
-        }
-    });
-
-    if !has_auto_switch || !content.contains("url =") {
-        let _ = update_toml_manifest_fields_locked(
-            steam_path,
-            &[
-                ("auto_switch", "true"),
-                // 默认清单节点与超时必须与 ost 侧常量同源：实测上游 ttfb 4.5~18.6 秒，
-                // 旧的 3000/3000/5000/5000 会让内核在拿到码之前就放弃（这是「中继几乎
-                // 缓存不到码」的成因之一）；而 "wudrm" 已确认返回滞后码，不能再写。
-                ("url", &format!("\"{}\"", ost::DEFAULT_MANIFEST_SERVER)),
-                ("server", &format!("\"{}\"", ost::DEFAULT_MANIFEST_SERVER)),
-                ("timeout_resolve_ms", &ost::MANIFEST_TIMEOUT_RESOLVE_MS.to_string()),
-                ("timeout_connect_ms", &ost::MANIFEST_TIMEOUT_CONNECT_MS.to_string()),
-                ("timeout_send_ms", &ost::MANIFEST_TIMEOUT_SEND_MS.to_string()),
-                ("timeout_recv_ms", &ost::MANIFEST_TIMEOUT_RECV_MS.to_string()),
-            ],
-        );
-    }
-    let _ = ost::deploy_manifest_lua(steam_path);
 }
 
 // 工具箱状态（对应 Electron 版 toolboxGetStatus / ToolboxStatusInfo）
