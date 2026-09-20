@@ -35,6 +35,10 @@ server/data/license_ed25519_*
 server/data/manifests/*
 !server/data/manifests/.gitkeep
 
+# 本地校验脚本的瞬时产物：scripts/check_warmed_codes.lua 每次运行都会重写它。
+# 它是诊断输出、不是源码，入库只会污染提交历史（已误入过一次）。
+warmed_report.txt
+
 # OS & Editor files
 .DS_Store
 Thumbs.db
