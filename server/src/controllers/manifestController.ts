@@ -74,8 +74,23 @@ export const getManifestCode = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '无效的 GID' });
     }
 
-    const code = await manifestService.getManifestCode(gid);
+    const result = await manifestService.getManifestCode(gid);
+    const code = result.code;
+
     if (!code) {
+      // 404 与 503 的语义必须严格区分，客户端据此决定「写负缓存」还是「立刻重试」：
+      //
+      // - 404：权威源明确回答「没有这个 gid」。客户端写 CFD_CODE_NEG_TTL 负缓存
+      //   是正确的 —— 重复问也不会有码。
+      // - 503：上游此刻过载/超时/被质询，我们**并不知道**有没有。客户端绝不能
+      //   写负缓存，必须立刻重试。
+      //
+      // 旧实现把所有失败一律回 404，等于把上游一次 429 抖动翻译成「确认没有」，
+      // 再被客户端固化成两分钟负缓存 —— 该 gid 期间对所有客户端都取不到码。
+      // 这正是「第一次点下载报无网络、等一两分钟再点才行」的成因。
+      if (result.transient && !result.definitiveMiss) {
+        return res.status(503).json({ success: false, message: '上游暂时不可用，请稍后重试' });
+      }
       return res.status(404).json({ success: false, message: '未找到清单请求代码' });
     }
 

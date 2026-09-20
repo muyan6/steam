@@ -1688,6 +1688,9 @@ fn pick_manifest_code(body: &str) -> Option<String> {
 async fn fetch_manifest_code_for_gid(gid: &str) -> Option<String> {
     let relay = http_client()
         .get(format!("{}/api/manifests/code/{}", SERVER_API, gid))
+        // 中继位于 Cloudflare 之后，缺 UA 会被回 403 质询页。
+        // 依据 OpenSteamTool PR #200：ManifestDeX 必须带专用 User-Agent 才返回码。
+        .header("User-Agent", "ChunFengDu/1.0")
         .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
         .send()
         .await;

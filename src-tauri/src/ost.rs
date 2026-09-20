@@ -142,7 +142,12 @@ end
 -- 表现为「第一次点下载报无网络, 等一两分钟再点才行」, 而实际上游几秒后就恢复了。
 function cfd_is_transient(status)
     if status == nil or status == 0 then return true end
-    return status == 429 or status == 500 or status == 502 or status == 503 or status == 504
+    -- 403: Cloudflare 质询页(实测缺失专用 UA 或触发风控时出现), 换 UA / 稍后重试即可
+    -- 429: 上游按 IP 限流(实测本机与中继出口 IP 都在限流窗口内)
+    -- 5xx: 上游过载; 其中 503 也是中继的专用信号 —— 它已把上游 429 与网络异常
+    --      统一映射为 503(见 server manifestController.getManifestCode),
+    --      因此 503 必须视为瞬时, 绝不能当成「确认查不到」。
+    return status == 403 or status == 429 or status == 500 or status == 502 or status == 503 or status == 504
 end
 
 function fetch_manifest_code(gid)
@@ -158,6 +163,11 @@ function fetch_manifest_code(gid)
 
     local body, status, code
     local transient = false
+    -- 「权威源明确回答没有这个 gid」—— 只有它为真才允许写负缓存。
+    -- 必须与 transient 分开跟踪: 上游过载(429/5xx/403)与网络异常都只是
+    -- 「现在问不到」, 并不代表这个 gid 没有码。把两者混为一谈会让一次
+    -- 上游抖动被记成「该 gid 无码」并冻结 CFD_CODE_NEG_TTL 秒。
+    local definitive_miss = false
 
     -- 第一优先级: 春风渡云端中继源。
     --
@@ -169,10 +179,18 @@ function fetch_manifest_code(gid)
     -- 中继带 5 分钟正缓存, 能把「N 客户端 x M 分包」收敛成「每 gid 每 5 分钟
     -- 1 次上游请求」, 这是唯一能让多客户端共存的顺序。绕一跳的延迟远小于
     -- 撞限流后空等的代价。
-    body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid)
+    -- 统一携带 UA: 中继与上游都可能位于 Cloudflare 之后, 缺 UA 会被回 403 质询页。
+    -- 依据: OpenSteamTool PR #200 —— ManifestDeX 必须带 User-Agent 才返回码,
+    -- 内核内置 provider 正是因为不带 UA 才全线 403。
+    body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid,
+                            {["User-Agent"] = "ChunFengDu/1.0"})
     code = cfd_pick_code(body, status)
     if code then cfd_cache_put(gid, code); return code end
     if cfd_is_transient(status) then transient = true end
+    -- 中继的 404 语义是「它替我们问过权威源, 权威源说没有」, 属确认查不到;
+    -- 而中继在上游不可用时回 503(落到上面的 transient 分支)。两种语义必须
+    -- 分开, 否则一次上游抖动会被当成「该 gid 无码」并冻结两分钟。
+    if status == 404 then definitive_miss = true end
 
     -- 第二优先级: ManifestDeX 清单代码直供源(直连兜底)。
     -- 该源经 Cloudflare 保护, 必须携带专用 User-Agent, 缺失会被返回 403 质询页。
@@ -181,6 +199,7 @@ function fetch_manifest_code(gid)
     code = cfd_pick_code(body, status)
     if code then cfd_cache_put(gid, code); return code end
     if cfd_is_transient(status) then transient = true end
+    if status == 404 then definitive_miss = true end
 
     -- 已移除 wudrm / 古韵 / steamrun 三个第三方源。
     -- 原因: 实测它们的刷新节奏落后于权威源, 同一 depot+gid 在同一时刻会给出
@@ -190,9 +209,12 @@ function fetch_manifest_code(gid)
     -- 表现为入库即报「无网络连接 / 0 字节下载」。
     -- 宁可返回 nil 也不返回滞后值 —— 上游失败应当尽快暴露, 而不是被掩盖成错值。
 
-    -- 只有「确认查不到」才写负缓存; 瞬时故障交给 Steam 立刻重试,
-    -- 绝不能让一次抖动冻结该 gid 两分钟。
-    if not transient then
+    -- 写负缓存必须同时满足两条: 有源**确认**查不到, 且没有任何源报瞬时故障。
+    -- 只要有一个源在报过载, 就说明我们其实不知道这个 gid 有没有码 —— 宁可
+    -- 让 Steam 立刻重试(它本来就带 15 秒间隔重试), 也不能冻结两分钟。
+    -- 实测本机与中继出口都在 ManifestDeX 的限流窗口内, 这条判断直接决定
+    -- 「上游抖动」会不会被放大成「这个 gid 两分钟内谁都拿不到码」。
+    if definitive_miss and not transient then
         CFD_CODE_FAIL[gid] = cfd_now()
     end
     return nil

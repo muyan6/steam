@@ -54,6 +54,22 @@ export interface DepotManifestInfo {
   dlcAppId?: string;
 }
 
+/**
+ * 清单请求码的查询结果。
+ *
+ * 存在的唯一理由：把「权威源确认没有这个 gid」与「上游暂时不可用」分开。
+ * 前者应回 404 并允许客户端写负缓存；后者必须回 503 且**绝不**允许写负缓存 ——
+ * 混为一谈会让一次上游 429 抖动被固化成「该 gid 两分钟内所有客户端都取不到码」。
+ */
+export interface ManifestCodeResult {
+  /** 取到的请求码；为 null 时依据下面两个标志决定回 404 还是 503 */
+  code: string | null;
+  /** 权威源明确回答「没有这个 gid」—— 只有它为真才该回 404 并写负缓存 */
+  definitiveMiss: boolean;
+  /** 至少一轮遇到上游过载/超时/质询 —— 必须回 503，让客户端立刻重试 */
+  transient: boolean;
+}
+
 export interface AppManifestResult {
   success: boolean;
   appId: number;
@@ -1440,7 +1456,7 @@ export class ManifestService {
   // 单航班去重：本中继存在的全部价值就是「把 N 客户端 x M 分包收敛成
   // 每 gid 每 5 分钟 1 次上游请求」。没有它，同一瞬间 N 个客户端请求同一 gid
   // 会各自打一遍上游，收敛效果归零 —— 而上游限流实测仅 60 次/分钟。
-  private manifestCodeInFlight = new Map<string, Promise<string | null>>();
+  private manifestCodeInFlight = new Map<string, Promise<ManifestCodeResult>>();
   // 上游实测 ttfb 4.5~18.6 秒。原实现超时 3500ms，意味着**从未等到过答案**，
   // 这才是「中继几乎没有缓存到码」的真正原因 —— 不是上游没码，是我们先放弃了。
   private readonly MANIFEST_CODE_UPSTREAM_TIMEOUT_MS = 15000;
@@ -1488,19 +1504,28 @@ export class ManifestService {
    *
    * 因此这里只保留权威源：拿不到就返回 null（客户端会走自己的直连源），
    * 绝不回退到会返回错值的第三方源，更不把错值写进正缓存。
+   *
+   * 返回 `ManifestCodeResult` 而非裸 string|null —— 调用方必须能区分
+   * 「权威源确认没有」与「上游暂时问不到」，否则会把一次 429 抖动翻译成 404、
+   * 再被客户端固化成两分钟负缓存。
    */
-  public async getManifestCode(gid: string): Promise<string | null> {
-    if (!gid || !/^\d+$/.test(gid)) return null;
+  public async getManifestCode(gid: string): Promise<ManifestCodeResult> {
+    if (!gid || !/^\d+$/.test(gid)) {
+      // 非法 gid 是**请求方**错误（controller 已在更外层回 400），
+      // 这里报 definitiveMiss 只是为了让返回值语义完整，不会真的写负缓存。
+      return { code: null, definitiveMiss: true, transient: false };
+    }
 
     // 0. 优先命中内存缓存
     const cached = this.manifestCodeCache.get(gid);
     if (cached && Date.now() - cached.fetchedAt < this.MANIFEST_CODE_TTL_MS) {
-      return cached.code;
+      return { code: cached.code, definitiveMiss: false, transient: false };
     }
-    // 负缓存命中：短时间内不重复打上游
+    // 负缓存命中：短时间内不重复打上游。
+    // 只有「确认查不到且无瞬时故障」才写它，所以这里可以安全地报 definitiveMiss。
     const negTs = this.negativeCodeCache.get(gid);
     if (negTs && Date.now() - negTs < this.NEGATIVE_CODE_TTL_MS) {
-      return null;
+      return { code: null, definitiveMiss: true, transient: false };
     }
 
     // 单航班：并发请求同一 gid 只打一次上游，其余等同一个 Promise。
@@ -1520,15 +1545,21 @@ export class ManifestService {
   /**
    * 向唯一权威源取码，带有限重试。
    *
-   * 关键区分：
+   * 关键区分（直接决定回给客户端的是 404 还是 503）：
    * - 200 + 合法纯数字码 → 写正缓存返回
-   * - 200 + 非码内容（如 HTML 质询页）→ 视为「确认查不到」，写负缓存
-   * - 429 / 5xx / 网络异常 → 属**瞬时过载**，退避后重试；重试仍失败则直接返回
-   *   null 且**不写负缓存**，让下一次调用立刻重试（而不是被冻结 60 秒）
-   * - 其余 4xx（如 403 质询）→ 不写负缓存：Cloudflare 质询往往是临时的
+   * - 200 + 非码内容（如 HTML 质询页）→ 权威源明确回答「没有」→ definitiveMiss
+   * - 404 → 权威源明确回答「没有这个 gid」→ definitiveMiss
+   * - 403（Cloudflare 质询）→ 换时机/换出口即可恢复 → transient，**不写负缓存**
+   * - 429 / 5xx / 网络异常 → 上游过载 → transient，退避重试，**不写负缓存**
+   *
+   * 为什么必须分开：中继原先把所有 null 一律回 404，而客户端把 404 读作
+   * 「权威源确认没有」。于是上游一次 429 抖动会被中继翻译成 404、再被客户端
+   * 固化成 CFD_CODE_NEG_TTL(120s) 负缓存 —— 该 gid 在两分钟内对**所有**客户端
+   * 都取不到码。这正是「第一次点下载报无网络、等一两分钟再点才行」的完整链路。
    */
-  private async fetchManifestCodeFromUpstream(gid: string): Promise<string | null> {
+  private async fetchManifestCodeFromUpstream(gid: string): Promise<ManifestCodeResult> {
     let sawDefinitiveMiss = false;
+    let sawTransient = false;
 
     for (let attempt = 1; attempt <= this.MANIFEST_CODE_MAX_ATTEMPTS; attempt++) {
       if (attempt > 1) {
@@ -1538,6 +1569,9 @@ export class ManifestService {
         const resp = await axios.get(`https://manifest.manifestdex.com/${gid}`, {
           timeout: this.MANIFEST_CODE_UPSTREAM_TIMEOUT_MS,
           responseType: 'text',
+          // 必须携带专用 UA：ManifestDeX 在 Cloudflare 之后，缺 UA 一律 403。
+          // 依据 OpenSteamTool PR #200 —— 上游只为 manifestdex 这个 provider
+          // 单独挂了 `User-Agent: ManifestDeX/1.0` 请求头。
           headers: { 'User-Agent': 'ManifestDeX/1.0' },
           // 不让 axios 对 4xx/5xx 抛异常：必须看到状态码才能区分
           // 「上游过载」与「这个 gid 确实没有码」
@@ -1547,26 +1581,48 @@ export class ManifestService {
           const text = resp.data.trim();
           if (/^\d+$/.test(text) && text !== '0') {
             this.setManifestCodeCache(gid, text);
-            return text;
+            return { code: text, definitiveMiss: false, transient: false };
           }
           // 200 但内容不是码：上游明确回答「没有」，重试无意义
           sawDefinitiveMiss = true;
           break;
         }
-        // 429 / 5xx：上游过载，可重试
-        if (resp.status !== 429 && resp.status < 500) {
-          // 其余 4xx（403 质询等）：重试无意义，但也**不写负缓存**
-          return null;
+        if (resp.status === 404) {
+          // 权威源的 404 = 明确没有这个 gid，重试无意义
+          sawDefinitiveMiss = true;
+          break;
         }
+        if (resp.status === 403) {
+          // Cloudflare 质询：换时机/换出口即可恢复，属瞬时
+          sawTransient = true;
+          continue;
+        }
+        if (resp.status === 429 || resp.status >= 500) {
+          // 限流 / 上游过载：可重试
+          sawTransient = true;
+          continue;
+        }
+        // 其余 4xx：请求本身有问题，重试无意义；但也不该固化成
+        // 「这个 gid 没有码」—— 标为瞬时，让客户端稍后重试。
+        sawTransient = true;
+        break;
       } catch {
-        // 网络层异常（超时 / 连接重置）：同样属瞬时故障，继续重试
+        // 网络层异常（超时 / 连接重置）：瞬时故障，继续重试
+        sawTransient = true;
       }
     }
 
-    if (sawDefinitiveMiss) {
+    // 只有「确认查不到」且**没有任何瞬时故障迹象**时才写负缓存。
+    // 只要有一轮是超时/429/403，我们就不知道这个 gid 到底有没有码 ——
+    // 写进去等于把它冻结 NEGATIVE_CODE_TTL_MS，期间所有客户端都拿到 404。
+    if (sawDefinitiveMiss && !sawTransient) {
       this.setNegativeCodeCache(gid);
     }
-    return null;
+    return {
+      code: null,
+      definitiveMiss: sawDefinitiveMiss && !sawTransient,
+      transient: sawTransient
+    };
   }
 
   /** 重试退避：优先读上游 Retry-After，缺失时按 3 秒递增 */

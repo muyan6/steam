@@ -235,6 +235,97 @@ if (httpCalls - transientBefore) <= callsAfter429 then
 end
 print('TRANSIENT_NOT_NEGATIVE_CACHED_OK')
 
+-- 中继 503 语义：中继在上游过载/超时时回 503（而非 404），客户端必须把它当瞬时故障。
+-- 背景：中继原先把所有失败一律回 404，客户端把 404 读作「权威源确认没有」并写
+-- 两分钟负缓存 —— 上游一次 429 抖动就这样被放大成「该 gid 两分钟内所有人都取不到码」。
+local s503Before = httpCalls
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    return nil, 503
+end
+local s503a = fetch_manifest_code('5000000000000000005')
+if s503a ~= nil then
+    print('FAIL: expected nil on 503, got ' .. tostring(s503a))
+    os.exit(1)
+end
+local callsAfter503 = httpCalls - s503Before
+local s503b = fetch_manifest_code('5000000000000000005')
+if s503b ~= nil then
+    print('FAIL: expected nil on second 503')
+    os.exit(1)
+end
+if (httpCalls - s503Before) <= callsAfter503 then
+    print('FAIL: 503 (relay transient signal) must NOT be negative-cached')
+    os.exit(1)
+end
+print('RELAY_503_TRANSIENT_NOT_NEGATIVE_CACHED_OK')
+
+-- 混合信号：中继回 404（说「没有」），直连却回 503（说「问不到」）。
+-- 只要有任何一源报瞬时故障，就说明我们**并不知道**这个 gid 有没有码 ——
+-- 此时绝不能写负缓存，否则一次上游抖动会冻结两分钟。
+local mixedBefore = httpCalls
+local mixedCall = 0
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    mixedCall = mixedCall + 1
+    if mixedCall == 1 then return 'not-a-code', 404 end
+    return nil, 503
+end
+local mixedA = fetch_manifest_code('6000000000000000006')
+if mixedA ~= nil then
+    print('FAIL: expected nil on mixed 404+503')
+    os.exit(1)
+end
+local callsAfterMixed = httpCalls - mixedBefore
+local mixedB = fetch_manifest_code('6000000000000000006')
+if (httpCalls - mixedBefore) <= callsAfterMixed then
+    print('FAIL: transient on ANY source must block negative caching (mixed 404+503)')
+    os.exit(1)
+end
+print('MIXED_SIGNAL_BLOCKS_NEGATIVE_CACHE_OK')
+
+-- 确认未命中（中继与直连都明确 404）才允许写负缓存。
+local bothBefore = httpCalls
+_G.http_get = function()
+    httpCalls = httpCalls + 1
+    return 'not-a-code', 404
+end
+local bothA = fetch_manifest_code('7000000000000000007')
+if bothA ~= nil then
+    print('FAIL: expected nil on double 404')
+    os.exit(1)
+end
+local callsAfterBoth = httpCalls - bothBefore
+local bothB = fetch_manifest_code('7000000000000000007')
+if (httpCalls - bothBefore) ~= callsAfterBoth then
+    print('FAIL: double-404 must be negative-cached')
+    os.exit(1)
+end
+print('DEFINITIVE_MISS_BOTH_SOURCES_NEGATIVE_CACHED_OK')
+
+-- ===== 5. 关键源与请求头存在性 =====
+-- 注意：本节必须写成**可执行断言**。此前这里是描述性文字，等于断言从不生效 ——
+-- 「UA 存在性」因此从未被真正验证过，而 UA 恰恰是 ManifestDeX 返回 403/200 的分水岭
+-- （依据 OpenSteamTool PR #200：上游只为 manifestdex 这个 provider 单独挂了 UA 头）。
+local function must_find(needle, label)
+    if not content:find(needle, 1, false) then
+        print('FAIL: ' .. label .. ' missing from manifest.lua')
+        os.exit(1)
+    end
+end
+
+must_find('steam%.myil%.top', 'relay endpoint')
+must_find('manifest%.manifestdex%.com', 'ManifestDeX endpoint')
+must_find('ManifestDeX/1%.0', 'ManifestDeX User-Agent')
+-- 中继同样在 Cloudflare 之后：缺 UA 会被回 403 质询页
+must_find('ChunFengDu/1%.0', 'relay User-Agent')
+-- 负缓存的唯一闸门：必须能区分「确认查不到」与「上游问不到」
+must_find('definitive_miss', 'definitive_miss gate')
+must_find('cfd_is_transient', 'transient classifier')
+-- 403 必须被当作瞬时（Cloudflare 质询），否则一次质询会冻结该 gid 两分钟
+must_find('status == 403', '403 transient handling')
+print('SECTION5_SOURCES_AND_HEADERS_OK')
+
 -- ===== 5. 关键源与请求头存在性 =====
 if not content:find('manifest%.manifestdex%.com') then
     print('FAIL: ManifestDeX endpoint missing')
