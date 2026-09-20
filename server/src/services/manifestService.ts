@@ -73,9 +73,10 @@ export interface ManifestCodeResult {
    *
    * 注意它**不代表内容版本旧**：code 只是下载凭据，内容版本由 gid 决定，
    * 而 gid 只在 depot 内容更新时才变。用旧 code 配当前 gid，拉到的仍是当前版本。
-   * 实测同一 (depot,gid) 的历史码当时全部返回 200，所以它的真实含义是
-   * 「这个码可能已失效，Steam 若拉不到会自己重试」，而不是「下到旧版本」。
-   * 新鲜码命中时为 false / 缺省。
+   *
+   * 真实含义是「这个码很可能已失效」—— 实测码龄超过约 30 分钟后基本一律 401
+   * （见 CODE_STORE_STALE_MAX_MS 的注释）。客户端据此可以让 Steam 更快重试，
+   * 而不是把它当成一个可靠的码。
    */
   stale?: boolean;
 }
@@ -1452,9 +1453,11 @@ export class ManifestService {
   // 更是全清。于是上游一挂，中继手里一个码都没有 —— 2026-09-20 ManifestDeX
   // 的 manifest 子域整体 521 时，中继只能对每个 gid 回 503，全线停摆。
   //
-  // 而实测证据表明**旧码不会立刻失效**：content_log.txt 里同一 (depot,gid)
-  // 的所有历史码当时都返回了 200，轮换只是「新码生效」而非「旧码作废」。
-  // 所以只要有持久化积累，上游挂掉时仍能顶上绝大部分曾成功取过的 gid。
+  // 早期判断「旧码不会立刻失效」是**错的**，已被直接实测推翻（见下面
+  // CODE_STORE_STALE_MAX_MS）。持久化的真实价值因此收窄为两点：
+  //   ① 半小时内扛住上游抖动（这才是「第一次点下载报无网络」的直接对策）
+  //   ② 累积 depot→gid 索引，供后续按需补码 —— 这一项不随码过期而失效，
+  //      因为 gid 是稳定的（只在 depot 内容更新时才变）。
   //
   // 这是完全自有的能力：上游健康时自动积累，上游挂了不依赖任何人。
   private manifestCodeStorePath = path.join(CONFIG.DATA_DIR, 'manifest_code_store.json');
@@ -1465,13 +1468,33 @@ export class ManifestService {
   /** 持久化条目条数上限：超出按最近使用淘汰 */
   private static readonly CODE_STORE_MAX = 50000;
   /**
-   * 持久化条目的可用窗口 —— 远大于内存 TTL 的 5 分钟。
+   * 过期码的可用窗口。**30 分钟，不是 7 天。**
    *
-   * 取 7 天：实测旧码当时仍返回 200，而入库后隔几天才点下载是极常见的路径。
-   * 窗口越长，上游挂掉时能顶上的 gid 越多；代价只是「可能下发一个已轮换掉的码」，
-   * 而那种情况 Steam 会自己重试，比直接 503 让下载完全停摆要好得多。
+   * 这里曾写 7 天，依据是「日志里同一 (depot,gid) 的历史码当时都返回 200」。
+   * 那个依据是错的 —— 那些 200 是**当时**的成功记录，不是「今天再用仍会成功」。
+   *
+   * 直接向 Valve CDN 复测（2026-09-20 18:40，按码龄分桶）：
+   *     0~15 分钟   27/27 可用
+   *    15~30 分钟    1/1  可用
+   *    45~60 分钟   10/27 可用
+   *   120 分钟以上    0/27 可用
+   *
+   * 即旧码只在约半小时内能顶用。窗口取 30 分钟，正好落在实测的可用区间内。
+   * 再长就是下发一个几乎必然 401 的码 —— Steam 拉不到清单，下载反而卡住，
+   * 比直接回 503 让它立刻重试更糟。
    */
-  private static readonly CODE_STORE_STALE_MAX_MS = 7 * 24 * 60 * 60 * 1000;
+  private static readonly CODE_STORE_STALE_MAX_MS = 30 * 60 * 1000;
+
+  /**
+   * 落盘条目的保留窗口 —— 与「可下发的窗口」是两件事，必须分开。
+   *
+   * 码本身 30 分钟后基本没用，但 `depot→gid` 索引不会过期：gid 只在 depot
+   * 内容更新时才变，它是长期资产，也是主动补码唯一的枚举依据。
+   * 若按 30 分钟淘汰落盘条目，重启后索引就空了，补码循环随即失效。
+   *
+   * 所以：保留 7 天（够覆盖「入库后隔几天才下载」），可下发仍只看 30 分钟。
+   */
+  private static readonly CODE_STORE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
   /**
    * depotId -> 该 depot 最近一次见到的 gid 集合。
@@ -1505,7 +1528,10 @@ export class ManifestService {
       for (const [gid, entry] of Object.entries(codes)) {
         if (!entry || typeof entry.code !== 'string' || !/^\d+$/.test(entry.code)) continue;
         if (typeof entry.fetchedAt !== 'number') continue;
-        if (now - entry.fetchedAt >= ManifestService.CODE_STORE_STALE_MAX_MS) {
+        // 用保留窗口而非可下发窗口：过期的码仍要留着撑起 depot→gid 索引，
+        // 否则重启后补码循环就没有枚举依据了。能不能下发由
+        // serveStaleOrTransient 按 CODE_STORE_STALE_MAX_MS 单独判定。
+        if (now - entry.fetchedAt >= ManifestService.CODE_STORE_RETENTION_MS) {
           expired++;
           continue;
         }
@@ -1690,12 +1716,13 @@ export class ManifestService {
   }
 
   private manifestCodeCache = new Map<string, { code: string; fetchedAt: number; depotId?: string }>();
-  // 缓存时长：请求码确实会随时间轮换 —— 从本机 Steam 日志解析出的 158 个
-  // (depot,gid) 组合里有 34 个先后出现过多个不同值，最频繁的
-  // depot 281992 / gid 3306222774754384885 在 28 分钟内换了 6 个码
-  // （08:44→08:49→08:56→09:01→09:06→09:12），即约 5~6 分钟一换。
-  // 但同一份日志里所有历史码当时都返回了 200 —— 旧码不会立刻失效。
-  // 故 5 分钟 TTL 既能贴合轮换节奏，又不会因偶发命中旧码而失败。
+  // 缓存时长：请求码按时间轮换 —— 从本机 Steam 日志解析出的 (depot,gid) 组合里
+  // 有 34 个先后出现过多个不同值，最频繁的 depot 281992 / gid 3306222774754384885
+  // 在 28 分钟内换了 6 个码（08:44→08:49→08:56→09:01→09:06→09:12），约 5~6 分钟一换。
+  //
+  // 取 5 分钟：正好贴合轮换节奏，保证下发的总是当前窗口的码。
+  // 曾以为「旧码也一直可用所以 TTL 可以放松」—— 已被实测推翻（见
+  // CODE_STORE_STALE_MAX_MS 的注释：45~60 分钟只有 10/27 可用）。
   private readonly MANIFEST_CODE_TTL_MS = 5 * 60 * 1000;
   // 容量上限：公开接口可枚举 gid，仅靠 TTL 惰性淘汰不足以防止内存无界增长
   private readonly MANIFEST_CODE_CACHE_MAX = 20000;
@@ -1982,19 +2009,18 @@ export class ManifestService {
   /**
    * 上游不可用时的兜底：优先下发仍在 STALE 窗口内的旧码，否则才回 503。
    *
-   * 旧码可用性有实测依据 —— content_log.txt 里同一 (depot,gid) 的历史码当时**都**
-   * 返回 200，轮换只是「新码生效」，并非「旧码作废」。所以旧码远比 503 有价值：
-   * 它能让下载立刻开始，而 503 会让 Steam 的下载流程停在那里等重试。
+   * 旧码只在**约半小时内**真的还能用（实测 0~15 分钟 27/27 可用、45~60 分钟
+   * 只剩 10/27、120 分钟以上 0/27）。半小时内它远比 503 有价值 —— 能让下载立刻
+   * 开始，而 503 会让 Steam 的下载流程停在那里等重试；超过半小时则相反：
+   * 下发一个几乎必然 401 的码会让下载卡住，不如回 503 让客户端立刻重试。
    *
    * 注意此处**不刷新** fetchedAt：旧码只是「能顶用」，不该被当成新鲜码再锁 5 分钟，
    * 否则上游一恢复我们仍会继续用旧码。
    */
   private serveStaleOrTransient(gid: string, transient: boolean): ManifestCodeResult {
     const stale = this.manifestCodeCache.get(gid);
-    // 窗口取持久化码库的 7 天，而不是内存 TTL 的 5 分钟 —— 码库里存的就是
-    // 「曾经成功取到过」的码，上游挂掉时它们是最有价值的资产。
-    // 下发旧码最坏情况是 Steam 拿它拉不到清单然后自己重试；
-    // 而回 503 会让下载流程直接停在那里等，后者更糟。
+    // 窗口取 30 分钟（CODE_STORE_STALE_MAX_MS），落在实测可用区间内。
+    // 不能用更长窗口：旧码越老，Steam 拿它拉不到清单的概率越高。
     if (stale && Date.now() - stale.fetchedAt < ManifestService.CODE_STORE_STALE_MAX_MS) {
       return { code: stale.code, definitiveMiss: false, transient: false, stale: true };
     }
