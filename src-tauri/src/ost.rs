@@ -907,16 +907,40 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
     let codes = if merged.lock_version == Some(true) {
         BTreeMap::new()
     } else {
-        // 清洗/去重/限量在 prefetch_manifest_codes 内完成。
-        // 必须连 depot_id 一起传：末位兜底源（古韵自有码库）的接口签名是
-        // index.php/{depot}/{gid}，(depot, gid) 是它库里的联合键，光有 gid 查不了。
-        let raw_pairs: Vec<(u32, String)> = merged
-            .depots
-            .as_deref()
-            .unwrap_or(&[])
-            .iter()
-            .filter_map(|d| d.manifest_id.clone().map(|g| (d.depot_id, g)))
-            .collect();
+        // 关键性能与体验优化：
+        // 预取仅用于主程序首次点击下载时的「秒开预热」，绝不应该试图在入库时把全部语言包全爬一遍
+        // （如博德之门3有 53 个分包，其中 50 个是法语、俄语、波兰语等语言包，全爬要等数分钟）。
+        // 优先挑选有解密密钥的核心主程序/内容分包（无密钥的语言包无法解密且不可玩，预取纯属浪费），
+        // 并将主 AppID 对应的核心分包排在最前，最多只预热前 3 个核心分包。
+        let mut raw_pairs: Vec<(u32, String)> = Vec::new();
+        if let Some(depots) = merged.depots.as_deref() {
+            for d in depots {
+                if let Some(g) = d.manifest_id.as_deref() {
+                    let g_trim = g.trim();
+                    if !g_trim.is_empty() && g_trim != "0" {
+                        let has_key = d.depot_key.as_deref().map(|k| is_valid_key(k.trim())).unwrap_or(false);
+                        if has_key {
+                            if d.depot_id == payload.app_id {
+                                raw_pairs.insert(0, (d.depot_id, g_trim.to_string()));
+                            } else {
+                                raw_pairs.push((d.depot_id, g_trim.to_string()));
+                            }
+                        }
+                    }
+                }
+            }
+            if raw_pairs.is_empty() {
+                for d in depots {
+                    if let Some(g) = d.manifest_id.as_deref() {
+                        let g_trim = g.trim();
+                        if !g_trim.is_empty() && g_trim != "0" {
+                            raw_pairs.push((d.depot_id, g_trim.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+        raw_pairs.truncate(3);
         crate::manifests::prefetch_manifest_codes(&raw_pairs)
     };
     let warmed_codes = codes.len();
