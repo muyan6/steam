@@ -350,9 +350,19 @@ pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
     // 会一直留在用户机器上（上面的 `if !content.contains("url =")` 只在**缺失**时补写，
     // 已存在的坏值永远不会被纠正）。而实测上游 ttfb 达 4.5~18.6 秒，5 秒收发超时
     // 会让内核在拿到码之前就放弃 —— 必须就地改写，不能只对新装生效。
+    //
+    // 坏节点名单必须覆盖全部三个已确认不可用的源，而不只是 "wudrm"：
+    // 实测 wudrm / 古韵 / steamrun 的刷新节奏都落后于权威源，同一 depot+gid
+    // 在同一时刻会给出与 ManifestDeX 不同的值，用它的码会让 Steam 拉不到清单
+    // （表现为入库即报「无网络连接 / 0 字节下载」）。用户机器上的实际值可能是
+    // 其中任意一个 —— 只认 "wudrm" 会让 "steamrun" 永远留在配置里。
+    const STALE_MANIFEST_NODES: [&str; 3] = ["wudrm", "steamrun", "guyun"];
     for line in lines.iter_mut() {
         let t = line.trim();
-        if t == "url = \"wudrm\"" || t == "server = \"wudrm\"" {
+        let is_stale_node = STALE_MANIFEST_NODES.iter().any(|n| {
+            t == format!("url = \"{}\"", n) || t == format!("server = \"{}\"", n)
+        });
+        if is_stale_node {
             *line = format!("{} = \"{}\"", t.split('=').next().unwrap_or("url").trim(), DEFAULT_MANIFEST_SERVER);
             updated = true;
         } else if t.starts_with("timeout_resolve_ms") && t != format!("timeout_resolve_ms = {}", MANIFEST_TIMEOUT_RESOLVE_MS) {
