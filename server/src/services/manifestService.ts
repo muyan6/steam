@@ -1619,9 +1619,12 @@ export class ManifestService {
           break;
         }
         if (resp.status === 403) {
-          // Cloudflare 质询：换时机/换出口即可恢复，属瞬时
+          // 403 = Cloudflare 拒绝。我们的 UA 已在白名单里（实测只有
+          // ManifestDeX/1.0 能过），所以 403 不可能是 UA 问题，而是出口 IP 被拦。
+          // **不重试** —— 3 秒退避不可能改变 IP 的封锁状态，重试只是白等一轮。
+          // 分类上仍属瞬时（不写负缓存），交给熔断把后续请求也快速失败。
           sawTransient = true;
-          continue;
+          break;
         }
         if (resp.status === 429) {
           // 限流：**不重试**。限流窗口不会在 3 秒退避内解除，重试只是再等一个
