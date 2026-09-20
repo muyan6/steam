@@ -112,15 +112,31 @@ export class NoticeService {
   private readCache: Announcement[] | null = null;
   private readCacheMtimeMs: number = -1;
 
-  private saveAll(notices: Announcement[]) {
+  /**
+   * 落盘公告列表，返回是否真的写入成功。
+   *
+   * 必须返回 boolean 并由调用方检查：原实现 catch 里只 console.error 就返回，
+   * 于是 writeJsonAtomic 失败（磁盘满 / 权限不足 / 目录只读）时，
+   * createNotice / updateNotice / toggleNotice / deleteNotice 一律照常返回，
+   * 管理端显示「公告创建成功并已即时生效」，而磁盘上什么都没变。
+   *
+   * 公告驱动客户端的弹窗 / 横幅 / 免责声明流程 —— 静默丢失意味着运营
+   * 以为发出去了、全体用户却看不到，且刷新页面后会「凭空消失」，极难排查。
+   *
+   * 与同仓库另外两个持久化服务保持一致：licenseService.saveKeys 与
+   * inviteService.saveRecords 都返回 boolean，且每个调用点都检查。
+   */
+  private saveAll(notices: Announcement[]): boolean {
     try {
       writeJsonAtomic(this.noticesFilePath, notices);
       // 写入后立即失效缓存，保证同进程读写一致
       this.readCache = null;
       this.readCacheMtimeMs = -1;
       this.syncLegacyFile();
+      return true;
     } catch (e) {
       console.error('[NoticeService] 保存公告列表失败:', e);
+      return false;
     }
   }
 
@@ -290,7 +306,11 @@ export class NoticeService {
     };
 
     list.unshift(newNotice);
-    this.saveAll(list);
+    if (!this.saveAll(list)) {
+      // 抛异常而非静默返回：调用方（控制器 / pushBroadcastAdmin）据此报错，
+      // 绝不把未落盘的公告当成创建成功回给管理端
+      throw new Error('公告保存失败，请稍后重试');
+    }
     return newNotice;
   }
 
@@ -324,7 +344,9 @@ export class NoticeService {
     };
 
     list[index] = updated;
-    this.saveAll(list);
+    if (!this.saveAll(list)) {
+      throw new Error('公告保存失败，请稍后重试');
+    }
     return list[index];
   }
 
@@ -335,7 +357,9 @@ export class NoticeService {
 
     list[index].enabled = enabled !== undefined ? enabled : !list[index].enabled;
     list[index].updatedAt = new Date().toISOString();
-    this.saveAll(list);
+    if (!this.saveAll(list)) {
+      throw new Error('公告保存失败，请稍后重试');
+    }
     return list[index];
   }
 
@@ -345,7 +369,12 @@ export class NoticeService {
     if (nextList.length === list.length) {
       return false;
     }
-    this.saveAll(nextList);
+    if (!this.saveAll(nextList)) {
+      // 必须抛异常：deleteNotice 的 false 语义是「公告不存在」（控制器映射 404）。
+      // 若落盘失败也返回 true，管理端会看到「已成功删除」而磁盘上公告仍在，
+      // 刷新后「复活」，且这次误判无法从响应里察觉。
+      throw new Error('公告删除失败，请稍后重试');
+    }
     return true;
   }
 }
