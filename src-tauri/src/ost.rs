@@ -412,6 +412,9 @@ pub static TOML_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// 且 manifest.lua 的取码源是硬编码的、根本不读这两个字段 —— 留着只会误导排查。
 pub const DEFAULT_MANIFEST_SERVER: &str = "manifestdex";
 
+/// 已确认不可用或已作废的遗留清单节点（持续 502/503 或返回滞后码，会让 Steam 报无网络连接）
+pub const STALE_MANIFEST_NODES: [&str; 4] = ["wudrm", "steamrun", "guyun", "opensteamtool"];
+
 /// opensteamtool.toml 的清单请求超时（毫秒）。
 ///
 /// 原为 3000/3000/5000/5000，而实测 ManifestDeX 的 ttfb 是 **4.5~18.6 秒** ——
@@ -518,12 +521,11 @@ pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
     // 已存在的坏值永远不会被纠正）。而实测上游 ttfb 达 4.5~18.6 秒，5 秒收发超时
     // 会让内核在拿到码之前就放弃 —— 必须就地改写，不能只对新装生效。
     //
-    // 坏节点名单必须覆盖全部三个已确认不可用的源，而不只是 "wudrm"：
-    // 实测 wudrm / 古韵 / steamrun 的刷新节奏都落后于权威源，同一 depot+gid
+    // 坏节点名单必须覆盖全部四个已确认不可用的源，而不只是部分源：
+    // 实测 wudrm / 古韵 / steamrun / opensteamtool 的刷新节奏都落后于权威源，同一 depot+gid
     // 在同一时刻会给出与 ManifestDeX 不同的值，用它的码会让 Steam 拉不到清单
     // （表现为入库即报「无网络连接 / 0 字节下载」）。用户机器上的实际值可能是
-    // 其中任意一个 —— 只认 "wudrm" 会让 "steamrun" 永远留在配置里。
-    const STALE_MANIFEST_NODES: [&str; 3] = ["wudrm", "steamrun", "guyun"];
+    // 其中任意一个 —— 必须就地全部改写为权威默认源。
     for line in lines.iter_mut() {
         let t = line.trim();
         let is_stale_node = STALE_MANIFEST_NODES.iter().any(|n| {

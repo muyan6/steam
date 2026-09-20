@@ -164,6 +164,8 @@ fn resolve_manifest_server(
             Some(url) => Ok(url),
             None => Err("已选择「自定义」清单服务器，但未填写自定义地址".to_string()),
         }
+    } else if ost::STALE_MANIFEST_NODES.contains(&api.as_str()) {
+        Ok(ost::DEFAULT_MANIFEST_SERVER.to_string())
     } else {
         Ok(api)
     }

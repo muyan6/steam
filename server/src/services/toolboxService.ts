@@ -10,49 +10,58 @@ export class ToolboxService {
 
   private defaultNodes: ManifestServerNode[] = [
     {
+      id: 'manifestdex',
+      name: 'ManifestDeX 权威码源',
+      endpoint: 'manifest.manifestdex.com',
+      region: 'Cloudflare 全球边缘 Anycast',
+      isRecommended: true,
+      status: 'online',
+      latencyMs: 35
+    },
+    {
+      id: 'cloud_direct',
+      name: '春风渡 云端直连中继节点',
+      endpoint: 'steam.myil.top',
+      region: '腾讯云 华东 BGP（带缓存与单航班收敛）',
+      isRecommended: true,
+      status: 'online',
+      latencyMs: 18
+    },
+    {
       id: 'guyunsq',
-      name: '古韵高速镜像专线',
+      name: '古韵高速码库 (末位兜底)',
       endpoint: 'gmrc.guyunsq.com',
       region: '国内高速 BGP 直连',
-      isRecommended: true,
+      isRecommended: false,
       status: 'online',
       latencyMs: 15
     },
     {
       id: 'steamrun',
-      name: 'SteamRun 官方镜像源',
+      name: 'SteamRun 镜像源 (已失效)',
       endpoint: 'manifest.steam.run',
       region: '全球 CDN / 亚太节点',
-      isRecommended: true,
-      status: 'online',
-      latencyMs: 38
+      isRecommended: false,
+      status: 'offline',
+      latencyMs: -1
     },
     {
       id: 'wudrm',
-      name: 'WUDRM 国内高速源',
+      name: 'WUDRM 高速源 (已失效)',
       endpoint: 'gmrc.wudrm.com',
       region: '华东 / 华南专线',
-      isRecommended: true,
-      status: 'online',
-      latencyMs: 25
+      isRecommended: false,
+      status: 'offline',
+      latencyMs: -1
     },
     {
       id: 'opensteamtool',
-      name: 'OpenSteamTool 社区备用源',
+      name: 'OpenSteamTool 社区源 (已失效)',
       endpoint: 'opensteamtool.com',
       region: '北美 / 欧洲主干',
       isRecommended: false,
-      status: 'online',
-      latencyMs: 145
-    },
-    {
-      id: 'cloud_direct',
-      name: '春风渡 云端直连加速节点',
-      endpoint: 'steam.myil.top',
-      region: '腾讯云 华东 BGP',
-      isRecommended: true,
-      status: 'online',
-      latencyMs: 18
+      status: 'offline',
+      latencyMs: -1
     }
   ];
 
