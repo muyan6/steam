@@ -1773,15 +1773,27 @@ async fn fetch_manifest_code_for_gid(
             .send()
             .await;
         match relay {
-            Ok(resp) if resp.status().is_success() => {
-                if let Ok(text) = resp.text().await {
-                    if let Some(code) = pick_manifest_code(&text) {
-                        return Some(code);
+            Ok(resp) => {
+                let http_status = resp.status().as_u16();
+                if (200..300).contains(&http_status) {
+                    if let Ok(text) = resp.text().await {
+                        if let Some(code) = pick_manifest_code(&text) {
+                            return Some(code);
+                        }
                     }
+                } else if http_status != 404 && http_status != 401 {
+                    // 只有「源此刻不可用」才熔断。
+                    //
+                    // 404 / 401 是**逐 gid 的确定性回答**（「这个 gid 我没收录」），
+                    // 不是源故障。旧实现用 `_ => health.mark_relay_fail()` 捕获全部
+                    // 非 2xx，于是一个 35 分包的游戏里只要有 1 个分包的 gid 未被收录，
+                    // 中继与 ManifestDeX 就会在接下来的 PREFETCH_SRC_FAIL_TTL_SECS
+                    // 内被整批判为不可用 —— 剩余 34 个分包全部跳过这两条最快的路，
+                    // 只能退到末位兜底源，多分包游戏的预取质量因此随机塌陷。
+                    health.mark_relay_fail();
                 }
             }
-            // 5xx / 网络异常 = 源此刻不可用，标记后本批次不再重试
-            _ => health.mark_relay_fail(),
+            Err(_) => health.mark_relay_fail(),
         }
     }
 
@@ -1793,14 +1805,20 @@ async fn fetch_manifest_code_for_gid(
             .send()
             .await;
         match direct {
-            Ok(resp) if resp.status().is_success() => {
-                if let Ok(text) = resp.text().await {
-                    if let Some(code) = pick_manifest_code(&text) {
-                        return Some(code);
+            Ok(resp) => {
+                let http_status = resp.status().as_u16();
+                if (200..300).contains(&http_status) {
+                    if let Ok(text) = resp.text().await {
+                        if let Some(code) = pick_manifest_code(&text) {
+                            return Some(code);
+                        }
                     }
+                } else if http_status != 404 && http_status != 401 {
+                    // 同上：404/401 是逐 gid 的确定性回答，不得熔断整批
+                    health.mark_dex_fail();
                 }
             }
-            _ => health.mark_dex_fail(),
+            Err(_) => health.mark_dex_fail(),
         }
     }
 

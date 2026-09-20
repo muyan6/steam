@@ -462,36 +462,34 @@
         <p class="text-xs text-slate-400 mb-4 leading-relaxed">
           OpenSteamTool 会在入库未拥有游戏时，自动向以下公用端点获取加密清单请求码 (GMRC)，解决个人服务器带宽限制。
         </p>
+        <p class="text-xs text-amber-400/90 mb-4 leading-relaxed">
+          注：原先提供的 SteamRun / WUDRM / OpenSteamTool 三个节点经实测均已失效（持续 502/503 或返回滞后码，
+          用其码会让 Steam 拉不到清单，表现为「无网络连接 / 0 字节下载」），已从选项中移除。
+        </p>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-4">
           <div
-            @click="setManifestApi('steamrun')"
-            class="p-4 rounded-2xl border transition cursor-pointer"
-            :class="manifestApi === 'steamrun' ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md' : 'theme-card hover:border-sky-500/30'"
+            @click="setManifestApi('manifestdex')"
+            class="p-4 rounded-2xl border cursor-pointer bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md"
           >
             <div class="font-bold text-sm text-slate-100 mb-1 flex items-center gap-2">
-              <span>SteamRun 镜像源</span>
-              <span class="text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 font-bold border border-sky-500/30">推荐</span>
+              <span>ManifestDeX 权威码源</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 font-bold border border-sky-500/30">唯一可用</span>
             </div>
-            <div class="text-xs text-slate-400 font-mono break-all">manifest.steam.run</div>
+            <div class="text-xs text-slate-400 font-mono break-all">manifest.manifestdex.com</div>
+            <div class="text-xs text-slate-500 mt-1.5 leading-relaxed">实测唯一与 Valve CDN 一致的码源，已由内核固定为默认节点</div>
           </div>
 
-          <div
-            @click="setManifestApi('wudrm')"
-            class="p-4 rounded-2xl border transition cursor-pointer"
-            :class="manifestApi === 'wudrm' ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md' : 'theme-card hover:border-sky-500/30'"
-          >
-            <div class="font-bold text-sm text-slate-100 mb-1">WUDRM 国内高速源</div>
-            <div class="text-xs text-slate-400 font-mono break-all">gmrc.wudrm.com</div>
-          </div>
-
-          <div
-            @click="setManifestApi('opensteamtool')"
-            class="p-4 rounded-2xl border transition cursor-pointer"
-            :class="manifestApi === 'opensteamtool' ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md' : 'theme-card hover:border-sky-500/30'"
-          >
-            <div class="font-bold text-sm text-slate-100 mb-1">OpenSteamTool 备用源</div>
-            <div class="text-xs text-slate-400 font-mono break-all">opensteamtool.com</div>
+          <div class="p-4 rounded-2xl border theme-card">
+            <div class="font-bold text-sm text-slate-300 mb-1">取码链路（内核固定顺序）</div>
+            <div class="text-xs text-slate-400 leading-relaxed space-y-1">
+              <div>1. 春风渡云端中继（带缓存与去重）</div>
+              <div>2. ManifestDeX 权威源直连</div>
+              <div>3. 古韵自有码库 / 20770407.xyz（末位兜底）</div>
+            </div>
+            <div class="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              顺序与熔断由 manifest.lua 调度器决定，不读取本项配置
+            </div>
           </div>
         </div>
 
@@ -624,10 +622,35 @@ const licenseInfo = ref<ClientLicenseInfo>({
 });
 
 const steamPathInput = ref('');
-const manifestApi = ref<'opensteamtool' | 'steamrun' | 'wudrm'>(
-  (localStorage.getItem('chunfengdu_manifest_api') as 'opensteamtool' | 'steamrun' | 'wudrm') || 'steamrun'
-);
-const setManifestApi = (v: 'opensteamtool' | 'steamrun' | 'wudrm') => {
+/**
+ * 清单节点取值。
+ *
+ * 必须与 Rust 侧 ost::DEFAULT_MANIFEST_SERVER 及 STALE_MANIFEST_NODES 对齐：
+ * 内核已认定 steamrun / wudrm / guyun / opensteamtool 四个节点全部作废
+ * （持续 502/503 或返回滞后码），若前端仍把 'steamrun' 写进 localStorage，
+ * 下次注入就会把一个坏节点带进 opensteamtool.toml —— 随后被
+ * ensure_toml_optimized 改回 manifestdex，两边来回打架。
+ */
+const VALID_MANIFEST_APIS = ['manifestdex', 'https://steam.myil.top'] as const;
+type ManifestApiValue = (typeof VALID_MANIFEST_APIS)[number];
+
+const readSavedManifestApi = (): ManifestApiValue => {
+  const saved = localStorage.getItem('chunfengdu_manifest_api');
+  // 老版本存下的坏节点一律丢弃并迁移到权威源，避免坏值被继续沿用
+  return (VALID_MANIFEST_APIS as readonly string[]).includes(saved || '')
+    ? (saved as ManifestApiValue)
+    : 'manifestdex';
+};
+
+const manifestApi = ref<ManifestApiValue>(readSavedManifestApi());
+
+// 存量迁移：把 localStorage 里的坏节点就地改写，避免「界面显示正确、
+// 但下次注入仍读到旧值」的隐性不一致
+if (localStorage.getItem('chunfengdu_manifest_api') !== manifestApi.value) {
+  localStorage.setItem('chunfengdu_manifest_api', manifestApi.value);
+}
+
+const setManifestApi = (v: ManifestApiValue) => {
   manifestApi.value = v;
   localStorage.setItem('chunfengdu_manifest_api', v);
   // 设置在下次「一键修复内核」/ 激活注入时才写入 opensteamtool.toml，明确告知避免误解

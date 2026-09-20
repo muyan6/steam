@@ -206,10 +206,19 @@ function cfd_is_transient(status)
     if status == nil or status == 0 then return true end
     -- 403: Cloudflare 质询页(实测缺失专用 UA 或触发风控时出现), 换 UA / 稍后重试即可
     -- 429: 上游按 IP 限流(实测本机与中继出口 IP 都在限流窗口内)
-    -- 5xx: 上游过载; 其中 503 也是中继的专用信号 —— 它已把上游 429 与网络异常
-    --      统一映射为 503(见 server manifestController.getManifestCode),
-    --      因此 503 必须视为瞬时, 绝不能当成「确认查不到」。
-    return status == 403 or status == 429 or status == 500 or status == 502 or status == 503 or status == 504
+    if status == 403 then return true end
+    if status == 429 then return true end
+    -- 全部 5xx 一律视为瞬时。**不能只枚举 500/502/503/504** ——
+    -- ManifestDeX 与 20770407 都在 Cloudflare 之后, 源站挂掉时返回的是它特有的
+    -- 521(Web Server Is Down) / 522(Connection Timed Out) / 523(Origin Unreachable)
+    -- / 524(A Timeout Occurred)。本文件下方注释正在描述 2026-09-20 那次 521 事故,
+    -- 而旧实现恰好漏掉 521 —— 后果是双向的:
+    --   ① cfd_src_fail 不触发, 后续每个分包都白等一轮 ManifestDeX 超时;
+    --   ② transient 保持 false, 若中继那边回了 404(definitive_miss), 
+    --      「definitive_miss and not transient」成立 → 该 gid 被写进负缓存冻结两分钟。
+    -- 503 同时是中继的专用信号(它已把上游 429 与网络异常统一映射为 503,
+    -- 见 server manifestController.getManifestCode), 也在本区间内。
+    return status >= 500 and status <= 599
 end
 
 -- 取码主入口。必须用 _ex 签名, 因为末位兜底源(古韵自有码库)需要 depot_id ——

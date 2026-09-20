@@ -1704,6 +1704,29 @@ export class ManifestService {
   }
 
   /**
+   * 由 gid 反查 depotId（仅在调用方没带 depotId 时使用）。
+   *
+   * 为什么需要：老版 OST 内核的 `fetch_manifest_code` 只回调 gid，不带 depot_id。
+   * 而末位兜底源古韵 `index.php/{depot}/{gid}` 与 20770407 都以 (depot, gid)
+   * 为联合键 —— 缺 depotId 时只能退到**已知必然 502** 的 `dex.php/{gid}`，
+   * 整条兜底链等于哑掉。
+   *
+   * depotGidIndex 里通常早就记着这个 gid 的归属：任意一次带 depotId 的请求、
+   * 或任意一条客户端上报，都会写入。反查出来即可复活这两个端点。
+   *
+   * 线性扫描在这里是可接受的：本函数只在 depotId 缺失时调用，而其后紧跟的
+   * 至少是一次 15 秒超时的上游 HTTP 请求 —— 数千次 Set 查找（亚毫秒）与之
+   * 相比完全可以忽略。
+   */
+  private findDepotIdForGid(gid: string): string | undefined {
+    if (!gid) return undefined;
+    for (const [depotId, gids] of this.depotGidIndex) {
+      if (gids.has(gid)) return depotId;
+    }
+    return undefined;
+  }
+
+  /**
    * 客户端上报取码结果 —— 这是码库最重要的数据来源。
    *
    * 为什么不让服务端自己去扒：古韵的接口按 (depot, gid) 查询，服务端要主动
@@ -1802,7 +1825,22 @@ export class ManifestService {
     for (const [depotId, gids] of this.depotGidIndex) {
       for (const gid of gids) {
         const entry = this.manifestCodeCache.get(gid);
-        if (!entry) continue;
+        if (!entry) {
+          // 从未取到过码的 gid 同样要纳入补码 —— 旧实现 `if (!entry) continue`
+          // 把它们 100% 排除在外，于是补码循环只能反复刷新「本来就有码」的条目，
+          // 而真正缺码的长尾（当初请求时全线上游不可用、或码已被容量淘汰但
+          // depot→gid 索引仍在）永远得不到后台拯救。
+          //
+          // 但**不能无条件优先**：确有一部分 gid 是永久没有码的（例如无 GID 的
+          // 免费分包），若给它们最高优先级，每轮 8 个名额会被这些填不上的条目
+          // 长期霸占。因此按「上次尝试时间」计算码龄，并强制一个重试间隔 ——
+          // 等价于带退避的负缓存：试过一次后要等 BACKFILL_MISS_RETRY_MS 才再试。
+          const missedAt = this.codeMissAt.get(gid);
+          const ageMs = now - (missedAt ?? 0);
+          if (ageMs < ManifestService.BACKFILL_MISS_RETRY_MS) continue;
+          out.push({ depotId, gid, ageMs });
+          continue;
+        }
         const ageMs = now - entry.fetchedAt;
         if (ageMs < this.MANIFEST_CODE_TTL_MS) continue;
         out.push({ depotId, gid, ageMs });
@@ -1810,6 +1848,27 @@ export class ManifestService {
     }
     out.sort((a, b) => b.ageMs - a.ageMs);
     return out.slice(0, Math.max(0, limit));
+  }
+
+  /**
+   * gid -> 最近一次「问了但没拿到码」的时间戳。
+   *
+   * 只用于 listStaleCodeTargets 计算重试间隔，不参与任何下发决策 ——
+   * 「问不到」不等于「没有码」，不能拿它当负缓存用（负缓存有自己的
+   * negativeCodeCache 与更严格的写入条件）。
+   */
+  private codeMissAt = new Map<string, number>();
+  /** 未出码 gid 的后台重试间隔：避免每轮补码反复打同一批永久无码的条目 */
+  private static readonly BACKFILL_MISS_RETRY_MS = 30 * 60 * 1000;
+  private static readonly CODE_MISS_MAP_MAX = 20000;
+
+  private noteCodeMiss(gid: string): void {
+    // 上限保护：公开接口可枚举 gid，无界会随随机请求持续膨胀
+    if (this.codeMissAt.size >= ManifestService.CODE_MISS_MAP_MAX && !this.codeMissAt.has(gid)) {
+      const oldest = this.codeMissAt.keys().next().value;
+      if (oldest !== undefined) this.codeMissAt.delete(oldest);
+    }
+    this.codeMissAt.set(gid, Date.now());
   }
 
   private manifestCodeCache = new Map<string, { code: string; fetchedAt: number; depotId?: string }>();
@@ -1925,8 +1984,13 @@ export class ManifestService {
       return { code: null, definitiveMiss: true, transient: false };
     }
     // depotId 是可选的：内核老版本回调只给 gid，不带它也要能正常工作。
-    // 带上它的唯一好处是填 depot 索引，供后续主动补码枚举。
-    if (depotId && /^\d+$/.test(depotId)) this.indexDepotGid(depotId, gid);
+    //
+    // 缺了它时先尝试从 depot 索引反查 —— 末位兜底源（古韵 index.php /
+    // 20770407）都以 (depot, gid) 为联合键，光有 gid 只能退到必然 502 的
+    // dex.php，整条兜底链哑掉。索引里通常早有归属记录。
+    const resolvedDepotId =
+      depotId && /^\d+$/.test(depotId) ? depotId : this.findDepotIdForGid(gid);
+    if (resolvedDepotId) this.indexDepotGid(resolvedDepotId, gid);
 
     // 0. 优先命中内存缓存
     const cached = this.manifestCodeCache.get(gid);
@@ -1945,7 +2009,7 @@ export class ManifestService {
     const running = this.manifestCodeInFlight.get(gid);
     if (running) return running;
 
-    const task = this.fetchManifestCodeFromUpstream(gid, depotId);
+    const task = this.fetchManifestCodeFromUpstream(gid, resolvedDepotId);
     this.manifestCodeInFlight.set(gid, task);
     try {
       return await task;
@@ -2178,6 +2242,7 @@ export class ManifestService {
     let filled = 0;
     try {
       for (const t of targets) {
+        let got = false;
         // 两个同源端点轮流当备份：古韵有缓存层（热 0.15 秒）优先，
         // 20770407.xyz 恒定 ~1.0 秒但可用性独立，古韵一挂就顶上。
         // 两者数据逐字节相同（实测 10/10），所以谁先谁后只影响延迟，不影响结果。
@@ -2198,7 +2263,9 @@ export class ManifestService {
                 // 前者按 fetchedAt 直接覆盖（补码的目的就是刷新时间戳），
                 // 后者会跳过「不够新」的条目，正好与补码意图相反。
                 this.setManifestCodeCache(t.gid, code, t.depotId);
+                this.codeMissAt.delete(t.gid);
                 filled++;
+                got = true;
                 break; // 拿到就够了，不必再问第二个端点
               }
             }
@@ -2206,6 +2273,10 @@ export class ManifestService {
             // 单条失败无所谓，下一轮还会再试；继续试下一个端点
           }
         }
+        // 两个端点都没给出码：记下本次尝试时间。
+        // listStaleCodeTargets 据此计算码龄并强制重试间隔 —— 否则
+        // 「从未有码」的条目会在每一轮补码中反复占据名额。
+        if (!got) this.noteCodeMiss(t.gid);
         await new Promise((r) => setTimeout(r, ManifestService.BACKFILL_GAP_MS));
       }
     } finally {

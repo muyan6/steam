@@ -401,8 +401,13 @@ const startActivation = async () => {
     activationPhase.value = 2;
     progressPercent.value = 60;
     const activateRes = await window.electronAPI.activateInjection({
-      // 尊重用户在设置页保存的清单源选择，不强制回退到 steamrun
-      manifestApi: localStorage.getItem('chunfengdu_manifest_api') || 'steamrun',
+      // 尊重用户在设置页保存的清单源选择。
+      //
+      // 回落值必须是 manifestdex：steamrun 已确认失效（持续 502，
+      // 且返回的码与 Valve CDN 不一致，会导致「无网络连接 / 0 字节下载」），
+      // Rust 侧 ost::DEFAULT_MANIFEST_SERVER 与 SettingsView 的选项均已改为
+      // manifestdex，这里漏改就会让首次引导把坏节点写进 opensteamtool.toml。
+      manifestApi: localStorage.getItem('chunfengdu_manifest_api') || 'manifestdex',
       restartSteam: true
     });
 

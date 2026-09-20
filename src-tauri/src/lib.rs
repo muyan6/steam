@@ -154,7 +154,11 @@ fn resolve_manifest_server(
     manifest_api: Option<String>,
     custom_api_url: Option<String>,
 ) -> Result<String, String> {
-    let api = manifest_api.unwrap_or_else(|| "steamrun".to_string());
+    // 默认值必须与 ost::DEFAULT_MANIFEST_SERVER 对齐：
+    // 写 "steamrun" 会把一个已确认不可用的节点（持续 502）写进用户的
+    // opensteamtool.toml，而 ensure_toml_optimized 的 STALE_MANIFEST_NODES
+    // 又会把它改回 manifestdex —— 两边来回打架。
+    let api = manifest_api.unwrap_or_else(|| ost::DEFAULT_MANIFEST_SERVER.to_string());
     if api == "custom" {
         match custom_api_url.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
             Some(url) => Ok(url),
@@ -785,7 +789,9 @@ async fn toolbox_fix_cloud_redirect() -> ToolboxActionResult {
 fn read_toml_server(steam_path: &std::path::Path) -> (bool, String) {
     let toml_path = steam_path.join("opensteamtool.toml");
     let mut auto_switch = false;
-    let mut server = "steamrun".to_string();
+    // 回落值同样对齐权威常量：toml 缺失时工具箱界面会显示这个值，
+    // 显示 steamrun 而实际生效的是 manifestdex 会直接误导排查
+    let mut server = ost::DEFAULT_MANIFEST_SERVER.to_string();
     if let Ok(content) = std::fs::read_to_string(toml_path) {
         // 逐行解析：trim → 去掉 # 注释 → 按 = 拆键值并两侧 trim。
         // 旧 contains("auto_switch = true") 写法无法匹配 "auto_switch=true"（无空格）
@@ -836,7 +842,7 @@ async fn get_toolbox_status() -> serde_json::Value {
                 "hasOpenSteamTool": false,
                 "hasSha256Cache": false,
                 "autoSwitchEnabled": false,
-                "currentManifestServer": "steamrun"
+                "currentManifestServer": ost::DEFAULT_MANIFEST_SERVER
             }),
             Some(p) => {
                 ensure_auto_switch_default(p);
@@ -861,7 +867,7 @@ async fn get_toolbox_status() -> serde_json::Value {
         "hasOpenSteamTool": false,
         "hasSha256Cache": false,
         "autoSwitchEnabled": false,
-        "currentManifestServer": "steamrun",
+        "currentManifestServer": ost::DEFAULT_MANIFEST_SERVER,
         "message": "任务执行失败"
     }))
 }
