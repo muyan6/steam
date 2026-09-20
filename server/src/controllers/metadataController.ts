@@ -808,22 +808,25 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       }
     }
 
-    // 7. 仅「锁定版本」模式才需要把实体清单沉淀到服务端缓存。
+    // 7. 【已移除】此前的 `if (needGid)` 批量实体清单沉淀循环。
     //
-    // 默认「跟随官方最新」模式下，客户端 Lua 不写 setManifestid，Steam 经
-    // manifest.lua 动态取码后直连 Valve CDN 拉当前最新清单，根本不需要实体文件。
-    // 而 manifestGid 是上面从 SteamCMD 解析出来的（与 needGid 无关），
-    // 原先这个循环没有任何守卫 —— 于是每个默认模式请求都会为全部 depot
-    // 触发一轮实体清单回源下载，纯属浪费服务器带宽、磁盘并推高上游频控风险。
-    // 该注释此前写作「默认模式没有社区对齐 GID，此循环自然空转」，与
-    // SteamCMD 无条件填充 manifestGid 的事实不符，属失效假设。
-    if (needGid) {
-      for (const d of depots) {
-        if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
-          manifestService.ensureManifestCached(d.depotId, d.manifestGid, appId).catch(() => {});
-        }
-      }
-    }
+    // 移除理由（全仓库调用链已核实）：
+    // 1. 客户端**从不发送** needGid=1。入库走的是 ost.rs → parse_metadata_with_gids
+    //    → `&withGids=1`（见 manifests.rs:1034-1051 与 ost.rs:786-792 的注释），
+    //    该参数的设计初衷正是「只要 GID 数字，绝不触发实体清单下载」。
+    //    因此这段循环对现有客户端从不执行 —— 但它是「一旦有人发 needGid=1 就爆」
+    //    的隐患：100 分包的游戏会一次性起 100 路 ensureManifestCached，
+    //    每路又是最多 16 个镜像竞速 + 整包解压落盘。
+    // 2. 锁定版本真正需要的实体清单，由**客户端自己**在入库时预缓存
+    //    （lib.rs:275 `if lock_mode { precache_manifests }`），服务端无需代劳。
+    // 3. 服务端的按需兜底路径仍然完整保留：
+    //    /api/manifests/download/:depotId/:manifestId → ensureManifestCached，
+    //    客户端在所有直连镜像都失败后才回退到它（manifests.rs:1380-1393），
+    //    且是单文件、按需触发，不存在批量放大的问题。
+    //
+    // 若将来确实需要服务端预热实体清单，请新增一个**显式**的
+    // `?precache=1` 开关并单独限流，不要复用 needGid —— 那个参数同时承担
+    // 「走 Hub3 GID 对齐」的语义，混在一起会再次让 GID 查询顺带拉实体。
 
     // 8. 写入响应缓存（10 分钟 TTL）
     writeMetadataCache({
