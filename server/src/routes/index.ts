@@ -16,7 +16,8 @@ import {
   downloadManifestFile,
   getManifestCode,
   reportManifestCodes,
-  getManifestCodeStats
+  getManifestCodeStats,
+  checkManifestSources
 } from '../controllers/manifestController.js';
 import { manifestService } from '../services/manifestService.js';
 import { getLatestOstRelease, downloadOstAsset } from '../controllers/ostController.js';
@@ -484,6 +485,10 @@ router.post('/sources/sync', triggerSyncFromSources);
 router.get('/admin/stats', getServerStats);
 router.get('/admin/search/debug', searchDebugKeys);
 router.get('/admin/toolbox/stats', getToolboxAdminStats);
+
+// 上游取码源体检：逐源并发探测并返回状态码/延迟/判定说明。
+// 放在 requireAdmin 之后 → 自动受保护（该中间件对注册在其后的所有路由生效）。
+router.get('/admin/manifests/sources', checkManifestSources);
 
 // 应用内跳转链接配置 (管理端)
 router.post('/admin/links', updateAppLinks);

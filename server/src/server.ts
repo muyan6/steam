@@ -927,6 +927,25 @@ const ADMIN_HTML = `<!DOCTYPE html>
           <button onclick="triggerSyncAll()" class="btn btn-primary">🔄 一键全量多源同步</button>
         </div>
 
+        <!-- 取码源体检：上游挂掉时点一下就知道是哪一跳坏了，不必翻日志 -->
+        <div class="card" style="margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <strong style="color: var(--text-strong); font-size: 15px; font-weight: 700;">🩺 清单取码源体检</strong>
+              <div style="color: var(--text-mid); font-size: 12px; margin-top: 4px; line-height: 1.6;">
+                并发探测取码链路上的每一个上游源，返回状态码、延迟与判定说明。<br>
+                探针默认取码库中一条真实存在的 (depotId, gid) —— 避免随机 gid 让所有源都 404、看起来像全线崩溃。
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <input id="probeDepotId" placeholder="depotId（可选）" class="input" style="width: 130px; font-family: monospace; font-size: 12px;">
+              <input id="probeGid" placeholder="gid（可选）" class="input" style="width: 190px; font-family: monospace; font-size: 12px;">
+              <button id="probeSourcesBtn" onclick="checkManifestSources()" class="btn btn-primary">🩺 开始体检</button>
+            </div>
+          </div>
+          <div id="probeResult" style="margin-top: 16px;"></div>
+        </div>
+
         <div id="sourcesGrid" class="grid-2"></div>
       </div>
 

@@ -2291,6 +2291,179 @@ export class ManifestService {
     return filled;
   }
 
+  /**
+   * 手动体检：并发探测取码链路上的每个上游源，返回状态码、延迟与结果摘要。
+   *
+   * 用途：上游挂掉时，过去只能从用户反馈或日志里间接推断「是哪一跳坏了」。
+   * 有了它，管理端点一下就能看到「ManifestDeX 521 / 古韵 200 / 20770407 401」
+   * 这样的逐源快照，不必再去翻 diag 日志。
+   *
+   * 探测对象是**取码源**，不含清单实体镜像（P-ToyStore / SteamML / Remlua /
+   * ManifestHub.uk）—— 那几条只在下载实体清单时用到，与日常取码故障无关。
+   *
+   * 探针目标 (depotId, gid)：优先从码库/索引里取一条真实记录（这样探测的是
+   * 真实存在的组合，结果才有意义）；取不到时允许调用方显式传入。
+   * **绝不随机造 gid** —— 那只会让所有源都返回 404，看起来像"全部挂了"。
+   */
+  public async checkAllSources(override?: {
+    depotId?: string;
+    gid?: string;
+  }): Promise<{
+    checkedAt: string;
+    probe: { depotId: string; gid: string; from: 'override' | 'code_store' } | null;
+    probes: Array<{
+      id: string;
+      label: string;
+      url: string;
+      ok: boolean;
+      httpStatus: number | null;
+      latencyMs: number;
+      codeFingerprint: string | null;
+      detail: string;
+    }>;
+    note: string;
+  }> {
+    const checkedAt = new Date().toISOString();
+
+    // 1. 选定探针目标：显式传入 > 码库里最新鲜的一条（带 depotId 的）
+    let depotId = String(override?.depotId || '').trim();
+    let gid = String(override?.gid || '').trim();
+    let from: 'override' | 'code_store' = 'override';
+    if (!/^\d+$/.test(depotId) || !/^\d+$/.test(gid) || gid === '0') {
+      depotId = '';
+      gid = '';
+      from = 'code_store';
+      let bestTs = -1;
+      for (const [g, entry] of this.manifestCodeCache) {
+        if (!entry.depotId || !/^\d+$/.test(entry.depotId)) continue;
+        if (entry.fetchedAt > bestTs) {
+          bestTs = entry.fetchedAt;
+          gid = g;
+          depotId = entry.depotId;
+        }
+      }
+    }
+
+    if (!gid || !depotId) {
+      return {
+        checkedAt,
+        probe: null,
+        probes: [],
+        note: '码库中尚无带 depotId 的记录，无法选定探针目标。可手动指定 ?depotId=&gid= 后重试。'
+      };
+    }
+
+    // 2. 逐源定义。顺序与客户端 manifest.lua 的取码链路一致。
+    const targets: Array<{ id: string; label: string; url: string; headers: Record<string, string> }> = [
+      {
+        id: 'manifestdex',
+        label: 'ManifestDeX 权威码源',
+        url: `https://manifest.manifestdex.com/${gid}`,
+        // 必须恰好是这个 UA —— 上游按 provider 白名单校验，缺失一律 403
+        headers: { 'User-Agent': 'ManifestDeX/1.0' }
+      },
+      {
+        id: 'guyun_index',
+        label: '古韵自有码库 index.php',
+        url: `https://gmrc.guyunsq.com/index.php/${depotId}/${gid}`,
+        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+      },
+      {
+        id: 'x20770407',
+        label: '20770407.xyz（与古韵同源冗余）',
+        url: `https://20770407.xyz/manifest/${depotId}/${gid}`,
+        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+      },
+      {
+        id: 'guyun_dex',
+        label: '古韵 dex.php（gid-only 聚合层）',
+        url: `https://gmrc.guyunsq.com/dex.php/${gid}`,
+        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+      }
+    ];
+
+    // 3. 并发探测。单个源失败不影响其它源 —— 体检的全部价值就在于逐个独立判断。
+    const settled = await Promise.allSettled(
+      targets.map(async (t) => {
+        const started = Date.now();
+        const resp = await axios.get(t.url, {
+          timeout: 20000,
+          responseType: 'text',
+          headers: t.headers,
+          // 与取码链路一致：不让 axios 对 4xx/5xx 抛异常，
+          // 必须看到状态码才能区分「源挂了」与「这个 gid 它没有」
+          validateStatus: () => true
+        });
+        return { t, resp, latencyMs: Date.now() - started };
+      })
+    );
+
+    const probes = settled.map((s, i) => {
+      const t = targets[i];
+      if (s.status === 'rejected') {
+        return {
+          id: t.id,
+          label: t.label,
+          url: t.url,
+          ok: false,
+          httpStatus: null,
+          latencyMs: -1,
+          codeFingerprint: null,
+          detail: `请求异常：${s.reason?.message || String(s.reason)}`
+        };
+      }
+      const { resp, latencyMs } = s.value;
+      const body = typeof resp.data === 'string' ? resp.data.trim() : '';
+      const isCode = /^\d+$/.test(body) && body !== '0';
+      // 码值只回指纹（前 4 + 后 4）：这是排障用的，没必要把完整码暴露在响应里
+      const fp = isCode ? `${body.slice(0, 4)}…${body.slice(-4)}（${body.length} 位）` : null;
+
+      let detail: string;
+      if (isCode) {
+        detail = '正常，返回有效码';
+      } else if (resp.status === 200) {
+        detail = `HTTP 200 但内容不是纯数字码：${body.slice(0, 80) || '(空响应)'}`;
+      } else if (resp.status === 404) {
+        detail = 'HTTP 404 — 该源没有这条 gid（不等于源故障）';
+      } else if (resp.status === 401) {
+        detail = 'HTTP 401 — 该源库里没有这个 (depot, gid) 组合（确认查不到）';
+      } else if (resp.status === 403) {
+        detail = 'HTTP 403 — Cloudflare 质询，通常是出口 IP 被拦或 UA 不符';
+      } else if (resp.status === 429) {
+        detail = 'HTTP 429 — 该源按 IP 限流中，稍后重试';
+      } else if (resp.status >= 500 && resp.status <= 599) {
+        detail =
+          resp.status >= 520 && resp.status <= 526
+            ? `HTTP ${resp.status} — Cloudflare 源站不可达（521 源站挂 / 522 连接超时 / 523 源不可达 / 524 响应超时）`
+            : `HTTP ${resp.status} — 上游过载或故障`;
+      } else {
+        detail = `HTTP ${resp.status}`;
+      }
+
+      return {
+        id: t.id,
+        label: t.label,
+        url: t.url,
+        ok: isCode,
+        httpStatus: resp.status,
+        latencyMs,
+        codeFingerprint: fp,
+        detail
+      };
+    });
+
+    const okCount = probes.filter((p) => p.ok).length;
+    return {
+      checkedAt,
+      probe: { depotId, gid, from },
+      probes,
+      note:
+        okCount > 0
+          ? `${okCount}/${probes.length} 个源可正常出码。只要权威源（ManifestDeX）恢复，客户端就会自动跳过后续兜底源 —— 熔断窗口仅 60 秒，无需任何手动干预。`
+          : `本次探测中 ${probes.length} 个源都未返回有效码。注意：若探针 gid 恰好已被 Valve 轮换，各源返回 404/401 也属正常，请换一条较新的 (depotId, gid) 复测。`
+    };
+  }
+
   // 补码循环句柄：保存下来才能停止。旧实现丢弃 setInterval 返回值，
   // 进程退出时无法 clearInterval，且 server.ts 若被重复调用（热重载/多次初始化）
   // 会叠加多个循环 —— backfillRunning 只能防单轮重叠，防不住多循环并存。

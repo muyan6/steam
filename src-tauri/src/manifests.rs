@@ -1747,11 +1747,24 @@ impl SourceHealth {
 /// `health` 在整个预取批次内共享：任一任务探明某源失效，其余任务立即跳过。
 /// 末位兜底源**不参与熔断** —— 前两个源熔断时它就是唯一能出码的路径，
 /// 把它也熔断掉整条链就彻底哑了（Lua 侧同理）。
+/// 预取到的单个码 + 它的来源。
+///
+/// `from_relay` 决定要不要把它回传给中继：中继本来就是这条码的出处，
+/// 把它再报回去只会让服务端拿自己的数据刷新自己的时间戳。
+/// 平时无害（60 秒内的权威新码不接受覆盖），但走 stale 通道下发的旧码
+/// 会在服务端已存在超过 60 秒，回传会被接受并把 fetchedAt 刷成当前时间 ——
+/// 等于把一个 30 分钟前的旧码「洗白」成新鲜码，其新鲜期被凭空延长 5 分钟。
+/// 码本身没错，只是可能已被 Valve 轮换掉，不该被这样续命。
+struct PrefetchedCode {
+    code: String,
+    from_relay: bool,
+}
+
 async fn fetch_manifest_code_for_gid(
     depot_id: u32,
     gid: &str,
     health: &SourceHealth,
-) -> Option<String> {
+) -> Option<PrefetchedCode> {
     if health.relay_ok() {
         // 带上 depotId：中继的末位兜底源有两条路径，index.php/{depot}/{gid} 按
         // (depot, gid) 联合键查自有库（实测正确组合 200、错 depot 一律 502），
@@ -1778,7 +1791,8 @@ async fn fetch_manifest_code_for_gid(
                 if (200..300).contains(&http_status) {
                     if let Ok(text) = resp.text().await {
                         if let Some(code) = pick_manifest_code(&text) {
-                            return Some(code);
+                            // 中继来源：不回传（见 PrefetchedCode 的说明）
+                            return Some(PrefetchedCode { code, from_relay: true });
                         }
                     }
                 } else if http_status != 404 && http_status != 401 {
@@ -1810,7 +1824,8 @@ async fn fetch_manifest_code_for_gid(
                 if (200..300).contains(&http_status) {
                     if let Ok(text) = resp.text().await {
                         if let Some(code) = pick_manifest_code(&text) {
-                            return Some(code);
+                            // ManifestDeX 直连来源：值得回传（中继没有这条）
+                            return Some(PrefetchedCode { code, from_relay: false });
                         }
                     }
                 } else if http_status != 404 && http_status != 401 {
@@ -1848,7 +1863,9 @@ async fn fetch_manifest_code_for_gid(
                 if resp.status().is_success() {
                     if let Ok(text) = resp.text().await {
                         if let Some(code) = pick_manifest_code(&text) {
-                            return Some(code);
+                            // 末位兜底源（古韵 / 20770407）：中继的兜底链用的就是这两个端点，
+                            // 数据同源，回传同样是拿服务端已有的数据刷自己的时间戳。
+                            return Some(PrefetchedCode { code, from_relay: true });
                         }
                     }
                 }
@@ -1892,6 +1909,8 @@ pub fn prefetch_manifest_codes(raw_pairs: &[(u32, String)]) -> BTreeMap<String, 
     let health = Arc::new(SourceHealth::default());
 
     let mut out = BTreeMap::new();
+    // 只装「非中继来源」的码，供末尾回传使用
+    let mut reportable: BTreeMap<String, String> = BTreeMap::new();
     for chunk in pairs.chunks(PREFETCH_CONCURRENCY) {
         let mut handles = Vec::new();
         for (depot_id, gid) in chunk {
@@ -1905,8 +1924,12 @@ pub fn prefetch_manifest_codes(raw_pairs: &[(u32, String)]) -> BTreeMap<String, 
         }
         for h in handles {
             match block_on(h) {
-                Ok((gid, Some(code))) => {
-                    out.insert(gid, code);
+                Ok((gid, Some(found))) => {
+                    // 中继来源的码不回传（见 PrefetchedCode 说明），但仍进本地预取结果
+                    if !found.from_relay {
+                        reportable.insert(gid.clone(), found.code.clone());
+                    }
+                    out.insert(gid, found.code);
                 }
                 Ok((_, None)) => {}
                 Err(e) => log_diag(&format!("清单码预取任务 join 失败: {}", e)),
@@ -1924,7 +1947,10 @@ pub fn prefetch_manifest_codes(raw_pairs: &[(u32, String)]) -> BTreeMap<String, 
     //
     // 放在预取末尾、且**不参与错误处理** —— 上报是纯增益的旁路，
     // 失败绝不能让入库流程受影响。dirty 标记由调用方决定是否真正发车。
-    report_codes_to_relay(&pairs, &out);
+    //
+    // 只上报非中继来源的码：中继自己给出的码再报回去，轻则无意义（服务端
+    // 60 秒保护会跳过），重则把走 stale 通道下发的旧码「洗白」成新鲜码。
+    report_codes_to_relay(&pairs, &reportable);
 
     out
 }

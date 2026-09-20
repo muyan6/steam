@@ -72,6 +72,31 @@ export const downloadManifestFile = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * 管理员：手动体检取码链路上的全部上游源。
+ *
+ * 逐源并发探测，返回状态码 / 延迟 / 是否出码 / 人类可读的判定说明。
+ * 上游挂掉时不必再翻 diag 日志 —— 点一下就能看到是「ManifestDeX 521」
+ * 还是「古韵 200 但 20770407 401」。
+ *
+ * 探针目标默认从码库取一条**真实存在**的 (depotId, gid)，避免随机 gid
+ * 让所有源都返回 404、看起来像「全线崩溃」。也支持手动指定后复测。
+ */
+export const checkManifestSources = async (req: Request, res: Response) => {
+  try {
+    const rawDepot = Array.isArray(req.query.depotId) ? req.query.depotId[0] : req.query.depotId;
+    const rawGid = Array.isArray(req.query.gid) ? req.query.gid[0] : req.query.gid;
+    const result = await manifestService.checkAllSources({
+      depotId: rawDepot ? String(rawDepot).trim() : undefined,
+      gid: rawGid ? String(rawGid).trim() : undefined
+    });
+    return res.json({ success: true, data: result });
+  } catch (e: any) {
+    console.error('[ManifestController] 源体检异常:', e);
+    return res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+};
+
 export const getManifestCode = async (req: Request, res: Response) => {
   try {
     const rawGid = Array.isArray(req.params.gid) ? req.params.gid[0] : req.params.gid;
