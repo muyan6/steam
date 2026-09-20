@@ -753,7 +753,7 @@ async function checkManifestSources() {
         '<code style="color:var(--c-blue);">gid=' + escapeHtml(d.probe.gid) + '</code>' +
         '（来源：' + (d.probe.from === 'override' ? '手动指定' : '码库中最新鲜的一条') + '）' +
       '</div>' +
-      '<div class="table-wrap"><table><thead><tr>' +
+      '<div class="table-container"><table><thead><tr>' +
         '<th>源</th><th>状态码</th><th>延迟</th><th>结果</th><th>说明</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<div style="font-size:12px;color:var(--text-mid);margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(56,189,248,.06);line-height:1.6;">' +

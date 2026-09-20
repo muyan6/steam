@@ -73,7 +73,12 @@ pub fn parse_binary_dict(data: &[u8]) -> Vec<DictEntry> {
                 break;
             }
             shift += 7;
-            if shift > 35 {
+            // 上限必须卡在 32 位：delta 用 u64 累加，若允许 shift 到 35
+            // （即 5 字节 varint），`delta as u32` 会静默截断高位，
+            // 解出的 appId 既错误又可能破坏「严格升序」不变量 ——
+            // 而下游按升序做二分查找，破坏后是**静默**返回错误结果，
+            // 不会报错。字典损坏或被替换时正是这条路径。
+            if shift >= 32 {
                 return Vec::new();
             }
         }

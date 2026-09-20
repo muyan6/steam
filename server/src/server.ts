@@ -938,8 +938,8 @@ const ADMIN_HTML = `<!DOCTYPE html>
               </div>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <input id="probeDepotId" placeholder="depotId（可选）" class="input" style="width: 130px; font-family: monospace; font-size: 12px;">
-              <input id="probeGid" placeholder="gid（可选）" class="input" style="width: 190px; font-family: monospace; font-size: 12px;">
+              <input id="probeDepotId" placeholder="depotId（可选）" class="input-ctrl" style="width: 130px; font-family: monospace; font-size: 12px;">
+              <input id="probeGid" placeholder="gid（可选）" class="input-ctrl" style="width: 190px; font-family: monospace; font-size: 12px;">
               <button id="probeSourcesBtn" onclick="checkManifestSources()" class="btn btn-primary">🩺 开始体检</button>
             </div>
           </div>

@@ -748,11 +748,23 @@ fn try_download_candidate(download_url: &str, app_id: u32) -> Result<PathBuf, St
     // 流式写入临时文件，避免 100MB+ 补丁整包驻留内存
     let mut file = fs::File::create(&temp_path).map_err(|e| format!("创建临时文件失败: {}", e))?;
     let mut total: u64 = 0;
+    // 累计体积上限。原先只有注释声称「下载层已限制 50MB」，代码里并不存在任何
+    // 上限 —— 分流源返回超大响应或无限流时会把磁盘写满，且要等 600 秒总超时
+    // 才会停。补丁包实测 100MB 级已是上限，这里取 512MB 留足余量。
+    const MAX_PATCH_BYTES: u64 = 512 * 1024 * 1024;
     loop {
         match crate::manifests::block_on(resp.chunk()) {
             Ok(Some(chunk)) => {
-                file.write_all(&chunk).map_err(|e| format!("写入临时文件失败: {}", e))?;
                 total += chunk.len() as u64;
+                if total > MAX_PATCH_BYTES {
+                    drop(file);
+                    let _ = fs::remove_file(&temp_path);
+                    return Err(format!(
+                        "补丁包体积超过上限（{} 字节），已中止下载",
+                        MAX_PATCH_BYTES
+                    ));
+                }
+                file.write_all(&chunk).map_err(|e| format!("写入临时文件失败: {}", e))?;
             }
             Ok(None) => break,
             Err(e) => {
