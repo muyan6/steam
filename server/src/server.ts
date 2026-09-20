@@ -23,6 +23,32 @@ if (CONFIG.TRUST_PROXY !== false) {
   app.set('trust proxy', CONFIG.TRUST_PROXY as any);
 }
 
+// 反代误配自检（只告警一次）。
+//
+// TRUST_PROXY 未配置时 express-rate-limit 只能看到 socket 地址；而本服务几乎必然
+// 部署在 nginx 之后（响应头 Server: nginx），socket 地址就是 127.0.0.1 ——
+// 于是**全部用户共用一个限流桶**：/manifests/code/:gid 的 120 次/分钟由全世界分摊，
+// 用户一多就集体 429，而且审计日志里的 IP 全是 127.0.0.1 毫无用处。
+//
+// 这里不自动修正 —— 伪造 X-Forwarded-For 可绕过全部限流（见 CODE_REVIEW S6），
+// 信任层级必须由部署方显式声明，不能由代码猜。
+let proxyMisconfigWarned = false;
+app.use((req, _res, next) => {
+  if (!proxyMisconfigWarned && CONFIG.TRUST_PROXY === false) {
+    if (req.headers['x-forwarded-for'] || req.headers['x-real-ip']) {
+      proxyMisconfigWarned = true;
+      console.warn('==============================================================');
+      console.warn('[配置告警] 收到反向代理头，但 TRUST_PROXY 未配置。');
+      console.warn('  后果：所有用户被当成同一个 IP —— 清单代码额度(120/分钟)全站共用，');
+      console.warn('        用户一多就集体 429；审计日志里的客户端 IP 也会失真。');
+      console.warn(`  当前 req.ip = ${req.ip}（本应为真实客户端 IP）`);
+      console.warn('  修复：部署环境设置 TRUST_PROXY=1（信任一层反代）后重启服务。');
+      console.warn('==============================================================');
+    }
+  }
+  next();
+});
+
 // 基础中间件
 app.disable('x-powered-by');
 const corsOrigin = CONFIG.CORS_ORIGIN === '' ? false : CONFIG.CORS_ORIGIN;
