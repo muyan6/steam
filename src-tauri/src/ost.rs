@@ -179,9 +179,9 @@ function fetch_manifest_code(gid)
     -- 中继带 5 分钟正缓存, 能把「N 客户端 x M 分包」收敛成「每 gid 每 5 分钟
     -- 1 次上游请求」, 这是唯一能让多客户端共存的顺序。绕一跳的延迟远小于
     -- 撞限流后空等的代价。
-    -- 统一携带 UA: 中继与上游都可能位于 Cloudflare 之后, 缺 UA 会被回 403 质询页。
-    -- 依据: OpenSteamTool PR #200 —— ManifestDeX 必须带 User-Agent 才返回码,
-    -- 内核内置 provider 正是因为不带 UA 才全线 403。
+    -- 中继这一跳的 UA 只是自我标识, **不是**准入门槛 —— 实测中继是裸 nginx
+    -- (响应头 Server: nginx, 无 cf-ray), 对空 UA / 任意 UA 一视同仁。
+    -- 真正必须卡 UA 的是下面那个 ManifestDeX 直连。
     body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid,
                             {["User-Agent"] = "ChunFengDu/1.0"})
     code = cfd_pick_code(body, status)

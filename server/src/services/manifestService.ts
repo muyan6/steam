@@ -1462,6 +1462,22 @@ export class ManifestService {
   private readonly MANIFEST_CODE_UPSTREAM_TIMEOUT_MS = 15000;
   private readonly MANIFEST_CODE_MAX_ATTEMPTS = 2;
 
+  // 上游熔断：上游拿不到码时，在窗口内直接失败，不再逐个 gid 去等 15 秒超时。
+  //
+  // 为什么必须有：实测上游被限流时，单次请求要 10~36 秒才回（多数是 429）。
+  // 中继原本对每个 gid 都重试 2 次，于是一个冷请求就要 25~60 秒 —— 实测
+  // 25.55s / 26.5s / 60.93s / 19.15s。上游持续不可用时，每个客户端、每个分包
+  // 都要付这个代价，用户看到的就是「点下载后长时间卡住」。
+  // 熔断打开后这段时间内所有请求立即失败，客户端得以马上走自己的直连源。
+  private upstreamBreakerOpenUntil = 0;
+  private readonly UPSTREAM_BREAKER_MS = 20 * 1000;
+
+  // 过期正缓存仍可顶用：实测同一 depot+gid 的请求码约 5~6 分钟轮换一次，
+  // 但**旧码不会立刻失效** —— content_log.txt 里所有历史码当时都返回了 200。
+  // 因此上游不可用时，宁可下发一个 30 分钟内的旧码，也不要回 503 让下载彻底停摆：
+  // 旧码让下载立刻开始，503 会让 Steam 的下载流程停在那里等重试。
+  private readonly MANIFEST_CODE_STALE_MAX_MS = 30 * 60 * 1000;
+
   /** 写入清单代码缓存，并在超限时清理过期项/按插入序淘汰 */
   private setManifestCodeCache(gid: string, code: string): void {
     this.manifestCodeCache.set(gid, { code, fetchedAt: Date.now() });
@@ -1561,6 +1577,13 @@ export class ManifestService {
     let sawDefinitiveMiss = false;
     let sawTransient = false;
 
+    // 熔断打开：立即失败，完全不碰网络。
+    // 这是把「上游持续不可用」从「每个请求等 15~30 秒」降为「立即返回」的关键，
+    // 也是让客户端能迅速改走自己直连源的前提。
+    if (Date.now() < this.upstreamBreakerOpenUntil) {
+      return this.serveStaleOrTransient(gid, true);
+    }
+
     for (let attempt = 1; attempt <= this.MANIFEST_CODE_MAX_ATTEMPTS; attempt++) {
       if (attempt > 1) {
         await this.sleepCodeRetry(attempt);
@@ -1569,9 +1592,11 @@ export class ManifestService {
         const resp = await axios.get(`https://manifest.manifestdex.com/${gid}`, {
           timeout: this.MANIFEST_CODE_UPSTREAM_TIMEOUT_MS,
           responseType: 'text',
-          // 必须携带专用 UA：ManifestDeX 在 Cloudflare 之后，缺 UA 一律 403。
-          // 依据 OpenSteamTool PR #200 —— 上游只为 manifestdex 这个 provider
-          // 单独挂了 `User-Agent: ManifestDeX/1.0` 请求头。
+          // 必须**恰好**是这个 UA —— 实测这是 ManifestDeX 的准入闸门：
+          //   ManifestDeX/1.0 → 通过（429 说明已进限流窗口，不是被拒）
+          //   ChunFengDu/1.0 / Mozilla/5.0 / 空 → 一律 403
+          // 依据 OpenSteamTool PR #200：上游只为 manifestdex 这个 provider
+          // 单独挂了 `User-Agent: ManifestDeX/1.0`，其余 provider 都不带头。
           headers: { 'User-Agent': 'ManifestDeX/1.0' },
           // 不让 axios 对 4xx/5xx 抛异常：必须看到状态码才能区分
           // 「上游过载」与「这个 gid 确实没有码」
@@ -1581,6 +1606,7 @@ export class ManifestService {
           const text = resp.data.trim();
           if (/^\d+$/.test(text) && text !== '0') {
             this.setManifestCodeCache(gid, text);
+            this.upstreamBreakerOpenUntil = 0; // 成功即闭合熔断
             return { code: text, definitiveMiss: false, transient: false };
           }
           // 200 但内容不是码：上游明确回答「没有」，重试无意义
@@ -1597,8 +1623,15 @@ export class ManifestService {
           sawTransient = true;
           continue;
         }
-        if (resp.status === 429 || resp.status >= 500) {
-          // 限流 / 上游过载：可重试
+        if (resp.status === 429) {
+          // 限流：**不重试**。限流窗口不会在 3 秒退避内解除，重试只是再等一个
+          // 15 秒超时 —— 这是冷请求耗时 25~60 秒的主要来源。改为立刻跳出，
+          // 交给熔断把后续请求也一并快速失败。
+          sawTransient = true;
+          break;
+        }
+        if (resp.status >= 500) {
+          // 5xx 可能是瞬时抖动，值得重试一次
           sawTransient = true;
           continue;
         }
@@ -1618,11 +1651,29 @@ export class ManifestService {
     if (sawDefinitiveMiss && !sawTransient) {
       this.setNegativeCodeCache(gid);
     }
-    return {
-      code: null,
-      definitiveMiss: sawDefinitiveMiss && !sawTransient,
-      transient: sawTransient
-    };
+    if (sawTransient) {
+      this.upstreamBreakerOpenUntil = Date.now() + this.UPSTREAM_BREAKER_MS;
+      return this.serveStaleOrTransient(gid, true);
+    }
+    return { code: null, definitiveMiss: sawDefinitiveMiss, transient: false };
+  }
+
+  /**
+   * 上游不可用时的兜底：优先下发仍在 STALE 窗口内的旧码，否则才回 503。
+   *
+   * 旧码可用性有实测依据 —— content_log.txt 里同一 (depot,gid) 的历史码当时**都**
+   * 返回 200，轮换只是「新码生效」，并非「旧码作废」。所以旧码远比 503 有价值：
+   * 它能让下载立刻开始，而 503 会让 Steam 的下载流程停在那里等重试。
+   *
+   * 注意此处**不刷新** fetchedAt：旧码只是「能顶用」，不该被当成新鲜码再锁 5 分钟，
+   * 否则上游一恢复我们仍会继续用旧码。
+   */
+  private serveStaleOrTransient(gid: string, transient: boolean): ManifestCodeResult {
+    const stale = this.manifestCodeCache.get(gid);
+    if (stale && Date.now() - stale.fetchedAt < this.MANIFEST_CODE_STALE_MAX_MS) {
+      return { code: stale.code, definitiveMiss: false, transient: false };
+    }
+    return { code: null, definitiveMiss: false, transient };
   }
 
   /** 重试退避：优先读上游 Retry-After，缺失时按 3 秒递增 */
