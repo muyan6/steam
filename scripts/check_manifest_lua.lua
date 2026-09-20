@@ -219,18 +219,33 @@ if t429a ~= nil then
     print('FAIL: expected nil on 429, got ' .. tostring(t429a))
     os.exit(1)
 end
-local callsAfter429 = httpCalls - transientBefore
-_G.http_get = function()
-    httpCalls = httpCalls + 1
-    return nil, 429
-end
-local t429b = fetch_manifest_code('4000000000000000004')
-if t429b ~= nil then
-    print('FAIL: expected nil on second 429, got ' .. tostring(t429b))
+if (httpCalls - transientBefore) < 1 then
+    print('FAIL: expected at least 1 http_get on a cold 429')
     os.exit(1)
 end
-if (httpCalls - transientBefore) <= callsAfter429 then
-    print('FAIL: 429 must NOT be negative-cached (second call should retry the network)')
+
+-- 关键断言：429 绝不能写负缓存。
+--
+-- 注意这里**不能**再断言「第二次调用必须重发网络请求」—— 源级熔断(CFD_SRC_FAIL)
+-- 会把刚报过瞬时故障的源跳过 CFD_SRC_FAIL_TTL 秒，因此第二次调用很可能一个请求
+-- 都不发（那正是熔断的目的：不再为已知失效的源白等）。
+-- 真正要守的是「该 gid 没有被负缓存冻结」，直接查表即可，与调用次数无关。
+if CFD_CODE_FAIL['4000000000000000004'] ~= nil then
+    print('FAIL: 429 must NOT be negative-cached (CFD_CODE_FAIL was written)')
+    os.exit(1)
+end
+
+-- 而且要真的可重试：清掉熔断标记后，调用必须重新打网络（而不是被负缓存挡住）。
+CFD_SRC_FAIL['relay'] = nil
+CFD_SRC_FAIL['manifestdex'] = nil
+local retryBefore = httpCalls
+local t429b = fetch_manifest_code('4000000000000000004')
+if t429b ~= nil then
+    print('FAIL: expected nil on retry after breaker reset, got ' .. tostring(t429b))
+    os.exit(1)
+end
+if (httpCalls - retryBefore) < 1 then
+    print('FAIL: after clearing the source breaker, the network must be retried')
     os.exit(1)
 end
 print('TRANSIENT_NOT_NEGATIVE_CACHED_OK')
@@ -238,6 +253,9 @@ print('TRANSIENT_NOT_NEGATIVE_CACHED_OK')
 -- 中继 503 语义：中继在上游过载/超时时回 503（而非 404），客户端必须把它当瞬时故障。
 -- 背景：中继原先把所有失败一律回 404，客户端把 404 读作「权威源确认没有」并写
 -- 两分钟负缓存 —— 上游一次 429 抖动就这样被放大成「该 gid 两分钟内所有人都取不到码」。
+-- 先清掉上一段（429 测试）留下的源级熔断标记，否则这里一个请求都发不出去。
+CFD_SRC_FAIL['relay'] = nil
+CFD_SRC_FAIL['manifestdex'] = nil
 local s503Before = httpCalls
 _G.http_get = function()
     httpCalls = httpCalls + 1
@@ -248,14 +266,26 @@ if s503a ~= nil then
     print('FAIL: expected nil on 503, got ' .. tostring(s503a))
     os.exit(1)
 end
-local callsAfter503 = httpCalls - s503Before
-local s503b = fetch_manifest_code('5000000000000000005')
-if s503b ~= nil then
-    print('FAIL: expected nil on second 503')
+if (httpCalls - s503Before) < 1 then
+    print('FAIL: expected at least 1 http_get on a cold 503')
     os.exit(1)
 end
-if (httpCalls - s503Before) <= callsAfter503 then
+-- 与 429 同理：源级熔断会跳过刚报过瞬时的源，因此不能再断言「第二次必发请求」。
+-- 要守的是「该 gid 没被负缓存冻结」。
+if CFD_CODE_FAIL['5000000000000000005'] ~= nil then
     print('FAIL: 503 (relay transient signal) must NOT be negative-cached')
+    os.exit(1)
+end
+CFD_SRC_FAIL['relay'] = nil
+CFD_SRC_FAIL['manifestdex'] = nil
+local s503RetryBefore = httpCalls
+local s503b = fetch_manifest_code('5000000000000000005')
+if s503b ~= nil then
+    print('FAIL: expected nil on retry after breaker reset')
+    os.exit(1)
+end
+if (httpCalls - s503RetryBefore) < 1 then
+    print('FAIL: after clearing the breaker, 503 must be retried over the network')
     os.exit(1)
 end
 print('RELAY_503_TRANSIENT_NOT_NEGATIVE_CACHED_OK')
@@ -263,11 +293,16 @@ print('RELAY_503_TRANSIENT_NOT_NEGATIVE_CACHED_OK')
 -- 混合信号：中继回 404（说「没有」），直连却回 503（说「问不到」）。
 -- 只要有任何一源报瞬时故障，就说明我们**并不知道**这个 gid 有没有码 ——
 -- 此时绝不能写负缓存，否则一次上游抖动会冻结两分钟。
+-- 同样先清熔断：前一段 503 测试必然把它们全打开了。
+CFD_SRC_FAIL['relay'] = nil
+CFD_SRC_FAIL['manifestdex'] = nil
 local mixedBefore = httpCalls
 local mixedCall = 0
 _G.http_get = function()
     httpCalls = httpCalls + 1
     mixedCall = mixedCall + 1
+    -- 中继回 404（「确认没有」），直连回 503（「问不到」）—— 两种语义必须并存，
+    -- 才能验证「任一源报瞬时即阻断负缓存」这条规则。
     if mixedCall == 1 then return 'not-a-code', 404 end
     return nil, 503
 end
@@ -276,15 +311,18 @@ if mixedA ~= nil then
     print('FAIL: expected nil on mixed 404+503')
     os.exit(1)
 end
-local callsAfterMixed = httpCalls - mixedBefore
-local mixedB = fetch_manifest_code('6000000000000000006')
-if (httpCalls - mixedBefore) <= callsAfterMixed then
+-- 关键：只要有**任一**源报瞬时故障，就说明我们并不知道这个 gid 有没有码，
+-- 此时绝不能写负缓存。这里直接查表，不依赖调用次数（熔断会改变请求数）。
+if CFD_CODE_FAIL['6000000000000000006'] ~= nil then
     print('FAIL: transient on ANY source must block negative caching (mixed 404+503)')
     os.exit(1)
 end
 print('MIXED_SIGNAL_BLOCKS_NEGATIVE_CACHE_OK')
 
 -- 确认未命中（中继与直连都明确 404）才允许写负缓存。
+-- 必须先清熔断，否则请求发不出去，负缓存自然也不会被写 —— 断言会假通过。
+CFD_SRC_FAIL['relay'] = nil
+CFD_SRC_FAIL['manifestdex'] = nil
 local bothBefore = httpCalls
 _G.http_get = function()
     httpCalls = httpCalls + 1

@@ -101,6 +101,34 @@ if not CFD_CODE_FAIL then CFD_CODE_FAIL = {} end
 if not CFD_CODE_NEG_TTL then CFD_CODE_NEG_TTL = 120 end
 if not CFD_CODE_TTL then CFD_CODE_TTL = 900 end
 
+-- 源级熔断: name -> 最近一次瞬时故障时间戳。
+--
+-- 为什么必须有: 实测 2026-09-20 当天, 中继与 ManifestDeX 双双失效, 只有古韵的
+-- index.php 能出码。但三个源是**串行**试的 —— 每个分包都要先白等中继(0.2s)
+-- 再白等 ManifestDeX(0.65s), 才轮到能出码的那个。一个 35 分包的游戏, 19 个
+-- 未缓存分包 x 0.85s 的纯浪费 ≈ 16 秒。
+-- 有了它, 第一分包探明哪两个源是坏的, 后续分包直接跳过 —— 只剩 0.2s。
+-- 60 秒后自动重试, 上游恢复了不会被永久跳过。
+if not CFD_SRC_FAIL then CFD_SRC_FAIL = {} end
+if not CFD_SRC_FAIL_TTL then CFD_SRC_FAIL_TTL = 60 end
+
+-- 该源是否值得一试(未熔断)
+function cfd_src_ok(name)
+    local t = CFD_SRC_FAIL[name]
+    if not t then return true end
+    local now = cfd_now()
+    if now > 0 and (now - t) >= CFD_SRC_FAIL_TTL then
+        CFD_SRC_FAIL[name] = nil
+        return true
+    end
+    return false
+end
+
+-- 标记瞬时故障; 成功则清标记(见 cfd_src_ok 内部)
+function cfd_src_fail(name)
+    CFD_SRC_FAIL[name] = cfd_now()
+end
+
 -- 读正缓存: 命中且未过期才返回 code, 过期即清除并返回 nil
 function cfd_cache_get(gid)
     local entry = CFD_CODE_OK[gid]
@@ -186,24 +214,28 @@ function fetch_manifest_code_ex(app_id, depot_id, gid)
     -- 中继这一跳的 UA 只是自我标识, **不是**准入门槛 —— 实测中继是裸 nginx
     -- (响应头 Server: nginx, 无 cf-ray), 对空 UA / 任意 UA 一视同仁。
     -- 真正必须卡 UA 的是下面那个 ManifestDeX 直连。
-    body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid,
-                            {["User-Agent"] = "ChunFengDu/1.0"})
-    code = cfd_pick_code(body, status)
-    if code then cfd_cache_put(gid, code); return code end
-    if cfd_is_transient(status) then transient = true end
-    -- 中继的 404 语义是「它替我们问过权威源, 权威源说没有」, 属确认查不到;
-    -- 而中继在上游不可用时回 503(落到上面的 transient 分支)。两种语义必须
-    -- 分开, 否则一次上游抖动会被当成「该 gid 无码」并冻结两分钟。
-    if status == 404 then definitive_miss = true end
+    if cfd_src_ok("relay") then
+        body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid,
+                                {["User-Agent"] = "ChunFengDu/1.0"})
+        code = cfd_pick_code(body, status)
+        if code then cfd_cache_put(gid, code); return code end
+        if cfd_is_transient(status) then transient = true; cfd_src_fail("relay") end
+        -- 中继的 404 语义是「它替我们问过权威源, 权威源说没有」, 属确认查不到;
+        -- 而中继在上游不可用时回 503(落到上面的 transient 分支)。两种语义必须
+        -- 分开, 否则一次上游抖动会被当成「该 gid 无码」并冻结两分钟。
+        if status == 404 then definitive_miss = true end
+    end
 
     -- 第二优先级: ManifestDeX 清单代码直供源(直连兜底)。
     -- 该源经 Cloudflare 保护, 必须携带专用 User-Agent, 缺失会被返回 403 质询页。
-    body, status = http_get("https://manifest.manifestdex.com/" .. gid,
-                            {["User-Agent"] = "ManifestDeX/1.0"})
-    code = cfd_pick_code(body, status)
-    if code then cfd_cache_put(gid, code); return code end
-    if cfd_is_transient(status) then transient = true end
-    if status == 404 then definitive_miss = true end
+    if cfd_src_ok("manifestdex") then
+        body, status = http_get("https://manifest.manifestdex.com/" .. gid,
+                                {["User-Agent"] = "ManifestDeX/1.0"})
+        code = cfd_pick_code(body, status)
+        if code then cfd_cache_put(gid, code); return code end
+        if cfd_is_transient(status) then transient = true; cfd_src_fail("manifestdex") end
+        if status == 404 then definitive_miss = true end
+    end
 
     -- 第三优先级(末位兜底): 古韵自有码库。
     --
@@ -221,6 +253,9 @@ function fetch_manifest_code_ex(app_id, depot_id, gid)
     --
     -- 它用 502 + "error: all upstreams failed" 表示「我库里没有且上游也挂了」,
     -- 属**瞬时**语义, 因此只置 transient, 绝不写负缓存。
+    -- 注意: 这一源**不**参与源级熔断。它是末位兜底, 前两个源熔断时它就成了唯一
+    -- 能出码的路径 —— 若也把它熔断掉, 整条链就彻底哑了。它的接口实测 20 次连打
+    -- 全部 200 且零限流, 单次 0.2 秒, 代价可接受。
     if depot_id and depot_id ~= 0 and gid then
         body, status = http_get("https://gmrc.guyunsq.com/index.php/" .. depot_id .. "/" .. gid)
         code = cfd_pick_code(body, status)
