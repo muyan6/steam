@@ -1146,11 +1146,17 @@ export const createTauriBridge = () => {
     },
     activateLicense: async (code: string): Promise<any> => {
       const devId = await invoke<string>('get_device_id');
+      // 必须带超时熔断：plugin-http 没有默认超时，网络「半死」时
+      // （TCP 已连上但对端不响应）promise 永不 settle，激活按钮会永远转圈、
+      // 既不报错也不复位 —— 用户只能重启客户端。与 getLicenseInfo 保持一致。
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
       try {
         const resp = await httpFetch(`${API}/api/license/activate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, deviceId: devId })
+          body: JSON.stringify({ code, deviceId: devId }),
+          signal: ctrl.signal
         });
         const json = await resp.json();
         if (json?.success) {
@@ -1166,16 +1172,22 @@ export const createTauriBridge = () => {
         return { success: false, message: json?.message || '激活失败' };
       } catch (e: any) {
         return { success: false, message: `激活请求异常: ${e?.message || String(e)}` };
+      } finally {
+        clearTimeout(timer);
       }
     },
     // 换机迁移：凭赞助码 + 原设备码将绑定关系迁移到本机
     rebindLicense: async (code: string, oldDeviceId: string): Promise<any> => {
       const devId = await invoke<string>('get_device_id');
+      // 同上：无超时则「半死」网络下换机按钮永久转圈
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
       try {
         const resp = await httpFetch(`${API}/api/license/rebind`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, oldDeviceId, newDeviceId: devId })
+          body: JSON.stringify({ code, oldDeviceId, newDeviceId: devId }),
+          signal: ctrl.signal
         });
         const json = await resp.json();
         if (json?.success) {
@@ -1191,6 +1203,8 @@ export const createTauriBridge = () => {
         return { success: false, message: json?.message || '迁移失败' };
       } catch (e: any) {
         return { success: false, message: `迁移请求异常: ${e?.message || String(e)}` };
+      } finally {
+        clearTimeout(timer);
       }
     },
     unbindLicense: async (): Promise<any> => {
@@ -1235,11 +1249,15 @@ export const createTauriBridge = () => {
     /** 绑定邀请码：本机与邀请人各获得后台配置的天数（赞助版） */
     bindInviteCode: async (code: string): Promise<any> => {
       const devId = await invoke<string>('get_device_id');
+      // 同上：绑定邀请码同样需要超时熔断
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
       try {
         const resp = await httpFetch(`${API}/api/invite/bind`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, deviceId: devId })
+          body: JSON.stringify({ code, deviceId: devId }),
+          signal: ctrl.signal
         });
         const json = await resp.json();
         if (json?.success) {
@@ -1247,13 +1265,21 @@ export const createTauriBridge = () => {
           try {
             const ctrl = new AbortController();
             const timer = setTimeout(() => ctrl.abort(), 3500);
-            const verifyResp = await httpFetch(`${API}/api/license/verify`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ deviceId: devId }),
-              signal: ctrl.signal
-            });
-            clearTimeout(timer);
+            // 用精确类型而非 DOM 的 Response：plugin-http 的 fetch 返回自有类型，
+            // 直接标注 Response 会因结构不兼容而报错
+            let verifyResp: Awaited<ReturnType<typeof httpFetch>>;
+            try {
+              verifyResp = await httpFetch(`${API}/api/license/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deviceId: devId }),
+                signal: ctrl.signal
+              });
+            } finally {
+              // 必须在 finally 清理：上面抛错（超时/断网）时原先的
+              // clearTimeout 永远不会执行，3.5 秒定时器泄漏
+              clearTimeout(timer);
+            }
             const verifyJson = await verifyResp.json();
             if (verifyJson?.success && verifyJson?.data) {
               const str = JSON.stringify(verifyJson.data);
@@ -1267,6 +1293,8 @@ export const createTauriBridge = () => {
         return { success: false, message: json?.message || '邀请码绑定失败' };
       } catch (e: any) {
         return { success: false, message: `邀请码绑定请求异常: ${e?.message || String(e)}` };
+      } finally {
+        clearTimeout(timer);
       }
     },
 
@@ -1344,7 +1372,8 @@ export async function sendTauriHeartbeatNow(): Promise<void> {
         osVersion: `tauri ${navigator.platform || 'windows'}`,
         isActivated: !!(license && license.isActivated),
         licenseCode: license?.code
-      })
+      }),
+      // 心跳每 30 分钟一次：无超时的话，一次「半死」连接会让这个 promise\n      // 永久悬挂（30 分钟定时器仍会再发一次，形成累积的悬挂请求）\n      signal: AbortSignal.timeout(10000)
     });
   } catch {}
 }
