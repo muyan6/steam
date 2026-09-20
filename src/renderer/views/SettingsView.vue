@@ -474,21 +474,25 @@
           >
             <div class="font-bold text-sm text-slate-100 mb-1 flex items-center gap-2">
               <span>ManifestDeX 权威码源</span>
-              <span class="text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 font-bold border border-sky-500/30">唯一可用</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 font-bold border border-sky-500/30">官方主节点</span>
             </div>
             <div class="text-xs text-slate-400 font-mono break-all">manifest.manifestdex.com</div>
-            <div class="text-xs text-slate-500 mt-1.5 leading-relaxed">实测唯一与 Valve CDN 一致的码源，已由内核固定为默认节点</div>
+            <div class="text-xs text-slate-500 mt-1.5 leading-relaxed">OpenSteamTool 官方直连核心节点，已由系统固定为底层默认</div>
           </div>
 
           <div class="p-4 rounded-2xl border theme-card">
-            <div class="font-bold text-sm text-slate-300 mb-1">取码链路（内核固定顺序）</div>
+            <div class="font-bold text-sm text-slate-300 mb-1 flex items-center gap-2">
+              <span>完整取码链路 (4级平级容灾)</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">全部生效</span>
+            </div>
             <div class="text-xs text-slate-400 leading-relaxed space-y-1">
-              <div>1. 春风渡云端中继（带缓存与去重）</div>
+              <div>1. 春风渡云端中继（带缓存与单航班去重）</div>
               <div>2. ManifestDeX 权威源直连</div>
-              <div>3. 古韵自有码库 / 20770407.xyz（末位兜底）</div>
+              <div>3. 古韵自有码库（独立高速缓存源）</div>
+              <div>4. 20770407.xyz（独立平级冗余源）</div>
             </div>
             <div class="text-xs text-slate-500 mt-1.5 leading-relaxed">
-              顺序与熔断由 manifest.lua 调度器决定，不读取本项配置
+              全部 4 个源均独立生效；按顺序级联，遇到故障自动毫秒级下切兜底
             </div>
           </div>
         </div>
