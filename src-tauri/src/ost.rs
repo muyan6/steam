@@ -307,6 +307,32 @@ function fetch_manifest_code_ex(app_id, depot_id, gid)
         code = cfd_pick_code(body, status)
         if code then cfd_cache_put(gid, code); return code end
         if cfd_is_transient(status) then transient = true end
+
+        -- 第四优先级: 20770407.xyz —— 与古韵**同源数据**的第二条命。
+        --
+        -- 为什么加: 实测两源在同一 (depot,gid) 上返回**逐字节相同**的码
+        -- (10/10 组合一致), 且都对 Valve CDN 返回 200。它不提供任何新码 ——
+        -- 10 组里 0 组是古韵没有的。它唯一的价值是「古韵域名挂掉/被封时还有一个
+        -- 能出码的端点」, 即冗余而非覆盖。
+        --
+        -- 为什么排古韵之后: 古韵前置有缓存层(实测 X-Cache: HIT, 热请求 0.15 秒),
+        -- 而它恒为 ~1.0 秒(cf-cache-status: DYNAMIC, 不缓存)。快 7 倍, 没理由让慢的先行。
+        -- 另有迹象表明古韵是它的下游缓存(两源数据完全一致 + 古韵有 X-Cache 层),
+        -- 若该推断成立, 古韵上游断供时会报错, 那时这一跳正好顶上 —— 顺序恰好正确。
+        --
+        -- 接口同样是 (depot, gid) 联合键: 假 gid / 错 depot 一律 401 Unauthorized,
+        -- depot 为 0 或空返回 400 Invalid Depot ID。这也再次反证它不是转发
+        -- ManifestDeX(那边只认单个 gid)。
+        --
+        -- 401 语义要小心: 它表示「这个组合我库里没有」, 属**确认查不到**,
+        -- 不能当瞬时故障 —— 否则每次未收录的 gid 都要白等一轮重试。
+        -- 但也不写负缓存: 未收录 ≠ Steam 那边没有码, 我们仍有中继可以问。
+        if gid then
+            body, status = http_get("https://20770407.xyz/manifest/" .. depot_id .. "/" .. gid)
+            code = cfd_pick_code(body, status)
+            if code then cfd_cache_put(gid, code); return code end
+            if cfd_is_transient(status) then transient = true end
+        end
     end
 
     -- 已移除 wudrm / steamrun 两个第三方源。

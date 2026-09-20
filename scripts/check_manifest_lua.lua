@@ -362,6 +362,9 @@ must_find('definitive_miss', 'definitive_miss gate')
 must_find('cfd_is_transient', 'transient classifier')
 -- 403 必须被当作瞬时（Cloudflare 质询），否则一次质询会冻结该 gid 两分钟
 must_find('status == 403', '403 transient handling')
+-- 第四源：20770407.xyz。与古韵**同源数据**（实测 10/10 组合逐字节相同），
+-- 提供的是冗余而非覆盖 —— 古韵域名挂掉时还有一条能出码的路。
+must_find('20770407%.xyz/manifest', '20770407 endpoint')
 print('SECTION5_SOURCES_AND_HEADERS_OK')
 
 -- ===== 5. 关键源与请求头存在性 =====
@@ -407,6 +410,19 @@ if not guyunPos then
 end
 if guyunPos < dexPos then
     print('FAIL: Guyun fallback must come AFTER ManifestDeX (it is last-resort only)')
+    os.exit(1)
+end
+
+-- 20770407.xyz 必须排在古韵**之后**：两源数据完全相同（实测 10/10 逐字节一致），
+-- 但古韵前置有缓存层（X-Cache: HIT，热请求 0.15 秒），而它恒为 ~1.0 秒。
+-- 顺序反了就是每次都先付 1 秒去拿一个古韵 0.15 秒就能给的码。
+local p2077 = content:find('20770407.xyz/manifest', 1, true)
+if not p2077 then
+    print('FAIL: 20770407.xyz fallback endpoint missing')
+    os.exit(1)
+end
+if p2077 < guyunPos then
+    print('FAIL: 20770407.xyz must come AFTER Guyun (same data, but Guyun is cached/faster)')
     os.exit(1)
 end
 print('SOURCE_ORDER_OK')

@@ -1951,22 +1951,17 @@ export class ManifestService {
     // 下面这跳**不受熔断影响** —— 否则上游一挂，本中继就再也拿不到新码，
     // 码库只能吃老本，永远等不到恢复。
     //
-    // 末位兜底：第三方码库。两条路径，优先用带 depot_id 的那条。
-    //
-    // 背景：2026-09-20 ManifestDeX 的 manifest 子域整体 521（Cloudflare 连不上
-    // 源站，而其文档站与 api 子域同时 200），全链路取码断掉。
-    //
-    // 为什么优先 index.php/{depot}/{gid}：实测该接口按 (depot, gid) 联合键查
-    // 自有库，错 depot 或假 gid 一律 502（证明它在真的查表，不是无脑返回数字），
-    // 正确组合 200 且响应头 X-Cache: HIT。而 dex.php/{gid} 是实时聚合层，
-    // 上游全挂时它自己就回 502 "all upstreams failed" —— 现在正是这种情况。
-    // 所以有 depotId 时必须先试 index.php，否则等于主动去撞一个已知会失败的接口。
-    //
-    // 两者都以 502 表示「我库里没有且上游也挂了」，属**瞬时**语义，
-    // 因此只置瞬时标志，绝不写负缓存。
+    // 末位兜底：第三方码库。顺序按「先准后宽、先快后慢」：
+    //   ① 古韵 index.php —— 有缓存层（实测 X-Cache: HIT，热请求 0.15 秒）
+    //   ② 20770407.xyz  —— 与古韵**同源数据**（实测 10/10 组合逐字节相同），
+    //                      但恒为 ~1.0 秒且不缓存。放在古韵之后当第二条命：
+    //                      它不提供新码，只保证古韵域名挂掉时还有路可走。
+    //   ③ 古韵 dex.php  —— gid-only 实时聚合层，上游全挂时它自己就回 502。
+    //                      没有 depotId 时的最后选择。
     const guyunUrls: string[] = [];
     if (depotId && /^\d+$/.test(depotId)) {
       guyunUrls.push(`https://gmrc.guyunsq.com/index.php/${depotId}/${gid}`);
+      guyunUrls.push(`https://20770407.xyz/manifest/${depotId}/${gid}`);
     }
     guyunUrls.push(`https://gmrc.guyunsq.com/dex.php/${gid}`);
     for (const url of guyunUrls) {
@@ -2065,27 +2060,33 @@ export class ManifestService {
     let filled = 0;
     try {
       for (const t of targets) {
-        try {
-          const resp = await axios.get(
-            `https://gmrc.guyunsq.com/index.php/${t.depotId}/${t.gid}`,
-            {
+        // 两个同源端点轮流当备份：古韵有缓存层（热 0.15 秒）优先，
+        // 20770407.xyz 恒定 ~1.0 秒但可用性独立，古韵一挂就顶上。
+        // 两者数据逐字节相同（实测 10/10），所以谁先谁后只影响延迟，不影响结果。
+        for (const url of [
+          `https://gmrc.guyunsq.com/index.php/${t.depotId}/${t.gid}`,
+          `https://20770407.xyz/manifest/${t.depotId}/${t.gid}`
+        ]) {
+          try {
+            const resp = await axios.get(url, {
               timeout: this.MANIFEST_CODE_UPSTREAM_TIMEOUT_MS,
               responseType: 'text',
               validateStatus: () => true
+            });
+            if (resp.status === 200 && typeof resp.data === 'string') {
+              const code = resp.data.trim();
+              if (/^\d+$/.test(code) && code !== '0') {
+                // 注意这里用 setManifestCodeCache 而非 reportManifestCodes：
+                // 前者按 fetchedAt 直接覆盖（补码的目的就是刷新时间戳），
+                // 后者会跳过「不够新」的条目，正好与补码意图相反。
+                this.setManifestCodeCache(t.gid, code, t.depotId);
+                filled++;
+                break; // 拿到就够了，不必再问第二个端点
+              }
             }
-          );
-          if (resp.status === 200 && typeof resp.data === 'string') {
-            const code = resp.data.trim();
-            if (/^\d+$/.test(code) && code !== '0') {
-              // 注意这里用 setManifestCodeCache 而非 reportManifestCodes：
-              // 前者按 fetchedAt 直接覆盖（补码的目的就是刷新时间戳），
-              // 后者会跳过「不够新」的条目，正好与补码意图相反。
-              this.setManifestCodeCache(t.gid, code, t.depotId);
-              filled++;
-            }
+          } catch {
+            // 单条失败无所谓，下一轮还会再试；继续试下一个端点
           }
-        } catch {
-          // 单条失败无所谓，下一轮还会再试
         }
         await new Promise((r) => setTimeout(r, ManifestService.BACKFILL_GAP_MS));
       }

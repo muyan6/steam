@@ -1804,25 +1804,34 @@ async fn fetch_manifest_code_for_gid(
         }
     }
 
-    // 末位兜底：古韵自有码库（与 Lua 侧同序）。
+    // 末位兜底：古韵自有码库 + 20770407.xyz（与 Lua 侧同序）。
     //
-    // 为什么预取也要接这一跳：预取的价值就是「让首次下载零网络往返」。
+    // 为什么预取也要接这两跳：预取的价值就是「让首次下载零网络往返」。
     // 若只有 Lua 侧接而预取不接，上游挂掉时预取会全空 —— 首次下载又退化成
     // 逐分包现场取码，正是我们想消除的那条最慢路径。
+    //
+    // 两源的定位不同：
+    //   古韵 —— 前置有缓存层（实测 X-Cache: HIT，热请求 0.15 秒），首选
+    //   20770407.xyz —— 与古韵**同源数据**（实测 10/10 组合逐字节相同），
+    //                    但恒为 ~1.0 秒且不缓存。它不提供新码，只是「古韵挂掉时
+    //                    还有一条能出码的路」，即冗余而非覆盖。
+    // 顺序不能反：慢的没理由排在快的前面。
     if depot_id != 0 && !gid.is_empty() {
-        let fb = http_client()
-            .get(format!(
-                "https://gmrc.guyunsq.com/index.php/{}/{}",
-                depot_id, gid
-            ))
-            .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
-            .send()
-            .await;
-        if let Ok(resp) = fb {
-            if resp.status().is_success() {
-                if let Ok(text) = resp.text().await {
-                    if let Some(code) = pick_manifest_code(&text) {
-                        return Some(code);
+        for url in [
+            format!("https://gmrc.guyunsq.com/index.php/{}/{}", depot_id, gid),
+            format!("https://20770407.xyz/manifest/{}/{}", depot_id, gid),
+        ] {
+            let fb = http_client()
+                .get(url)
+                .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
+                .send()
+                .await;
+            if let Ok(resp) = fb {
+                if resp.status().is_success() {
+                    if let Ok(text) = resp.text().await {
+                        if let Some(code) = pick_manifest_code(&text) {
+                            return Some(code);
+                        }
                     }
                 }
             }
