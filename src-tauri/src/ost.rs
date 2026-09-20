@@ -90,11 +90,33 @@ pub const MANIFEST_LUA: &str = r#"-- ===== 清单请求码调度器 (由春风�
 
 -- 正缓存 gid -> {code=..., ts=...}。Steam 会针对同一 GID 反复查询(重试/续传/多分包共用),
 -- 缓存能把重复请求降为 0 次网络往返。
--- 但**不能永久缓存**: 实测同一 depot+gid 的清单请求码会随时间轮换 ——
--- gid 2613374344895573127 在一小时内从 16792007641517249214 变成 1790064358646451831。
--- 旧实现写死「同一次 Steam 运行期内永久复用」, 一旦码轮换, 缓存的旧码会让后续
--- 所有分包都拉不到清单, 表现为入库即报「无网络连接」且只有重启 Steam 才可能恢复。
--- 故给正缓存加 TTL, 过期后重新取码。
+--
+-- 这里必须区分两个完全不同的概念, 混为一谈会得出错误的缓存策略:
+--
+--   * GID (manifest id) = Valve 为某个 depot 的文件树结构算出的内容指纹。
+--     **只在 depot 内容真正更新时才变**, 是稳定值。实测本机 content_log 里
+--     115 个 depot 中有 92 个在 17 天内 gid 一次未变; 变化的那些(如 depot 250900
+--     出现 11 个 gid)确实是对应游戏发过版本更新。
+--     推论: 用旧 gid 只会下到旧版本内容, 但**仍然下得动** —— 不会失败。
+--
+--   * CODE (清单请求码 / GMRC) = Steam 服务端签发的下载授权凭据。
+--     **它与 gid 无关地按时间轮换** —— 实测 depot 281992 / gid 3306222774754384885
+--     的码在 08:44~09:12 的 28 分钟里换了 6 次(约 5~6 分钟一次), 而 gid 全程未变:
+--       08:44:02 12091008303184869312
+--       08:49:10  4290150583116450900
+--       08:56:12  8718528965540727549
+--       09:01:39  5935441427713080969
+--       09:06:30 15707427750034045965
+--       09:12:38   248109835839928064
+--
+-- 所以「不能永久缓存」针对的是 **code**, 不是 gid。旧实现把 (gid, code) 绑定
+-- 写死成「同一次 Steam 运行期内永久复用」, 码一轮换缓存就交出旧码, 后续所有
+-- 分包都拉不到清单 —— 表现为入库即报「无网络连接」且只有重启 Steam 才可能恢复。
+-- 故给正缓存加 TTL, 过期后重新取码; 而 gid 本身可以放心长期持有。
+--
+-- 反过来, 旧 code 并非立刻作废: 同一日志里所有历史码当时**都**返回了 200。
+-- 这正是末位兜底与持久化码库能成立的基础。
+if not CFD_CODE_OK then CFD_CODE_OK = {} end
 if not CFD_CODE_OK then CFD_CODE_OK = {} end
 -- 负缓存 gid -> 失败时间戳。短期抑制, 避免同一 GID 反复空等各源超时。
 if not CFD_CODE_FAIL then CFD_CODE_FAIL = {} end
@@ -182,6 +204,10 @@ end
 -- 它的接口是 index.php/{depot_id}/{gid}, 只有 gid 根本查不了。
 -- 而 Steam 调哪个签名取决于内核版本: 新版给 _ex, 老版只给 fetch_manifest_code。
 -- 因此保留两个全局函数, 单参数那个把 depot_id 置 0 后转调 _ex。
+--
+-- 注意缓存键是 gid 而非 depot_id+gid: 内核回调时 gid 是唯一稳定的标识,
+-- 且实测未观察到同一 gid 被两个 depot 共用的情况。depot_id 只用于末位兜底源
+-- 的联合键查询, 不参与缓存。
 function fetch_manifest_code_ex(app_id, depot_id, gid)
     local cached = cfd_cache_get(gid)
     if cached then return cached end
@@ -215,7 +241,15 @@ function fetch_manifest_code_ex(app_id, depot_id, gid)
     -- (响应头 Server: nginx, 无 cf-ray), 对空 UA / 任意 UA 一视同仁。
     -- 真正必须卡 UA 的是下面那个 ManifestDeX 直连。
     if cfd_src_ok("relay") then
-        body, status = http_get("https://steam.myil.top/api/manifests/code/" .. gid,
+        -- 带上 depot_id: 中继的末位兜底源有两条路径, index.php/{depot}/{gid} 按
+        -- (depot, gid) 联合键查自有库(实测正确组合 200, 错 depot 一律 502),
+        -- 而 dex.php/{gid} 是实时聚合层(上游全挂时它自己就回 502)。
+        -- 不传 depot_id 时中继只能退到后者 —— 在上游挂掉的当下等于必然失败。
+        local relay_url = "https://steam.myil.top/api/manifests/code/" .. gid
+        if depot_id and depot_id ~= 0 then
+            relay_url = relay_url .. "?depotId=" .. depot_id
+        end
+        body, status = http_get(relay_url,
                                 {["User-Agent"] = "ChunFengDu/1.0"})
         code = cfd_pick_code(body, status)
         if code then cfd_cache_put(gid, code); return code end

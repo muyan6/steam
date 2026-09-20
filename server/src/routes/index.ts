@@ -11,7 +11,13 @@ import {
   getMetadataIndexAdmin
 } from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
-import { getManifestsForApp, downloadManifestFile, getManifestCode } from '../controllers/manifestController.js';
+import {
+  getManifestsForApp,
+  downloadManifestFile,
+  getManifestCode,
+  reportManifestCodes,
+  getManifestCodeStats
+} from '../controllers/manifestController.js';
 import { manifestService } from '../services/manifestService.js';
 import { getLatestOstRelease, downloadOstAsset } from '../controllers/ostController.js';
 import {
@@ -358,6 +364,32 @@ const manifestCodeLimiter = rateLimit({
   skip: (req) => manifestService.hasFreshCode(String(req.params.gid || '')),
   message: { success: false, message: '清单代码查询过于频繁，请稍后再试' }
 });
+// 注意：这两条**必须**排在 `/manifests/code/:gid` 之前。
+// Express 按注册顺序匹配，否则 GET /manifests/code/stats 会先命中 :gid，
+// 而 "stats" 不是纯数字，会被参数校验挡成 400 —— 路由静默失效。
+// 码库概览：只回条数等统计，不暴露任何具体码值，供后台诊断
+router.get('/manifests/code/stats', getManifestCodeStats);
+
+// 客户端上报取码结果 —— 码库最重要的数据来源。
+//
+// 为什么由客户端上报而不是服务端自己扒：古韵的接口按 (depot, gid) 查询，
+// 服务端要主动扒就得先枚举全部组合；虽然 gid 稳定（只在 depot 内容更新时才变）
+// 使枚举可行，但**集中从一个出口 IP 高频请求第三方服务**极易触发风控 ——
+// 封的是服务器，沉淀管道就断了。
+// 客户端上报天然分散：每个用户入库时本来就已经取到了这些码，顺手回传即可，
+// 服务端零额外出网流量。用户越多覆盖越全。
+//
+// 限流放宽到 600/分钟：一个 35 分包的游戏一次入库就上报 35 条，若压到 120
+// 会让正常用户直接撞墙；但也不能不设，否则码库可被任意灌数据。
+const manifestReportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '上报过于频繁，请稍后再试' }
+});
+router.post('/manifests/code/report', manifestReportLimiter, reportManifestCodes);
+
 router.get('/manifests/code/:gid', manifestCodeLimiter, getManifestCode);
 
 // OST 内核中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）

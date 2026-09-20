@@ -74,7 +74,13 @@ export const getManifestCode = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '无效的 GID' });
     }
 
-    const result = await manifestService.getManifestCode(gid);
+    // depotId 可选。带上它有两个好处：① 末位兜底源能走更准的 index.php/{depot}/{gid}
+    // 而不是已知会失败的 dex.php/{gid}；② 填充 depot→gid 索引，供后续主动补码枚举。
+    // 老版内核回调只给 gid，所以它必须可选 —— 缺了也要能正常取码。
+    const rawDepot = Array.isArray(req.query.depotId) ? req.query.depotId[0] : req.query.depotId;
+    const depotId = rawDepot ? String(rawDepot).trim() : undefined;
+
+    const result = await manifestService.getManifestCode(gid, depotId);
     const code = result.code;
 
     if (!code) {
@@ -94,12 +100,66 @@ export const getManifestCode = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '未找到清单请求代码' });
     }
 
+    // stale 提示：这个码来自过期缓存（上游当下取不到，用旧码顶上）。
+    //
+    // 它**不代表内容版本旧** —— code 只是下载凭据，内容版本由 gid 决定，
+    // 而 gid 只在 depot 内容更新时才变。旧 code 配当前 gid 拉到的仍是当前版本。
+    // 真实含义是「这个码可能已失效」：Steam 拿它拉不到清单时会自己重试。
+    // 暴露出来是为了排障可观测，不是版本提示。
+    const stale = result.stale === true;
+    if (stale) res.setHeader('X-Manifest-Code-Stale', '1');
+
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
-      return res.json({ success: true, gid, code });
+      return res.json({ success: true, gid, code, stale });
     }
     return res.type('text/plain').send(code);
   } catch (e) {
     console.error('[ManifestController] 获取清单代码异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+};
+
+/**
+ * 客户端上报取码结果 —— 码库最重要的数据来源。
+ *
+ * 设计要点：
+ * - **幂等且只增不减**：同一 (depot, gid) 重复上报只刷新时间戳，不产生副作用。
+ * - **不信任任何字段**：逐条校验纯数字，脏数据丢弃而不是整批失败。
+ * - **不覆盖更新的码**：客户端可能跑了几分钟才上报，期间服务端已取到更晚的码；
+ *   那种情况下保留服务端自己的（更新），丢弃上报的（更旧）。
+ * - **永不返回错误码影响业务**：上报是纯增益的旁路，失败也不该让客户端入库失败，
+ *   所以除参数明显非法外一律 200。
+ */
+export const reportManifestCodes = async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    const rawList = Array.isArray(body) ? body : body?.codes;
+    if (!Array.isArray(rawList)) {
+      return res.status(400).json({ success: false, message: '请求体应为数组或 { codes: [...] }' });
+    }
+    // 单次上报上限：防止被当作任意写入的入口塞爆码库
+    const list = rawList.slice(0, 500);
+    const result = manifestService.reportManifestCodes(
+      list.map((e: any) => ({
+        depotId: String(e?.depotId ?? ''),
+        gid: String(e?.gid ?? ''),
+        code: String(e?.code ?? '')
+      }))
+    );
+    // 只接受 depotId 是数字的条目；非数字的计入 rejected 并已丢弃
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error('[ManifestController] 上报清单代码异常:', e);
+    res.status(500).json({ success: false, message: '服务器内部错误' });
+  }
+};
+
+/** 码库概览（诊断用，不暴露任何具体码值） */
+export const getManifestCodeStats = async (_req: Request, res: Response) => {
+  try {
+    res.json({ success: true, ...manifestService.getCodeStoreStats() });
+  } catch (e) {
+    console.error('[ManifestController] 码库统计异常:', e);
     res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };

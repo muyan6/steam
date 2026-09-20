@@ -6,6 +6,7 @@ import apiRouter from './routes/index.js';
 import { syncService } from './services/syncService.js';
 import { onlineRulesSyncService } from './services/onlineRulesSyncService.js';
 import { depotService } from './services/depotService.js';
+import { manifestService } from './services/manifestService.js';
 import { gameService } from './services/gameService.js';
 import { sourceRegistryService } from './services/sourceRegistryService.js';
 import { noticeService } from './services/noticeService.js';
@@ -1423,6 +1424,13 @@ const server = app.listen(CONFIG.PORT, CONFIG.HOST, () => {
   syncService.startScheduledDailySync();
   // 启动 SteamDB / Steam 双榜热门游戏联机规则同步引擎
   onlineRulesSyncService.startScheduledSync();
+  // 启动低频清单码补全循环。
+  //
+  // 每 10 分钟一轮、每轮最多 8 条、条间隔 1.5 秒 —— 即约 0.8 条/分钟的极低速率。
+  // 这个节奏是刻意的：第三方接口现在完全不设防（UA 不校验、20 次连打零限流），
+  // 但那是针对**分散的客户端 IP**。服务端只有一个出口 IP，打太快必被封，
+  // 封了沉淀管道就断了。主力始终是客户端上报，这里只补长尾。
+  manifestService.startBackfillLoop(10 * 60 * 1000);
 });
 
 // 端口占用等启动错误给出友好提示

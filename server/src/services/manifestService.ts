@@ -68,6 +68,16 @@ export interface ManifestCodeResult {
   definitiveMiss: boolean;
   /** 至少一轮遇到上游过载/超时/质询 —— 必须回 503，让客户端立刻重试 */
   transient: boolean;
+  /**
+   * 这个码来自过期缓存（上游当下取不到，用旧码顶用）。
+   *
+   * 注意它**不代表内容版本旧**：code 只是下载凭据，内容版本由 gid 决定，
+   * 而 gid 只在 depot 内容更新时才变。用旧 code 配当前 gid，拉到的仍是当前版本。
+   * 实测同一 (depot,gid) 的历史码当时全部返回 200，所以它的真实含义是
+   * 「这个码可能已失效，Steam 若拉不到会自己重试」，而不是「下到旧版本」。
+   * 新鲜码命中时为 false / 缺省。
+   */
+  stale?: boolean;
 }
 
 export interface AppManifestResult {
@@ -1463,21 +1473,61 @@ export class ManifestService {
    */
   private static readonly CODE_STORE_STALE_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 
+  /**
+   * depotId -> 该 depot 最近一次见到的 gid 集合。
+   *
+   * 为什么需要它：gid 是 Valve 为 depot 内容算出的内容指纹，**只在 depot 内容
+   * 真正更新时才变**（实测 17 天内 115 个 depot 里 92 个 gid 一次未变；变的那
+   * 23 个确实发过版本更新）。所以 (depotId, gid) 是一个**缓慢增长且可枚举**的
+   * 集合 —— 这正是「主动补码」能成立的前提：不需要遍历整个 Steam 目录，
+   * 只要覆盖真实被请求过的 depot 即可。
+   *
+   * 它由客户端上报与实时取码两条路径共同填充，随码库一起落盘。
+   */
+  private depotGidIndex = new Map<string, Set<string>>();
+
   private loadCodeStore(): void {
     try {
       if (!fs.existsSync(this.manifestCodeStorePath)) return;
       const raw = fs.readFileSync(this.manifestCodeStorePath, 'utf-8');
-      const parsed = JSON.parse(raw) as Record<string, { code: string; fetchedAt: number }>;
+      const parsed = JSON.parse(raw) as {
+        codes?: Record<string, { code: string; fetchedAt: number; depotId?: string }>;
+        depots?: Record<string, string[]>;
+      };
+      // 兼容旧格式（顶层直接就是 gid -> entry 的扁平对象）。
+      // 显式标注类型而不是靠 ?? 推导：两个分支的元素类型不同（旧格式没有 depotId），
+      // 推导出来是联合类型，后面读 entry.depotId 会报 TS2339。
+      const codes: Record<string, { code: string; fetchedAt: number; depotId?: string }> =
+        parsed.codes ?? (parsed as unknown as Record<string, { code: string; fetchedAt: number; depotId?: string }>);
       const now = Date.now();
       let loaded = 0;
-      for (const [gid, entry] of Object.entries(parsed)) {
+      let expired = 0;
+      for (const [gid, entry] of Object.entries(codes)) {
         if (!entry || typeof entry.code !== 'string' || !/^\d+$/.test(entry.code)) continue;
         if (typeof entry.fetchedAt !== 'number') continue;
-        if (now - entry.fetchedAt >= ManifestService.CODE_STORE_STALE_MAX_MS) continue;
-        this.manifestCodeCache.set(gid, { code: entry.code, fetchedAt: entry.fetchedAt });
+        if (now - entry.fetchedAt >= ManifestService.CODE_STORE_STALE_MAX_MS) {
+          expired++;
+          continue;
+        }
+        this.manifestCodeCache.set(gid, {
+          code: entry.code,
+          fetchedAt: entry.fetchedAt,
+          depotId: typeof entry.depotId === 'string' ? entry.depotId : undefined
+        });
         loaded++;
       }
-      console.log(`[ManifestService] 码库已载入 ${loaded} 条（文件共 ${Object.keys(parsed).length} 条）`);
+      for (const [depotId, gids] of Object.entries(parsed.depots ?? {})) {
+        if (!Array.isArray(gids)) continue;
+        const set = new Set<string>();
+        for (const g of gids) {
+          if (typeof g === 'string' && /^\d+$/.test(g) && this.manifestCodeCache.has(g)) set.add(g);
+        }
+        if (set.size > 0) this.depotGidIndex.set(depotId, set);
+      }
+      console.log(
+        `[ManifestService] 码库已载入 ${loaded} 条（过期丢弃 ${expired}）｜` +
+          `depot 索引 ${this.depotGidIndex.size} 个`
+      );
     } catch (e) {
       console.warn('[ManifestService] 码库载入失败（不影响运行）:', e);
     }
@@ -1510,11 +1560,21 @@ export class ManifestService {
         entries.sort((a, b) => b[1].fetchedAt - a[1].fetchedAt);
         entries.length = ManifestService.CODE_STORE_MAX;
       }
-      const obj: Record<string, { code: string; fetchedAt: number }> = {};
-      for (const [gid, entry] of entries) obj[gid] = entry;
+      const codes: Record<string, { code: string; fetchedAt: number; depotId?: string }> = {};
+      for (const [gid, entry] of entries) {
+        codes[gid] = entry.depotId
+          ? { code: entry.code, fetchedAt: entry.fetchedAt, depotId: entry.depotId }
+          : { code: entry.code, fetchedAt: entry.fetchedAt };
+      }
+      // depot 索引只保留仍在码库里的 gid，避免文件随淘汰无限增长
+      const depots: Record<string, string[]> = {};
+      for (const [depotId, gids] of this.depotGidIndex) {
+        const alive = [...gids].filter((g) => codes[g] !== undefined);
+        if (alive.length > 0) depots[depotId] = alive;
+      }
 
       const tmp = this.manifestCodeStorePath + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(obj), 'utf-8');
+      fs.writeFileSync(tmp, JSON.stringify({ codes, depots }), 'utf-8');
       fs.renameSync(tmp, this.manifestCodeStorePath);
       this.codeStoreDirty = false;
     } catch (e) {
@@ -1522,7 +1582,114 @@ export class ManifestService {
     }
   }
 
-  private manifestCodeCache = new Map<string, { code: string; fetchedAt: number }>();
+  /** 记录 depot 与 gid 的归属关系（供主动补码枚举，不影响取码路径） */
+  private indexDepotGid(depotId: string, gid: string): void {
+    if (!depotId || !/^\d+$/.test(depotId)) return;
+    let set = this.depotGidIndex.get(depotId);
+    if (!set) {
+      set = new Set<string>();
+      this.depotGidIndex.set(depotId, set);
+    }
+    if (!set.has(gid)) {
+      set.add(gid);
+      this.markCodeStoreDirty();
+    }
+  }
+
+  /**
+   * 客户端上报取码结果 —— 这是码库最重要的数据来源。
+   *
+   * 为什么不让服务端自己去扒：古韵的接口按 (depot, gid) 查询，服务端要主动
+   * 扒就得先枚举出全部组合。虽然 gid 稳定（只在 depot 内容更新时才变）使枚举
+   * 可行，但**集中从一个出口 IP 高频请求第三方服务**极易触发风控 —— 封的是
+   * 服务器，沉淀管道就断了。
+   *
+   * 客户端上报天然分散：每个用户入库时本来就已经取到了这些码，顺手回传即可，
+   * 服务端零额外出网流量。用户越多覆盖越全，且完全不受单一来源的限制。
+   *
+   * 只接受 (depotId, gid, code) 三元组，逐条校验；不合法的直接丢弃，
+   * 绝不因为一条脏数据让整批失败。
+   */
+  public reportManifestCodes(
+    entries: Array<{ depotId: string; gid: string; code: string }>
+  ): { accepted: number; rejected: number } {
+    let accepted = 0;
+    let rejected = 0;
+    const now = Date.now();
+    for (const e of entries) {
+      const depotId = String(e?.depotId ?? '').trim();
+      const gid = String(e?.gid ?? '').trim();
+      const code = String(e?.code ?? '').trim();
+      if (!/^\d+$/.test(depotId) || !/^\d+$/.test(gid) || !/^\d+$/.test(code) || code === '0') {
+        rejected++;
+        continue;
+      }
+      this.indexDepotGid(depotId, gid);
+      const cur = this.manifestCodeCache.get(gid);
+      // 不覆盖更新的码：上报可能来自跑了几分钟的旧会话
+      if (cur && cur.fetchedAt >= now) continue;
+      this.manifestCodeCache.set(gid, { code, fetchedAt: now, depotId });
+      // 上报是对「确认存在」的正向证据，清掉可能存在的负缓存
+      this.negativeCodeCache.delete(gid);
+      accepted++;
+    }
+    if (accepted > 0) this.markCodeStoreDirty();
+    return { accepted, rejected };
+  }
+
+  /** 该 gid 当前是否只有过期码（供 controller 决定是否加 stale 响应头） */
+  public getCodeStaleness(gid: string): { hasCode: boolean; stale: boolean; ageMs: number } {
+    const e = this.manifestCodeCache.get(gid);
+    if (!e) return { hasCode: false, stale: false, ageMs: 0 };
+    const ageMs = Date.now() - e.fetchedAt;
+    return { hasCode: true, stale: ageMs >= this.MANIFEST_CODE_TTL_MS, ageMs };
+  }
+
+  /** 码库概览（供后台诊断，不暴露任何具体码值） */
+  public getCodeStoreStats(): {
+    total: number;
+    fresh: number;
+    depots: number;
+    indexEntries: number;
+  } {
+    const now = Date.now();
+    let fresh = 0;
+    for (const v of this.manifestCodeCache.values()) {
+      if (now - v.fetchedAt < this.MANIFEST_CODE_TTL_MS) fresh++;
+    }
+    let indexEntries = 0;
+    for (const s of this.depotGidIndex.values()) indexEntries += s.size;
+    return {
+      total: this.manifestCodeCache.size,
+      fresh,
+      depots: this.depotGidIndex.size,
+      indexEntries
+    };
+  }
+
+  /**
+   * 列出「已知但码已不新鲜」的 (depotId, gid) 组合，供低频主动补码使用。
+   *
+   * 只返回真实被请求过、且 gid 仍在索引里的组合 —— 绝不遍历整个 Steam 目录。
+   * 按码龄从旧到新排序：越旧的越可能已轮换，补它收益最高。
+   */
+  public listStaleCodeTargets(limit: number): Array<{ depotId: string; gid: string; ageMs: number }> {
+    const now = Date.now();
+    const out: Array<{ depotId: string; gid: string; ageMs: number }> = [];
+    for (const [depotId, gids] of this.depotGidIndex) {
+      for (const gid of gids) {
+        const entry = this.manifestCodeCache.get(gid);
+        if (!entry) continue;
+        const ageMs = now - entry.fetchedAt;
+        if (ageMs < this.MANIFEST_CODE_TTL_MS) continue;
+        out.push({ depotId, gid, ageMs });
+      }
+    }
+    out.sort((a, b) => b.ageMs - a.ageMs);
+    return out.slice(0, Math.max(0, limit));
+  }
+
+  private manifestCodeCache = new Map<string, { code: string; fetchedAt: number; depotId?: string }>();
   // 缓存时长：请求码确实会随时间轮换 —— 从本机 Steam 日志解析出的 158 个
   // (depot,gid) 组合里有 34 个先后出现过多个不同值，最频繁的
   // depot 281992 / gid 3306222774754384885 在 28 分钟内换了 6 个码
@@ -1566,8 +1733,9 @@ export class ManifestService {
   private readonly MANIFEST_CODE_STALE_MAX_MS = 30 * 60 * 1000;
 
   /** 写入清单代码缓存，并在超限时清理过期项/按插入序淘汰 */
-  private setManifestCodeCache(gid: string, code: string): void {
-    this.manifestCodeCache.set(gid, { code, fetchedAt: Date.now() });
+  private setManifestCodeCache(gid: string, code: string, depotId?: string): void {
+    this.manifestCodeCache.set(gid, { code, fetchedAt: Date.now(), depotId });
+    if (depotId) this.indexDepotGid(depotId, gid);
     this.markCodeStoreDirty();
     if (this.manifestCodeCache.size <= this.MANIFEST_CODE_CACHE_MAX) return;
     const now = Date.now();
@@ -1626,12 +1794,15 @@ export class ManifestService {
    * 「权威源确认没有」与「上游暂时问不到」，否则会把一次 429 抖动翻译成 404、
    * 再被客户端固化成两分钟负缓存。
    */
-  public async getManifestCode(gid: string): Promise<ManifestCodeResult> {
+  public async getManifestCode(gid: string, depotId?: string): Promise<ManifestCodeResult> {
     if (!gid || !/^\d+$/.test(gid)) {
       // 非法 gid 是**请求方**错误（controller 已在更外层回 400），
       // 这里报 definitiveMiss 只是为了让返回值语义完整，不会真的写负缓存。
       return { code: null, definitiveMiss: true, transient: false };
     }
+    // depotId 是可选的：内核老版本回调只给 gid，不带它也要能正常工作。
+    // 带上它的唯一好处是填 depot 索引，供后续主动补码枚举。
+    if (depotId && /^\d+$/.test(depotId)) this.indexDepotGid(depotId, gid);
 
     // 0. 优先命中内存缓存
     const cached = this.manifestCodeCache.get(gid);
@@ -1650,7 +1821,7 @@ export class ManifestService {
     const running = this.manifestCodeInFlight.get(gid);
     if (running) return running;
 
-    const task = this.fetchManifestCodeFromUpstream(gid);
+    const task = this.fetchManifestCodeFromUpstream(gid, depotId);
     this.manifestCodeInFlight.set(gid, task);
     try {
       return await task;
@@ -1674,7 +1845,7 @@ export class ManifestService {
    * 固化成 CFD_CODE_NEG_TTL(120s) 负缓存 —— 该 gid 在两分钟内对**所有**客户端
    * 都取不到码。这正是「第一次点下载报无网络、等一两分钟再点才行」的完整链路。
    */
-  private async fetchManifestCodeFromUpstream(gid: string): Promise<ManifestCodeResult> {
+  private async fetchManifestCodeFromUpstream(gid: string, depotId?: string): Promise<ManifestCodeResult> {
     let sawDefinitiveMiss = false;
     let sawTransient = false;
 
@@ -1749,37 +1920,50 @@ export class ManifestService {
       }
     }
 
-    // ManifestDeX 拿不到 → 末位兜底：古韵的 gid-only 聚合接口。
+    // 熔断期间若手里有旧码，前面已经返回；走到这里说明码库也没有。
+    // 下面这跳**不受熔断影响** —— 否则上游一挂，本中继就再也拿不到新码，
+    // 码库只能吃老本，永远等不到恢复。
+    //
+    // 末位兜底：第三方码库。两条路径，优先用带 depot_id 的那条。
     //
     // 背景：2026-09-20 ManifestDeX 的 manifest 子域整体 521（Cloudflare 连不上
-    // 源站，而其文档站与 api 子域同时 200），全链路取码断掉。客户端 Lua 侧已有
-    // 带 depot_id 的 index.php 兜底（那个更准），但客户端的第一跳是本中继 ——
-    // 中继若只会回 503，客户端就得先空等一次才轮到自己的兜底。
+    // 源站，而其文档站与 api 子域同时 200），全链路取码断掉。
     //
-    // 这里用 dex.php（gid-only）：本端点没有 depot_id 可传，index.php 需要它。
-    // dex.php 是实时聚合接口，上游全挂时它自己回 502 + "all upstreams failed" ——
-    // 那正是 transient，所以只置瞬时标志，绝不写负缓存。
-    // 排最后：ManifestDeX 一恢复就完全不走这里。
-    try {
-      const fb = await axios.get(`https://gmrc.guyunsq.com/dex.php/${gid}`, {
-        timeout: this.MANIFEST_CODE_UPSTREAM_TIMEOUT_MS,
-        responseType: 'text',
-        validateStatus: () => true
-      });
-      if (fb.status === 200 && typeof fb.data === 'string') {
-        const t = fb.data.trim();
-        if (/^\d+$/.test(t) && t !== '0') {
-          this.setManifestCodeCache(gid, t);
-          this.upstreamBreakerOpenUntil = 0;
-          return { code: t, definitiveMiss: false, transient: false };
+    // 为什么优先 index.php/{depot}/{gid}：实测该接口按 (depot, gid) 联合键查
+    // 自有库，错 depot 或假 gid 一律 502（证明它在真的查表，不是无脑返回数字），
+    // 正确组合 200 且响应头 X-Cache: HIT。而 dex.php/{gid} 是实时聚合层，
+    // 上游全挂时它自己就回 502 "all upstreams failed" —— 现在正是这种情况。
+    // 所以有 depotId 时必须先试 index.php，否则等于主动去撞一个已知会失败的接口。
+    //
+    // 两者都以 502 表示「我库里没有且上游也挂了」，属**瞬时**语义，
+    // 因此只置瞬时标志，绝不写负缓存。
+    const guyunUrls: string[] = [];
+    if (depotId && /^\d+$/.test(depotId)) {
+      guyunUrls.push(`https://gmrc.guyunsq.com/index.php/${depotId}/${gid}`);
+    }
+    guyunUrls.push(`https://gmrc.guyunsq.com/dex.php/${gid}`);
+    for (const url of guyunUrls) {
+      try {
+        const fb = await axios.get(url, {
+          timeout: this.MANIFEST_CODE_UPSTREAM_TIMEOUT_MS,
+          responseType: 'text',
+          validateStatus: () => true
+        });
+        if (fb.status === 200 && typeof fb.data === 'string') {
+          const t = fb.data.trim();
+          if (/^\d+$/.test(t) && t !== '0') {
+            this.setManifestCodeCache(gid, t, depotId);
+            this.upstreamBreakerOpenUntil = 0;
+            return { code: t, definitiveMiss: false, transient: false };
+          }
+          // 200 但不是码：该源没有，不算权威判定（它是聚合层，不是权威源）
+          sawTransient = true;
+        } else {
+          sawTransient = true;
         }
-        // 200 但不是码：该源没有，不算权威判定（它是聚合层，不是权威源）
-        sawTransient = true;
-      } else {
+      } catch {
         sawTransient = true;
       }
-    } catch {
-      sawTransient = true;
     }
 
     // 只有「确认查不到」且**没有任何瞬时故障迹象**时才写负缓存。
@@ -1812,7 +1996,7 @@ export class ManifestService {
     // 下发旧码最坏情况是 Steam 拿它拉不到清单然后自己重试；
     // 而回 503 会让下载流程直接停在那里等，后者更糟。
     if (stale && Date.now() - stale.fetchedAt < ManifestService.CODE_STORE_STALE_MAX_MS) {
-      return { code: stale.code, definitiveMiss: false, transient: false };
+      return { code: stale.code, definitiveMiss: false, transient: false, stale: true };
     }
     return { code: null, definitiveMiss: false, transient };
   }
@@ -1820,6 +2004,83 @@ export class ManifestService {
   /** 重试退避：优先读上游 Retry-After，缺失时按 3 秒递增 */
   private async sleepCodeRetry(attempt: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, Math.min(3000 * (attempt - 1), 6000)));
+  }
+
+  // ==================== 低频主动补码 ====================
+  //
+  // 定位：**只补客户端上报覆盖不到的长尾**，不是主力数据来源。
+  //
+  // 为什么必须低频：第三方接口现在完全不设防（实测 UA 不校验、20 次连打零限流、
+  // 伪造 XFF 不分桶），但那是针对**分散的客户端 IP**。若服务端从一个出口 IP
+  // 每天打它几十万次，它必然会发现并封掉 —— 封的是服务器，沉淀管道就断了。
+  // 而客户端上报天然分散，主力必须走那条路。
+  //
+  // 为什么不会失控：补码目标来自 depotGidIndex —— 只包含**真实被请求过**的
+  // (depot, gid)，绝不遍历整个 Steam 目录。gid 稳定（只在 depot 内容更新时才变）
+  // 使这个集合缓慢增长，因此长期看它是收敛的，不是无限膨胀的爬取任务。
+  private backfillRunning = false;
+  /** 每轮补码条数上限。取小值：宁可慢，不可把对端惹毛。 */
+  private static readonly BACKFILL_BATCH = 8;
+  /** 每条之间的间隔。合起来把速率压在约 1 条/秒以内。 */
+  private static readonly BACKFILL_GAP_MS = 1500;
+
+  /**
+   * 补一轮过期码。返回实际补到的条数。
+   *
+   * 走 index.php/{depot}/{gid} 而非 dex.php：前者查自有库（实测正确组合 200
+   * 且 X-Cache: HIT），后者是实时聚合层，上游全挂时它自己就回 502。
+   */
+  public async backfillStaleCodes(): Promise<number> {
+    if (this.backfillRunning) return 0;
+    const targets = this.listStaleCodeTargets(ManifestService.BACKFILL_BATCH);
+    if (targets.length === 0) return 0;
+
+    this.backfillRunning = true;
+    let filled = 0;
+    try {
+      for (const t of targets) {
+        try {
+          const resp = await axios.get(
+            `https://gmrc.guyunsq.com/index.php/${t.depotId}/${t.gid}`,
+            {
+              timeout: this.MANIFEST_CODE_UPSTREAM_TIMEOUT_MS,
+              responseType: 'text',
+              validateStatus: () => true
+            }
+          );
+          if (resp.status === 200 && typeof resp.data === 'string') {
+            const code = resp.data.trim();
+            if (/^\d+$/.test(code) && code !== '0') {
+              // 注意这里用 setManifestCodeCache 而非 reportManifestCodes：
+              // 前者按 fetchedAt 直接覆盖（补码的目的就是刷新时间戳），
+              // 后者会跳过「不够新」的条目，正好与补码意图相反。
+              this.setManifestCodeCache(t.gid, code, t.depotId);
+              filled++;
+            }
+          }
+        } catch {
+          // 单条失败无所谓，下一轮还会再试
+        }
+        await new Promise((r) => setTimeout(r, ManifestService.BACKFILL_GAP_MS));
+      }
+    } finally {
+      this.backfillRunning = false;
+      if (filled > 0) {
+        console.log(
+          `[ManifestService] 主动补码完成: ${filled}/${targets.length} 条` +
+            `｜码库 ${this.manifestCodeCache.size} 条 / ${this.depotGidIndex.size} 个 depot`
+        );
+      }
+    }
+    return filled;
+  }
+
+  /** 启动低频补码循环。由 server.ts 在启动时调用一次。 */
+  public startBackfillLoop(intervalMs: number): void {
+    const timer = setInterval(() => {
+      this.backfillStaleCodes().catch(() => {});
+    }, intervalMs);
+    timer.unref?.();
   }
 }
 

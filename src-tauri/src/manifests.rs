@@ -4,7 +4,8 @@ use std::future::Future;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -1686,6 +1687,52 @@ fn pick_manifest_code(body: &str) -> Option<String> {
     Some(t.to_string())
 }
 
+/// 源级熔断窗口（秒），与内核 Lua 侧的 CFD_SRC_FAIL_TTL 保持一致。
+const PREFETCH_SRC_FAIL_TTL_SECS: u64 = 60;
+
+fn now_epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// 预取期间的源可用性（每个源一个失败时间戳，0 = 未失败）。
+///
+/// 为什么必须有：实测 2026-09-20 当天中继与 ManifestDeX 双双失效，只有古韵的
+/// index.php 能出码。三个源是**串行**试的，每个 gid 都要先白等中继(0.2s) 再
+/// 白等 ManifestDeX(0.65s) 才轮到能出码的那个 —— 一个 gid 就是 1.0 秒纯浪费。
+/// 35 个分包即使并发 3，也要 12 批 x 1.0 秒 ≈ 12 秒。
+/// 共享这份状态后，第一个 gid 探明哪两个源是坏的，后续 34 个直接跳过。
+#[derive(Default)]
+struct SourceHealth {
+    relay_fail_at: AtomicU64,
+    dex_fail_at: AtomicU64,
+}
+
+impl SourceHealth {
+    /// 未失败，或已过熔断窗口（可重试）
+    fn available(field: &AtomicU64) -> bool {
+        let t = field.load(Ordering::Relaxed);
+        if t == 0 {
+            return true;
+        }
+        now_epoch_secs().saturating_sub(t) >= PREFETCH_SRC_FAIL_TTL_SECS
+    }
+    fn relay_ok(&self) -> bool {
+        Self::available(&self.relay_fail_at)
+    }
+    fn dex_ok(&self) -> bool {
+        Self::available(&self.dex_fail_at)
+    }
+    fn mark_relay_fail(&self) {
+        self.relay_fail_at.store(now_epoch_secs(), Ordering::Relaxed);
+    }
+    fn mark_dex_fail(&self) {
+        self.dex_fail_at.store(now_epoch_secs(), Ordering::Relaxed);
+    }
+}
+
 /// 单个 GID 取码：源顺序、校验与 manifest.lua 的 fetch_manifest_code_ex 保持一致。
 ///
 /// 中继优先（与内核 Lua 同序）：服务端带 5 分钟正缓存 + 单航班去重，
@@ -1696,40 +1743,64 @@ fn pick_manifest_code(body: &str) -> Option<String> {
 /// `depot_id` 只有末位兜底源（古韵自有码库）需要 —— 它的接口签名是
 /// `index.php/{depot}/{gid}`，(depot, gid) 是库里的联合键，光有 gid 查不了。
 /// 传 0 或 gid 为空时该源自动跳过。
-async fn fetch_manifest_code_for_gid(depot_id: u32, gid: &str) -> Option<String> {
-    let relay = http_client()
-        .get(format!("{}/api/manifests/code/{}", SERVER_API, gid))
-        // 中继是裸 nginx（响应头 Server: nginx，无 cf-ray），对 UA 不做校验 ——
-        // 实测空 UA / Mozilla / 任意自造 UA 的响应完全一致。这里带上只是自我标识，
-        // 便于服务端排查时区分请求来自客户端预取还是内核 Lua 现场取码。
-        // 真正必须卡 UA 的是下面的 ManifestDeX 直连（PR #200）。
-        .header("User-Agent", "ChunFengDu/1.0")
-        .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
-        .send()
-        .await;
-    if let Ok(resp) = relay {
-        if resp.status().is_success() {
-            if let Ok(text) = resp.text().await {
-                if let Some(code) = pick_manifest_code(&text) {
-                    return Some(code);
+///
+/// `health` 在整个预取批次内共享：任一任务探明某源失效，其余任务立即跳过。
+/// 末位兜底源**不参与熔断** —— 前两个源熔断时它就是唯一能出码的路径，
+/// 把它也熔断掉整条链就彻底哑了（Lua 侧同理）。
+async fn fetch_manifest_code_for_gid(
+    depot_id: u32,
+    gid: &str,
+    health: &SourceHealth,
+) -> Option<String> {
+    if health.relay_ok() {
+        // 带上 depotId：中继的末位兜底源有两条路径，index.php/{depot}/{gid} 按
+        // (depot, gid) 联合键查自有库（实测正确组合 200、错 depot 一律 502），
+        // 而 dex.php/{gid} 是实时聚合层（上游全挂时它自己就回 502）。
+        // 不带 depotId 时中继只能退到后者 —— 在上游挂掉的当下等于必然失败。
+        let relay_url = if depot_id != 0 {
+            format!("{}/api/manifests/code/{}?depotId={}", SERVER_API, gid, depot_id)
+        } else {
+            format!("{}/api/manifests/code/{}", SERVER_API, gid)
+        };
+        let relay = http_client()
+            .get(relay_url)
+            // 中继是裸 nginx（响应头 Server: nginx，无 cf-ray），对 UA 不做校验 ——
+            // 实测空 UA / Mozilla / 任意自造 UA 的响应完全一致。这里带上只是自我标识，
+            // 便于服务端排查时区分请求来自客户端预取还是内核 Lua 现场取码。
+            // 真正必须卡 UA 的是下面的 ManifestDeX 直连（PR #200）。
+            .header("User-Agent", "ChunFengDu/1.0")
+            .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
+            .send()
+            .await;
+        match relay {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(text) = resp.text().await {
+                    if let Some(code) = pick_manifest_code(&text) {
+                        return Some(code);
+                    }
                 }
             }
+            // 5xx / 网络异常 = 源此刻不可用，标记后本批次不再重试
+            _ => health.mark_relay_fail(),
         }
     }
 
-    let direct = http_client()
-        .get(format!("https://manifest.manifestdex.com/{}", gid))
-        .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
-        .header("User-Agent", "ManifestDeX/1.0")
-        .send()
-        .await;
-    if let Ok(resp) = direct {
-        if resp.status().is_success() {
-            if let Ok(text) = resp.text().await {
-                if let Some(code) = pick_manifest_code(&text) {
-                    return Some(code);
+    if health.dex_ok() {
+        let direct = http_client()
+            .get(format!("https://manifest.manifestdex.com/{}", gid))
+            .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
+            .header("User-Agent", "ManifestDeX/1.0")
+            .send()
+            .await;
+        match direct {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(text) = resp.text().await {
+                    if let Some(code) = pick_manifest_code(&text) {
+                        return Some(code);
+                    }
                 }
             }
+            _ => health.mark_dex_fail(),
         }
     }
 
@@ -1788,14 +1859,20 @@ pub fn prefetch_manifest_codes(raw_pairs: &[(u32, String)]) -> BTreeMap<String, 
         return BTreeMap::new();
     }
 
+    // 整批共享一份源健康状态。为什么放在批外层而不是每个任务各一份：
+    // 实测两个源同时失效时，每个 gid 都要串行白等 0.85 秒，35 个分包就是 30 秒。
+    // 共享之后第一个任务探明失效，其余 34 个直接跳过 —— 只剩能出码那一跳的 0.15 秒。
+    let health = Arc::new(SourceHealth::default());
+
     let mut out = BTreeMap::new();
     for chunk in pairs.chunks(PREFETCH_CONCURRENCY) {
         let mut handles = Vec::new();
         for (depot_id, gid) in chunk {
             let gid = gid.clone();
             let depot_id = *depot_id;
+            let health = Arc::clone(&health);
             handles.push(tauri::async_runtime::spawn(async move {
-                let code = fetch_manifest_code_for_gid(depot_id, &gid).await;
+                let code = fetch_manifest_code_for_gid(depot_id, &gid, &health).await;
                 (gid, code)
             }));
         }
@@ -1809,7 +1886,68 @@ pub fn prefetch_manifest_codes(raw_pairs: &[(u32, String)]) -> BTreeMap<String, 
             }
         }
     }
+
+    // 顺手上报给中继，扩充云端码库。
+    //
+    // 为什么让客户端上报而不是服务端自己扒：第三方接口按 (depot, gid) 查询，
+    // 服务端要主动扒就得先枚举全部组合 —— 集中从一个出口 IP 高频请求极易触发
+    // 风控，封的是服务器，沉淀管道就断了。客户端上报天然分散：这些码本来就是
+    // 用户入库时已经取到的，回传只是多一个 POST，服务端零额外出网流量。
+    // 用户越多覆盖越全，且完全不依赖任何单一上游的存活。
+    //
+    // 放在预取末尾、且**不参与错误处理** —— 上报是纯增益的旁路，
+    // 失败绝不能让入库流程受影响。dirty 标记由调用方决定是否真正发车。
+    report_codes_to_relay(&pairs, &out);
+
     out
+}
+
+/// 把本轮预取到的码上报给中继，扩充云端码库。**完全异步，绝不阻塞入库**。
+///
+/// 为什么必须异步：入库是用户盯着进度的操作，任何一秒的额外等待都是体感损失。
+/// 上报是纯旁路 —— 成功则码库多几条，失败则下次入库再报一遍（服务端幂等，
+/// 重复上报只刷新时间戳）。为一个可以下次再做的事让用户多等 5 秒是错的，
+/// 所以这里起独立线程发车，主流程立刻返回。
+fn report_codes_to_relay(pairs: &[(u32, String)], codes: &BTreeMap<String, String>) {
+    if codes.is_empty() {
+        return;
+    }
+    // 一个 gid 可能被多个 depot 共用，全部报上去：
+    // 服务端的 depot→gid 索引需要完整归属关系才能做主动补码枚举。
+    let mut items: Vec<serde_json::Value> = Vec::new();
+    for (depot_id, gid) in pairs {
+        if let Some(code) = codes.get(gid) {
+            items.push(json!({
+                "depotId": depot_id.to_string(),
+                "gid": gid,
+                "code": code
+            }));
+        }
+    }
+    if items.is_empty() {
+        return;
+    }
+    let n = items.len();
+    std::thread::spawn(move || {
+        let client = http_client().clone();
+        let url = format!("{}/api/manifests/code/report", SERVER_API);
+        let ok = block_on(async move {
+            client
+                .post(&url)
+                .header("User-Agent", "ChunFengDu/1.0")
+                .json(&json!({ "codes": items }))
+                .timeout(Duration::from_secs(10))
+                .send()
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+        });
+        log_diag(&format!(
+            "清单码上报中继: {} 条 -> {}",
+            n,
+            if ok { "成功" } else { "失败(不影响入库)" }
+        ));
+    });
 }
 
 // ==================== 本地 18万+ 全量库检索（内嵌二进制字典 + 云端同步） ====================
