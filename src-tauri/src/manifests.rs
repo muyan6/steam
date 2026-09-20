@@ -1688,8 +1688,10 @@ fn pick_manifest_code(body: &str) -> Option<String> {
 async fn fetch_manifest_code_for_gid(gid: &str) -> Option<String> {
     let relay = http_client()
         .get(format!("{}/api/manifests/code/{}", SERVER_API, gid))
-        // 中继位于 Cloudflare 之后，缺 UA 会被回 403 质询页。
-        // 依据 OpenSteamTool PR #200：ManifestDeX 必须带专用 User-Agent 才返回码。
+        // 中继是裸 nginx（响应头 Server: nginx，无 cf-ray），对 UA 不做校验 ——
+        // 实测空 UA / Mozilla / 任意自造 UA 的响应完全一致。这里带上只是自我标识，
+        // 便于服务端排查时区分请求来自客户端预取还是内核 Lua 现场取码。
+        // 真正必须卡 UA 的是下面的 ManifestDeX 直连（PR #200）。
         .header("User-Agent", "ChunFengDu/1.0")
         .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
         .send()
