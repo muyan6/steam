@@ -150,7 +150,11 @@ function cfd_is_transient(status)
     return status == 403 or status == 429 or status == 500 or status == 502 or status == 503 or status == 504
 end
 
-function fetch_manifest_code(gid)
+-- 取码主入口。必须用 _ex 签名, 因为末位兜底源(古韵自有码库)需要 depot_id ——
+-- 它的接口是 index.php/{depot_id}/{gid}, 只有 gid 根本查不了。
+-- 而 Steam 调哪个签名取决于内核版本: 新版给 _ex, 老版只给 fetch_manifest_code。
+-- 因此保留两个全局函数, 单参数那个把 depot_id 置 0 后转调 _ex。
+function fetch_manifest_code_ex(app_id, depot_id, gid)
     local cached = cfd_cache_get(gid)
     if cached then return cached end
 
@@ -201,13 +205,32 @@ function fetch_manifest_code(gid)
     if cfd_is_transient(status) then transient = true end
     if status == 404 then definitive_miss = true end
 
-    -- 已移除 wudrm / 古韵 / steamrun 三个第三方源。
-    -- 原因: 实测它们的刷新节奏落后于权威源, 同一 depot+gid 在同一时刻会给出
-    -- 与 ManifestDeX 不同的值(depot 1086941 / gid 2613374344895573127 上,
-    -- ManifestDeX 与云端给 16792007641517249214, wudrm 与 steamrun 给
-    -- 5615254503045846791)。这类滞后值一旦被缓存并交给 Steam, 该分包就拉不到清单,
-    -- 表现为入库即报「无网络连接 / 0 字节下载」。
-    -- 宁可返回 nil 也不返回滞后值 —— 上游失败应当尽快暴露, 而不是被掩盖成错值。
+    -- 第三优先级(末位兜底): 古韵自有码库。
+    --
+    -- 为什么留这一条: 2026-09-20 ManifestDeX 的 manifest 子域整体 521
+    -- (Cloudflare 连不上源站, 其文档站与 api 子域同时正常), 全链路取码断掉。
+    -- 而实测 gmrc.guyunsq.com/index.php/{depot}/{gid} 仍稳定返回真实码 ——
+    -- 拿它向 Valve CDN 请求清单得到 200 OK(content_log.txt 已留证),
+    -- 说明这是真码不是伪造值。
+    --
+    -- 它排最后: ManifestDeX 一恢复就完全不走这里。
+    --
+    -- 接口签名必须带 depot_id —— 实测错 depot + 真 gid 返回 502,
+    -- 真 depot + 假 gid 也 502, 说明 (depot, gid) 是它库里的联合键。
+    -- 这也反证它不是转发 ManifestDeX(那边只认单个 gid)。
+    --
+    -- 它用 502 + "error: all upstreams failed" 表示「我库里没有且上游也挂了」,
+    -- 属**瞬时**语义, 因此只置 transient, 绝不写负缓存。
+    if depot_id and depot_id ~= 0 and gid then
+        body, status = http_get("https://gmrc.guyunsq.com/index.php/" .. depot_id .. "/" .. gid)
+        code = cfd_pick_code(body, status)
+        if code then cfd_cache_put(gid, code); return code end
+        if cfd_is_transient(status) then transient = true end
+    end
+
+    -- 已移除 wudrm / steamrun 两个第三方源。
+    -- 原因: 实测它们已不可用(wudrm 持续 503, steamrun 持续 502),
+    -- 留着只会让每个分包都白等一轮超时。
 
     -- 写负缓存必须同时满足两条: 有源**确认**查不到, 且没有任何源报瞬时故障。
     -- 只要有一个源在报过载, 就说明我们其实不知道这个 gid 有没有码 —— 宁可
@@ -220,8 +243,10 @@ function fetch_manifest_code(gid)
     return nil
 end
 
-function fetch_manifest_code_ex(app_id, depot_id, gid)
-    return fetch_manifest_code(gid)
+-- 单参数兼容入口: 老版内核只调 fetch_manifest_code。
+-- depot_id 置 0 → 末位兜底源(需要 depot_id)自动跳过, 行为与加它之前完全一致。
+function fetch_manifest_code(gid)
+    return fetch_manifest_code_ex(0, 0, gid)
 end
 "#;
 
@@ -762,15 +787,17 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
     let codes = if merged.lock_version == Some(true) {
         BTreeMap::new()
     } else {
-        // 清洗/去重/限量在 prefetch_manifest_codes 内完成，这里只负责把 GID 摊平
-        let raw_gids: Vec<String> = merged
+        // 清洗/去重/限量在 prefetch_manifest_codes 内完成。
+        // 必须连 depot_id 一起传：末位兜底源（古韵自有码库）的接口签名是
+        // index.php/{depot}/{gid}，(depot, gid) 是它库里的联合键，光有 gid 查不了。
+        let raw_pairs: Vec<(u32, String)> = merged
             .depots
             .as_deref()
             .unwrap_or(&[])
             .iter()
-            .filter_map(|d| d.manifest_id.clone())
+            .filter_map(|d| d.manifest_id.clone().map(|g| (d.depot_id, g)))
             .collect();
-        crate::manifests::prefetch_manifest_codes(&raw_gids)
+        crate::manifests::prefetch_manifest_codes(&raw_pairs)
     };
     let warmed_codes = codes.len();
 

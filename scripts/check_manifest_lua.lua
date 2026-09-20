@@ -348,6 +348,7 @@ print('MANIFESTDEX_CONFIG_OK')
 -- 这是唯一能让多客户端共存的顺序；绕一跳的延迟远小于撞限流后空等的代价。
 local dexPos = content:find('manifest.manifestdex.com', 1, true)
 local cloudPos = content:find('steam.myil.top/api/manifests/code', 1, true)
+local guyunPos = content:find('gmrc.guyunsq.com/index.php', 1, true)
 if not dexPos then
     print('FAIL: ManifestDeX endpoint missing (needed as direct fallback)')
     os.exit(1)
@@ -358,6 +359,16 @@ if not cloudPos then
 end
 if cloudPos > dexPos then
     print('FAIL: cloud relay must be tried BEFORE ManifestDeX direct (order inverted)')
+    os.exit(1)
+end
+-- 末位兜底源必须在 ManifestDeX **之后**：它是竞品服务器，ManifestDeX 一恢复
+-- 就不该再碰它。顺序反了会变成优先白嫖，既不稳定也不体面。
+if not guyunPos then
+    print('FAIL: Guyun fallback endpoint missing (gmrc.guyunsq.com/index.php)')
+    os.exit(1)
+end
+if guyunPos < dexPos then
+    print('FAIL: Guyun fallback must come AFTER ManifestDeX (it is last-resort only)')
     os.exit(1)
 end
 print('SOURCE_ORDER_OK')

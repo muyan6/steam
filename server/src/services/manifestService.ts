@@ -93,6 +93,7 @@ export class ManifestService {
         console.error('[ManifestService] 创建清单缓存目录失败:', e);
       }
     }
+    this.loadCodeStore();
   }
 
   /**
@@ -1435,6 +1436,92 @@ export class ManifestService {
     }
   }
 
+  // ==================== 持久化码库（自建，不依赖任何上游） ====================
+  //
+  // 为什么必须落盘：原先码只存在内存 Map 里，5 分钟 TTL 一过就没了，进程重启
+  // 更是全清。于是上游一挂，中继手里一个码都没有 —— 2026-09-20 ManifestDeX
+  // 的 manifest 子域整体 521 时，中继只能对每个 gid 回 503，全线停摆。
+  //
+  // 而实测证据表明**旧码不会立刻失效**：content_log.txt 里同一 (depot,gid)
+  // 的所有历史码当时都返回了 200，轮换只是「新码生效」而非「旧码作废」。
+  // 所以只要有持久化积累，上游挂掉时仍能顶上绝大部分曾成功取过的 gid。
+  //
+  // 这是完全自有的能力：上游健康时自动积累，上游挂了不依赖任何人。
+  private manifestCodeStorePath = path.join(CONFIG.DATA_DIR, 'manifest_code_store.json');
+  /** 落盘节流：写盘是 IO，不能每个 gid 都写一次 */
+  private codeStoreDirty = false;
+  private codeStoreFlushTimer: NodeJS.Timeout | null = null;
+  private static readonly CODE_STORE_FLUSH_MS = 30 * 1000;
+  /** 持久化条目条数上限：超出按最近使用淘汰 */
+  private static readonly CODE_STORE_MAX = 50000;
+  /**
+   * 持久化条目的可用窗口 —— 远大于内存 TTL 的 5 分钟。
+   *
+   * 取 7 天：实测旧码当时仍返回 200，而入库后隔几天才点下载是极常见的路径。
+   * 窗口越长，上游挂掉时能顶上的 gid 越多；代价只是「可能下发一个已轮换掉的码」，
+   * 而那种情况 Steam 会自己重试，比直接 503 让下载完全停摆要好得多。
+   */
+  private static readonly CODE_STORE_STALE_MAX_MS = 7 * 24 * 60 * 60 * 1000;
+
+  private loadCodeStore(): void {
+    try {
+      if (!fs.existsSync(this.manifestCodeStorePath)) return;
+      const raw = fs.readFileSync(this.manifestCodeStorePath, 'utf-8');
+      const parsed = JSON.parse(raw) as Record<string, { code: string; fetchedAt: number }>;
+      const now = Date.now();
+      let loaded = 0;
+      for (const [gid, entry] of Object.entries(parsed)) {
+        if (!entry || typeof entry.code !== 'string' || !/^\d+$/.test(entry.code)) continue;
+        if (typeof entry.fetchedAt !== 'number') continue;
+        if (now - entry.fetchedAt >= ManifestService.CODE_STORE_STALE_MAX_MS) continue;
+        this.manifestCodeCache.set(gid, { code: entry.code, fetchedAt: entry.fetchedAt });
+        loaded++;
+      }
+      console.log(`[ManifestService] 码库已载入 ${loaded} 条（文件共 ${Object.keys(parsed).length} 条）`);
+    } catch (e) {
+      console.warn('[ManifestService] 码库载入失败（不影响运行）:', e);
+    }
+  }
+
+  /** 标记脏并由定时器批量落盘，避免每个 gid 都触发一次写文件 */
+  private markCodeStoreDirty(): void {
+    this.codeStoreDirty = true;
+    if (this.codeStoreFlushTimer) return;
+    this.codeStoreFlushTimer = setTimeout(() => {
+      this.codeStoreFlushTimer = null;
+      this.flushCodeStore();
+    }, ManifestService.CODE_STORE_FLUSH_MS);
+    // 不能因为一个待写的定时器把进程钉住不退
+    this.codeStoreFlushTimer.unref?.();
+  }
+
+  /**
+   * 把内存码库落盘。
+   *
+   * 超过上限时按 fetchedAt 从旧到新淘汰 —— 越新的码越可能仍在生效窗口内。
+   * 写盘用「临时文件 + rename」：进程在写一半时被杀不会留下半个损坏的 JSON，
+   * 否则下次启动整个码库都读不出来，白白损失全部积累。
+   */
+  public flushCodeStore(): void {
+    if (!this.codeStoreDirty) return;
+    try {
+      const entries = [...this.manifestCodeCache.entries()];
+      if (entries.length > ManifestService.CODE_STORE_MAX) {
+        entries.sort((a, b) => b[1].fetchedAt - a[1].fetchedAt);
+        entries.length = ManifestService.CODE_STORE_MAX;
+      }
+      const obj: Record<string, { code: string; fetchedAt: number }> = {};
+      for (const [gid, entry] of entries) obj[gid] = entry;
+
+      const tmp = this.manifestCodeStorePath + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(obj), 'utf-8');
+      fs.renameSync(tmp, this.manifestCodeStorePath);
+      this.codeStoreDirty = false;
+    } catch (e) {
+      console.warn('[ManifestService] 码库落盘失败:', e);
+    }
+  }
+
   private manifestCodeCache = new Map<string, { code: string; fetchedAt: number }>();
   // 缓存时长：请求码确实会随时间轮换 —— 从本机 Steam 日志解析出的 158 个
   // (depot,gid) 组合里有 34 个先后出现过多个不同值，最频繁的
@@ -1481,6 +1568,7 @@ export class ManifestService {
   /** 写入清单代码缓存，并在超限时清理过期项/按插入序淘汰 */
   private setManifestCodeCache(gid: string, code: string): void {
     this.manifestCodeCache.set(gid, { code, fetchedAt: Date.now() });
+    this.markCodeStoreDirty();
     if (this.manifestCodeCache.size <= this.MANIFEST_CODE_CACHE_MAX) return;
     const now = Date.now();
     for (const [k, v] of this.manifestCodeCache) {
@@ -1661,6 +1749,39 @@ export class ManifestService {
       }
     }
 
+    // ManifestDeX 拿不到 → 末位兜底：古韵的 gid-only 聚合接口。
+    //
+    // 背景：2026-09-20 ManifestDeX 的 manifest 子域整体 521（Cloudflare 连不上
+    // 源站，而其文档站与 api 子域同时 200），全链路取码断掉。客户端 Lua 侧已有
+    // 带 depot_id 的 index.php 兜底（那个更准），但客户端的第一跳是本中继 ——
+    // 中继若只会回 503，客户端就得先空等一次才轮到自己的兜底。
+    //
+    // 这里用 dex.php（gid-only）：本端点没有 depot_id 可传，index.php 需要它。
+    // dex.php 是实时聚合接口，上游全挂时它自己回 502 + "all upstreams failed" ——
+    // 那正是 transient，所以只置瞬时标志，绝不写负缓存。
+    // 排最后：ManifestDeX 一恢复就完全不走这里。
+    try {
+      const fb = await axios.get(`https://gmrc.guyunsq.com/dex.php/${gid}`, {
+        timeout: this.MANIFEST_CODE_UPSTREAM_TIMEOUT_MS,
+        responseType: 'text',
+        validateStatus: () => true
+      });
+      if (fb.status === 200 && typeof fb.data === 'string') {
+        const t = fb.data.trim();
+        if (/^\d+$/.test(t) && t !== '0') {
+          this.setManifestCodeCache(gid, t);
+          this.upstreamBreakerOpenUntil = 0;
+          return { code: t, definitiveMiss: false, transient: false };
+        }
+        // 200 但不是码：该源没有，不算权威判定（它是聚合层，不是权威源）
+        sawTransient = true;
+      } else {
+        sawTransient = true;
+      }
+    } catch {
+      sawTransient = true;
+    }
+
     // 只有「确认查不到」且**没有任何瞬时故障迹象**时才写负缓存。
     // 只要有一轮是超时/429/403，我们就不知道这个 gid 到底有没有码 ——
     // 写进去等于把它冻结 NEGATIVE_CODE_TTL_MS，期间所有客户端都拿到 404。
@@ -1686,7 +1807,11 @@ export class ManifestService {
    */
   private serveStaleOrTransient(gid: string, transient: boolean): ManifestCodeResult {
     const stale = this.manifestCodeCache.get(gid);
-    if (stale && Date.now() - stale.fetchedAt < this.MANIFEST_CODE_STALE_MAX_MS) {
+    // 窗口取持久化码库的 7 天，而不是内存 TTL 的 5 分钟 —— 码库里存的就是
+    // 「曾经成功取到过」的码，上游挂掉时它们是最有价值的资产。
+    // 下发旧码最坏情况是 Steam 拿它拉不到清单然后自己重试；
+    // 而回 503 会让下载流程直接停在那里等，后者更糟。
+    if (stale && Date.now() - stale.fetchedAt < ManifestService.CODE_STORE_STALE_MAX_MS) {
       return { code: stale.code, definitiveMiss: false, transient: false };
     }
     return { code: null, definitiveMiss: false, transient };
@@ -1699,3 +1824,17 @@ export class ManifestService {
 }
 
 export const manifestService = new ManifestService();
+
+// 码库落盘钩子：正常退出与 SIGINT/SIGTERM 都要刷一次，
+// 否则最近的取码成果会随进程一起丢掉（定时器最长 30 秒才落一次盘）。
+// 与 dlcIndexService 同样的模式，保证 pm2 restart 不丢数据。
+const flushCodeStoreOnExit = () => manifestService.flushCodeStore();
+process.once('beforeExit', flushCodeStoreOnExit);
+process.once('SIGINT', () => {
+  flushCodeStoreOnExit();
+  process.exit(0);
+});
+process.once('SIGTERM', () => {
+  flushCodeStoreOnExit();
+  process.exit(0);
+});

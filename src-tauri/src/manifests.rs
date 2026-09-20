@@ -1679,13 +1679,17 @@ fn pick_manifest_code(body: &str) -> Option<String> {
     Some(t.to_string())
 }
 
-/// 单个 GID 取码：源顺序、校验与 manifest.lua 的 fetch_manifest_code 保持一致。
+/// 单个 GID 取码：源顺序、校验与 manifest.lua 的 fetch_manifest_code_ex 保持一致。
 ///
 /// 中继优先（与内核 Lua 同序）：服务端带 5 分钟正缓存 + 单航班去重，
 /// 能把「N 客户端 x M 分包」收敛成「每 gid 每 5 分钟 1 次上游请求」。
 /// 直连 ManifestDeX 仅作兜底 —— 它按 IP 限流 60 次/分钟，客户端各自直连
 /// 等于把额度除以客户端数，人一多就集体 429。
-async fn fetch_manifest_code_for_gid(gid: &str) -> Option<String> {
+///
+/// `depot_id` 只有末位兜底源（古韵自有码库）需要 —— 它的接口签名是
+/// `index.php/{depot}/{gid}`，(depot, gid) 是库里的联合键，光有 gid 查不了。
+/// 传 0 或 gid 为空时该源自动跳过。
+async fn fetch_manifest_code_for_gid(depot_id: u32, gid: &str) -> Option<String> {
     let relay = http_client()
         .get(format!("{}/api/manifests/code/{}", SERVER_API, gid))
         // 中继是裸 nginx（响应头 Server: nginx，无 cf-ray），对 UA 不做校验 ——
@@ -1721,6 +1725,31 @@ async fn fetch_manifest_code_for_gid(gid: &str) -> Option<String> {
             }
         }
     }
+
+    // 末位兜底：古韵自有码库（与 Lua 侧同序）。
+    //
+    // 为什么预取也要接这一跳：预取的价值就是「让首次下载零网络往返」。
+    // 若只有 Lua 侧接而预取不接，上游挂掉时预取会全空 —— 首次下载又退化成
+    // 逐分包现场取码，正是我们想消除的那条最慢路径。
+    if depot_id != 0 && !gid.is_empty() {
+        let fb = http_client()
+            .get(format!(
+                "https://gmrc.guyunsq.com/index.php/{}/{}",
+                depot_id, gid
+            ))
+            .timeout(Duration::from_secs(PREFETCH_TIMEOUT_SECS))
+            .send()
+            .await;
+        if let Ok(resp) = fb {
+            if resp.status().is_success() {
+                if let Ok(text) = resp.text().await {
+                    if let Some(code) = pick_manifest_code(&text) {
+                        return Some(code);
+                    }
+                }
+            }
+        }
+    }
     None
 }
 
@@ -1733,30 +1762,33 @@ async fn fetch_manifest_code_for_gid(gid: &str) -> Option<String> {
 /// 尽力而为：任何失败、超时或上游拒绝都只让对应 GID 缺席，绝不向调用方报错 ——
 /// 缺席的 GID 在 Steam 首次请求时会回退到 manifest.lua 的现场取码（原行为），
 /// 因此本函数的输出只可能是纯增益，不会让任何原本可用的场景变差。
-pub fn prefetch_manifest_codes(raw_gids: &[String]) -> BTreeMap<String, String> {
-    let mut gids: Vec<String> = Vec::new();
-    for raw in raw_gids {
+pub fn prefetch_manifest_codes(raw_pairs: &[(u32, String)]) -> BTreeMap<String, String> {
+    let mut pairs: Vec<(u32, String)> = Vec::new();
+    for (depot_id, raw) in raw_pairs {
         let g = raw.trim();
         // gid 会参与 Lua 字面量拼接，必须是纯数字非 0，脏值一律丢弃
         if g.is_empty() || g == "0" || !g.chars().all(|c| c.is_ascii_digit()) {
             continue;
         }
-        if !gids.iter().any(|x| x == g) {
-            gids.push(g.to_string());
+        // 同一 gid 可能被多个 depot 共用（实测存在），只保留首个 ——
+        // 取码只认 gid，depot_id 仅用于末位兜底源的联合键查询。
+        if !pairs.iter().any(|(_, x)| x == g) {
+            pairs.push((*depot_id, g.to_string()));
         }
     }
-    gids.truncate(PREFETCH_MAX_GIDS);
-    if gids.is_empty() {
+    pairs.truncate(PREFETCH_MAX_GIDS);
+    if pairs.is_empty() {
         return BTreeMap::new();
     }
 
     let mut out = BTreeMap::new();
-    for chunk in gids.chunks(PREFETCH_CONCURRENCY) {
+    for chunk in pairs.chunks(PREFETCH_CONCURRENCY) {
         let mut handles = Vec::new();
-        for gid in chunk {
+        for (depot_id, gid) in chunk {
             let gid = gid.clone();
+            let depot_id = *depot_id;
             handles.push(tauri::async_runtime::spawn(async move {
-                let code = fetch_manifest_code_for_gid(&gid).await;
+                let code = fetch_manifest_code_for_gid(depot_id, &gid).await;
                 (gid, code)
             }));
         }
