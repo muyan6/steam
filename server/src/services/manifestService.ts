@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import axios, { AxiosRequestConfig } from 'axios';
 import AdmZip from 'adm-zip';
 import { CONFIG } from '../config/index.js';
@@ -13,6 +14,13 @@ const MAX_ZIP_ENTRY_BYTES = 50 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 2000;
 /// 单个清单实体落盘上限：清单本体不应达到该量级，超过即为异常/劫持内容
 const MAX_MANIFEST_BYTES = 512 * 1024 * 1024;
+/// 竞速下载单条清单时的更紧上限。
+///
+/// 注释里写的是「单个清单实体不可能达到 50MB 量级，用更紧的上限避免 16 路竞速
+/// 各自缓冲超大响应」，但实现此前传的是 MAX_MANIFEST_BYTES = 512MB ——
+/// 该 URL 列表最多 16 路（2 候选 AppID × 4 镜像 × 2 仓库）全部并发，
+/// 恶意/异常上游可让单次沉淀在内存里缓冲 16 × 512MB。这里与注释对齐。
+const MAX_SINGLE_MANIFEST_BYTES = 16 * 1024 * 1024;
 
 /**
  * 并发竞速下载：首个通过 accept 校验的响应胜出，并在返回前 abort 其余请求。
@@ -130,7 +138,11 @@ export class ManifestService {
     this.manifestResultInFlight.set(cacheKey, task);
     try {
       const result = await task;
-      this.setManifestResultCache(cacheKey, result);
+      // 只缓存成功结果。失败（上游 429/超时）同样带 10 分钟 TTL 写进缓存的话，
+      // 一次抖动就会让该 appId|dlcs 组合在 10 分钟内对**所有**客户端都返回
+      // 「上游不可用」，即使上游早已恢复 —— 注释里辛苦区分的「未收录 vs 上游故障」
+      // 会被缓存层直接抹掉。失败结果由下一次请求重新探测。
+      if (result.success) this.setManifestResultCache(cacheKey, result);
       return result;
     } finally {
       this.manifestResultInFlight.delete(cacheKey);
@@ -159,7 +171,13 @@ export class ManifestService {
 
     // 1. 检查服务端本地 manifests/ 缓存目录（支持扁平与 ManifestHub3 标准 AppID 树形目录）
     const localDepots = this.scanLocalManifests(candidateDepotIds, appId);
-    if (localDepots.length > 0) {
+    // 仅当本地缓存**覆盖了全部候选分包**时才走快路径短路返回。
+    //
+    // 旧实现只要命中任意一个非空本地结果就 success:true 返回，且该结果被缓存
+    // 10 分钟 —— 一个 100 分包的游戏只要本地恰好有 1 个清单，客户端拿到的就是
+    // 「成功 + 仅 1 个分包」，其余 99 个分包在缓存期内永久不可见。
+    // 少挂几个无害，但把「不完整」当「完整」下发会让用户永远装不全。
+    if (localDepots.length > 0 && localDepots.length >= candidateDepotIds.length) {
       return {
         success: true,
         appId,
@@ -773,6 +791,8 @@ export class ManifestService {
   }
 
   /** 单次检索允许跟随的下载链接数上限（防上游 HTML 异常导致无界顺序下载） */
+  /// ManifestHub.uk 兜底下载的总时间预算：超过即放弃剩余链接，避免长时间占住请求
+  private static readonly UK_TOTAL_BUDGET_MS = 20 * 1000;
   private static readonly MAX_UK_DOWNLOAD_LINKS = 8;
 
   /**
@@ -793,12 +813,24 @@ export class ManifestService {
       .map((m) => m[1])
       .slice(0, ManifestService.MAX_UK_DOWNLOAD_LINKS);
 
+    // 串行尝试下载链接，但设**总预算**上限。
+    //
+    // 旧实现逐个 await，每个 timeout 10 秒、最多 8 个链接 —— 上游全部返回失效
+    // 链接时最坏阻塞约 80 秒。而本函数既被 /api/manifests 列表链路调用，也被
+    // ensureManifestCachedInner 的下载链路复用，长时间占住 Express 连接会连带
+    // 拖慢其它请求。这里超预算即放弃剩余链接（兜底源本就是尽力而为）。
+    const deadline = Date.now() + ManifestService.UK_TOTAL_BUDGET_MS;
     for (const href of downloadMatches) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        console.warn('[ManifestService] ManifestHub.uk 兜底下载超出总预算，放弃剩余链接');
+        break;
+      }
       try {
         const dlUrl = `https://api.manifesthub.uk${href}`;
         const zipResp = await axios.get(dlUrl, {
           responseType: 'arraybuffer',
-          timeout: 10000,
+          timeout: Math.min(10000, remaining),
           maxContentLength: MAX_UPSTREAM_ZIP_BYTES,
           headers: {
             'User-Agent': 'Mozilla/5.0',
@@ -809,7 +841,10 @@ export class ManifestService {
           const list = this.unpackZipAndExtractManifests(appId, Buffer.from(zipResp.data), depotIds, 'manifesthub_uk');
           if (list.length > 0) return list;
         }
-      } catch {}
+      } catch (e: any) {
+        // 不再静默：UK 源长期挂掉时，日志里必须能看到是哪条链接、什么错
+        console.warn(`[ManifestService] ManifestHub.uk 链接下载失败 ${href}:`, e?.message || e);
+      }
     }
     return [];
   }
@@ -842,6 +877,14 @@ export class ManifestService {
         if (entry.isDirectory) continue;
         const name = path.basename(entry.entryName);
         if (name.endsWith('.lua')) {
+          // .lua 条目此前**完全没有体积校验**：条目数上限 2000 拦不住单个条目的
+          // 高压缩比膨胀 —— 50MB 的上游 zip 里一个 .lua 即可解压出数十 GB 文本，
+          // readAsText 的字符串拼接会直接把 Node 堆打爆。
+          const luaSize = Number(entry.header?.size ?? 0);
+          if (luaSize > MAX_ZIP_ENTRY_BYTES) {
+            console.warn(`[ManifestService] ZIP 内 .lua 条目过大已跳过 (${luaSize} 字节): ${name}`);
+            continue;
+          }
           luaContent += zip.readAsText(entry) + '\n';
         } else {
           const match = name.match(/^(\d+)_(\d+)\.manifest$/i);
@@ -1040,6 +1083,12 @@ export class ManifestService {
       let lua = '';
       for (const e of entries) {
         if (!e.isDirectory && e.entryName.endsWith('.lua')) {
+          // 同上：.lua 条目必须做体积校验，否则单个高压缩比条目即可撑爆内存
+          const luaSize = Number(e.header?.size ?? 0);
+          if (luaSize > MAX_ZIP_ENTRY_BYTES) {
+            console.warn(`[ManifestService] ZIP 内 .lua 条目过大已跳过 (${luaSize} 字节): ${e.entryName}`);
+            continue;
+          }
           lua += zip.readAsText(e) + '\n';
         }
       }
@@ -1154,7 +1203,7 @@ export class ManifestService {
       // 避免 16 路竞速各自在内存里缓冲超大响应
       const buf = await raceDownload(
         hubManifestUrls,
-        { responseType: 'arraybuffer', timeout: 3500, maxContentLength: MAX_MANIFEST_BYTES },
+        { responseType: 'arraybuffer', timeout: 3500, maxContentLength: MAX_SINGLE_MANIFEST_BYTES },
         (d) => !!d && d.byteLength > 0
       );
       if (buf && this.isValidManifestBuffer(Buffer.from(buf))) {
@@ -1226,7 +1275,16 @@ export class ManifestService {
     return null;
   }
 
-  public isValidManifestBuffer(buf: Buffer): boolean {
+  /**
+   * @param truncated 传入的 buffer 是否为文件的**前缀片段**（未读全）。
+   *
+   * protobuf 分支的长度自洽校验（offset + length <= buf.length）依赖 buffer 总长度：
+   * 只读前 1KB 时，任何声明长度 >1KB 的合法清单都会被判无效 —— 而这类清单正是靠
+   * protobuf 分支才被承认为有效的（zip/魔数分支另说）。结果是
+   * getLocalManifestFilePath 恒返回 null，每次下载都回源。
+   * 因此截断读取时只要求「首字段是合法 varint 长度前缀且长度非 0」。
+   */
+  public isValidManifestBuffer(buf: Buffer, truncated = false): boolean {
     if (!buf || buf.length < 32) return false;
     const str128 = buf.subarray(0, 128).toString('utf8').toLowerCase();
     if (
@@ -1263,8 +1321,10 @@ export class ManifestService {
         if ((b & 0x80) === 0) { terminated = true; break; }
         shift += 7;
       }
-      // 长度分隔字段：声明的长度必须落在剩余缓冲内，否则不是有效清单
+      // 长度分隔字段：声明的长度必须落在剩余缓冲内，否则不是有效清单。
+      // 截断读取（只读了文件前缀）时无法做这一步自洽校验，只要求长度非 0。
       if (buf[0] === 0x0a || buf[0] === 0x12) {
+        if (truncated) return terminated && length > 0;
         return terminated && length > 0 && offset + length <= buf.length;
       }
       // 0x08 为 varint 字段：只需确认后续是可解析的 varint 序列（非全 0 文本）
@@ -1283,7 +1343,9 @@ export class ManifestService {
       try {
         const head = Buffer.alloc(1024);
         const read = fs.readSync(fd, head, 0, head.length, 0);
-        if (this.isValidManifestBuffer(head.subarray(0, read))) {
+        const size = fs.fstatSync(fd).size;
+        // 文件大于 1KB 时本次读取是前缀片段，按 truncated 语义校验
+        if (this.isValidManifestBuffer(head.subarray(0, read), size > read)) {
           return filePath;
         }
       } finally {
@@ -1410,12 +1472,29 @@ export class ManifestService {
   private maybePruneManifestDir(): void {
     this.manifestSaveCounter += 1;
     if (this.manifestSaveCounter % 200 !== 0) return;
+    if (this.pruneScheduled) return;
+    // 原实现在 saveManifestFile 里同步递归 readdirSync + 逐文件 statSync
+    // （上限 2 万文件），在下载高峰期会阻塞事件循环数百毫秒，所有在途 HTTP
+    // 响应被一起拖慢。改为让出当前 tick 后台异步执行，并加去重标志防止
+    // 每次触发都叠一个任务。
+    this.pruneScheduled = true;
+    setImmediate(() => {
+      void this.pruneManifestDir().finally(() => {
+        this.pruneScheduled = false;
+      });
+    });
+  }
+
+  private pruneScheduled = false;
+
+  /** 异步清理清单缓存目录：按 mtime 最旧优先淘汰，回到上限以内 */
+  private async pruneManifestDir(): Promise<void> {
     try {
       const all: Array<{ p: string; mtime: number }> = [];
-      const collect = (dir: string) => {
+      const collect = async (dir: string): Promise<void> => {
         let entries: fs.Dirent[];
         try {
-          entries = fs.readdirSync(dir, { withFileTypes: true });
+          entries = await fs.promises.readdir(dir, { withFileTypes: true });
         } catch {
           return;
         }
@@ -1423,21 +1502,21 @@ export class ManifestService {
           const p = path.join(dir, e.name);
           if (e.isFile() && e.name.endsWith('.manifest')) {
             let mtime = 0;
-            try { mtime = fs.statSync(p).mtimeMs; } catch {}
+            try { mtime = (await fs.promises.stat(p)).mtimeMs; } catch {}
             all.push({ p, mtime });
           } else if (e.isDirectory() && /^\d+$/.test(e.name)) {
-            collect(p);
+            await collect(p);
           }
         }
       };
-      collect(this.manifestDir);
+      await collect(this.manifestDir);
       if (all.length <= this.MANIFEST_DIR_MAX_FILES) return;
 
       all.sort((a, b) => a.mtime - b.mtime);
       const removeCount = all.length - this.MANIFEST_DIR_MAX_FILES;
       for (let i = 0; i < removeCount; i++) {
         try {
-          fs.unlinkSync(all[i].p);
+          await fs.promises.unlink(all[i].p);
           this.indexRemoveFile(all[i].p);
         } catch {}
       }
@@ -1599,7 +1678,9 @@ export class ManifestService {
         if (alive.length > 0) depots[depotId] = alive;
       }
 
-      const tmp = this.manifestCodeStorePath + '.tmp';
+      // 临时文件名必须唯一：固定 `.tmp` 在并发/多进程 flush 时会互相截断，
+      // 把半截 JSON rename 成正式码库。带 pid + 随机串后 rename 是原子的。
+      const tmp = `${this.manifestCodeStorePath}.${process.pid}.${Date.now()}.${crypto.randomBytes(3).toString('hex')}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify({ codes, depots }), 'utf-8');
       fs.renameSync(tmp, this.manifestCodeStorePath);
       this.codeStoreDirty = false;
@@ -1652,9 +1733,25 @@ export class ManifestService {
       }
       this.indexDepotGid(depotId, gid);
       const cur = this.manifestCodeCache.get(gid);
-      // 不覆盖更新的码：上报可能来自跑了几分钟的旧会话
-      if (cur && cur.fetchedAt >= now) continue;
-      this.manifestCodeCache.set(gid, { code, fetchedAt: now, depotId });
+      if (cur) {
+        // 同码重复上报：纯 no-op，不刷新时间戳也不做无谓写
+        if (cur.code === code) continue;
+        // 不覆盖「刚刚由权威源取到」的码。
+        //
+        // 旧实现写的是 `if (cur && cur.fetchedAt >= now) continue;` —— 而 cur.fetchedAt
+        // 必然 ≤ now（都是 Date.now()），该条件恒假，注释承诺的「不覆盖更新的码」
+        // 从未生效：客户端跑了几分钟后上报的**旧码**会以 fetchedAt=now 覆盖服务端
+        // 刚取到的新码，并被当作新鲜码下发给全体客户端。
+        //
+        // 上报请求不带采集时间戳（客户端会跑很久才回传），无法精确比较新旧，
+        // 因此采用保守判据：60 秒内写入的条目视为权威新码，不接受客户端覆盖。
+        if (now - cur.fetchedAt < 60 * 1000) continue;
+      }
+      // 必须走 setManifestCodeCache：它带 MANIFEST_CODE_CACHE_MAX 容量检查。
+      // 旧实现直接 manifestCodeCache.set()，绕过了唯一的容量上限 ——
+      // 而这里是 /manifests/code/report 这条公开写入口的**主写路径**，
+      // 持续上报不同 (depotId,gid,code) 即可让 Map 无界增长直至 OOM。
+      this.setManifestCodeCache(gid, code, depotId);
       // 上报是对「确认存在」的正向证据，清掉可能存在的负缓存
       this.negativeCodeCache.delete(gid);
       accepted++;
@@ -1958,6 +2055,17 @@ export class ManifestService {
     //                      它不提供新码，只保证古韵域名挂掉时还有路可走。
     //   ③ 古韵 dex.php  —— gid-only 实时聚合层，上游全挂时它自己就回 502。
     //                      没有 depotId 时的最后选择。
+    // 兜底源失败与「权威源瞬时故障」必须分开计数：
+    //
+    // 旧实现把兜底源的任何非码响应都置 sawTransient = true，后果有二：
+    // ① 负缓存永不可达 —— `sawDefinitiveMiss && !sawTransient` 恒假，于是公开接口
+    //    每次随机 gid 请求都要串行打 3~4 个第三方源，正是注释所担心的「放大器」；
+    // ② 任何人用随机 gid 打公开接口，兜底源对未知 gid 必然返回非码，
+    //    从而把 upstreamBreakerOpenUntil 推后 —— **全站所有 gid** 的取码在 20 秒内
+    //    只剩旧码或 503。一次随机请求即可让全体用户取不到码，属放大攻击面。
+    //
+    // 只有权威源自身出现 429/403/5xx/网络异常才算 transient 并允许开熔断。
+    let sawFallbackFailure = false;
     const guyunUrls: string[] = [];
     if (depotId && /^\d+$/.test(depotId)) {
       guyunUrls.push(`https://gmrc.guyunsq.com/index.php/${depotId}/${gid}`);
@@ -1979,12 +2087,12 @@ export class ManifestService {
             return { code: t, definitiveMiss: false, transient: false };
           }
           // 200 但不是码：该源没有，不算权威判定（它是聚合层，不是权威源）
-          sawTransient = true;
+          sawFallbackFailure = true;
         } else {
-          sawTransient = true;
+          sawFallbackFailure = true;
         }
       } catch {
-        sawTransient = true;
+        sawFallbackFailure = true;
       }
     }
 
@@ -1998,7 +2106,17 @@ export class ManifestService {
       this.upstreamBreakerOpenUntil = Date.now() + this.UPSTREAM_BREAKER_MS;
       return this.serveStaleOrTransient(gid, true);
     }
-    return { code: null, definitiveMiss: sawDefinitiveMiss, transient: false };
+    // 权威源已明确判定「没有这个 gid」，且兜底源也没给出码：
+    // 此时应如实回 404（让客户端写负缓存），而不是因为兜底源的一次失败就
+    // 谎报 transient —— 后者会让客户端反复重试同一个必然不存在的 gid。
+    if (sawDefinitiveMiss) {
+      return { code: null, definitiveMiss: true, transient: false };
+    }
+    // 权威源没给出结论、兜底源也全失败：确实不知道有没有，报 transient 让客户端稍后重试
+    if (sawFallbackFailure) {
+      return { code: null, definitiveMiss: false, transient: true };
+    }
+    return { code: null, definitiveMiss: false, transient: false };
   }
 
   /**
@@ -2102,12 +2220,26 @@ export class ManifestService {
     return filled;
   }
 
+  // 补码循环句柄：保存下来才能停止。旧实现丢弃 setInterval 返回值，
+  // 进程退出时无法 clearInterval，且 server.ts 若被重复调用（热重载/多次初始化）
+  // 会叠加多个循环 —— backfillRunning 只能防单轮重叠，防不住多循环并存。
+  private backfillTimer: ReturnType<typeof setInterval> | null = null;
+
   /** 启动低频补码循环。由 server.ts 在启动时调用一次。 */
   public startBackfillLoop(intervalMs: number): void {
-    const timer = setInterval(() => {
+    this.stopBackfillLoop();
+    this.backfillTimer = setInterval(() => {
       this.backfillStaleCodes().catch(() => {});
     }, intervalMs);
-    timer.unref?.();
+    (this.backfillTimer as any).unref?.();
+  }
+
+  /** 停止补码循环（重复启动前与进程退出时调用） */
+  public stopBackfillLoop(): void {
+    if (this.backfillTimer) {
+      clearInterval(this.backfillTimer);
+      this.backfillTimer = null;
+    }
   }
 }
 
@@ -2116,7 +2248,10 @@ export const manifestService = new ManifestService();
 // 码库落盘钩子：正常退出与 SIGINT/SIGTERM 都要刷一次，
 // 否则最近的取码成果会随进程一起丢掉（定时器最长 30 秒才落一次盘）。
 // 与 dlcIndexService 同样的模式，保证 pm2 restart 不丢数据。
-const flushCodeStoreOnExit = () => manifestService.flushCodeStore();
+const flushCodeStoreOnExit = () => {
+  manifestService.stopBackfillLoop();
+  manifestService.flushCodeStore();
+};
 process.once('beforeExit', flushCodeStoreOnExit);
 process.once('SIGINT', () => {
   flushCodeStoreOnExit();

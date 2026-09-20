@@ -5,8 +5,14 @@ import { manifestService } from '../services/manifestService.js';
 export const getManifestsForApp = async (req: Request, res: Response) => {
   try {
     const rawAppId = Array.isArray(req.params.appId) ? req.params.appId[0] : req.params.appId;
-    const appId = parseInt(rawAppId, 10);
-    if (isNaN(appId)) {
+    // 严格白名单：parseInt 会接受 "123abc"、"-1"、"1.9" 等并静默截断，
+    // 畸形输入会继续拼进上游 URL 与 manifests/<appId>/ 目录探测
+    const appIdStr = String(rawAppId ?? '').trim();
+    if (!/^\d+$/.test(appIdStr)) {
+      return res.status(400).json({ success: false, message: '无效的 AppID' });
+    }
+    const appId = Number(appIdStr);
+    if (!Number.isSafeInteger(appId) || appId <= 0 || appId > 0xffffffff) {
       return res.status(400).json({ success: false, message: '无效的 AppID' });
     }
 

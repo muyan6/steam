@@ -180,8 +180,18 @@ export class SponsorService {
       let page = 1;
       let totalPage = 1;
 
-      // 支持遍历前 5 页或所有赞助者（按每页 50 条计）
-      while (page <= totalPage && page <= 10) {
+      // 遍历所有页（每页 50 条），但设页数硬上限防止上游返回异常 total_page 时死循环。
+      // 旧实现硬编码 `page <= 10`，而合并阶段又会剔除**全部** source==='afdian' 的
+      // 旧条目 —— 赞助者超过 500 人时，第 501 名之后每次同步都会被静默删除且永不回补。
+      // 上限提到 200 页（1 万条）远超实际规模，同时记录是否被截断。
+      const PAGE_HARD_LIMIT = 200;
+      let truncated = false;
+      while (page <= totalPage) {
+        if (page > PAGE_HARD_LIMIT) {
+          truncated = true;
+          console.warn(`[SponsorService] 爱发电页数超过硬上限 ${PAGE_HARD_LIMIT}，已停止翻页（total_page=${totalPage}）`);
+          break;
+        }
         const paramsObj = { page, per_page: 50 };
         const paramsStr = JSON.stringify(paramsObj);
         const ts = Math.floor(Date.now() / 1000);
@@ -198,17 +208,22 @@ export class SponsorService {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-        const resp = await fetch('https://afdian.com/api/open/query-sponsor', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'ChunFengDu-Server/2.7.6'
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
+        // try/finally 清理定时器：旧实现在 fetch 抛错（超时/网络异常）时永远走不到
+        // clearTimeout，8 秒定时器泄漏并拖住事件循环；翻页循环里每页泄漏一个。
+        let resp: Response;
+        try {
+          resp = await fetch('https://afdian.com/api/open/query-sponsor', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'ChunFengDu-Server/2.7.6'
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         if (!resp.ok) {
           throw new Error(`爱发电 HTTP 响应异常: ${resp.status} ${resp.statusText}`);
@@ -248,9 +263,16 @@ export class SponsorService {
 
       // 合并而非覆盖：爱发电数据按 id 覆盖，同时保留后台手动维护的本地条目，
       // 避免一次同步（尤其是接口返回空时）抹掉管理员手工添加的赞助者。
+      //
+      // 关键：翻页被截断时（页面数超硬上限，或本次拉取明显少于已有条目），
+      // 必须保留**未被本次拉取覆盖**的旧 afdian 条目 —— 否则它们会被静默删除。
+      const fetchedIds = new Set(allFetchedSponsors.map((s) => s.id));
       const mergedMap = new Map<string, SponsorItem>();
       for (const s of this.readRawSponsors()) {
-        if (s && s.source !== 'afdian') mergedMap.set(s.id, s);
+        if (!s) continue;
+        if (s.source === 'afdian' && fetchedIds.has(s.id)) continue; // 本次已拉到，用新数据覆盖
+        if (s.source === 'afdian' && truncated) mergedMap.set(s.id, s); // 未拉到且被截断：保留旧记录
+        else if (s.source !== 'afdian') mergedMap.set(s.id, s);
       }
       for (const s of allFetchedSponsors) {
         mergedMap.set(s.id, s);

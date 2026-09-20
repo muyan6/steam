@@ -173,9 +173,13 @@ export class SourceRegistryService {
   }
 
   private saveRegistry(): void {
+    // 不能静默吞掉写失败：内存态显示「已同步 N 条」而磁盘没有记录时，
+    // 一次重启就会把数据源面板打回「未同步」，且排障时日志里毫无线索
     try {
       writeJsonAtomic(this.registryFilePath, this.sources);
-    } catch {}
+    } catch (e) {
+      console.error('[SourceRegistry] 数据源状态落盘失败（内存态与磁盘将不一致）:', (e as Error).message);
+    }
   }
 
   public getAllSources(): DataSourceInfo[] {

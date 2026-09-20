@@ -123,35 +123,83 @@ export class ToolboxService {
       timestamp: new Date().toISOString()
     };
 
-    try {
-      let logs: ToolboxRepairLog[] = [];
-      if (fs.existsSync(this.logFilePath)) {
-        const raw = fs.readFileSync(this.logFilePath, 'utf-8');
-        logs = JSON.parse(raw);
-      }
-      logs.unshift(newRecord);
-      // 保持最多 1000 条日志
-      if (logs.length > 1000) {
-        logs = logs.slice(0, 1000);
-      }
-      writeJsonAtomic(this.logFilePath, logs);
-    } catch (e: any) {
-      console.warn('[ToolboxService] 写入修复日志失败:', e.message);
-    }
+    // 内存缓冲 + 写链：/toolbox/repair-log 是公开接口，
+    // 原实现每写一条就全量 readFileSync + parse + 1000 条重写，且无任何互斥 ——
+    // 高频调用时并发 read-modify-write 会互相覆盖（丢日志），
+    // 同步读写还会阻塞事件循环。
+    //
+    // 必须先 loadLogs()：否则首次记录时缓冲区还是空的，落盘会用「仅此一条」
+    // 覆写掉磁盘上已有的全部历史日志。
+    this.loadLogs().unshift(newRecord);
+    if (this.logsBuffer.length > 1000) this.logsBuffer.length = 1000;
+    this.logsDirty = true;
+    this.scheduleLogFlush();
 
     return newRecord;
+  }
+
+  /** 修复日志内存缓冲（首条访问时从磁盘载入） */
+  private logsBuffer: ToolboxRepairLog[] = [];
+  private logsLoaded = false;
+  private logsDirty = false;
+  private logsFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 落盘串行化：避免两次 flush 争用同一临时文件 */
+  private logsSaveChain: Promise<void> = Promise.resolve();
+
+  private loadLogs(): ToolboxRepairLog[] {
+    if (this.logsLoaded) return this.logsBuffer;
+    this.logsLoaded = true;
+    try {
+      if (fs.existsSync(this.logFilePath)) {
+        const raw = fs.readFileSync(this.logFilePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        // 形状校验：文件被外部写坏成非数组时不能直接当日志用，
+        // 否则后续 unshift/filter 会抛出难以定位的异常
+        this.logsBuffer = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch (e: any) {
+      // 不再空 catch 吞掉：损坏时统计会静默归零，必须留下明确日志
+      console.error('[ToolboxService] 修复日志文件解析失败，按空日志处理（原文件保留）:', e?.message || e);
+      this.logsBuffer = [];
+    }
+    return this.logsBuffer;
+  }
+
+  private scheduleLogFlush(): void {
+    if (this.logsFlushTimer) return;
+    this.logsFlushTimer = setTimeout(() => {
+      this.logsFlushTimer = null;
+      void this.flushLogs();
+    }, 3 * 1000);
+    (this.logsFlushTimer as any).unref?.();
+  }
+
+  private flushLogs(): Promise<void> {
+    if (!this.logsDirty) return this.logsSaveChain;
+    this.logsDirty = false;
+    const snapshot = this.logsBuffer.slice();
+    const run = async (): Promise<void> => {
+      try {
+        writeJsonAtomic(this.logFilePath, snapshot);
+      } catch (e: any) {
+        // 落盘失败必须恢复脏标记并重排定时器，否则这批日志再无写入机会
+        this.logsDirty = true;
+        console.warn('[ToolboxService] 写入修复日志失败（将重试）:', e?.message || e);
+        this.scheduleLogFlush();
+      }
+    };
+    const next = this.logsSaveChain.then(run, run);
+    this.logsSaveChain = next.catch(() => {});
+    return next;
   }
 
   /**
    * 获取工具箱统计信息与节点监控
    */
   public getStats(): ToolboxStatsResponse {
-    let logs: ToolboxRepairLog[] = [];
-    try {
-      if (fs.existsSync(this.logFilePath)) {
-        logs = JSON.parse(fs.readFileSync(this.logFilePath, 'utf-8'));
-      }
-    } catch {}
+    // 统一走内存缓冲：既避免每次统计都全量读盘，也保证统计里包含
+    // 尚在 3 秒防抖窗口内、还没落盘的最新日志
+    const logs: ToolboxRepairLog[] = this.loadLogs();
 
     const clearCacheCount = logs.filter(l => l.actionType === 'clear_cache').length;
     const repairKernelCount = logs.filter(l => l.actionType === 'repair_kernel').length;

@@ -26,8 +26,12 @@ export class GameService {
   // 全量库 appId 索引：28.8万条线性扫描是每次详情查询的热点，建 Map 后 O(1)
   private allGamesById: Map<number, CompactGame> | null = null;
   // Steam 官方在线搜索结果 TTL 缓存（防同一热词反复实时打 Steam API）
-  private onlineSearchCache: Map<string, { ts: number; items: SteamGame[] }> = new Map();
+  // ttl 逐条存储：空结果必须用短 TTL（见 searchSteamStoreOnlineAndPersist），
+  // 统一读全局常量会让「空结果短 TTL」的承诺失效
+  private onlineSearchCache: Map<string, { ts: number; items: SteamGame[]; ttl: number }> = new Map();
   private static ONLINE_SEARCH_TTL_MS = 5 * 60 * 1000;
+  // 空结果短 TTL：用户改一个错别字后应能立刻重查，而不是被冻结 5 分钟
+  private static ONLINE_SEARCH_EMPTY_TTL_MS = 20 * 1000;
   // 中文缓存防抖落盘：搜索热词命中时避免每次都在事件循环上同步全量写盘
   private cacheDirty = false;
   private cacheFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -51,7 +55,14 @@ export class GameService {
         if (Array.isArray(list)) {
           for (const item of list) {
             this.chineseGamesCache.set(item.appId, item);
+            // imageCache 的 5000 上限此前只在 fetchRealSteamHeader 里生效，
+            // 从磁盘全量灌入时完全没有约束 —— 缓存文件涨到几十万条后，
+            // 每次重启都会把整份封面 URL 塞进内存，且永远不会被淘汰。
             if (item.headerUrl) {
+              if (this.imageCache.size >= GameService.IMAGE_CACHE_MAX) {
+                const oldest = this.imageCache.keys().next().value;
+                if (oldest !== undefined) this.imageCache.delete(oldest);
+              }
               this.imageCache.set(item.appId, item.headerUrl);
             }
           }
@@ -70,6 +81,11 @@ export class GameService {
    */
   private saveChineseCache(): void {
     this.cacheDirty = true;
+    this.scheduleChineseCacheFlush();
+  }
+
+  /** 单次排定防抖落盘；已有计时器时不重复排定 */
+  private scheduleChineseCacheFlush(): void {
     if (this.cacheFlushTimer) return;
     this.cacheFlushTimer = setTimeout(() => {
       this.cacheFlushTimer = null;
@@ -95,6 +111,10 @@ export class GameService {
     } catch (e) {
       this.cacheDirty = true;
       console.error('[GameService] 保存中文游戏缓存失败:', e);
+      // 必须重排定时器：flushChineseCache 被调用时 cacheFlushTimer 已被清空，
+      // 只恢复 dirty 标记而没有计时器的话，在下次命中搜索热词之前
+      // 这批数据再也没有落盘机会（进程重启即全部丢失）。
+      this.scheduleChineseCacheFlush();
     } finally {
       this.flushingChineseCache = false;
     }
@@ -261,7 +281,7 @@ export class GameService {
   private async searchSteamStoreOnlineAndPersist(query: string): Promise<SteamGame[]> {
     const cacheKey = query.trim().toLowerCase();
     const cached = this.onlineSearchCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < GameService.ONLINE_SEARCH_TTL_MS) {
+    if (cached && Date.now() - cached.ts < (cached.ttl || GameService.ONLINE_SEARCH_TTL_MS)) {
       return cached.items;
     }
     try {
@@ -312,8 +332,13 @@ export class GameService {
           this.saveChineseCache();
         }
 
-        // 空结果也缓存但用较短 TTL 占位，防止用无效词刷穿缓存上限
-        this.onlineSearchCache.set(cacheKey, { ts: Date.now(), items: newResults });
+        // 空结果也缓存，但必须用**较短** TTL —— 注释一直这么写，实现此前却写入
+        // 完整的 5 分钟 TTL：用户拼错一个词后即便立刻改正，5 分钟内仍拿不到结果，
+        // 表现成「搜索坏了」。这里按结果是否为空分别取 TTL。
+        const ttl = newResults.length > 0
+          ? GameService.ONLINE_SEARCH_TTL_MS
+          : GameService.ONLINE_SEARCH_EMPTY_TTL_MS;
+        this.onlineSearchCache.set(cacheKey, { ts: Date.now(), items: newResults, ttl });
         if (this.onlineSearchCache.size > 500) {
           const now = Date.now();
           for (const [k, v] of this.onlineSearchCache) {
@@ -472,7 +497,9 @@ export class GameService {
 
       // 如果官方 API 结果较少，用中文缓存和热门库补充
       for (const g of this.popularGames) {
-        if (isNumber && g.appId.toString().includes(rawQ) && !seenAppIds.has(g.appId)) {
+        // 必须与下方各源统一走 matchNumeric（精确或前缀），
+        // 旧实现用 includes：搜 "12" 会命中 512、1123、61234 等一切含 "12" 的 AppID
+        if (isNumber && this.matchNumeric(g.appId, rawQ) && !seenAppIds.has(g.appId)) {
           allMatched.push(g);
           seenAppIds.add(g.appId);
         } else if (searchKeywords.some((kw) => g.name.toLowerCase().includes(kw) || (g.nameZh && g.nameZh.toLowerCase().includes(kw))) && !seenAppIds.has(g.appId)) {
@@ -593,9 +620,22 @@ export class GameService {
       }
     }
 
-    // 纯数字未收录时的保底
+    // 纯数字未收录时的保底。
+    // 必须校验为安全的 32 位 AppID：传入 20 位数字串时 parseInt 会产生一个
+    // 超出 Steam 取值范围的失真 appId，并据此拼出必然 404 的封面 URL。
     if (isNumber && allMatched.length === 0) {
-      const appId = parseInt(rawQ, 10);
+      const appId = Number(rawQ);
+      if (!Number.isSafeInteger(appId) || appId <= 0 || appId > 0xffffffff) {
+        return {
+          items: [],
+          total: 0,
+          page,
+          pageSize,
+          totalPages: 1,
+          source,
+          sourceName: sourceNames[source]
+        };
+      }
       allMatched.push({
         appId,
         name: `Steam App ${appId}`,

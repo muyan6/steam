@@ -13,8 +13,27 @@ export class SyncService {
   // 安全策略：不再关闭上游 HTTPS 证书校验
   private readonly httpsAgent = new https.Agent();
   private isSyncing = false;
+  // 子任务各自的互斥：syncGames/syncDepotKeys/syncTokens 会被管理端路由直接调用，
+  // 旧实现只给 syncAll 加了守卫，手动同步与 24h 定时任务并发时两路会同时
+  // writeJsonAtomicAsync + loadAllGamesDatabase，后写覆盖先写。
+  private subRunning = new Set<string>();
   private timer: NodeJS.Timeout | null = null;
   private initialTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * 获取子任务锁。
+   * @param internal 由 syncAll 调用时为 true —— 调用方已持有全局互斥，跳过抢锁
+   */
+  private beginSub(name: string, internal?: boolean): boolean {
+    if (internal) return true;
+    if (this.isSyncing || this.subRunning.has(name)) return false;
+    this.subRunning.add(name);
+    return true;
+  }
+
+  private endSub(name: string): void {
+    this.subRunning.delete(name);
+  }
 
   private fastMirrors = [
     'https://raw.githubusercontent.com/',
@@ -30,7 +49,11 @@ export class SyncService {
   /**
    * 同步全量游戏列表
    */
-  public async syncGames(): Promise<{ success: boolean; message: string; count?: number }> {
+  public async syncGames(opts?: { internal?: boolean }): Promise<{ success: boolean; message: string; count?: number }> {
+    if (!this.beginSub('games', opts?.internal)) {
+      return { success: false, message: '同步任务正在后台进行中，请勿重复触发。' };
+    }
+    try {
     const upstreamPath = 'SteamTools-Team/GameList/main/games.json';
     let data: any = null;
 
@@ -87,14 +110,22 @@ export class SyncService {
       sourceRegistryService.recordSyncError('steamtools_gamelist', e.message);
       return { success: false, message: `解析并写入数据失败: ${e.message}` };
     }
+    } finally {
+      if (!opts?.internal) this.endSub('games');
+    }
   }
 
   /**
    * 同步全量 DepotKey 解密密钥库（优先苏大猫实时源，其次 GitHub 镜像源）
    */
-  public async syncDepotKeys(): Promise<{ success: boolean; message: string; count?: number }> {
+  public async syncDepotKeys(opts?: { internal?: boolean }): Promise<{ success: boolean; message: string; count?: number }> {
+    if (!this.beginSub('depotKeys', opts?.internal)) {
+      return { success: false, message: '同步任务正在后台进行中，请勿重复触发。' };
+    }
+    try {
     let data: Record<string, string> | null = null;
     let sudamaCount = 0;
+    let fromSudama = false;
 
     // 1. 优先尝试从苏大猫实时接口同步
     try {
@@ -105,8 +136,17 @@ export class SyncService {
         headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
       });
 
-      if (resp.data && typeof resp.data === 'object' && Object.keys(resp.data).length > 1000) {
+      // 必须排除数组：typeof [] === 'object'，数组同样能通过旧校验，
+      // 随后按 Object.entries 落盘会写成 "0"/"1"/"2" 键的垃圾数据，
+      // 直接污染 28.8 万条真实密钥库。
+      if (
+        resp.data &&
+        typeof resp.data === 'object' &&
+        !Array.isArray(resp.data) &&
+        Object.keys(resp.data).length > 1000
+      ) {
         data = resp.data;
+        fromSudama = true;
         sudamaCount = Object.keys(data!).length;
         sourceRegistryService.recordSyncSuccess('sudama_keys', sudamaCount);
         console.log(`[SyncService] 成功从苏大猫源拉取到 ${sudamaCount} 条 DepotKey`);
@@ -129,9 +169,8 @@ export class SyncService {
             headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
           });
 
-          if (resp.data && typeof resp.data === 'object') {
+          if (resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data)) {
             data = resp.data;
-            sourceRegistryService.recordSyncSuccess('manifesthub_keys', Object.keys(data!).length);
             break;
           }
         } catch (e: any) {
@@ -153,11 +192,13 @@ export class SyncService {
       }
 
       if (!(await depotService.saveDepotKeys(cleanKeys))) {
-        sourceRegistryService.recordSyncError('manifesthub_keys', '落盘失败或数据库处于损坏保护状态');
+        sourceRegistryService.recordSyncError(fromSudama ? 'sudama_keys' : 'manifesthub_keys', '落盘失败或数据库处于损坏保护状态');
         return { success: false, message: '密钥数据落盘失败（可能数据库损坏保护已生效），请检查服务端日志。' };
       }
       const count = depotService.getTotalKeysCount();
-      sourceRegistryService.recordSyncSuccess('manifesthub_keys', count);
+      // 按实际命中的源记状态：数据来自苏大猫时却把成功与计数写进 manifesthub_keys，
+      // 会让数据源面板显示「GitHub 镜像已同步 28.8 万条」而实际是苏大猫贡献的
+      sourceRegistryService.recordSyncSuccess(fromSudama ? 'sudama_keys' : 'manifesthub_keys', count);
 
       return {
         success: true,
@@ -167,12 +208,18 @@ export class SyncService {
     } catch (e: any) {
       return { success: false, message: `写入密钥数据失败: ${e.message}` };
     }
+    } finally {
+      if (!opts?.internal) this.endSub('depotKeys');
+    }
   }
 
   /**
    * 同步 Steam PICS AccessTokens 令牌库
    */
-  public async syncTokens(): Promise<{ success: boolean; message: string; count?: number }> {
+  public async syncTokens(opts?: { internal?: boolean }): Promise<{ success: boolean; message: string; count?: number }> {
+    if (!this.beginSub('tokens', opts?.internal)) {
+      return { success: false, message: '同步任务正在后台进行中，请勿重复触发。' };
+    }
     try {
       console.log(`[SyncService] 正在从苏大猫源 ${this.sudamaEndpoints.tokens} 拉取最新 PICS AccessTokens...`);
       const resp = await axios.get(this.sudamaEndpoints.tokens, {
@@ -181,7 +228,7 @@ export class SyncService {
         headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
       });
 
-      if (resp.data && typeof resp.data === 'object') {
+      if (resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data)) {
         const tokens: Record<string, string> = {};
         for (const [k, v] of Object.entries(resp.data)) {
           if (typeof v === 'string' && v.length > 0) {
@@ -208,6 +255,8 @@ export class SyncService {
       sourceRegistryService.recordSyncError('sudama_tokens', e.message);
       console.error(`[SyncService] 同步 AccessTokens 失败:`, e.message);
       return { success: false, message: `同步 AccessTokens 失败: ${e.message}` };
+    } finally {
+      if (!opts?.internal) this.endSub('tokens');
     }
   }
 
@@ -224,9 +273,11 @@ export class SyncService {
     const results: any = {};
 
     try {
-      results.depotKeys = await this.syncDepotKeys();
-      results.tokens = await this.syncTokens();
-      results.games = await this.syncGames();
+      // internal: true —— syncAll 已持有全局互斥，子方法不再重复抢锁，
+      // 否则会立即被自己的守卫拒绝、整体同步静默变成「全部失败」
+      results.depotKeys = await this.syncDepotKeys({ internal: true });
+      results.tokens = await this.syncTokens({ internal: true });
+      results.games = await this.syncGames({ internal: true });
 
       // 子任务失败必须如实上报：密钥库/令牌库属于核心数据，任一写入失败都视为整体失败，
       // 否则管理端会在数据未落盘时仍显示「同步完成」，掩盖真实的持久化故障。
