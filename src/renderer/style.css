@@ -1042,83 +1042,89 @@ button.hover-lift:not(:disabled):active {
 }
 
 /* ==========================================================================
-   指南模态弹窗多主题高质感自适应系统 (Guide Modals Multi-Theme Adaptation)
-   覆盖 6 套主题（深色 + 浅色）：自适应柔和渐变、高对比度、防发黑、防发灰
+   指南模态弹窗系统：全量同步软件全局主题变量 (Theme-Synchronized Guide System)
+   严格联动 6 套主题（3深+3浅）的 CSS 变量，确保与整体软件高度一致、通透雅致
    ========================================================================== */
 
-/* 模式卡片 A - 天蓝/青绿系 (跟随最新模式等) */
-.guide-card-accent-a {
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.14) 0%, rgba(15, 23, 42, 0.75) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.35);
+/* 弹窗顶层容器卡片 */
+.guide-modal-card {
+  background-color: var(--color-bg-card);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--color-border-subtle);
 }
 
-[data-theme="frost"] .guide-card-accent-a,
-[data-theme="dawn"] .guide-card-accent-a,
-[data-theme="mint"] .guide-card-accent-a {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
-  border-color: #7dd3fc !important;
-  box-shadow: 0 4px 16px rgba(2, 132, 199, 0.08) !important;
-}
-
-/* 模式卡片 B - 紫罗兰系 (版本锁定模式等) */
-.guide-card-accent-b {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.14) 0%, rgba(15, 23, 42, 0.75) 100%);
-  border: 1px solid rgba(192, 132, 252, 0.35);
-}
-
-[data-theme="frost"] .guide-card-accent-b,
-[data-theme="dawn"] .guide-card-accent-b,
-[data-theme="mint"] .guide-card-accent-b {
-  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%) !important;
-  border-color: #d8b4fe !important;
-  box-shadow: 0 4px 16px rgba(147, 51, 234, 0.08) !important;
-}
-
-/* 模式卡片 C - 翡翠绿系 (Steam通道联机等) */
-.guide-card-accent-emerald {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14) 0%, rgba(15, 23, 42, 0.75) 100%);
-  border: 1px solid rgba(52, 211, 153, 0.35);
-}
-
-[data-theme="frost"] .guide-card-accent-emerald,
-[data-theme="dawn"] .guide-card-accent-emerald,
-[data-theme="mint"] .guide-card-accent-emerald {
-  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%) !important;
-  border-color: #86efac !important;
-  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.08) !important;
-}
-
-/* 模式卡片 D - 琥珀金/橙色系 (联机补丁注入等) */
-.guide-card-accent-amber {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14) 0%, rgba(15, 23, 42, 0.75) 100%);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-}
-
-[data-theme="frost"] .guide-card-accent-amber,
-[data-theme="dawn"] .guide-card-accent-amber,
-[data-theme="mint"] .guide-card-accent-amber {
-  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
-  border-color: #fcd34d !important;
-  box-shadow: 0 4px 16px rgba(217, 119, 6, 0.08) !important;
-}
-
-/* 通用功能图解微卡片与徽章条目 */
-.guide-sub-card {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all 0.2s ease;
-}
-
-[data-theme="frost"] .guide-sub-card,
-[data-theme="dawn"] .guide-sub-card,
-[data-theme="mint"] .guide-sub-card {
-  background: #ffffff !important;
+[data-theme="frost"] .guide-modal-card,
+[data-theme="dawn"] .guide-modal-card,
+[data-theme="mint"] .guide-modal-card {
+  background-color: #ffffff !important;
   border-color: #e2e8f0 !important;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05) !important;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15) !important;
 }
 
-.guide-sub-card:hover {
+/* 核心方案/模式大卡片 (类似实用工具箱风格) */
+.guide-hero-card {
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-subtle);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.guide-hero-card:hover {
   border-color: var(--color-border-hover);
+  box-shadow: 0 12px 28px -6px var(--color-accent-glow);
+}
+
+[data-theme="frost"] .guide-hero-card,
+[data-theme="dawn"] .guide-hero-card,
+[data-theme="mint"] .guide-hero-card {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-theme="frost"] .guide-hero-card:hover,
+[data-theme="dawn"] .guide-hero-card:hover,
+[data-theme="mint"] .guide-hero-card:hover {
+  border-color: var(--color-accent-primary) !important;
+  box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* 带有软件主题渐变的高光卡片头部横幅 */
+.guide-hero-banner {
+  background: linear-gradient(135deg, var(--color-accent-primary-hover) 0%, var(--color-accent-primary) 55%, var(--color-accent-secondary) 100%);
+}
+
+.guide-hero-banner-alt {
+  background: var(--color-accent-gradient);
+}
+
+/* 功能操作与说明微卡片 (全主题自动感知) */
+.guide-item-card {
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border-subtle);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.guide-item-card:hover {
+  background-color: var(--color-bg-card-hover);
+  border-color: var(--color-border-hover);
+  transform: translateY(-1px);
+}
+
+[data-theme="frost"] .guide-item-card,
+[data-theme="dawn"] .guide-item-card,
+[data-theme="mint"] .guide-item-card {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-theme="frost"] .guide-item-card:hover,
+[data-theme="dawn"] .guide-item-card:hover,
+[data-theme="mint"] .guide-item-card:hover {
+  border-color: var(--color-accent-primary) !important;
+  box-shadow: 0 6px 18px -2px rgba(15, 23, 42, 0.08) !important;
 }
 
 /* 浅色主题下半透明白色背景与边框的优雅映射 */
