@@ -185,13 +185,18 @@
                   ID: {{ game.appId }}
                 </span>
 
-                <!-- 规则生效 / 软停用开关 -->
-                <GameStatusToggle
-                  :app-id="game.appId"
-                  :is-disabled="!!game.isDisabled"
-                  :loading="togglingAppId === game.appId"
-                  @toggle="onToggleGameStatus(game.appId, $event)"
-                />
+                <!-- 规则生效状态 (纯只读徽章，无点击互动) -->
+                <span
+                  class="text-[11px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold border select-none"
+                  :class="game.isDisabled
+                    ? 'bg-slate-700/50 text-slate-300 border-slate-600/30'
+                    : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'"
+                  :title="game.isDisabled ? '已停用入库：文件已归档到 Disable 目录' : '入库生效中：OpenSteamTool 正常挂载'"
+                >
+                  <CheckCircle2 v-if="!game.isDisabled" class="w-3 h-3 text-emerald-400" />
+                  <PauseCircle v-else class="w-3 h-3 text-slate-400" />
+                  <span>{{ game.isDisabled ? '已停用' : '已生效' }}</span>
+                </span>
 
                 <!-- 密钥状态 -->
                 <span
@@ -260,13 +265,14 @@
             </div>
           </div>
 
-          <!-- 操作按钮条 -->
-          <div class="flex items-center justify-between gap-2 pt-3 border-t border-white/10">
-            <div class="flex items-center gap-2 flex-wrap">
+          <!-- 操作按钮条 (统一规范化对齐排布) -->
+          <div class="pt-3 border-t border-white/10 space-y-2">
+            <!-- 第 1 行：主要运行动作 (下载与运行，等宽对半分) -->
+            <div class="grid grid-cols-2 gap-2">
               <a
                 :href="`steam://install/${game.appId}`"
                 title="在 Steam 客户端直接触发下载"
-                class="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm"
+                class="h-8 px-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
               >
                 <Download class="w-3.5 h-3.5" />
                 <span>下载</span>
@@ -275,22 +281,26 @@
               <a
                 :href="`steam://rungameid/${game.appId}`"
                 title="在 Steam 客户端启动游戏"
-                class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
+                class="h-8 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98"
               >
                 <Play class="w-3.5 h-3.5 fill-current" />
                 <span>运行</span>
               </a>
+            </div>
 
+            <!-- 第 2 行：规则管理动作 (版本控制、规则启停、移出库，均分 1/3) -->
+            <div class="grid grid-cols-3 gap-2">
+              <!-- 按钮 1: 版本策略 (锁定版本 / 跟随最新) -->
               <button
                 v-if="!isPinned(game)"
                 @click="handleSetVersionStrategy(game.appId, game.name, true)"
                 :disabled="updatingAppId === game.appId"
                 title="钉死当前官方最新版本（联机对版本用）；官方出新版后不会自动跟进"
-                class="px-2.5 py-1.5 btn-soft-action text-xs font-semibold rounded-xl flex items-center gap-1.5"
+                class="h-8 px-2 btn-soft-action text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
                 <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <Lock v-else class="w-3.5 h-3.5" />
-                <span>{{ updatingAppId === game.appId ? '处理中...' : '锁定版本' }}</span>
+                <span class="truncate">{{ updatingAppId === game.appId ? '处理中' : '锁定版本' }}</span>
               </button>
 
               <button
@@ -299,35 +309,55 @@
                 :disabled="updatingAppId === game.appId"
                 title="解除锁定，此后每次下载自动获取官方最新清单，无须再手动更新"
                 :class="updateStatuses[game.appId]?.hasUpdate
-                  ? 'px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300'
-                  : 'px-2.5 py-1.5 btn-soft-action'"
-                class="text-xs font-semibold rounded-xl transition flex items-center gap-1.5 disabled:opacity-60"
+                  ? 'bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300'
+                  : 'btn-soft-action text-slate-300'"
+                class="h-8 px-2 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
                 <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <ArrowUpCircle v-else class="w-3.5 h-3.5" />
-                <span>{{ updatingAppId === game.appId ? '处理中...' : '跟随最新' }}</span>
+                <span class="truncate">{{ updatingAppId === game.appId ? '处理中' : '跟随最新' }}</span>
               </button>
 
+              <!-- 按钮 2: Lua 规则启停开关 (软停用 / 恢复启用) -->
               <button
-                v-if="isPinned(game) && !manifestStatuses[game.appId]?.hasManifest && !game.hasManifest"
-                @click="handleRepairManifest(game.appId)"
-                :disabled="repairingAppId === game.appId"
-                title="仅「锁定版本」模式需要：手动将实体清单预缓存到本地 Steam/depotcache 目录"
-                class="px-2.5 py-1.5 btn-soft-action text-xs font-semibold rounded-xl flex items-center gap-1.5"
+                @click="onToggleGameStatus(game.appId, !game.isDisabled)"
+                :disabled="togglingAppId === game.appId"
+                :title="game.isDisabled ? '已停用入库；点击即可一键重新激活' : '入库生效中；点击可将其临时停用归档（无需物理删除）'"
+                :class="game.isDisabled
+                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300'
+                  : 'btn-soft-action text-slate-300 hover:text-slate-100'"
+                class="h-8 px-2 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
-                <RotateCw v-if="repairingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
-                <FolderSync v-else class="w-3.5 h-3.5" />
-                <span>{{ repairingAppId === game.appId ? '拉取中...' : '预缓存' }}</span>
+                <RotateCw v-if="togglingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
+                <template v-else>
+                  <PlayCircle v-if="game.isDisabled" class="w-3.5 h-3.5 text-emerald-400" />
+                  <PauseCircle v-else class="w-3.5 h-3.5 text-slate-400" />
+                  <span class="truncate">{{ game.isDisabled ? '恢复启用' : '停用规则' }}</span>
+                </template>
+              </button>
+
+              <!-- 按钮 3: 移出库 (物理删除规则) -->
+              <button
+                @click="removeGame(game.appId, game.name)"
+                title="将该游戏移出库（彻底删除 Lua 规则）"
+                class="h-8 px-2 bg-rose-600/15 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 cursor-pointer"
+              >
+                <Trash2 class="w-3.5 h-3.5" />
+                <span class="truncate">出库</span>
               </button>
             </div>
 
+            <!-- 第 3 行 (仅需时展示)：预缓存实体清单 -->
             <button
-              @click="removeGame(game.appId, game.name)"
-              title="将该游戏移出库（删除 Lua 规则）"
-              class="px-3 py-1.5 bg-rose-600/15 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              v-if="isPinned(game) && !manifestStatuses[game.appId]?.hasManifest && !game.hasManifest"
+              @click="handleRepairManifest(game.appId)"
+              :disabled="repairingAppId === game.appId"
+              title="仅「锁定版本」模式需要：手动将实体清单预缓存到本地 Steam/depotcache 目录"
+              class="w-full h-8 px-3 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-60 cursor-pointer"
             >
-              <Trash2 class="w-3.5 h-3.5" />
-              <span>出库</span>
+              <RotateCw v-if="repairingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
+              <FolderSync v-else class="w-3.5 h-3.5" />
+              <span>{{ repairingAppId === game.appId ? '正在拉取清单...' : '缺少本地清单，点击预缓存' }}</span>
             </button>
           </div>
         </div>
@@ -353,12 +383,14 @@ import {
   CloudDownload,
   Lock,
   BookOpen,
-  ChevronDown
+  ChevronDown,
+  CheckCircle2,
+  PauseCircle,
+  PlayCircle
 } from 'lucide-vue-next';
 import { AppManifestStatus, GameUpdateStatus, LuaGameInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
 import { applyImageFallback, smartMultiCdnImageFallback } from '../utils/imageFallback';
-import GameStatusToggle from '../components/library/GameStatusToggle.vue';
 import { useLuaManager } from '../composables/useLuaManager';
 import type { GameFilterMode } from '../types/luaManager';
 
