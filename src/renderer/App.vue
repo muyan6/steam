@@ -190,6 +190,10 @@
             v-else-if="currentTab === 'onlinefix'"
             @notify="addToast"
           />
+          <TrainerAchievementsView
+            v-else-if="currentTab === 'trainers'"
+            @notify="addToast"
+          />
           <ToolboxView
             v-else-if="currentTab === 'toolbox'"
             @notify="addToast"
@@ -501,11 +505,13 @@ import {
   Download,
   MessageSquare,
   CheckCircle2,
-  XCircle
+  XCircle,
+  Trophy
 } from 'lucide-vue-next';
 import SearchView from './views/SearchView.vue';
 import LibraryView from './views/LibraryView.vue';
 import OnlineFixView from './views/OnlineFixView.vue';
+import TrainerAchievementsView from './views/TrainerAchievementsView.vue';
 import ToolboxView from './views/ToolboxView.vue';
 import FeaturesView from './views/FeaturesView.vue';
 import AboutView from './views/AboutView.vue';
@@ -522,7 +528,7 @@ import { formatIpcError, sanitizeChangelogText } from './api/tauriBridge';
 import { APP_CONFIG } from '../config/appConfig';
 
 const appVersion = APP_CONFIG.VERSION;
-const currentTab = ref<'search' | 'library' | 'onlinefix' | 'toolbox' | 'features' | 'about' | 'settings'>('search');
+const currentTab = ref<'search' | 'library' | 'onlinefix' | 'trainers' | 'toolbox' | 'features' | 'about' | 'settings'>('search');
 const showStartupWizard = ref(false);
 // 启动引导打开来源：首次启动(环境未就绪)为强引导不可关闭；设置页手动打开可随时关闭
 const wizardClosable = ref(false);
@@ -717,6 +723,7 @@ const navItems = [
   { id: 'search' as const, label: '游戏检索与入库', iconComponent: Search },
   { id: 'library' as const, label: '已入库规则管理', iconComponent: Library },
   { id: 'onlinefix' as const, label: '联机中心', iconComponent: Gamepad2 },
+  { id: 'trainers' as const, label: '修改器与成就管理', iconComponent: Trophy },
   { id: 'toolbox' as const, label: '实用工具箱', iconComponent: Wrench },
   { id: 'features' as const, label: '功能详解', iconComponent: Sparkles },
   { id: 'about' as const, label: '关于软件', iconComponent: Info },

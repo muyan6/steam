@@ -22,6 +22,8 @@ import {
 } from '../controllers/manifestController.js';
 import { manifestService } from '../services/manifestService.js';
 import { getLatestOstRelease, downloadOstAsset } from '../controllers/ostController.js';
+import { matchTrainer, downloadTrainerProxy } from '../controllers/trainerController.js';
+import { getGameAchievements, getSamDownloadInfo, downloadSamProxy } from '../controllers/achievementController.js';
 import {
   getLatestNotice,
   getActiveNoticesList,
@@ -469,6 +471,13 @@ router.post('/toolbox/repair-log', heartbeatLimiter, reportRepairLog);
 router.get('/toolbox/steamless-info', getSteamlessInfo);
 router.get('/toolbox/online-modes', getOnlineModes);
 router.get('/toolbox/onlinefix-search', searchOnlineFix);
+
+// 修改器与成就管理 (Trainers & Achievements)
+router.get('/trainers/match', matchTrainer);
+router.get('/trainers/download', downloadTrainerProxy);
+router.get('/achievements/sam/info', getSamDownloadInfo);
+router.get('/achievements/sam/download', downloadSamProxy);
+router.get('/achievements/:appId', getGameAchievements);
 
 // ==================== 2. 管理员认证受保护 API ====================
 

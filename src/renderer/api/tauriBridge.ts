@@ -1,6 +1,19 @@
 import { invoke } from '@tauri-apps/api/core';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
-import type { SteamGame, SteamEnvironmentInfo, ToolboxActionResult, LocalGamesScanResult, SponsorItem, SponsorDataResponse, VersionChangelogItem, InviteStatus } from '../../types';
+import type {
+  SteamGame,
+  SteamEnvironmentInfo,
+  ToolboxActionResult,
+  LocalGamesScanResult,
+  SponsorItem,
+  SponsorDataResponse,
+  VersionChangelogItem,
+  InviteStatus,
+  TrainerInfo,
+  TrainerStatus,
+  GameAchievementsData,
+  SamStatus
+} from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
 import { APP_CONFIG } from '../../config/appConfig';
@@ -1350,6 +1363,60 @@ export const createTauriBridge = () => {
       } catch {
         return { server: 'steamrun', isOfficial: false, status: 'unknown' };
       }
+    },
+
+    // 修改器与成就管理 (Trainer & Achievement Management)
+    matchTrainer: async (name: string, appId?: number): Promise<TrainerInfo | null> => {
+      try {
+        const query = `name=${encodeURIComponent(name)}${appId ? `&appId=${appId}` : ''}`;
+        const res = await getJson<any>(`${API}/api/trainers/match?${query}`);
+        if (res && res.success) {
+          return res.data;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
+    getTrainerStatus: async (appId: number): Promise<TrainerStatus> => {
+      return invoke('get_trainer_status', { appId });
+    },
+    downloadTrainer: async (appId: number, downloadUrl: string, filename?: string, referer?: string): Promise<TrainerStatus> => {
+      return invoke('download_trainer', { appId, downloadUrl, filename, referer });
+    },
+    launchTrainer: async (appId: number): Promise<boolean> => {
+      return invoke('launch_trainer', { appId });
+    },
+    openTrainerDir: async (appId: number): Promise<boolean> => {
+      return invoke('open_trainer_dir', { appId });
+    },
+    deleteTrainer: async (appId: number): Promise<boolean> => {
+      return invoke('delete_trainer', { appId });
+    },
+
+    getGameAchievements: async (appId: number, lang = 'schinese'): Promise<GameAchievementsData | null> => {
+      try {
+        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`);
+        if (res && res.success) {
+          return res.data;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    },
+    getSamStatus: async (): Promise<SamStatus> => {
+      return invoke('get_sam_status');
+    },
+    downloadSam: async (downloadUrl?: string): Promise<SamStatus> => {
+      const url = downloadUrl || `${API}/api/achievements/sam/download`;
+      return invoke('download_sam', { downloadUrl: url });
+    },
+    launchSamForGame: async (appId: number): Promise<boolean> => {
+      return invoke('launch_sam_for_game', { appId });
+    },
+    openSamDir: async (): Promise<boolean> => {
+      return invoke('open_sam_dir');
     }
   };
 };

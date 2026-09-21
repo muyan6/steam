@@ -13,6 +13,8 @@ pub mod accounts;
 pub mod lua_manager;
 pub mod lua_watcher;
 pub mod steam_worker;
+pub mod trainer;
+pub mod achievements;
 
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -1753,6 +1755,58 @@ fn set_window_background(app: AppHandle, hex: String) {
     apply_native_background(&app, &hex);
 }
 
+// ==================== 修改器与成就管理命令 ====================
+
+#[tauri::command]
+fn get_trainer_status(app_id: u32) -> Result<trainer::TrainerStatus, String> {
+    trainer::get_trainer_status(app_id)
+}
+
+#[tauri::command]
+async fn download_trainer(
+    app_id: u32,
+    download_url: String,
+    filename: Option<String>,
+    referer: Option<String>,
+) -> Result<trainer::TrainerStatus, String> {
+    trainer::download_trainer(app_id, download_url, filename, referer).await
+}
+
+#[tauri::command]
+fn launch_trainer(app_id: u32) -> Result<bool, String> {
+    trainer::launch_trainer(app_id)
+}
+
+#[tauri::command]
+fn open_trainer_dir(app_id: u32) -> Result<bool, String> {
+    trainer::open_trainer_dir(app_id)
+}
+
+#[tauri::command]
+fn delete_trainer(app_id: u32) -> Result<bool, String> {
+    trainer::delete_trainer(app_id)
+}
+
+#[tauri::command]
+fn get_sam_status() -> Result<achievements::SamStatus, String> {
+    achievements::get_sam_status()
+}
+
+#[tauri::command]
+async fn download_sam(download_url: Option<String>) -> Result<achievements::SamStatus, String> {
+    achievements::download_sam(download_url).await
+}
+
+#[tauri::command]
+fn launch_sam_for_game(app_id: u32) -> Result<bool, String> {
+    achievements::launch_sam_for_game(app_id)
+}
+
+#[tauri::command]
+fn open_sam_dir() -> Result<bool, String> {
+    achievements::open_sam_dir()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1871,7 +1925,16 @@ pub fn run() {
             get_local_steam_accounts,
             switch_steam_account,
             check_game_dlc_diff,
-            append_game_dlcs
+            append_game_dlcs,
+            get_trainer_status,
+            download_trainer,
+            launch_trainer,
+            open_trainer_dir,
+            delete_trainer,
+            get_sam_status,
+            download_sam,
+            launch_sam_for_game,
+            open_sam_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

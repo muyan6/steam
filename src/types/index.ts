@@ -423,3 +423,53 @@ export interface VersionChangelogItem {
   downloadUrl?: string;
 }
 
+// ==================== 修改器与成就管理 ====================
+
+export interface CheatItem {
+  raw: string;
+  hotkey: string;
+  descriptionEn: string;
+  descriptionZh: string;
+}
+
+export interface TrainerInfo {
+  matched: boolean;
+  postTitle?: string;
+  postUrl?: string;
+  publishedAt?: string;
+  version?: string;
+  downloadUrl?: string;
+  directDownloadUrl?: string;
+  cheatsCount?: number;
+  cheats?: CheatItem[];
+}
+
+export interface TrainerStatus {
+  isDownloaded: boolean;
+  exePath?: string | null;
+  exeName?: string | null;
+  fileSize?: number | null;
+  isRunning: boolean;
+}
+
+export interface AchievementItem {
+  name?: string;
+  title: string;
+  description: string;
+  icon: string;
+  percent: string;
+}
+
+export interface GameAchievementsData {
+  appId: number;
+  count: number;
+  achievements: AchievementItem[];
+}
+
+export interface SamStatus {
+  isInstalled: boolean;
+  exePath?: string | null;
+  version?: string | null;
+}
+
+
