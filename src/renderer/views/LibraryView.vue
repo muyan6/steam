@@ -73,41 +73,16 @@
         <span class="block mt-1 text-sky-300/70">若首次点击下载提示「无网络连接 / 0 字节下载」，属清单请求码尚在获取中，等 5~10 秒<strong class="text-sky-200">再点一次下载</strong>即可正常开始。</span>
       </div>
       <button
-        @click="showGuide = !showGuide"
-        class="shrink-0 px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5"
+        @click="showGuide = true"
+        class="shrink-0 px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
       >
         <BookOpen class="w-3.5 h-3.5" />
-        <span>{{ showGuide ? '收起说明' : '功能说明' }}</span>
-        <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': showGuide }" />
+        <span>模式与功能指南</span>
       </button>
     </div>
 
-    <!-- 功能说明面板 -->
-    <div v-if="showGuide" class="mb-4 p-4 xl:p-5 rounded-2xl bg-slate-900/70 border border-white/10 text-xs shrink-0 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2.5">
-      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-0.5">顶部与全局操作</div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">检查更新</strong><span class="text-slate-400">检查「已锁定」版本的游戏是否落后官方最新版；跟随最新的游戏会自动跳过</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">刷新列表</strong><span class="text-slate-400">重新扫描规则目录，刷新所有卡片的密钥、清单与版本状态</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-emerald-300 shrink-0 w-16">三态筛选</strong><span class="text-slate-400">在「全部」、「生效中」、「已停用」间快速切换，灵活分类管理已归档游戏</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">账号秒切</strong><span class="text-slate-400">左侧边栏底部支持免密一键切换本地保存的 Steam 登录账号，自动重启应用生效</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">重启 Steam</strong><span class="text-slate-400">入库即时生效一般无须重启，仅在 Steam 偶发未识别规则时救急</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-rose-300 shrink-0 w-16">清空所有</strong><span class="text-slate-400">一键清空全部游戏的入库规则（高危操作，需二次确认）</span></div>
-
-      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mt-1.5 mb-0.5">卡片操作</div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-emerald-300 shrink-0 w-16">下载 / 运行</strong><span class="text-slate-400">直接调起 Steam 触发高速下载安装，或直接拉起启动游戏</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">停用 / 启用</strong><span class="text-slate-400">将规则软归档至 Disable 目录，Steam 中立即隐身且不占用空间，保留密钥随时可一键恢复</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-slate-200 shrink-0 w-16">锁定 / 跟随</strong><span class="text-slate-400">【锁定】钉死当前版本供联机对版本；【跟随】解除锁定，每次自动获取官方最新清单</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-amber-300 shrink-0 w-16">预缓存</strong><span class="text-slate-400">仅锁定模式需要，将对应版本实体清单提前写入 depotcache 目录以确保下载无误</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-rose-300 shrink-0 w-16">出库</strong><span class="text-slate-400">彻底删除该游戏的 Lua 规则文件，从库中完全移除</span></div>
-
-      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mt-1.5 mb-0.5">卡片徽标（模式与状态）</div>
-      <div class="md:col-span-2 leading-relaxed text-slate-400 space-y-1">
-        <div><span class="text-emerald-400 font-semibold">已生效</span> / <span class="text-slate-400 font-semibold">已停用</span>：当前 Lua 规则是否已挂载到 Steam 运行；</div>
-        <div><span class="text-emerald-400 font-semibold">密钥</span>：已注入 Depot 解密密钥（正常下载解密的前提）；<span class="text-purple-400 font-semibold">Token</span>：已配置 PICS 访问令牌；</div>
-        <div><span class="text-cyan-400 font-semibold">跟随最新</span>：【推荐】内核直连 CDN 动态获取最新清单，永远跟随官方更新，天然支持工坊，无需本地实体清单；</div>
-        <div><span class="text-slate-300 font-semibold">已锁定</span>：版本已钉死，依赖本地实体清单，官方出新版后不自动跟进（适合联机对版本）；</div>
-        <div><span class="text-amber-400 font-semibold">待缓存</span>：锁定版本模式下本地缺少实体清单，需点击卡片下方的预缓存按钮拉取。</div>
-      </div>
-    </div>
+    <!-- 规则管理与核心模式详解弹窗 (支持自由滑动，图文对照直观好懂) -->
+    <LibraryGuideModal v-model="showGuide" />
 
     <!-- 搜索过滤与分级状态栏 (如果有入库游戏) -->
     <div v-if="unlockedGames.length > 0" class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
@@ -399,6 +374,7 @@ import { formatIpcError } from '../api/tauriBridge';
 import { applyImageFallback, smartMultiCdnImageFallback } from '../utils/imageFallback';
 import { useLuaManager } from '../composables/useLuaManager';
 import type { GameFilterMode } from '../types/luaManager';
+import LibraryGuideModal from '../components/library/LibraryGuideModal.vue';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
