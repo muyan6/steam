@@ -130,6 +130,28 @@
         </div>
 
         <div class="flex items-center gap-3" @click.stop>
+          <!-- 视图模式切换：网格展台 / 紧凑列表 -->
+          <div class="flex items-center bg-slate-900/90 p-1 rounded-xl border border-white/10 gap-1">
+            <button
+              @click="viewMode = 'grid'"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              :class="viewMode === 'grid' ? 'bg-amber-500 text-slate-950 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+              title="卡片网格展台"
+            >
+              <LayoutGrid class="w-3.5 h-3.5" />
+              <span>网格</span>
+            </button>
+            <button
+              @click="viewMode = 'list'"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              :class="viewMode === 'list' ? 'bg-amber-500 text-slate-950 font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+              title="紧凑列表模式"
+            >
+              <List class="w-3.5 h-3.5" />
+              <span>列表</span>
+            </button>
+          </div>
+
           <span class="text-xs text-slate-400 font-medium hidden sm:flex items-center gap-1.5">
             <Sliders class="w-3.5 h-3.5" />
             <span>卡片大小:</span>
@@ -137,7 +159,7 @@
 
           <div class="hidden sm:flex items-center gap-2">
             <button
-              @click="cardScale = Math.max(80, cardScale - 10)"
+              @click="cardScale = Math.max(70, cardScale - 10)"
               class="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-bold transition cursor-pointer"
               title="缩小卡片"
             >
@@ -146,7 +168,7 @@
             <input
               v-model.number="cardScale"
               type="range"
-              min="80"
+              min="70"
               max="130"
               step="5"
               class="w-20 accent-amber-400 cursor-pointer"
@@ -174,7 +196,7 @@
         </div>
       </div>
 
-      <!-- 游戏卡片网格 -->
+      <!-- 游戏展示内容区 -->
       <transition
         enter-active-class="transition-all duration-300 ease-out"
         leave-active-class="transition-all duration-200 ease-in"
@@ -195,23 +217,23 @@
             </p>
           </div>
 
-          <!-- 卡片网格 -->
+          <!-- 模式 1: 紧凑卡片网格展台 (3~4 列，高质感 112px 封面) -->
           <div
-            v-else
-            class="grid gap-4 pb-8 transition-all duration-200"
+            v-else-if="viewMode === 'grid'"
+            class="grid gap-3.5 pb-8 transition-all duration-200"
             :class="{
-              'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4': cardScale <= 90,
-              'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-3': cardScale > 90 && cardScale <= 110,
-              'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2': cardScale > 110
+              'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6': cardScale <= 85,
+              'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5': cardScale > 85 && cardScale <= 105,
+              'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4': cardScale > 105
             }"
           >
             <div
               v-for="game in filteredGames"
               :key="game.appId"
-              class="game-card-surface flex flex-col justify-between group overflow-hidden border border-white/10 rounded-3xl bg-slate-900/80 shadow-lg hover:border-amber-500/40 transition-all duration-300"
+              class="game-card-surface flex flex-col justify-between group overflow-hidden border border-white/10 rounded-2xl bg-slate-900/80 shadow-md hover:border-amber-500/40 transition-all duration-200"
             >
-              <!-- 顶部横版封面 -->
-              <div class="relative w-full aspect-[16/9] bg-slate-950 overflow-hidden shrink-0">
+              <!-- 顶部横版封面 (高度固定 112px，比例匀称，绝不过大) -->
+              <div class="relative w-full h-28 bg-slate-950 overflow-hidden shrink-0">
                 <img
                   :src="'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/' + game.appId + '/capsule_616x353.jpg'"
                   class="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.06]"
@@ -221,166 +243,246 @@
                 <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent pointer-events-none"></div>
 
                 <!-- 左上角修改器状态徽章 -->
-                <div class="absolute top-2.5 left-2.5">
+                <div class="absolute top-2 left-2">
                   <span
                     v-if="trainerStatuses[game.appId]?.isRunning"
-                    class="px-2.5 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[11px] font-bold shadow-sm flex items-center gap-1.5 animate-pulse"
+                    class="px-2 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[10px] font-bold shadow-sm flex items-center gap-1 animate-pulse"
                   >
                     <span class="w-1.5 h-1.5 rounded-full bg-slate-950"></span>
-                    <span>修改器运行中</span>
+                    <span>运行中</span>
                   </span>
                   <span
                     v-else-if="trainerStatuses[game.appId]?.isDownloaded"
-                    class="px-2.5 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 backdrop-blur-md text-[11px] font-bold shadow-sm"
+                    class="px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 backdrop-blur-md text-[10px] font-bold shadow-sm"
                   >
                     已就绪
                   </span>
                   <span
                     v-else-if="trainerInfos[game.appId]?.matched"
-                    class="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 backdrop-blur-md text-[11px] font-bold shadow-sm"
+                    class="px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 backdrop-blur-md text-[10px] font-bold shadow-sm"
                   >
                     官方支持
                   </span>
                 </div>
 
                 <!-- 右上角 AppID 胶囊 -->
-                <div class="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 text-[11px] font-mono text-amber-400 font-bold shadow-sm">
+                <div class="absolute top-2 right-2 px-2 py-0.5 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 text-[10px] font-mono text-amber-400 font-bold shadow-sm">
                   ID: {{ game.appId }}
                 </div>
               </div>
 
-              <!-- 卡片信息主体 -->
-              <div class="p-4 flex-1 flex flex-col justify-between gap-4">
-                <div class="space-y-1">
-                  <h4 class="font-bold text-sm text-slate-100 truncate group-hover:text-amber-400 transition-colors" :title="game.name">
+              <!-- 卡片信息主体 (紧凑设计) -->
+              <div class="p-3 flex-1 flex flex-col justify-between gap-2.5">
+                <div class="space-y-0.5">
+                  <h4 class="font-bold text-xs text-slate-100 truncate group-hover:text-amber-400 transition-colors" :title="game.name">
                     {{ game.name }}
                   </h4>
-                  <p class="text-xs text-slate-400 truncate flex items-center gap-1.5" :title="game.installDir">
-                    <span class="shrink-0">目录:</span>
+                  <p class="text-[11px] text-slate-400 truncate flex items-center gap-1" :title="game.installDir">
+                    <span class="shrink-0 text-slate-500">目录:</span>
                     <span class="text-slate-300 font-mono truncate">{{ game.installDir }}</span>
                   </p>
                 </div>
 
-                <!-- 模块一：风灵月影修改器专区 -->
-                <div class="p-3 rounded-2xl bg-slate-950/60 border border-white/5 space-y-2.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <div class="flex items-center gap-1.5 font-bold text-slate-200">
-                      <Gamepad2 class="w-3.5 h-3.5 text-amber-400" />
+                <!-- 模块一：风灵月影修改器专区 (紧凑设计) -->
+                <div class="p-2.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-1.5">
+                  <div class="flex items-center justify-between text-[11px]">
+                    <div class="flex items-center gap-1 font-bold text-slate-200">
+                      <Gamepad2 class="w-3 h-3 text-amber-400" />
                       <span>风灵月影修改器</span>
                     </div>
 
-                    <!-- 修改器匹配加载指示 -->
-                    <span v-if="loadingTrainers[game.appId]" class="text-[11px] text-slate-400 font-mono flex items-center gap-1">
-                      <RotateCw class="w-3 h-3 animate-spin text-amber-400" />
-                      <span>匹配中...</span>
+                    <span v-if="loadingTrainers[game.appId]" class="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+                      <RotateCw class="w-2.5 h-2.5 animate-spin text-amber-400" />
+                      <span>匹配中</span>
                     </span>
-                    <span v-else-if="trainerInfos[game.appId]?.matched" class="text-[11px] text-amber-300/90 font-mono truncate max-w-[140px]" :title="trainerInfos[game.appId]?.version">
+                    <span v-else-if="trainerInfos[game.appId]?.matched" class="text-[10px] text-amber-300 font-mono truncate max-w-[120px]" :title="trainerInfos[game.appId]?.version">
                       {{ trainerInfos[game.appId]?.cheatsCount ? `${trainerInfos[game.appId]?.cheatsCount}项修改` : '已收录' }}
                     </span>
-                    <span v-else-if="trainerInfos[game.appId] && !trainerInfos[game.appId]?.matched" class="text-[11px] text-slate-500 font-mono">
-                      暂无官方修改器
+                    <span v-else-if="trainerInfos[game.appId] && !trainerInfos[game.appId]?.matched" class="text-[10px] text-slate-500 font-mono">
+                      暂未收录
                     </span>
                   </div>
 
                   <!-- 修改器操作按钮组 -->
-                  <div class="flex items-center gap-2">
-                    <!-- 启动修改器 (已下载) -->
+                  <div class="flex items-center gap-1.5">
                     <button
                       v-if="trainerStatuses[game.appId]?.isDownloaded"
                       @click="handleLaunchTrainer(game.appId)"
                       :disabled="actionLoadings[`trainer_launch_${game.appId}`]"
-                      class="flex-1 py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                      class="flex-1 py-1.5 px-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-bold text-[11px] transition cursor-pointer flex items-center justify-center gap-1 shadow-sm disabled:opacity-50"
                     >
-                      <Play class="w-3.5 h-3.5 fill-current" />
+                      <Play class="w-3 h-3 fill-current" />
                       <span>启动修改器</span>
                     </button>
 
-                    <!-- 下载修改器 (未下载且有匹配) -->
                     <button
                       v-else-if="trainerInfos[game.appId]?.matched"
                       @click="handleDownloadTrainer(game)"
                       :disabled="actionLoadings[`trainer_download_${game.appId}`]"
-                      class="flex-1 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                      class="flex-1 py-1.5 px-2 rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold text-[11px] transition cursor-pointer flex items-center justify-center gap-1 shadow-sm disabled:opacity-50"
                     >
-                      <Download class="w-3.5 h-3.5" :class="actionLoadings[`trainer_download_${game.appId}`] ? 'animate-bounce' : ''" />
-                      <span>{{ actionLoadings[`trainer_download_${game.appId}`] ? '下载中...' : '一键下载修改器' }}</span>
+                      <Download class="w-3 h-3" :class="actionLoadings[`trainer_download_${game.appId}`] ? 'animate-bounce' : ''" />
+                      <span>{{ actionLoadings[`trainer_download_${game.appId}`] ? '下载中' : '一键下载' }}</span>
                     </button>
 
-                    <!-- 未检测到修改器信息时主动匹配 -->
                     <button
                       v-else
                       @click="fetchTrainerInfoForGame(game, true)"
                       :disabled="loadingTrainers[game.appId]"
-                      class="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 border border-white/5 disabled:opacity-50"
+                      class="flex-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-[11px] transition cursor-pointer flex items-center justify-center gap-1 border border-white/5 disabled:opacity-50"
                     >
-                      <Search class="w-3.5 h-3.5 text-slate-400" />
-                      <span>检索官方修改器</span>
+                      <Search class="w-3 h-3 text-slate-400" />
+                      <span>检索</span>
                     </button>
 
-                    <!-- 查看修改项图鉴按钮 -->
                     <button
                       v-if="trainerInfos[game.appId]?.cheats?.length"
                       @click="openCheatsModal(game)"
-                      class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-white/10"
-                      title="查看修改项快捷键中英文图鉴"
+                      class="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-white/10"
+                      title="查看修改项快捷键图鉴"
                     >
-                      <ListChecks class="w-4 h-4 text-amber-400" />
+                      <ListChecks class="w-3.5 h-3.5 text-amber-400" />
                     </button>
 
-                    <!-- 打开修改器目录 -->
                     <button
                       v-if="trainerStatuses[game.appId]?.isDownloaded"
                       @click="handleOpenTrainerDir(game.appId)"
-                      class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-white/10"
+                      class="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-white/10"
                       title="打开修改器存放目录"
                     >
-                      <FolderOpen class="w-4 h-4 text-slate-400" />
+                      <FolderOpen class="w-3.5 h-3.5 text-slate-400" />
                     </button>
                   </div>
                 </div>
 
-                <!-- 模块二：Steam 成就管理专区 -->
-                <div class="p-3 rounded-2xl bg-slate-950/60 border border-white/5 space-y-2.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <div class="flex items-center gap-1.5 font-bold text-slate-200">
-                      <Award class="w-3.5 h-3.5 text-sky-400" />
-                      <span>Steam 官方成就管理</span>
+                <!-- 模块二：Steam 成就管理专区 (紧凑设计) -->
+                <div class="p-2.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-1.5">
+                  <div class="flex items-center justify-between text-[11px]">
+                    <div class="flex items-center gap-1 font-bold text-slate-200">
+                      <Award class="w-3 h-3 text-sky-400" />
+                      <span>Steam 成就管理</span>
                     </div>
 
-                    <span v-if="loadingAchievements[game.appId]" class="text-[11px] text-slate-400 font-mono flex items-center gap-1">
-                      <RotateCw class="w-3 h-3 animate-spin text-sky-400" />
-                      <span>拉取中...</span>
+                    <span v-if="loadingAchievements[game.appId]" class="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+                      <RotateCw class="w-2.5 h-2.5 animate-spin text-sky-400" />
+                      <span>拉取中</span>
                     </span>
-                    <span v-else-if="achievementData[game.appId]" class="text-[11px] text-sky-300 font-mono">
-                      共 {{ achievementData[game.appId]?.count || 0 }} 项成就
+                    <span v-else-if="achievementData[game.appId]" class="text-[10px] text-sky-300 font-mono">
+                      {{ achievementData[game.appId]?.count || 0 }}项成就
                     </span>
-                    <span v-else class="text-[11px] text-slate-500 font-mono">
+                    <span v-else class="text-[10px] text-slate-500 font-mono">
                       点击查看
                     </span>
                   </div>
 
                   <!-- 成就按钮组 -->
-                  <div class="flex items-center gap-2">
-                    <!-- 启动 SAM 解锁器 -->
+                  <div class="flex items-center gap-1.5">
                     <button
                       @click="handleLaunchSam(game.appId)"
-                      class="flex-1 py-2 px-3 rounded-xl bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                      class="flex-1 py-1.5 px-2 rounded-lg bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-bold text-[11px] transition cursor-pointer flex items-center justify-center gap-1 shadow-sm"
                       title="启动 Steam Achievement Manager 针对此游戏解锁或重置成就"
                     >
-                      <Rocket class="w-3.5 h-3.5" />
-                      <span>启动 SAM 解锁器</span>
+                      <Rocket class="w-3 h-3" />
+                      <span>SAM 解锁器</span>
                     </button>
 
-                    <!-- 查看成就列表 -->
                     <button
                       @click="openAchievementsModal(game)"
-                      class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer border border-white/10 flex items-center gap-1"
+                      class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold transition cursor-pointer border border-white/10 flex items-center gap-1"
                       title="浏览该游戏全部成就徽章、中英说明与全球达成率"
                     >
-                      <Eye class="w-3.5 h-3.5 text-sky-400" />
+                      <Eye class="w-3 h-3 text-sky-400" />
                       <span>图鉴</span>
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 模式 2: 紧凑列表模式 (极简高效，浏览多款游戏极速无感) -->
+          <div v-else class="space-y-2 pb-8">
+            <div
+              v-for="game in filteredGames"
+              :key="game.appId"
+              class="p-2.5 px-3.5 rounded-2xl bg-slate-900/80 border border-white/10 hover:border-amber-500/30 transition flex items-center justify-between gap-4 group flex-wrap sm:flex-nowrap shadow-sm"
+            >
+              <!-- 封面 + 游戏名 + 路径 -->
+              <div class="flex items-center gap-3 min-w-0 flex-1">
+                <div class="relative w-16 h-8 rounded-lg overflow-hidden bg-slate-950 shrink-0 border border-white/10 shadow-sm">
+                  <img
+                    :src="'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/' + game.appId + '/capsule_184x69.jpg'"
+                    class="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    loading="lazy"
+                    @error="handleCardImgError($event, game.appId)"
+                  />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <h4 class="font-bold text-xs text-slate-100 truncate group-hover:text-amber-400 transition-colors" :title="game.name">
+                      {{ game.name }}
+                    </h4>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded font-mono bg-white/5 text-amber-400 border border-white/10 shrink-0">ID: {{ game.appId }}</span>
+                    <span v-if="trainerStatuses[game.appId]?.isRunning" class="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-500 text-slate-950 animate-pulse shrink-0">运行中</span>
+                    <span v-else-if="trainerStatuses[game.appId]?.isDownloaded" class="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">修改器就绪</span>
+                  </div>
+                  <p class="text-[10px] text-slate-400 font-mono truncate mt-0.5" :title="game.installDir">{{ game.installDir }}</p>
+                </div>
+              </div>
+
+              <!-- 右侧快捷按钮栏 -->
+              <div class="flex items-center gap-2.5 shrink-0">
+                <!-- 修改器 -->
+                <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-white/5">
+                  <button
+                    v-if="trainerStatuses[game.appId]?.isDownloaded"
+                    @click="handleLaunchTrainer(game.appId)"
+                    class="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
+                  >
+                    <Play class="w-3 h-3 fill-current" />
+                    <span>启动修改器</span>
+                  </button>
+                  <button
+                    v-else-if="trainerInfos[game.appId]?.matched"
+                    @click="handleDownloadTrainer(game)"
+                    class="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
+                  >
+                    <Download class="w-3 h-3" />
+                    <span>下修改器</span>
+                  </button>
+                  <button
+                    v-else
+                    @click="fetchTrainerInfoForGame(game, true)"
+                    class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium cursor-pointer"
+                  >
+                    <span>查修改器</span>
+                  </button>
+                  <button
+                    v-if="trainerInfos[game.appId]?.cheats?.length"
+                    @click="openCheatsModal(game)"
+                    class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer"
+                    title="查看修改项快捷键"
+                  >
+                    <ListChecks class="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <!-- 成就 -->
+                <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-white/5">
+                  <button
+                    @click="handleLaunchSam(game.appId)"
+                    class="px-2 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
+                  >
+                    <Rocket class="w-3 h-3" />
+                    <span>SAM 解锁</span>
+                  </button>
+                  <button
+                    @click="openAchievementsModal(game)"
+                    class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 cursor-pointer"
+                    title="查看全量成就图鉴"
+                  >
+                    <Eye class="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -753,7 +855,9 @@ import {
   Eye,
   Rocket,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  LayoutGrid,
+  List
 } from 'lucide-vue-next';
 import type {
   LocalInstalledGame,
@@ -780,6 +884,7 @@ const searchQuery = ref('');
 const cardScale = ref<number>(100);
 const isCollapsed = ref(false);
 const filterMode = ref<'all' | 'downloaded'>('all');
+const viewMode = ref<'grid' | 'list'>('grid');
 
 // 修改器与成就数据字典
 const trainerInfos = reactive<Record<number, TrainerInfo | null>>({});
