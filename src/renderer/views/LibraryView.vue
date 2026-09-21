@@ -104,17 +104,47 @@
       </div>
     </div>
 
-    <!-- 搜索过滤栏 (如果有入库游戏) -->
-    <div v-if="unlockedGames.length > 0" class="mb-4 flex items-center gap-3 shrink-0">
-      <div class="relative flex-1 max-w-md">
-        <input
-          v-model="filterKeyword"
-          type="text"
-          placeholder="在已入库游戏中快速过滤 (AppID / 游戏名)..."
-          class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-4 py-2.5 pl-10 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30 transition shadow-inner"
-        />
-        <Search class="w-4 h-4 absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
+    <!-- 搜索过滤与分级状态栏 (如果有入库游戏) -->
+    <div v-if="unlockedGames.length > 0" class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
+      <div class="flex items-center gap-3 flex-1 min-w-[280px]">
+        <div class="relative flex-1 max-w-md">
+          <input
+            v-model="filterKeyword"
+            type="text"
+            placeholder="在已入库游戏中快速过滤 (AppID / 游戏名)..."
+            class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-4 py-2.5 pl-10 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30 transition shadow-inner"
+          />
+          <Search class="w-4 h-4 absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
+        </div>
+
+        <!-- 状态分级切换标签组 -->
+        <div class="flex items-center bg-slate-900/80 p-1 rounded-xl border border-white/10 text-xs shrink-0">
+          <button
+            @click="statusFilter = 'all'"
+            class="px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+            :class="statusFilter === 'all' ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30' : 'text-slate-400 hover:text-slate-200 border border-transparent'"
+          >
+            全部 ({{ unlockedGames.length }})
+          </button>
+          <button
+            @click="statusFilter = 'active'"
+            class="px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 cursor-pointer"
+            :class="statusFilter === 'active' ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30' : 'text-slate-400 hover:text-slate-200 border border-transparent'"
+          >
+            <span>生效中</span>
+            <span class="font-mono text-[10px] opacity-80">({{ activeGamesCount }})</span>
+          </button>
+          <button
+            @click="statusFilter = 'disabled'"
+            class="px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 cursor-pointer"
+            :class="statusFilter === 'disabled' ? 'bg-slate-700/50 text-slate-200 font-bold border border-slate-600/30' : 'text-slate-400 hover:text-slate-200 border border-transparent'"
+          >
+            <span>已停用</span>
+            <span class="font-mono text-[10px] opacity-80">({{ disabledGamesCount }})</span>
+          </button>
+        </div>
       </div>
+
       <span class="text-xs text-slate-400 font-mono">显示 {{ filteredGames.length }} / {{ unlockedGames.length }} 款</span>
     </div>
 
@@ -135,7 +165,8 @@
         <div
           v-for="game in filteredGames"
           :key="game.appId"
-          class="game-card-surface p-4 xl:p-4 flex flex-col justify-between gap-3.5 group"
+          class="game-card-surface p-4 xl:p-4 flex flex-col justify-between gap-3.5 group transition-all"
+          :class="game.isDisabled ? 'opacity-75 border-dashed border-slate-700/80 bg-slate-950/40 hover:opacity-100' : ''"
         >
           <!-- 封面小图与信息 -->
           <div class="flex items-center gap-3.5 min-w-0">
@@ -153,6 +184,14 @@
                 <span class="text-[11px] font-mono theme-text-accent bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20 font-bold">
                   ID: {{ game.appId }}
                 </span>
+
+                <!-- 规则生效 / 软停用开关 -->
+                <GameStatusToggle
+                  :app-id="game.appId"
+                  :is-disabled="!!game.isDisabled"
+                  :loading="togglingAppId === game.appId"
+                  @toggle="onToggleGameStatus(game.appId, $event)"
+                />
 
                 <!-- 密钥状态 -->
                 <span
@@ -319,11 +358,17 @@ import {
 import { AppManifestStatus, GameUpdateStatus, LuaGameInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
 import { applyImageFallback, smartMultiCdnImageFallback } from '../utils/imageFallback';
+import GameStatusToggle from '../components/library/GameStatusToggle.vue';
+import { useLuaManager } from '../composables/useLuaManager';
+import type { GameFilterMode } from '../types/luaManager';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
   (e: 'refresh-status'): void;
 }>();
+
+const { togglingAppId, handleToggleStatus } = useLuaManager();
+const statusFilter = ref<GameFilterMode>('all');
 
 const unlockedGames = ref<LuaGameInfo[]>([]);
 const manifestStatuses = reactive<Record<number, AppManifestStatus>>({});
@@ -334,6 +379,9 @@ const repairingAppId = ref<number | null>(null);
 const filterKeyword = ref('');
 const showGuide = ref(false);
 
+const activeGamesCount = computed(() => unlockedGames.value.filter((g) => !g.isDisabled).length);
+const disabledGamesCount = computed(() => unlockedGames.value.filter((g) => !!g.isDisabled).length);
+
 const updatableCount = computed(
   () => Object.values(updateStatuses).filter((s) => s?.pinned && s.hasUpdate).length
 );
@@ -342,12 +390,29 @@ const updatableCount = computed(
 const isPinned = (game: LuaGameInfo) => game.pinned ?? updateStatuses[game.appId]?.pinned ?? false;
 
 const filteredGames = computed(() => {
+  let list = unlockedGames.value;
+  if (statusFilter.value === 'active') {
+    list = list.filter((g) => !g.isDisabled);
+  } else if (statusFilter.value === 'disabled') {
+    list = list.filter((g) => !!g.isDisabled);
+  }
   const kw = filterKeyword.value.trim().toLowerCase();
-  if (!kw) return unlockedGames.value;
-  return unlockedGames.value.filter(
+  if (!kw) return list;
+  return list.filter(
     (g) => g.appId.toString().includes(kw) || g.name.toLowerCase().includes(kw)
   );
 });
+
+const onToggleGameStatus = async (appId: number, targetDisabled: boolean) => {
+  await handleToggleStatus(
+    appId,
+    targetDisabled,
+    async () => {
+      await loadLibrary();
+    },
+    (msg, type) => emit('notify', msg, type || 'info')
+  );
+};
 
 const loadLibrary = async () => {
   try {

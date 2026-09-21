@@ -25,8 +25,14 @@
       </div>
     </div>
 
-    <!-- 4 大核心工具卡片网格 (2x2 响应式布局) -->
+    <!-- 核心工具卡片网格 (响应式布局) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-5xl">
+      <!-- Steam 本地多账号免密秒切 (跨两列大卡片) -->
+      <SteamAccountCard
+        class="md:col-span-2"
+        @notify="(msg, type) => emit('notify', msg, type)"
+      />
+
       <!-- 卡片 1: 清理Steam缓存 (主题强调色渐变) -->
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
@@ -422,6 +428,7 @@ import {
 } from 'lucide-vue-next';
 import { ToolboxStatusInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
+import SteamAccountCard from '../components/account/SteamAccountCard.vue';
 
 const emit = defineEmits<{
   (e: 'notify', message: string, type?: 'success' | 'error' | 'warning' | 'info'): void;

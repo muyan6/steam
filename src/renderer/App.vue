@@ -46,6 +46,11 @@
 
       <!-- 底部状态指示面板 -->
       <div class="p-3 m-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md text-xs shadow-inner app-no-drag">
+        <!-- Steam 账号快速切换 -->
+        <div class="mb-2.5">
+          <SteamAccountSwitcher @notify="addToast" />
+        </div>
+
         <div class="flex items-center justify-between mb-2">
           <span class="text-slate-400 flex items-center gap-1.5 text-xs">
             <Activity class="w-3.5 h-3.5 text-slate-400" />
@@ -508,6 +513,7 @@ import SettingsView from './views/SettingsView.vue';
 import StartupWizardModal from './components/StartupWizardModal.vue';
 import LicenseModal from './components/LicenseModal.vue';
 import SponsorModal from './components/SponsorModal.vue';
+import SteamAccountSwitcher from './components/account/SteamAccountSwitcher.vue';
 import Toast, { ToastItem } from './components/Toast.vue';
 import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';

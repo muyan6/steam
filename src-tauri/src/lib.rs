@@ -9,6 +9,8 @@ pub mod onlinefix;
 pub mod steamless;
 pub mod quota;
 pub mod license_verify;
+pub mod accounts;
+pub mod lua_manager;
 
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -495,7 +497,7 @@ async fn get_unlocked_games() -> Vec<u32> {
 async fn remove_unlocked_game(app_id: u32) -> serde_json::Value {
     tauri::async_runtime::spawn_blocking(move || {
         if let Some(steam_path) = steam::detect_steam_path() {
-            match ost::remove_unlocked_rule(&steam_path, app_id) {
+            match lua_manager::remove_unlocked_rule_comprehensive(&steam_path, app_id) {
                 Ok((removed, failed)) => {
                     if failed > 0 {
                         if removed == 0 {
@@ -504,8 +506,6 @@ async fn remove_unlocked_game(app_id: u32) -> serde_json::Value {
                                 "message": format!("AppID {} 的规则文件删除失败（Steam 可能正在运行），请先退出 Steam 后重试", app_id)
                             })
                         } else {
-                            // 部分落点删除失败：整体结果保留 success 供前端兼容，
-                            // 消息明确提示残留，避免用户误以为已彻底清理
                             json!({
                                 "success": true,
                                 "message": format!("已移除 AppID {} 的入库规则，但部分规则文件删除失败（Steam 可能正在运行）", app_id)
@@ -515,6 +515,64 @@ async fn remove_unlocked_game(app_id: u32) -> serde_json::Value {
                         json!({ "success": true, "message": format!("已成功移除 AppID {} 的入库规则", app_id) })
                     }
                 }
+                Err(e) => json!({ "success": false, "message": e }),
+            }
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 安装路径" })
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
+}
+
+/// 软切换游戏入库状态（移动至 Disable/ 或移回复原，不物理删除文件）
+#[tauri::command]
+async fn toggle_game_status(app_id: u32, disabled: bool) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            match lua_manager::toggle_lua_status(&steam_path, app_id, disabled) {
+                Ok(res) => json!({
+                    "success": res.success,
+                    "appId": res.app_id,
+                    "isDisabled": res.is_disabled,
+                    "message": res.message
+                }),
+                Err(e) => json!({ "success": false, "message": e }),
+            }
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 安装路径" })
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
+}
+
+/// 获取本机保存的所有 Steam 登录账号列表
+#[tauri::command]
+async fn get_local_steam_accounts() -> Vec<accounts::LocalSteamAccount> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            accounts::list_local_steam_accounts(&steam_path)
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// 免密一键切换当前 Steam 登录账号并自动重启 Steam
+#[tauri::command]
+async fn switch_steam_account(account_name: String) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            match accounts::switch_steam_account(&steam_path, &account_name) {
+                Ok(res) => json!({
+                    "success": res.success,
+                    "message": res.message,
+                    "targetAccount": res.target_account,
+                    "restartedSteam": res.restarted_steam
+                }),
                 Err(e) => json!({ "success": false, "message": e }),
             }
         } else {
@@ -1426,82 +1484,17 @@ async fn sync_game_dictionary(app: AppHandle) -> DictionarySyncStatus {
     .unwrap_or_else(|e| DictionarySyncStatus { success: false, updated: false, message: format!("任务执行失败: {}", e), count: None })
 }
 
-// 已入库游戏详情（真实清单/密钥状态，供 LibraryView 渲染"预缓存"入口）
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UnlockedDetail {
-    pub app_id: u32,
-    pub name: String,
-    pub has_token: bool,
-    pub has_manifest: bool,
-    pub has_depot_keys: bool,
-    /// Lua 规则是否钉死了清单版本（setManifestid）；false = 跟随官方最新版
-    pub pinned: bool,
-    pub depots_count: u32,
-    pub dlc_count: u32,
-    pub lua_path: String,
-}
+// 已入库游戏详情（支持已启用与 Disable 软停用分级扫描，委托给 lua_manager 独立模块）
+pub use lua_manager::UnlockedDetail;
 
 #[tauri::command]
 async fn get_unlocked_details() -> Vec<UnlockedDetail> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut details = Vec::new();
         if let Some(steam_path) = steam::detect_steam_path() {
-            let lua_dir = steam_path.join("config").join("lua");
-            if let Ok(entries) = std::fs::read_dir(&lua_dir) {
-                let mut items: Vec<(u32, PathBuf)> = entries
-                    .filter_map(|e| e.ok())
-                    .filter_map(|e| {
-                        let p = e.path();
-                        let stem = p.file_stem()?.to_str()?;
-                        let id = stem.parse::<u32>().ok()?;
-                        p.extension()?.to_str()?.eq_ignore_ascii_case("lua").then_some((id, p))
-                    })
-                    .collect();
-                items.sort_by_key(|(id, _)| *id);
-                // 仅扫描一次 depotcache，避免逐游戏全量遍历（depotcache 可有数千文件）
-                let ids: Vec<u32> = items.iter().map(|(id, _)| *id).collect();
-                let manifest_map = manifests::batch_manifest_status(&steam_path, &ids);
-                for (app_id, path) in items {
-                    let content = std::fs::read_to_string(&path).unwrap_or_default();
-                    // 名称来自首行注释 "-- Game: X" / "-- X"
-                    let mut name = format!("Steam App {}", app_id);
-                    if let Some(first) = content.lines().next() {
-                        let t = first.trim_start_matches('-').trim();
-                        let t = t.strip_prefix("Game:").map(|s| s.trim()).unwrap_or(t);
-                        if let Some(pos) = t.find("(AppID") {
-                            let t = t[..pos].trim();
-                            if !t.is_empty() {
-                                name = t.to_string();
-                            }
-                        } else if !t.is_empty() {
-                            name = t.to_string();
-                        }
-                    }
-                    // 新方言下 addappid 同时覆盖本体/分包，统计口径为"挂载的 App/Depot 总数"
-                    let addappid_count = content.matches("addappid").count() as u32;
-                    let has_token = content.contains("addtoken");
-                    // 兼容新旧两种方言：addappid 带有效密钥 / setDepotKey 均判定为已注入密钥
-                    let has_depot_keys = ost::lua_has_valid_key(&content);
-                    let has_manifest = manifest_map
-                        .get(&app_id)
-                        .map(|s| s.has_manifest)
-                        .unwrap_or(false);
-                    details.push(UnlockedDetail {
-                        app_id,
-                        name,
-                        has_token,
-                        has_manifest,
-                        has_depot_keys,
-                        pinned: content.contains("setManifestid"),
-                        depots_count: addappid_count.max(1),
-                        dlc_count: addappid_count.saturating_sub(1),
-                        lua_path: format!("config/lua/{}.lua", app_id),
-                    });
-                }
-            }
+            lua_manager::get_all_unlocked_details(&steam_path)
+        } else {
+            Vec::new()
         }
-        details
     })
     .await
     .unwrap_or_default()
@@ -1830,7 +1823,10 @@ pub fn run() {
             update_game_rules,
             check_ost_sync,
             sync_ost_latest,
-            sync_game_dictionary
+            sync_game_dictionary,
+            toggle_game_status,
+            get_local_steam_accounts,
+            switch_steam_account
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

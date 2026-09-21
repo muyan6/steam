@@ -92,6 +92,8 @@ export interface LuaGameInfo {
   depotsCount: number;
   dlcCount: number;
   luaPath: string;
+  /** 是否已被软停用归档到 Disable 目录 */
+  isDisabled?: boolean;
 }
 
 export interface SteamEnvironmentInfo {
