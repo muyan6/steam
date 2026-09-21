@@ -932,3 +932,84 @@ export const getMetadataIndexAdmin = (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
+
+/**
+ * 核验客户端已有 DLC 与服务端最新 DLC 的差异，计算缺失增量
+ */
+export const checkDlcDiff = async (req: Request, res: Response) => {
+  try {
+    const raw = Array.isArray(req.params.appId) ? req.params.appId[0] : req.params.appId;
+    const appId = parseInt(String(raw), 10);
+    if (isNaN(appId) || appId <= 0) {
+      return res.status(400).json({ success: false, message: '无效的 AppID' });
+    }
+
+    // 客户端传入的已持有 DLC 列表
+    let existingDlcIds: number[] = [];
+    if (Array.isArray(req.body?.existingDlcIds)) {
+      existingDlcIds = req.body.existingDlcIds
+        .map((x: any) => parseInt(String(x), 10))
+        .filter((n: number) => !isNaN(n) && n > 0);
+    } else if (typeof req.query.existingDlcIds === 'string') {
+      existingDlcIds = req.query.existingDlcIds
+        .split(',')
+        .map((x: string) => parseInt(x.trim(), 10))
+        .filter((n: number) => !isNaN(n) && n > 0);
+    }
+
+    let remoteDlcIds: number[] = [];
+
+    // 1. 尝试从 DLC 索引服务获取已有的 DLC
+    const indexed = dlcIndexService.get(appId);
+    if (indexed && Array.isArray(indexed.dlcIds)) {
+      for (const d of indexed.dlcIds) {
+        const dId = parseInt(String(d), 10);
+        if (!isNaN(dId) && dId > 0 && dId !== appId && !remoteDlcIds.includes(dId)) {
+          remoteDlcIds.push(dId);
+        }
+      }
+    }
+
+    // 2. 如果索引为空或较少，尝试从元数据缓存获取
+    const cached = readMetadataCache(appId, false);
+    if (cached && Array.isArray(cached.dlcDepots)) {
+      for (const dep of cached.dlcDepots) {
+        const dId = parseInt(String(dep.dlcAppId), 10);
+        if (!isNaN(dId) && dId > 0 && dId !== appId && !remoteDlcIds.includes(dId)) {
+          remoteDlcIds.push(dId);
+        }
+      }
+    }
+
+    // 3. 兜底：如果还是没有，从 ManifestHub3 尝试拉取
+    if (remoteDlcIds.length === 0) {
+      const hubData = await fetchManifestHub3(appId);
+      if (hubData && hubData.dlcIds) {
+        for (const idStr of hubData.dlcIds) {
+          const dId = parseInt(idStr, 10);
+          if (!isNaN(dId) && dId > 0 && dId !== appId && !remoteDlcIds.includes(dId)) {
+            remoteDlcIds.push(dId);
+          }
+        }
+      }
+    }
+
+    const existingSet = new Set(existingDlcIds);
+    const missingDlcIds = remoteDlcIds.filter((id) => !existingSet.has(id));
+
+    return res.json({
+      success: true,
+      data: {
+        appId,
+        totalRemoteDlcs: remoteDlcIds.length,
+        existingCount: existingDlcIds.length,
+        missingDlcIds,
+        missingCount: missingDlcIds.length
+      }
+    });
+  } catch (e: any) {
+    console.error('[MetadataController] 比对 DLC 差异异常:', e);
+    return res.status(500).json({ success: false, message: '服务器比对 DLC 差异异常' });
+  }
+};
+

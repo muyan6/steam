@@ -976,7 +976,7 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
 }
 
 /// 扫描一行中的 `addappid(<digits>` 提取 AppID（纯字节级扫描，中文注释行安全）
-fn extract_addappid_ids(content: &str) -> Vec<u32> {
+pub fn extract_addappid_ids(content: &str) -> Vec<u32> {
     const NEEDLE: &[u8] = b"addappid";
     let bytes = content.as_bytes();
     let mut ids = Vec::new();

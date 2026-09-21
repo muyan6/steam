@@ -8,7 +8,8 @@ import { licenseSignService } from '../services/licenseSignService.js';
 import {
   getGameMetadata,
   refreshAppMetadataIndexAdmin,
-  getMetadataIndexAdmin
+  getMetadataIndexAdmin,
+  checkDlcDiff
 } from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
 import {
@@ -330,6 +331,8 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
 };
 
 router.get('/metadata/:appId', requireKeyAccess, getGameMetadata);
+router.post('/metadata/:appId/dlc-diff', requireKeyAccess, checkDlcDiff);
+router.get('/metadata/:appId/dlc-diff', requireKeyAccess, checkDlcDiff);
 
 // 客户端公开查询当前设备每日免费配额与最新云端上限
 router.get('/quota/status', getDeviceQuotaStatus);

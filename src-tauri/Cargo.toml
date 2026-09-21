@@ -42,6 +42,7 @@ windows-sys = { version = "0.59", features = [
     "Win32_Networking_WinSock",
     "Win32_System_SystemInformation",
 ] }
+notify = "6.1.1"
 
 [profile.release]
 strip = true

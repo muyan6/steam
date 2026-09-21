@@ -11,6 +11,8 @@ pub mod quota;
 pub mod license_verify;
 pub mod accounts;
 pub mod lua_manager;
+pub mod lua_watcher;
+pub mod steam_worker;
 
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -545,6 +547,40 @@ async fn toggle_game_status(app_id: u32, disabled: bool) -> serde_json::Value {
     })
     .await
     .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
+}
+
+/// 核验已入库游戏与云端最新 DLC 的差异（提取增量缺失的 DLC）
+#[tauri::command]
+async fn check_game_dlc_diff(app_id: u32) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            match lua_manager::check_game_dlc_diff(&steam_path, app_id) {
+                Ok(res) => serde_json::to_value(res).unwrap_or_else(|_| json!({ "success": true })),
+                Err(e) => json!({ "success": false, "message": e }),
+            }
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 安装路径" })
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("执行失败: {}", e) }))
+}
+
+/// 一键向已入库游戏的规则文件中增量追加新 DLC
+#[tauri::command]
+async fn append_game_dlcs(app_id: u32, dlc_ids: Vec<u32>) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(steam_path) = steam::detect_steam_path() {
+            match lua_manager::append_game_dlcs(&steam_path, app_id, dlc_ids) {
+                Ok(res) => serde_json::to_value(res).unwrap_or_else(|_| json!({ "success": true })),
+                Err(e) => json!({ "success": false, "message": e }),
+            }
+        } else {
+            json!({ "success": false, "message": "未找到 Steam 安装路径" })
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("执行失败: {}", e) }))
 }
 
 /// 获取本机保存的所有 Steam 登录账号列表
@@ -1733,6 +1769,13 @@ pub fn run() {
                     ensure_auto_switch_default(&p);
                 }
             });
+            // 启动 config/lua 后台防抖文件监听器（优化 2：规则变动秒级自动同步）
+            let watcher_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                if let Some(p) = steam::detect_steam_path() {
+                    lua_watcher::start_lua_watcher(watcher_handle, &p);
+                }
+            });
             // 启动 8 秒后静默同步云端游戏字典：版本变化则下载写入 exe 同目录
             // sidecar（game_dict.dat），下次检索自动热加载。内部走 spawn_blocking
             // （block_on 需要 Tokio 上下文）+ catch_unwind 双重包裹，任何失败或
@@ -1826,7 +1869,9 @@ pub fn run() {
             sync_game_dictionary,
             toggle_game_status,
             get_local_steam_accounts,
-            switch_steam_account
+            switch_steam_account,
+            check_game_dlc_diff,
+            append_game_dlcs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

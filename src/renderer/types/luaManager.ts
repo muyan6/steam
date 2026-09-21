@@ -6,3 +6,21 @@ export interface LuaToggleResult {
 }
 
 export type GameFilterMode = 'all' | 'active' | 'disabled';
+
+export interface DlcDiffResult {
+  success: boolean;
+  appId: number;
+  totalRemoteDlcs: number;
+  localDlcCount: number;
+  missingDlcIds: number[];
+  message: string;
+}
+
+export interface DlcAppendResult {
+  success: boolean;
+  appId: number;
+  addedCount: number;
+  addedDlcIds: number[];
+  message: string;
+}
+

@@ -202,6 +202,26 @@
                 <span>Token</span>
               </span>
 
+              <!-- 3.5. DLC 状态与增量核验徽章 (点击可比对云端最新 DLC) -->
+              <button
+                @click.stop="handleCheckDlc(game.appId)"
+                :disabled="dlcDiffs[game.appId]?.checking || dlcDiffs[game.appId]?.appending"
+                class="text-[11px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold border transition cursor-pointer select-none active:scale-95"
+                :class="dlcDiffs[game.appId]?.missingDlcs?.length
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 hover:bg-amber-500/30 shadow-sm'
+                  : 'bg-slate-700/30 text-slate-300 border-slate-600/30 hover:bg-slate-700/50 hover:text-slate-100'"
+                :title="dlcDiffs[game.appId]?.missingDlcs?.length
+                  ? `发现 ${dlcDiffs[game.appId].missingDlcs.length} 个新 DLC 未入库，点击卡片下方按钮可一键补全`
+                  : `当前含 ${game.dlcCount || 0} 个 DLC，点击可在线核验云端最新 DLC`"
+              >
+                <RotateCw v-if="dlcDiffs[game.appId]?.checking" class="w-3 h-3 animate-spin text-amber-400" />
+                <Layers v-else class="w-3 h-3 text-sky-400" />
+                <span v-if="dlcDiffs[game.appId]?.missingDlcs?.length" class="text-amber-300 font-bold">
+                  +{{ dlcDiffs[game.appId].missingDlcs.length }} 新DLC
+                </span>
+                <span v-else>{{ game.dlcCount || 0 }} DLC</span>
+              </button>
+
               <!-- 4. 模式判定（权威唯一定位，彻底消除模式冲突）：跟随最新 / 已锁定 / 待缓存 / 有更新 -->
               <!-- 模式 A: 跟随最新（动态清单模式，永不跟本地旧清单混淆） -->
               <span
@@ -327,7 +347,20 @@
               </button>
             </div>
 
-            <!-- 第 3 行 (仅需时展示)：预缓存实体清单 -->
+            <!-- 第 3 行 (仅需时展示)：增量补全新 DLC -->
+            <button
+              v-if="dlcDiffs[game.appId]?.missingDlcs?.length"
+              @click="handleAppendDlc(game.appId)"
+              :disabled="dlcDiffs[game.appId]?.appending"
+              title="将新发现的 DLC 增量追加到当前 Lua 规则中，并自动同步 GreenLuma"
+              class="w-full h-8 px-3 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/35 text-amber-200 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-60 cursor-pointer shadow-sm"
+            >
+              <RotateCw v-if="dlcDiffs[game.appId]?.appending" class="w-3.5 h-3.5 animate-spin" />
+              <Layers v-else class="w-3.5 h-3.5 text-amber-400" />
+              <span>{{ dlcDiffs[game.appId]?.appending ? '正在补全新 DLC...' : `一键补全 ${dlcDiffs[game.appId].missingDlcs.length} 个新 DLC` }}</span>
+            </button>
+
+            <!-- 第 4 行 (仅需时展示)：预缓存实体清单 -->
             <button
               v-if="isPinned(game) && !manifestStatuses[game.appId]?.hasManifest && !game.hasManifest"
               @click="handleRepairManifest(game.appId)"
@@ -347,7 +380,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import {
   Library,
   Trash2,
@@ -367,12 +400,15 @@ import {
   CheckCircle2,
   PauseCircle,
   PlayCircle,
-  AlertCircle
+  AlertCircle,
+  Layers
 } from 'lucide-vue-next';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { AppManifestStatus, GameUpdateStatus, LuaGameInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
 import { applyImageFallback, smartMultiCdnImageFallback } from '../utils/imageFallback';
 import { useLuaManager } from '../composables/useLuaManager';
+import { checkGameDlcDiff, appendGameDlcs } from '../api/luaManagerApi';
 import type { GameFilterMode } from '../types/luaManager';
 import LibraryGuideModal from '../components/library/LibraryGuideModal.vue';
 
@@ -390,6 +426,7 @@ const updateStatuses = reactive<Record<number, GameUpdateStatus>>({});
 const checkingUpdates = ref(false);
 const updatingAppId = ref<number | null>(null);
 const repairingAppId = ref<number | null>(null);
+const dlcDiffs = reactive<Record<number, { missingDlcs: number[]; checking: boolean; appending: boolean }>>({});
 const filterKeyword = ref('');
 const showGuide = ref(false);
 
@@ -583,11 +620,74 @@ const handleImgError = (e: Event, appId: number) => {
   smartMultiCdnImageFallback(e, appId, 'capsule_184x69.jpg');
 };
 
+const handleCheckDlc = async (appId: number) => {
+  if (!dlcDiffs[appId]) {
+    dlcDiffs[appId] = { missingDlcs: [], checking: false, appending: false };
+  }
+  dlcDiffs[appId].checking = true;
+  try {
+    const res = await checkGameDlcDiff(appId);
+    if (res.success) {
+      dlcDiffs[appId].missingDlcs = res.missingDlcIds || [];
+      if (res.missingDlcIds && res.missingDlcIds.length > 0) {
+        emit('notify', `AppID ${appId}: 发现 ${res.missingDlcIds.length} 个新 DLC 未入库，可一键补全！`, 'info');
+      } else {
+        emit('notify', `AppID ${appId}: 本地 DLC 规则已是最新完整状态，无需补全。`, 'success');
+      }
+    } else {
+      emit('notify', res.message || 'DLC 核验未完成', 'warning');
+    }
+  } catch (e: any) {
+    emit('notify', `DLC 核验异常: ${formatIpcError(e)}`, 'error');
+  } finally {
+    dlcDiffs[appId].checking = false;
+  }
+};
+
+const handleAppendDlc = async (appId: number) => {
+  const item = dlcDiffs[appId];
+  if (!item || !item.missingDlcs || item.missingDlcs.length === 0) return;
+  item.appending = true;
+  try {
+    const res = await appendGameDlcs(appId, item.missingDlcs);
+    if (res.success) {
+      emit('notify', res.message || `成功为 AppID ${appId} 追加 ${item.missingDlcs.length} 个新 DLC！`, 'success');
+      item.missingDlcs = [];
+      await loadLibrary();
+    } else {
+      emit('notify', res.message || 'DLC 补全写入失败', 'error');
+    }
+  } catch (e: any) {
+    emit('notify', `DLC 追加写入异常: ${formatIpcError(e)}`, 'error');
+  } finally {
+    item.appending = false;
+  }
+};
+
+let unlistenWatcher: UnlistenFn | null = null;
+
 onMounted(async () => {
   await loadLibrary();
   // 静默预检版本更新：仅在确有更新时提示，不打扰日常使用
   if (unlockedGames.value.length > 0) {
     handleCheckUpdates(true);
+  }
+
+  // 监听 Rust 后台防抖目录变动事件（优化 2：规则变动秒级自动静默同步）
+  try {
+    unlistenWatcher = await listen('lua-files-changed', () => {
+      console.log('[LibraryView] 接收到规则目录变动通知，正在静默同步已入库列表...');
+      loadLibrary();
+    });
+  } catch (e) {
+    console.warn('[LibraryView] 注册 lua-files-changed 监听器失败:', e);
+  }
+});
+
+onUnmounted(() => {
+  if (unlistenWatcher) {
+    unlistenWatcher();
+    unlistenWatcher = null;
   }
 });
 </script>

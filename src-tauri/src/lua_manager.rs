@@ -214,3 +214,136 @@ pub fn remove_unlocked_rule_comprehensive(steam_path: &Path, app_id: u32) -> Res
     crate::ost::sync_greenluma_app_list(steam_path);
     Ok((removed, failed))
 }
+
+/// DLC 差异对比结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DlcDiffResult {
+    pub success: bool,
+    pub app_id: u32,
+    pub total_remote_dlcs: usize,
+    pub local_dlc_count: usize,
+    pub missing_dlc_ids: Vec<u32>,
+    pub message: String,
+}
+
+/// DLC 增量追加写入响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DlcAppendResult {
+    pub success: bool,
+    pub app_id: u32,
+    pub added_count: usize,
+    pub added_dlc_ids: Vec<u32>,
+    pub message: String,
+}
+
+/// 查找指定 AppID 的 Lua 规则文件路径（优先激活目录，其次 Disable 目录）
+pub fn find_lua_path(steam_path: &Path, app_id: u32) -> Option<(PathBuf, bool)> {
+    let active = steam_path.join("config").join("lua").join(format!("{}.lua", app_id));
+    if active.exists() {
+        return Some((active, false));
+    }
+    let disabled = steam_path.join("config").join("lua").join("Disable").join(format!("{}.lua", app_id));
+    if disabled.exists() {
+        return Some((disabled, true));
+    }
+    None
+}
+
+/// 核验已入库游戏与云端最新 DLC 的差异（提取本地缺失的增量 DLC）
+pub fn check_game_dlc_diff(steam_path: &Path, app_id: u32) -> Result<DlcDiffResult, String> {
+    let (lua_path, _) = find_lua_path(steam_path, app_id)
+        .ok_or_else(|| format!("未在规则目录中找到 AppID {} 的规则文件", app_id))?;
+
+    let content = fs::read_to_string(&lua_path)
+        .map_err(|e| format!("读取规则文件失败: {}", e))?;
+
+    // 本地已有的所有 AppID / DepotID（含主 AppID 及所有已挂载 DLC）
+    let local_ids = crate::ost::extract_addappid_ids(&content);
+    let local_dlc_count = local_ids.iter().filter(|&&id| id != app_id).count();
+
+    // 从云端/备用容灾源拉取完整元数据（包含全部最新 DLC）
+    let meta = crate::manifests::parse_metadata(app_id, false)
+        .map_err(|e| format!("获取云端游戏元数据失败: {}", e))?;
+
+    // 差集计算：云端存在但本地 Lua 尚未添加的 DLC
+    let mut missing_dlc_ids: Vec<u32> = meta
+        .dlc_ids
+        .into_iter()
+        .filter(|id| *id != app_id && !local_ids.contains(id))
+        .collect();
+    missing_dlc_ids.sort_unstable();
+    missing_dlc_ids.dedup();
+
+    let total_remote_dlcs = local_dlc_count + missing_dlc_ids.len();
+
+    let message = if missing_dlc_ids.is_empty() {
+        "已拥有该游戏的全部最新 DLC，无需补全！".to_string()
+    } else {
+        format!("发现 {} 个尚未入库的新 DLC，支持一键智能补全！", missing_dlc_ids.len())
+    };
+
+    Ok(DlcDiffResult {
+        success: true,
+        app_id,
+        total_remote_dlcs,
+        local_dlc_count,
+        missing_dlc_ids,
+        message,
+    })
+}
+
+/// 一键向已入库游戏的规则文件中增量追加新 DLC（不破坏原有密钥与配置）
+pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Result<DlcAppendResult, String> {
+    let (lua_path, _) = find_lua_path(steam_path, app_id)
+        .ok_or_else(|| format!("未在规则目录中找到 AppID {} 的规则文件", app_id))?;
+
+    let content = fs::read_to_string(&lua_path)
+        .map_err(|e| format!("读取规则文件失败: {}", e))?;
+
+    let local_ids = crate::ost::extract_addappid_ids(&content);
+
+    // 过滤出真正尚未写入的有效 DLC
+    let mut to_add: Vec<u32> = dlc_ids
+        .into_iter()
+        .filter(|id| *id > 0 && *id != app_id && !local_ids.contains(id))
+        .collect();
+    to_add.sort_unstable();
+    to_add.dedup();
+
+    if to_add.is_empty() {
+        return Ok(DlcAppendResult {
+            success: true,
+            app_id,
+            added_count: 0,
+            added_dlc_ids: vec![],
+            message: "所选 DLC 均已在当前入库规则中，无需重复添加".to_string(),
+        });
+    }
+
+    let mut new_content = content;
+    if !new_content.ends_with('\n') {
+        new_content.push('\n');
+    }
+
+    new_content.push_str("\n-- ==================== [CFD] 一键增量补全新 DLC ====================\n");
+    for id in &to_add {
+        new_content.push_str(&format!("addappid({})\n", id));
+    }
+
+    fs::write(&lua_path, new_content)
+        .map_err(|e| format!("写入规则文件失败: {}", e))?;
+
+    // 联动刷新 GreenLuma AppList
+    crate::ost::sync_greenluma_app_list(steam_path);
+
+    Ok(DlcAppendResult {
+        success: true,
+        app_id,
+        added_count: to_add.len(),
+        added_dlc_ids: to_add.clone(),
+        message: format!("成功为游戏增量追加 {} 个新 DLC 到入库规则！", to_add.len()),
+    })
+}
+
