@@ -723,7 +723,7 @@ const navItems = [
   { id: 'search' as const, label: '游戏检索与入库', iconComponent: Search },
   { id: 'library' as const, label: '已入库规则管理', iconComponent: Library },
   { id: 'onlinefix' as const, label: '联机中心', iconComponent: Gamepad2 },
-  { id: 'trainers' as const, label: '修改器与成就管理', iconComponent: Trophy },
+  { id: 'trainers' as const, label: '修改器与成就解锁', iconComponent: Trophy },
   { id: 'toolbox' as const, label: '实用工具箱', iconComponent: Wrench },
   { id: 'features' as const, label: '功能详解', iconComponent: Sparkles },
   { id: 'about' as const, label: '关于软件', iconComponent: Info },

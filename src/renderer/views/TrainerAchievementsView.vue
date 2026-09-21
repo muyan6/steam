@@ -8,14 +8,14 @@
         </div>
         <div>
           <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <span>修改器与成就管理</span>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800/80 theme-text-accent font-mono border border-white/10">本地已装即配</span>
+            <span>修改器与成就解锁</span>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20">一键全成就点亮 · 官方修改器直连</span>
           </h2>
-          <p class="text-xs text-slate-400 mt-0.5">自动匹配已安装游戏的风灵月影最新官方修改器与 Steam 官方全量成就图鉴</p>
+          <p class="text-xs text-slate-400 mt-0.5">自动匹配本地已安装游戏：一键解锁/点亮 Steam 100% 全成就徽章，秒级直连官方下载最新风灵月影修改器</p>
         </div>
       </div>
 
-      <!-- 右侧 SAM 成就管理器微型指示器 & 手动匹配 -->
+      <!-- 右侧 SAM 成就解锁引擎微型指示器 & 手动匹配 -->
       <div class="flex items-center gap-2.5">
         <button
           @click="showCustomGameModal = true"
@@ -29,31 +29,48 @@
         <button
           @click="showSamModal = true"
           class="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2 transition cursor-pointer"
-          :title="samStatus.isInstalled ? 'SAM (Steam Achievement Manager) 已就绪' : '未检测到 SAM 成就管理器，点击一键安装'"
+          :title="samStatus.isInstalled ? 'Steam 成就解锁引擎 (SAM) 已就绪，可针对任意游戏一键点亮全成就' : '未检测到 Steam 成就解锁引擎，点击一键部署安装'"
         >
           <Trophy class="w-3.5 h-3.5" :class="samStatus.isInstalled ? 'text-emerald-400' : 'text-amber-400'" />
-          <span class="text-slate-400">SAM 解锁器:</span>
+          <span class="text-slate-400">成就解锁引擎 (SAM):</span>
           <span v-if="samStatus.isInstalled" class="text-emerald-400 font-bold flex items-center gap-1.5">
             <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>已就绪 (v{{ samStatus.version || '7.0.25' }})</span>
+            <span>解锁核心就绪 (v{{ samStatus.version || '7.0.25' }})</span>
           </span>
           <span v-else class="text-amber-400 font-bold flex items-center gap-1.5 animate-pulse">
             <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-            <span>未安装 · 点击部署</span>
+            <span>未部署 · 点击一键安装</span>
           </span>
         </button>
       </div>
     </div>
 
-    <!-- 顶部功能横幅指引 -->
-    <div class="mb-5 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200/90 flex items-start gap-3 shrink-0">
-      <div class="w-5 h-5 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 shrink-0 mt-0.5 font-bold">
-        ⚡
+    <!-- 顶部功能横幅指引：清晰明确的成就解锁与修改器指南 -->
+    <div class="mb-5 p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-sky-500/10 to-slate-950/40 border border-white/10 text-xs text-slate-300 flex items-start gap-3.5 shrink-0 shadow-sm">
+      <div class="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 font-bold text-base shadow-inner">
+        🏆
       </div>
-      <div class="leading-relaxed flex-1">
-        <strong class="text-amber-300 font-semibold">双轨极速赋能：</strong>
-        <strong class="text-emerald-400 font-bold">风灵月影修改器</strong>自动探测本地安装游戏的英文原名并直连官方 API 匹配最新版，一键下载并脱机拉起，绝不破坏游戏核心文件；
-        <strong class="text-sky-300 font-bold">Steam 官方成就管理</strong>免 Key 拉取高清图鉴与全球玩家达成百分比，依托沙盒隔离的 SAM 工具精准解锁与重置。
+      <div class="leading-relaxed flex-1 space-y-2">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 font-bold text-[11px] border border-amber-500/30">核心能力速览</span>
+          <span class="text-slate-200 font-semibold text-xs">本地已安装游戏自动化匹配，双轨功能即点即用</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-0.5 text-[11px]">
+          <div class="p-2.5 rounded-xl bg-sky-950/50 border border-sky-500/25 text-slate-300 leading-relaxed shadow-sm">
+            <div class="font-bold text-sky-300 flex items-center gap-1.5 mb-1">
+              <Trophy class="w-3.5 h-3.5 text-sky-400" />
+              <span>Steam 成就一键解锁</span>
+            </div>
+            <span>点击任意游戏的<strong class="text-sky-200">「一键解锁成就」</strong>，即可<strong class="text-sky-300">一键点亮 100% 全成就徽章</strong>或自由勾选指定成就解锁，Steam 客户端<strong>实时同步跳杯</strong>，亦可随时撤销重置！</span>
+          </div>
+          <div class="p-2.5 rounded-xl bg-emerald-950/50 border border-emerald-500/25 text-slate-300 leading-relaxed shadow-sm">
+            <div class="font-bold text-emerald-300 flex items-center gap-1.5 mb-1">
+              <Gamepad2 class="w-3.5 h-3.5 text-emerald-400" />
+              <span>风灵月影官方修改器</span>
+            </div>
+            <span>自动识别本地游戏并直连官方接口，<strong class="text-emerald-300">一键高速下载并脱机拉起</strong>，锁血/无敌/无限金钱随心开启，独立进程安全运行，绝不破坏游戏核心文件。</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -355,41 +372,41 @@
                   </div>
                 </div>
 
-                <!-- 模块二：Steam 成就管理专区 (紧凑设计) -->
+                <!-- 模块二：Steam 全成就解锁专区 (紧凑设计) -->
                 <div class="p-2.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-1.5">
                   <div class="flex items-center justify-between text-[11px]">
                     <div class="flex items-center gap-1 font-bold text-slate-200">
-                      <Award class="w-3 h-3 text-sky-400" />
-                      <span>Steam 成就管理</span>
+                      <Trophy class="w-3 h-3 text-sky-400" />
+                      <span>Steam 全成就解锁</span>
                     </div>
 
                     <span v-if="loadingAchievements[game.appId]" class="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                       <RotateCw class="w-2.5 h-2.5 animate-spin text-sky-400" />
-                      <span>拉取中</span>
+                      <span>解析中</span>
                     </span>
                     <span v-else-if="achievementData[game.appId]" class="text-[10px] text-sky-300 font-mono">
-                      {{ achievementData[game.appId]?.count || 0 }}项成就
+                      共 {{ achievementData[game.appId]?.count || 0 }} 项成就
                     </span>
-                    <span v-else class="text-[10px] text-slate-500 font-mono">
-                      点击查看
+                    <span v-else class="text-[10px] text-sky-400/80 font-mono">
+                      支持一键全点亮
                     </span>
                   </div>
 
-                  <!-- 成就按钮组 -->
+                  <!-- 成就操作按钮组：突出「一键解锁成就」 -->
                   <div class="flex items-center gap-1.5">
                     <button
                       @click="handleLaunchSam(game.appId)"
                       class="flex-1 py-1.5 px-2 rounded-lg bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-bold text-[11px] transition cursor-pointer flex items-center justify-center gap-1 shadow-sm"
-                      title="启动 Steam Achievement Manager 针对此游戏解锁或重置成就"
+                      title="一键打开成就解锁器：可一键批量点亮 100% 全成就徽章或挑选指定成就解锁，Steam 客户端实时同步跳杯"
                     >
                       <Rocket class="w-3 h-3" />
-                      <span>SAM 解锁器</span>
+                      <span>一键解锁成就</span>
                     </button>
 
                     <button
                       @click="openAchievementsModal(game)"
                       class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold transition cursor-pointer border border-white/10 flex items-center gap-1"
-                      title="浏览该游戏全部成就徽章、中英说明与全球达成率"
+                      title="浏览该游戏官方全量成就图鉴与全球达成率"
                     >
                       <Eye class="w-3 h-3 text-sky-400" />
                       <span>图鉴</span>
@@ -467,21 +484,23 @@
                   </button>
                 </div>
 
-                <!-- 成就 -->
-                <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-white/5">
+                <!-- 成就解锁 -->
+                <div class="flex items-center gap-1.5 bg-slate-950/60 p-1 rounded-xl border border-white/5">
                   <button
                     @click="handleLaunchSam(game.appId)"
-                    class="px-2 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
+                    class="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-sm"
+                    title="一键打开成就解锁器：可一键批量点亮 100% 全成就徽章或挑选指定成就解锁"
                   >
                     <Rocket class="w-3 h-3" />
-                    <span>SAM 解锁</span>
+                    <span>一键解锁成就</span>
                   </button>
                   <button
                     @click="openAchievementsModal(game)"
-                    class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 cursor-pointer"
-                    title="查看全量成就图鉴"
+                    class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                    title="查看官方全量成就图鉴与全球达成率"
                   >
-                    <Eye class="w-3.5 h-3.5" />
+                    <Eye class="w-3 h-3 text-sky-400" />
+                    <span>图鉴</span>
                   </button>
                 </div>
               </div>
@@ -599,10 +618,10 @@
             <div>
               <h3 class="font-bold text-slate-100 text-base flex items-center gap-2">
                 <span>{{ activeModalGame.name }}</span>
-                <span class="text-xs text-sky-400 font-mono font-normal">官方成就图鉴</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30">官方成就图鉴与一键解锁</span>
               </h3>
               <p class="text-xs text-slate-400 mt-0.5">
-                共收录 {{ achievementData[activeModalGame.appId]?.count || 0 }} 项成就 · 官方实时全球达成率
+                共收录 {{ achievementData[activeModalGame.appId]?.count || 0 }} 项成就 · 支持自选解锁或一键点亮 100% 全成就徽章
               </p>
             </div>
           </div>
@@ -685,38 +704,39 @@
           </div>
         </div>
 
-        <!-- 底部快捷栏 -->
-        <div class="p-4 border-t border-white/10 flex items-center justify-between gap-3 bg-slate-950/40 shrink-0">
-          <span class="text-xs text-slate-400 font-mono">
-            提示：可点击右侧唤起独立 SAM 工具，一键批量解锁或撤回指定成就
-          </span>
+        <!-- 底部快捷栏：明确全成就点亮指引与唤起按钮 -->
+        <div class="p-4 border-t border-white/10 flex items-center justify-between gap-4 bg-slate-950/40 shrink-0 flex-wrap sm:flex-nowrap">
+          <div class="flex items-center gap-2 text-xs text-slate-300">
+            <span class="w-2 h-2 rounded-full bg-sky-400 shrink-0"></span>
+            <span><strong>一键解锁提示：</strong>点击右侧拉起解锁器，在弹出窗口中勾选全部并点击锁图标保存，Steam 客户端<strong>即刻同步跳杯</strong>！</span>
+          </div>
           <button
             @click="handleLaunchSam(activeModalGame.appId)"
-            class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+            class="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-sm shrink-0"
           >
             <Rocket class="w-3.5 h-3.5" />
-            <span>启动 SAM 解锁当前游戏</span>
+            <span>🚀 打开解锁器 (一键点亮全成就)</span>
           </button>
         </div>
       </div>
     </div>
 
     <!-- ============================================== -->
-    <!-- 弹窗 3: SAM 成就管理器安装与状态弹窗 -->
+    <!-- 弹窗 3: SAM 成就解锁引擎安装与状态弹窗 -->
     <!-- ============================================== -->
     <div
       v-if="showSamModal"
       class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4"
     >
-      <div class="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+      <div class="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
         <div class="flex items-center justify-between border-b border-white/10 pb-3">
           <div class="flex items-center gap-2.5">
             <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold">
               <Trophy class="w-4 h-4" />
             </div>
             <div>
-              <h3 class="font-bold text-sm text-slate-100">Steam 成就管理器 (SAM)</h3>
-              <p class="text-[11px] text-slate-400">SteamAchievementManager 沙盒工具</p>
+              <h3 class="font-bold text-sm text-slate-100">Steam 全成就一键解锁引擎 (SAM)</h3>
+              <p class="text-[11px] text-slate-400">Steam Achievement Manager 官方沙盒内核</p>
             </div>
           </div>
           <button
@@ -727,21 +747,36 @@
           </button>
         </div>
 
-        <p class="text-xs text-slate-300 leading-relaxed">
-          Steam 成就管理器 (SAM) 是开源且享誉全球的成就解锁工具。为保障春风渡客户端自身绝对安全与不闪退，我们采用
-          <strong class="text-sky-300">完全独立的沙盒进程隔离架构</strong>，绝不在主程序直接加载底层 DLL。
-        </p>
+        <div class="space-y-3 text-xs text-slate-300 leading-relaxed">
+          <p>
+            这是全球公认且最受信赖的 <strong class="text-sky-300">Steam 成就解锁与重置工具</strong>：
+          </p>
+          <div class="p-3.5 rounded-2xl bg-sky-950/30 border border-sky-500/20 space-y-2">
+            <div class="flex items-start gap-2">
+              <span class="text-sky-400 font-bold shrink-0 text-sm leading-none">✨</span>
+              <span><strong class="text-sky-200">一键点亮 100% 全成就：</strong>只需在弹出的窗口中全选成就并保存，Steam 客户端立即实时弹出跳杯动画与全量成就勋章！</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-amber-400 font-bold shrink-0 text-sm leading-none">🎯</span>
+              <span><strong class="text-amber-200">自由挑选与随时重置：</strong>支持单独解锁卡关或心仪的指定成就，也可以随时撤销重置已达成的成就重新体验。</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-emerald-400 font-bold shrink-0 text-sm leading-none">🛡️</span>
+              <span><strong class="text-emerald-200">独立沙盒安全隔离：</strong>春风渡通过完全独立的外部子进程调用原生接口，绝不向游戏或客户端注入代码，安全稳固。</span>
+            </div>
+          </div>
+        </div>
 
         <div class="p-3 rounded-2xl bg-slate-950/60 border border-white/5 space-y-2 text-xs">
           <div class="flex items-center justify-between">
             <span class="text-slate-400">运行状态:</span>
             <span v-if="samStatus.isInstalled" class="text-emerald-400 font-bold flex items-center gap-1">
               <CheckCircle2 class="w-3.5 h-3.5" />
-              <span>已就绪 (v{{ samStatus.version || '7.0.25' }})</span>
+              <span>已部署就绪 (v{{ samStatus.version || '7.0.25' }})</span>
             </span>
             <span v-else class="text-amber-400 font-bold flex items-center gap-1">
               <AlertTriangle class="w-3.5 h-3.5" />
-              <span>未检测到安装</span>
+              <span>未检测到部署</span>
             </span>
           </div>
           <div v-if="samStatus.exePath" class="text-[11px] text-slate-500 font-mono truncate" :title="samStatus.exePath">
@@ -757,7 +792,7 @@
             :class="samStatus.isInstalled ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10' : 'bg-amber-500 hover:bg-amber-400 text-slate-950'"
           >
             <Download class="w-3.5 h-3.5" :class="actionLoadings['install_sam'] ? 'animate-bounce' : ''" />
-            <span>{{ actionLoadings['install_sam'] ? '正在部署中...' : (samStatus.isInstalled ? '重新安装最新版' : '一键极速安装') }}</span>
+            <span>{{ actionLoadings['install_sam'] ? '正在部署成就解锁引擎...' : (samStatus.isInstalled ? '重新部署最新解锁内核' : '一键极速安装解锁引擎') }}</span>
           </button>
 
           <button
@@ -1116,27 +1151,27 @@ const checkSamStatus = async () => {
 const handleLaunchSam = async (appId: number) => {
   if (!samStatus.value.isInstalled) {
     showSamModal.value = true;
-    emit('notify', '请先点击一键安装部署 SAM 成就管理器', 'warning');
+    emit('notify', '请先点击一键部署 Steam 全成就解锁引擎 (SAM)', 'warning');
     return;
   }
   try {
     await window.electronAPI.launchSamForGame(appId);
-    emit('notify', `已针对 AppID: ${appId} 成功启动 SAM 成就解锁器！`, 'success');
+    emit('notify', `已成功唤起成就解锁器！在弹出窗口中勾选全部并点击锁图标保存，即可一键点亮全成就！`, 'success');
   } catch (err: any) {
-    emit('notify', `启动 SAM 失败: ${formatIpcError(err)}`, 'error');
+    emit('notify', `唤起成就解锁器失败: ${formatIpcError(err)}`, 'error');
   }
 };
 
 // 安装 SAM
 const handleInstallSam = async () => {
   actionLoadings['install_sam'] = true;
-  emit('notify', '正在下载并部署 Steam Achievement Manager 沙盒工具...', 'info');
+  emit('notify', '正在高速下载并部署 Steam 全成就解锁引擎...', 'info');
   try {
     const res = await window.electronAPI.downloadSam();
     samStatus.value = res;
-    emit('notify', 'SAM 成就管理器安装就绪，现在可针对任意游戏一键唤起！', 'success');
+    emit('notify', '成就解锁引擎部署完毕！现在可针对任意游戏一键点亮全成就。', 'success');
   } catch (err: any) {
-    emit('notify', `安装 SAM 失败: ${formatIpcError(err)}`, 'error');
+    emit('notify', `部署成就解锁引擎失败: ${formatIpcError(err)}`, 'error');
   } finally {
     actionLoadings['install_sam'] = false;
   }
