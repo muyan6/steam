@@ -17,11 +17,6 @@
             class="w-full h-full object-cover"
           />
           <User v-else class="w-3.5 h-3.5 text-slate-400" />
-          <span
-            v-if="currentAccount?.isCurrentAutoLogin"
-            class="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-slate-900"
-            title="当前自动登录账号"
-          ></span>
         </div>
 
         <!-- 账号昵称与提示 -->
