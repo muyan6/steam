@@ -256,6 +256,19 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
         }
       }
       manifestHub3Negative.set(appId, Date.now());
+      // 负缓存条目同样必须受容量约束：原实现的淘汰逻辑只在成功分支里，
+      // 海量不存在/持续失败的 AppID 会以 {data:null} 永久堆积在这里。
+      if (manifestHub3Cache.size >= MANIFEST_HUB3_CACHE_MAX) {
+        const tsN = Date.now();
+        for (const [k, v] of manifestHub3Cache) {
+          if (tsN - v.fetchedAt >= MANIFEST_HUB3_NEGATIVE_TTL_MS) manifestHub3Cache.delete(k);
+        }
+        while (manifestHub3Cache.size >= MANIFEST_HUB3_CACHE_MAX) {
+          const oldestNull = manifestHub3Cache.keys().next().value;
+          if (oldestNull === undefined) break;
+          manifestHub3Cache.delete(oldestNull);
+        }
+      }
       manifestHub3Cache.set(appId, { data: null, fetchedAt: Date.now() });
       return null;
     }
@@ -981,8 +994,18 @@ export const checkDlcDiff = async (req: Request, res: Response) => {
       }
     }
 
-    // 3. 兜底：如果还是没有，从 ManifestHub3 尝试拉取
-    if (remoteDlcIds.length === 0) {
+    // 3. 兜底：索引/缓存给出的 DLC 明显少于元数据缓存里的权威分包关联时，从
+    //    ManifestHub3 补齐。
+    //
+    // 原实现的条件是 `remoteDlcIds.length === 0`，与上面的注释「索引为空或较少」
+    // 不符：只要索引里恰好有 1 条 DLC，就永远不会走兜底，返回残缺结果。
+    // 判据改为「与已缓存元数据的 DLC 数量比对」，只有确实更少时才补。
+    const cachedDlcCount = new Set(
+      (cached?.dlcDepots || [])
+        .map((x) => parseInt(String(x.dlcAppId), 10))
+        .filter((n) => !isNaN(n) && n > 0 && n !== appId)
+    ).size;
+    if (remoteDlcIds.length === 0 || remoteDlcIds.length < cachedDlcCount) {
       const hubData = await fetchManifestHub3(appId);
       if (hubData && hubData.dlcIds) {
         for (const idStr of hubData.dlcIds) {

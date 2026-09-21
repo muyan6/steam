@@ -30,25 +30,47 @@ pub fn get_sam_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// 寻找 SAM.Game.exe 或 SAM.Picker.exe
+/// 递归（限深）查找 SAM.Game.exe。
+///
+/// 保留目录层级解压后，SAM.Game.exe 可能位于 SAM.Game/ 子目录下，
+/// 固定一层的旧实现会漏掉更深层级；同时输出顺序必须确定，
+/// 不能依赖 read_dir 的返回顺序。
 pub fn find_sam_game_exe(dir: &Path) -> Option<PathBuf> {
-    let target = dir.join("SAM.Game.exe");
-    if target.exists() {
-        return Some(target);
-    }
-    // 递归一层目录查找（若压缩包带有子文件夹）
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                let sub_target = p.join("SAM.Game.exe");
-                if sub_target.exists() {
-                    return Some(sub_target);
+    fn walk(dir: &Path, depth: usize) -> Option<PathBuf> {
+        if depth > 4 {
+            return None;
+        }
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        if let Ok(entries) = fs::read_dir(dir) {
+            let mut candidates: Vec<PathBuf> = Vec::new();
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    dirs.push(p);
+                } else if p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.eq_ignore_ascii_case("SAM.Game.exe"))
+                    .unwrap_or(false)
+                {
+                    candidates.push(p);
                 }
             }
+            // 同一层有多个时按路径排序，保证结果稳定可复现
+            candidates.sort();
+            if let Some(first) = candidates.into_iter().next() {
+                return Some(first);
+            }
         }
+        dirs.sort();
+        for d in dirs {
+            if let Some(found) = walk(&d, depth + 1) {
+                return Some(found);
+            }
+        }
+        None
     }
-    None
+    walk(dir, 0)
 }
 
 /// 查询本地 SAM 状态
@@ -101,17 +123,36 @@ pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, Str
     let mut archive = zip::ZipArchive::new(Cursor::new(&bytes))
         .map_err(|e| format!("解析 SAM 归档文件失败: {}", e))?;
 
+    // 必须保留压缩包内的目录层级。
+    //
+    // 原实现用 Path::file_name() 把所有条目扁平化到同一目录：SAM 官方包是多层
+    // 子目录结构（SAM.Game/、SAM.Picker/ 等），展平后同名文件互相覆盖、
+    // 依赖 DLL 丢失，装完直接起不来。
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)
             .map_err(|e| format!("读取 SAM 归档项失败: {}", e))?;
 
         let name = file.name().to_string();
-        if file.is_dir() || name.contains("__MACOSX") {
+        if name.contains("__MACOSX") {
             continue;
         }
 
-        let clean_name = Path::new(&name).file_name().unwrap_or_default();
-        let out_path = dir.join(clean_name);
+        // 只接受 zip 内部的相对路径；拒绝绝对路径与 .. 穿越（zip-slip）
+        let rel = Path::new(&name);
+        if rel.is_absolute()
+            || rel.components().any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        let out_path = dir.join(rel);
+
+        if file.is_dir() {
+            let _ = fs::create_dir_all(&out_path);
+            continue;
+        }
+        if let Some(parent) = out_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
 
         let mut out_file = fs::File::create(&out_path)
             .map_err(|e| format!("创建 SAM 解压文件失败: {}", e))?;

@@ -1369,7 +1369,10 @@ export const createTauriBridge = () => {
     matchTrainer: async (name: string, appId?: number): Promise<TrainerInfo | null> => {
       try {
         const query = `name=${encodeURIComponent(name)}${appId ? `&appId=${appId}` : ''}`;
-        const res = await getJson<any>(`${API}/api/trainers/match?${query}`);
+        // 服务端最坏预算：WP REST 8s + 文章页 8s + 302 追踪 6s = 22s。
+        // 用默认 8s 会在慢网提前 abort，异常又被吞成 null，
+        // 界面把「网络超时」误报为「暂未收录该修改器」。这里给足 25s。
+        const res = await getJson<any>(`${API}/api/trainers/match?${query}`, 25000);
         if (res && res.success) {
           return res.data;
         }
@@ -1396,7 +1399,8 @@ export const createTauriBridge = () => {
 
     getGameAchievements: async (appId: number, lang = 'schinese'): Promise<GameAchievementsData | null> => {
       try {
-        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`);
+        // 服务端最坏预算：社区页抓取 10s + 官方统计兜底 8s = 18s，同理给足 20s
+        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`, 20000);
         if (res && res.success) {
           return res.data;
         }

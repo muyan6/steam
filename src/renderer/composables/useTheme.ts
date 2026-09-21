@@ -77,29 +77,45 @@ const currentTheme = ref<AppThemeId>('frost');
 
 // 主题需在应用挂载前初始化，避免浅色主题用户冷启动时看到深色首帧闪变
 export function initThemeEarly() {
+  // localStorage 读取单独兜底：它可能因隐私模式/存储禁用而抛错。
+  // 关键：绝不能让这个异常跳过下面的 dark class 同步 —— index.html 里
+  // 硬编码了 class="dark"，浅色主题下若不摘掉，两个指南弹窗共 122 处
+  // dark: 变体会在浅色背景上错误生效。
+  let saved: AppThemeId | null = null;
   try {
-    const saved = localStorage.getItem('app_theme') as AppThemeId;
-    if (saved && THEME_LIST.some(t => t.id === saved)) {
-      currentTheme.value = saved;
-    } else {
-      // 默认主题：极简皓月（frost，浅色）
-      currentTheme.value = 'frost';
-    }
+    saved = localStorage.getItem('app_theme') as AppThemeId;
+  } catch {
+    saved = null;
+  }
+  if (saved && THEME_LIST.some(t => t.id === saved)) {
+    currentTheme.value = saved;
+  } else {
+    // 默认主题：极简皓月（frost，浅色）
+    currentTheme.value = 'frost';
+  }
+
+  try {
     document.documentElement.setAttribute('data-theme', currentTheme.value);
-    const isDark = ['midnight', 'neon', 'emerald'].includes(currentTheme.value);
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    // 同步原生窗口背景色：与 applyTheme 保持一致，避免冷启动首帧边缘白缝
-    const theme = THEME_LIST.find((t) => t.id === currentTheme.value);
-    if (theme?.bgHex) {
-      try {
-        window.electronAPI?.setWindowBackground?.(theme.bgHex);
-      } catch {}
-    }
+    syncDarkClass(currentTheme.value);
   } catch {}
+
+  // 同步原生窗口背景色：与 applyTheme 保持一致，避免冷启动首帧边缘白缝
+  const theme = THEME_LIST.find((t) => t.id === currentTheme.value);
+  if (theme?.bgHex) {
+    try {
+      window.electronAPI?.setWindowBackground?.(theme.bgHex);
+    } catch {}
+  }
+}
+
+/** 深/浅主题 → <html> 的 dark 类同步（Tailwind darkMode: 'class' 的唯一开关） */
+function syncDarkClass(themeId: AppThemeId): void {
+  const isDark = ['midnight', 'neon', 'emerald'].includes(themeId);
+  if (isDark) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
 }
 
 export function useTheme() {
@@ -118,12 +134,7 @@ export function useTheme() {
     currentTheme.value = themeId;
     localStorage.setItem('app_theme', themeId);
     document.documentElement.setAttribute('data-theme', themeId);
-    const isDark = ['midnight', 'neon', 'emerald'].includes(themeId);
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    syncDarkClass(themeId);
     // 同步原生窗口背景色：覆盖 DPI 缩放下 WebView 与窗口边缘原生缝隙的默认白底
     const theme = THEME_LIST.find((t) => t.id === themeId);
     if (theme?.bgHex) {

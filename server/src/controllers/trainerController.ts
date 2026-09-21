@@ -22,7 +22,28 @@ interface TrainerMatchData {
 
 // 内存缓存 24 小时
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// 缓存条目硬上限 + 游戏名长度上限：
+// cacheKey 由用户传入的 name 拼接而成，不加约束时随机名称即可
+// 无限撑大 Map 并每次都穿透缓存直打 flingtrainer.com。
+const TRAINER_CACHE_MAX = 500;
+const TRAINER_NAME_MAX_LEN = 128;
 const trainerCache = new Map<string, { data: TrainerMatchData; timestamp: number }>();
+
+/** 写入修改器缓存（带容量淘汰），所有写入路径必须走这里 */
+function writeTrainerCache(key: string, data: TrainerMatchData): void {
+  if (trainerCache.size >= TRAINER_CACHE_MAX) {
+    const now = Date.now();
+    for (const [k, v] of trainerCache) {
+      if (now - v.timestamp >= CACHE_TTL_MS) trainerCache.delete(k);
+    }
+    while (trainerCache.size >= TRAINER_CACHE_MAX) {
+      const oldest = trainerCache.keys().next().value;
+      if (oldest === undefined) break;
+      trainerCache.delete(oldest);
+    }
+  }
+  trainerCache.set(key, { data, timestamp: Date.now() });
+}
 
 // 常见修改项高频英文词汇中英映射字典
 const CHEAT_TRANSLATIONS: Array<[RegExp, string]> = [
@@ -103,7 +124,8 @@ function parseCheatsFromHtml(html: string): CheatItem[] {
  */
 export const matchTrainer = async (req: Request, res: Response) => {
   const appId = req.query.appId ? String(req.query.appId).trim() : '';
-  const rawName = req.query.name ? String(req.query.name).trim() : '';
+  // 游戏名先截断再参与正则清洗与缓存键拼接：防止超长 name 污染缓存键
+  const rawName = req.query.name ? String(req.query.name).trim().slice(0, TRAINER_NAME_MAX_LEN) : '';
 
   if (!rawName && !appId) {
     return res.status(400).json({ success: false, message: '请提供游戏名称或 AppID' });
@@ -135,7 +157,7 @@ export const matchTrainer = async (req: Request, res: Response) => {
     const posts = Array.isArray(searchResp.data) ? searchResp.data : [];
     if (posts.length === 0) {
       const emptyResult: TrainerMatchData = { matched: false };
-      trainerCache.set(cacheKey, { data: emptyResult, timestamp: Date.now() });
+      writeTrainerCache(cacheKey, emptyResult);
       return res.json({ success: true, data: emptyResult });
     }
 
@@ -205,7 +227,7 @@ export const matchTrainer = async (req: Request, res: Response) => {
       cheats
     };
 
-    trainerCache.set(cacheKey, { data: resultData, timestamp: Date.now() });
+    writeTrainerCache(cacheKey, resultData);
     return res.json({ success: true, data: resultData });
   } catch (err: any) {
     console.error('[TrainerController] 检索修改器异常:', err?.message || err);
@@ -221,11 +243,16 @@ export const matchTrainer = async (req: Request, res: Response) => {
  */
 export const downloadTrainerProxy = async (req: Request, res: Response) => {
   const targetUrl = req.query.url ? String(req.query.url) : '';
-  const referer = req.query.referer ? String(req.query.referer) : 'https://flingtrainer.com/';
+  const rawReferer = req.query.referer ? String(req.query.referer) : '';
 
   if (!targetUrl || !/^https?:\/\/flingtrainer\.com\//i.test(targetUrl)) {
     return res.status(400).json({ success: false, message: '非法的修改器下载地址' });
   }
+  // Referer 同样必须限定在 flingtrainer.com 域内：它是客户端可自由传入的参数，
+  // 原样透传会让本服务成为「伪造 Referer 访问任意站点」的跳板。
+  const referer = /^https?:\/\/([\w-]+\.)?flingtrainer\.com\//i.test(rawReferer)
+    ? rawReferer
+    : 'https://flingtrainer.com/';
 
   try {
     const upstream = await axios.get(targetUrl, {

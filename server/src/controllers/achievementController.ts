@@ -16,7 +16,36 @@ export interface GameAchievementsData {
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// 缓存条目硬上限：与 metadataController 的 METADATA_CACHE_MAX 保持一致，
+// 超限时先清过期再按插入序淘汰最旧，防止被海量 AppID 撑爆内存。
+const ACHIEVEMENT_CACHE_MAX = 500;
 const achievementCache = new Map<string, { data: GameAchievementsData; timestamp: number }>();
+
+/**
+ * 语言代码白名单式归一化。
+ * cacheKey 由 lang 拼接而成，若原样透传 req.query.lang，攻击者用随机值即可
+ * 每次都绕过缓存直打 steamcommunity.com，并把无界条目堆进 Map。
+ */
+function normalizeLang(raw: unknown): string {
+  const v = String(raw ?? '').trim().toLowerCase();
+  return /^[a-z]{2,16}$/.test(v) ? v : 'schinese';
+}
+
+/** 写入成就缓存（带容量淘汰），所有写入路径必须走这里 */
+function writeAchievementCache(key: string, data: GameAchievementsData): void {
+  if (achievementCache.size >= ACHIEVEMENT_CACHE_MAX) {
+    const now = Date.now();
+    for (const [k, v] of achievementCache) {
+      if (now - v.timestamp >= CACHE_TTL_MS) achievementCache.delete(k);
+    }
+    while (achievementCache.size >= ACHIEVEMENT_CACHE_MAX) {
+      const oldest = achievementCache.keys().next().value;
+      if (oldest === undefined) break;
+      achievementCache.delete(oldest);
+    }
+  }
+  achievementCache.set(key, { data, timestamp: Date.now() });
+}
 
 const SAM_REPO = 'gibbed/SteamAchievementManager';
 
@@ -25,7 +54,7 @@ const SAM_REPO = 'gibbed/SteamAchievementManager';
  */
 export const getGameAchievements = async (req: Request, res: Response) => {
   const appId = parseInt(String(req.params.appId || req.query.appId || '0'), 10);
-  const lang = String(req.query.lang || 'schinese');
+  const lang = normalizeLang(req.query.lang);
 
   if (!appId || isNaN(appId) || appId <= 0) {
     return res.status(400).json({ success: false, message: '无效的 AppID' });
@@ -80,7 +109,7 @@ export const getGameAchievements = async (req: Request, res: Response) => {
         count: achievements.length,
         achievements
       };
-      achievementCache.set(cacheKey, { data: resultData, timestamp: Date.now() });
+      writeAchievementCache(cacheKey, resultData);
       return res.json({ success: true, data: resultData });
     }
 
@@ -106,13 +135,13 @@ export const getGameAchievements = async (req: Request, res: Response) => {
         count: fallbackItems.length,
         achievements: fallbackItems
       };
-      achievementCache.set(cacheKey, { data: fallbackData, timestamp: Date.now() });
+      writeAchievementCache(cacheKey, fallbackData);
       return res.json({ success: true, data: fallbackData });
     }
 
     // 若两项均无成就，说明该游戏无成就系统（如纯单机老游戏或未配置成就）
     const emptyData: GameAchievementsData = { appId, count: 0, achievements: [] };
-    achievementCache.set(cacheKey, { data: emptyData, timestamp: Date.now() });
+    writeAchievementCache(cacheKey, emptyData);
     return res.json({ success: true, data: emptyData });
   } catch (err: any) {
     console.error(`[AchievementController] 拉取 AppID ${appId} 成就数据失败:`, err?.message || err);
@@ -170,7 +199,19 @@ export const getSamDownloadInfo = async (_req: Request, res: Response) => {
  */
 export const downloadSamProxy = async (_req: Request, res: Response) => {
   try {
-    const url = 'https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.25/SteamAchievementManager-7.0.25.zip';
+    // 复用 latest release 的真实资产地址，避免上游发布新版本后仍固定拉取 7.0.25 旧包。
+    // 查询失败时回退到已知可用版本，保证下载链路始终有值。
+    let url = 'https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.25/SteamAchievementManager-7.0.25.zip';
+    try {
+      const rel = await axios.get(`https://api.github.com/repos/${SAM_REPO}/releases/latest`, {
+        timeout: 6000,
+        headers: { 'User-Agent': 'chunfengdu-server', Accept: 'application/vnd.github+json' }
+      });
+      const zipAsset = (Array.isArray(rel.data?.assets) ? rel.data.assets : []).find(
+        (a: any) => typeof a?.name === 'string' && a.name.endsWith('.zip')
+      );
+      if (zipAsset?.browser_download_url) url = zipAsset.browser_download_url;
+    } catch {}
     const upstream = await axios.get(url, {
       timeout: 120000,
       responseType: 'stream',
@@ -179,7 +220,9 @@ export const downloadSamProxy = async (_req: Request, res: Response) => {
     });
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="SteamAchievementManager-7.0.25.zip"');
+    // 文件名从最终 URL 推导，避免上游升版后仍下发 7.0.25 的固定文件名
+    const assetFileName = url.split('/').pop() || 'SteamAchievementManager.zip';
+    res.setHeader('Content-Disposition', `attachment; filename="${assetFileName}"`);
 
     upstream.data.on('error', (err: any) => {
       console.error('[AchievementController] SAM 下载流出错:', err?.message || err);

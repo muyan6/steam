@@ -20,14 +20,19 @@ pub struct TrainerStatus {
     pub is_running: bool,
 }
 
-/// 获取指定 AppID 的修改器持久化存放目录
-pub fn get_trainer_dir(app_id: u32) -> Result<PathBuf, String> {
+/// 计算指定 AppID 的修改器持久化目录路径（**不产生任何磁盘副作用**）
+pub fn get_trainer_dir_path(app_id: u32) -> Result<PathBuf, String> {
     let appdata = std::env::var("APPDATA")
         .map_err(|_| "无法读取 APPDATA 环境变量".to_string())?;
-    let dir = PathBuf::from(appdata)
+    Ok(PathBuf::from(appdata)
         .join("com.chunfengdu.app")
         .join("trainers")
-        .join(app_id.to_string());
+        .join(app_id.to_string()))
+}
+
+/// 获取目录并确保存在（仅下载/写入路径调用）
+pub fn get_trainer_dir(app_id: u32) -> Result<PathBuf, String> {
+    let dir = get_trainer_dir_path(app_id)?;
     if !dir.exists() {
         fs::create_dir_all(&dir)
             .map_err(|e| format!("创建修改器目录失败: {}", e))?;
@@ -35,18 +40,65 @@ pub fn get_trainer_dir(app_id: u32) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// 寻找目录下的修改器主执行程序
+/// 寻找目录下的修改器主执行程序。
+///
+/// 结果必须确定：原实现直接返回 read_dir 的第一个 .exe，而目录项顺序由
+/// 文件系统决定，同一目录在多次调用间可能给出不同的「主程序」。
+/// 改为收集后排序，优先取与 AppID 同名的可执行文件，否则取字典序首个。
 pub fn find_trainer_exe(dir: &Path) -> Option<PathBuf> {
+    find_trainer_exe_for(dir, None)
+}
+
+/// 带 AppID 偏好的主程序查找
+pub fn find_trainer_exe_for(dir: &Path, app_id: Option<u32>) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext.eq_ignore_ascii_case("exe") {
-                        return Some(path);
-                    }
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(ext) = path.extension() {
+                if ext.eq_ignore_ascii_case("exe") {
+                    candidates.push(path);
                 }
             }
+        }
+    }
+    candidates.sort();
+    if let Some(id) = app_id {
+        let needle = id.to_string();
+        if let Some(hit) = candidates
+            .iter()
+            .find(|p| p.file_stem().and_then(|s| s.to_str()).map(|s| s.contains(&needle)).unwrap_or(false))
+        {
+            return Some(hit.clone());
+        }
+    }
+    candidates.into_iter().next()
+}
+
+/// 递归（限深）查找修改器主程序，兼容压缩包内的子目录层级
+fn find_trainer_exe_recursive(dir: &Path, app_id: u32, depth: usize) -> Option<PathBuf> {
+    if depth > 4 {
+        return None;
+    }
+    if let Some(hit) = find_trainer_exe_for(dir, Some(app_id)) {
+        return Some(hit);
+    }
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                dirs.push(p);
+            }
+        }
+    }
+    dirs.sort();
+    for d in dirs {
+        if let Some(found) = find_trainer_exe_recursive(&d, app_id, depth + 1) {
+            return Some(found);
         }
     }
     None
@@ -70,10 +122,14 @@ fn is_exe_running(exe_name: &str) -> bool {
     false
 }
 
-/// 查询本地修改器状态
+/// 查询本地修改器状态。
+///
+/// 纯只读查询：使用不建目录的 get_trainer_dir_path。
+/// 前端会对**每款本地游戏**调用本函数做状态预取，若在此 create_dir_all，
+/// 100 款游戏就会在 APPDATA 下凭空生成 100 个空目录。
 pub fn get_trainer_status(app_id: u32) -> Result<TrainerStatus, String> {
-    let dir = get_trainer_dir(app_id)?;
-    if let Some(exe) = find_trainer_exe(&dir) {
+    let dir = get_trainer_dir_path(app_id)?;
+    if let Some(exe) = find_trainer_exe_recursive(&dir, app_id, 0) {
         let exe_name = exe.file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Trainer.exe")
@@ -143,30 +199,47 @@ pub async fn download_trainer(
     let is_exe = bytes.len() > 2 && bytes[0] == b'M' && bytes[1] == b'Z';
 
     if is_zip {
-        // 解压 Zip 提取里面的 .exe
+        // 解压 Zip：**完整保留目录层级，并解出全部文件**。
+        //
+        // 原实现只取压缩包内第一个 .exe 就 break，同包的配置、依赖 DLL、
+        // 说明文件全部丢弃，压缩包内带子目录时更是直接丢结构；FLiNG 的包
+        // 常带配置与依赖，只留一个 exe 会导致修改器起不来或功能缺失。
         let mut archive = zip::ZipArchive::new(Cursor::new(&bytes))
             .map_err(|e| format!("解析修改器 Zip 归档失败: {}", e))?;
 
-        let mut extracted_exe: Option<PathBuf> = None;
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)
                 .map_err(|e| format!("读取归档文件项失败: {}", e))?;
 
             let name = file.name().to_string();
-            if name.ends_with(".exe") && !name.contains("__MACOSX") {
-                let clean_file_name = Path::new(&name).file_name()
-                    .unwrap_or_default();
-                let out_path = dir.join(clean_file_name);
-                let mut out_file = fs::File::create(&out_path)
-                    .map_err(|e| format!("创建解压修改器文件失败: {}", e))?;
-                std::io::copy(&mut file, &mut out_file)
-                    .map_err(|e| format!("写入解压修改器失败: {}", e))?;
-                extracted_exe = Some(out_path);
-                break;
+            if name.contains("__MACOSX") {
+                continue;
             }
+
+            // 只接受包内相对路径，拒绝绝对路径与 .. 穿越（zip-slip）
+            let rel = Path::new(&name);
+            if rel.is_absolute()
+                || rel.components().any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                continue;
+            }
+            let out_path = dir.join(rel);
+
+            if file.is_dir() {
+                let _ = fs::create_dir_all(&out_path);
+                continue;
+            }
+            if let Some(parent) = out_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+
+            let mut out_file = fs::File::create(&out_path)
+                .map_err(|e| format!("创建解压修改器文件失败: {}", e))?;
+            std::io::copy(&mut file, &mut out_file)
+                .map_err(|e| format!("写入解压修改器失败: {}", e))?;
         }
 
-        if extracted_exe.is_none() {
+        if find_trainer_exe_recursive(&dir, app_id, 0).is_none() {
             return Err("修改器压缩包内未找到可执行文件 (.exe)".to_string());
         }
     } else if is_exe {
@@ -190,15 +263,17 @@ pub async fn download_trainer(
 
 /// 脱机拉起修改器进程（独立进程组，不卡死主界面，不因春风渡退出而受影响）
 pub fn launch_trainer(app_id: u32) -> Result<bool, String> {
-    let dir = get_trainer_dir(app_id)?;
-    let exe = find_trainer_exe(&dir)
+    let dir = get_trainer_dir_path(app_id)?;
+    let exe = find_trainer_exe_recursive(&dir, app_id, 0)
         .ok_or_else(|| "本地未找到已下载的修改器程序，请先点击下载".to_string())?;
+    // 工作目录取 exe 所在目录：修改器常按相对路径读取同目录的配置与依赖
+    let work_dir = exe.parent().unwrap_or(&dir).to_path_buf();
 
     #[cfg(windows)]
     {
         // 0x00000200 = CREATE_NEW_PROCESS_GROUP
         let mut cmd = Command::new(&exe);
-        cmd.current_dir(&dir);
+        cmd.current_dir(&work_dir);
         cmd.creation_flags(0x00000200);
 
         cmd.spawn()
@@ -210,7 +285,7 @@ pub fn launch_trainer(app_id: u32) -> Result<bool, String> {
     #[cfg(not(windows))]
     {
         let mut cmd = Command::new(&exe);
-        cmd.current_dir(&dir);
+        cmd.current_dir(&work_dir);
         cmd.spawn().map_err(|e| format!("启动失败: {}", e))?;
         Ok(true)
     }
@@ -218,9 +293,12 @@ pub fn launch_trainer(app_id: u32) -> Result<bool, String> {
 
 /// 打开修改器存放目录
 pub fn open_trainer_dir(app_id: u32) -> Result<bool, String> {
-    let dir = get_trainer_dir(app_id)?;
+    let dir = get_trainer_dir_path(app_id)?;
     #[cfg(windows)]
     {
+        if !dir.exists() {
+            return Err("该游戏尚未下载修改器，目录不存在".to_string());
+        }
         Command::new("explorer")
             .arg(dir)
             .spawn()
@@ -233,9 +311,12 @@ pub fn open_trainer_dir(app_id: u32) -> Result<bool, String> {
     }
 }
 
-/// 删除已下载的修改器
+/// 删除已下载的修改器。
+///
+/// 刻意用不建目录的 get_trainer_dir_path：原实现先 create_dir_all 再 remove_dir_all，
+/// 对「本来就没有修改器」的游戏等于白建又白删一次目录。
 pub fn delete_trainer(app_id: u32) -> Result<bool, String> {
-    let dir = get_trainer_dir(app_id)?;
+    let dir = get_trainer_dir_path(app_id)?;
     if dir.exists() {
         fs::remove_dir_all(&dir)
             .map_err(|e| format!("删除修改器目录失败: {}", e))?;

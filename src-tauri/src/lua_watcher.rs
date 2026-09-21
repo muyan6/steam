@@ -1,13 +1,19 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use notify::{Event, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter};
 
-static WATCHER_RUNNING: std::sync::OnceLock<Arc<AtomicBool>> = std::sync::OnceLock::new();
+/// 监听线程的存活标记。
+///
+/// 刻意不用 OnceLock：一旦 set() 成功，标记便永久为 Some，即便监听线程随后
+/// 因 watcher.watch() 失败（目录被删、权限不足等）立刻退出，任何重试都会在
+/// 入口处直接 return，监听再也不可能恢复；而 stop_signal 也永远没有机会被置位。
+/// 用 Mutex<Option<..>> 才能在「确实有线程在跑」与「曾经跑过但已退出」之间区分。
+static WATCHER_RUNNING: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 
 /// 启动 config/lua 目录的后台防抖监听服务（优化 2）
 ///
@@ -26,9 +32,19 @@ pub fn start_lua_watcher(app_handle: AppHandle, steam_path: &Path) {
     };
 
     let stop_signal = Arc::new(AtomicBool::new(false));
-    if WATCHER_RUNNING.set(Arc::clone(&stop_signal)).is_err() {
-        // 已经运行，避免重复启动多个线程
-        return;
+    {
+        let mut guard = match WATCHER_RUNNING.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        // 已有线程在跑（其 stop 标记尚未置位）→ 避免重复启动多个监听线程。
+        // 若标记存在但线程已置位退出，则视为「已结束」，允许本次重新拉起。
+        if let Some(existing) = guard.as_ref() {
+            if !existing.load(Ordering::Relaxed) {
+                return;
+            }
+        }
+        *guard = Some(Arc::clone(&stop_signal));
     }
 
     let dir_to_watch = lua_dir.clone();
@@ -53,12 +69,14 @@ pub fn start_lua_watcher(app_handle: AppHandle, steam_path: &Path) {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("[LuaWatcher] 创建文件监听器失败: {}", e);
+                release_watcher_slot(&thread_stop);
                 return;
             }
         };
 
         if let Err(e) = watcher.watch(&dir_to_watch, RecursiveMode::Recursive) {
             eprintln!("[LuaWatcher] 监听目录 {:?} 失败: {}", dir_to_watch, e);
+            release_watcher_slot(&thread_stop);
             return;
         }
 
@@ -101,6 +119,26 @@ pub fn start_lua_watcher(app_handle: AppHandle, steam_path: &Path) {
             }
         }
 
+        release_watcher_slot(&thread_stop);
         println!("[LuaWatcher] 文件监听线程已安全退出");
     });
+}
+
+/// 标记监听线程已结束，使后续 start_lua_watcher 能够重新拉起。
+///
+/// 置位自身 stop 标记是「线程已退出」的判据：只有此时才清空全局槽位，
+/// 避免把另一个仍在运行的线程挤掉。
+fn release_watcher_slot(thread_stop: &Arc<AtomicBool>) {
+    thread_stop.store(true, Ordering::Relaxed);
+    let mut guard = match WATCHER_RUNNING.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let is_self = guard
+        .as_ref()
+        .map(|cur| Arc::ptr_eq(cur, thread_stop))
+        .unwrap_or(false);
+    if is_self {
+        *guard = None;
+    }
 }

@@ -10,7 +10,17 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-/// Steam 原生接口（SteamClient）进程隔离执行器（优化 1）
+/// Steam 原生接口（SteamClient）进程隔离执行器的**框架预留**。
+///
+/// 状态说明（务必与提交说明区分）：
+/// 本模块目前**尚未接入任何调用链** —— 全仓库只有本文件的定义与 lib.rs 的
+/// `pub mod steam_worker;`，没有任何命令或业务路径调用 run_isolated_steam_worker。
+/// 因此提交 9a2f898 所描述的「SteamClient 进程隔离」在当前版本实际未生效，
+/// 接入前不得对外宣称已具备该能力。保留为框架是为了避免后续重复设计。
+///
+/// 接入前提：必须先有一个真实的 Worker 可执行文件（由外部独立进程加载
+/// steamclient64.dll 并输出 JSON），本函数才可能成功；worker_exe 不存在时
+/// 会直接返回 Err，不会静默降级。
 ///
 /// 架构铁律与设计原则：
 /// 1. 绝不在 Tauri GUI 主进程中直接通过 FFI 加载 steamclient.dll 或 steamclient64.dll；
@@ -18,6 +28,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 /// 3. 若在主进程直接加载，任何 C++ 异常、指针崩溃、DLL 损坏或 Steam 客户端退出均会导致 Tauri 窗口闪退；
 /// 4. 本模块规范了独立 Worker 子进程隔离模式：主进程通过子进程唤起外部轻量 Worker 执行一次性任务，
 ///    子进程完成输出 JSON 后立即销毁并释放句柄，主界面 100% 免受任何底层崩溃影响。
+#[allow(dead_code)] // 框架预留：接入真实 Worker 前无调用方，避免 dead_code 噪音掩盖其他告警
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkerRunResult {
@@ -28,7 +39,8 @@ pub struct WorkerRunResult {
     pub error: Option<String>,
 }
 
-/// 执行隔离的 Steam 外部工作进程
+/// 执行隔离的 Steam 外部工作进程（框架预留，当前无调用方，见模块头注释）
+#[allow(dead_code)]
 pub fn run_isolated_steam_worker(
     worker_exe: &Path,
     args: &[&str],

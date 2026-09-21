@@ -1189,8 +1189,11 @@ const handleOpenSamDir = async () => {
 // 手动查询自定义游戏
 const handleCustomQuery = async () => {
   const name = customGameInputName.value.trim();
-  const appId = customGameInputAppId.value ? Number(customGameInputAppId.value) : 9999999;
-  if (!name && !appId) return;
+  const rawAppId = customGameInputAppId.value;
+  // 守卫必须先于默认值填充：原实现先把 appId 赋成 9999999，
+  // 导致下一行 `if (!name && !appId)` 恒为 false，守卫完全失效。
+  if (!name && !rawAppId) return;
+  const appId = rawAppId ? Number(rawAppId) : 9999999;
 
   const mockGame: LocalInstalledGame = {
     appId,

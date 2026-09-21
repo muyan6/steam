@@ -473,11 +473,47 @@ router.get('/toolbox/online-modes', getOnlineModes);
 router.get('/toolbox/onlinefix-search', searchOnlineFix);
 
 // 修改器与成就管理 (Trainers & Achievements)
-router.get('/trainers/match', matchTrainer);
-router.get('/trainers/download', downloadTrainerProxy);
-router.get('/achievements/sam/info', getSamDownloadInfo);
-router.get('/achievements/sam/download', downloadSamProxy);
-router.get('/achievements/:appId', getGameAchievements);
+//
+// 以下五个端点全部零鉴权，且每个未命中缓存的请求都要向上游
+// (flingtrainer.com / steamcommunity.com / api.github.com) 发起多次抓取，
+// 其中 /trainers/match 最坏预算 22 秒、/achievements/:appId 最坏 18 秒。
+// 不加限流等于把本服务变成对上游的放大器，被脚本刷即可打满出网带宽
+// 并连带触发上游风控（封的是服务器 IP）——与文件内其余 22 处上游接口保持一致。
+// 命中缓存的请求零上游流量，故用 skip 豁免，避免误伤正常用户。
+const trainerMatchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '修改器检索过于频繁，请稍后再试' }
+});
+const trainerDownloadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '修改器下载请求过于频繁，请稍后再试' }
+});
+const achievementLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '成就数据查询过于频繁，请稍后再试' }
+});
+const samDownloadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'SAM 下载请求过于频繁，请稍后再试' }
+});
+
+router.get('/trainers/match', trainerMatchLimiter, matchTrainer);
+router.get('/trainers/download', trainerDownloadLimiter, downloadTrainerProxy);
+router.get('/achievements/sam/info', achievementLimiter, getSamDownloadInfo);
+router.get('/achievements/sam/download', samDownloadLimiter, downloadSamProxy);
+router.get('/achievements/:appId', achievementLimiter, getGameAchievements);
 
 // ==================== 2. 管理员认证受保护 API ====================
 
