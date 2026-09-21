@@ -58,102 +58,17 @@
         先看游戏卡片左上角<strong class="text-sky-300">徽章颜色</strong>：绿色优先方案一，琥珀色/橙色必须切换到方案二安装补丁，卡片亦有智能方案指引。
       </div>
       <button
-        @click="showGuide = !showGuide"
-        class="shrink-0 px-3 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+        @click="showGuide = true"
+        class="shrink-0 px-3.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+        title="查看联机方案、启动方式及徽章说明"
       >
         <BookOpen class="w-3.5 h-3.5" />
-        <span>{{ showGuide ? '收起说明' : '功能说明' }}</span>
-        <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': showGuide }" />
+        <span>使用说明</span>
       </button>
     </div>
 
-    <!-- 功能说明面板：徽章图例 + 两大方案原理 + 启动方式说明 -->
-    <div v-if="showGuide" class="mb-4 p-4 xl:p-5 rounded-2xl bg-slate-900/70 border border-white/10 text-xs shrink-0 space-y-3">
-      <!-- 徽章图例 -->
-      <div class="space-y-2">
-        <div class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">卡片左上角联机徽章图例（扫描游戏文件自动判断）</div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 leading-relaxed">
-          <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[11px] font-bold">Steamworks 联机</span>
-            <span class="text-slate-400">绿色：原生 Steam P2P 大厅接口，<strong class="text-emerald-400">直接用方案一</strong>，免改文件即可</span>
-          </div>
-          <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/85 text-slate-950 text-[11px] font-bold">Steamworks+三方</span>
-            <span class="text-slate-400">绿色：核心联机走 Steam，语音等附属走三方，<strong class="text-emerald-400">仍用方案一</strong></span>
-          </div>
-          <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500/90 text-slate-950 text-[11px] font-bold">云端大厅·需补丁</span>
-            <span class="text-slate-400">琥珀色：官方云端大厅强鉴权（如《致命公司》《恐鬼症》），免改直启会被拒绝建房，<strong class="text-amber-400">必须用方案二安装补丁</strong></span>
-          </div>
-          <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-sky-500/85 text-slate-950 text-[11px] font-bold">Steam API</span>
-            <span class="text-slate-400">蓝色：接入了 Steam 但联机方式不确定，<strong class="text-sky-400">先试方案一</strong>，无效再换方案二</span>
-          </div>
-          <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500/90 text-slate-950 text-[11px] font-bold">第三方网络</span>
-            <span class="text-slate-400">橙色：联机走 Photon/EOS 等独立服务，Steam 通道进不去，<strong class="text-amber-400">直接用方案二</strong></span>
-          </div>
-          <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-slate-800/80 text-slate-300 text-[11px] font-bold border border-white/10">单机/MOD</span>
-            <span class="text-slate-400">深灰：官方无联机服务或单机（如植物大战僵尸、黑神话），<strong class="text-slate-300">如需联机或自制MOD</strong>可尝试方案一直启</span>
-          </div>
-          <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-500/90 text-slate-950 text-[11px] font-bold">已装联机补丁</span>
-            <span class="text-slate-400">绿色：已通过方案二部署过补丁，直接联机启动即可</span>
-          </div>
-          <div class="flex gap-2 items-start">
-            <span class="shrink-0 px-2 py-0.5 rounded-lg bg-slate-800/90 text-slate-300 text-[11px] font-bold border border-white/10">官方竞技服</span>
-            <span class="text-slate-400">深灰：官方专属竞技服务器与反作弊（如 CS2、Apex、PUBG），<strong class="text-slate-300">不支持破解联机</strong>，需官方正版</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 两大方案 -->
-      <div class="space-y-2">
-        <div class="text-[11px] font-bold text-slate-300 uppercase tracking-wider pt-1">两大联机方案（先方案一，无效才方案二）</div>
-        <div class="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-1">
-          <div class="font-bold text-emerald-300 flex items-center gap-1.5">
-            <Rocket class="w-3.5 h-3.5" />
-            <span>方案一 · Steam 通道联机（免改任何游戏文件，优先推荐）</span>
-          </div>
-          <p class="text-slate-400 leading-relaxed">
-            把游戏的联机通道伪装进 Steam 官方测试大厅 <strong class="text-slate-300">Spacewar (480)</strong>，游戏在 Steam 眼里就是"正规军"，好友列表直接右键「邀请加入游戏」。下方的
-            <strong class="text-slate-300">Open 内核 / Spacewar / BAT 三种启动方式都是这一方案的不同启动手法，联机本质完全相同</strong>——
-            所以 Open 内核联不上的游戏，换成另外两种启动方式也一样联不上，请直接改用方案二。
-          </p>
-        </div>
-        <div class="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-1">
-          <div class="font-bold text-amber-300 flex items-center gap-1.5">
-            <Wrench class="w-3.5 h-3.5" />
-            <span>方案二 · 联机补丁注入（修改游戏文件，精准修复）</span>
-          </div>
-          <p class="text-slate-400 leading-relaxed">
-            即「联机补丁模式」标签页：对接 <code>online-fix.me</code> 补丁库按游戏精准下载补丁，替换游戏目录内的
-            <code>steam_api64.dll</code> 等文件并写入联机配置（也支持 Goldberg 局域网模式）。
-            适用于方案一无法连入、大厅不可见的游戏。原文件自动备份，可一键还原。
-          </p>
-        </div>
-      </div>
-
-      <!-- 三种启动方式（方案一内部差异） -->
-      <div class="space-y-2">
-        <div class="text-[11px] font-bold text-slate-300 uppercase tracking-wider pt-1">方案一的三种启动方式（只是启动手法不同，联机效果一样）</div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
-            <div class="font-bold text-sky-400 flex items-center gap-1.5"><ArrowLeftRight class="w-3.5 h-3.5" /><span>Open 内核直启</span></div>
-            <p class="text-slate-400 leading-relaxed">自动让 Steam 以 <code>-onlinefix</code> 参数运行（内核联机拦截生效），并通过 <code>steam -applaunch</code> 以 Steam 原生会话拉起游戏；内核把会话伪装为 Spacewar (480) 通道并映射真实游戏名，同时弹出 Steam 原生邀请对话框——纯入库游戏联机的推荐方式</p>
-          </div>
-          <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
-            <div class="font-bold text-purple-400 flex items-center gap-1.5"><Rocket class="w-3.5 h-3.5" /><span>Spacewar 伪装直启</span></div>
-            <p class="text-slate-400 leading-relaxed">写入 <code>steam_appid.txt=480</code> 压制游戏自检重启，并注入环境变量拉起 exe，好友看到你玩的是 <strong class="text-slate-300">Spacewar</strong>；纯入库游戏联机稳定方案</p>
-          </div>
-          <div class="p-3 rounded-xl bg-slate-950/60 border border-white/10 space-y-1">
-            <div class="font-bold text-emerald-400 flex items-center gap-1.5"><Terminal class="w-3.5 h-3.5" /><span>BAT 脚本注入</span></div>
-            <p class="text-slate-400 leading-relaxed">游戏目录生成 <code>Launch_Online_Fix.bat</code> 与 <code>steam_appid.txt</code> 启动，联机效果同上；此后无需本工具也能直接双击该 bat 联机启动游戏</p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 联机中心核心指南弹窗 (全主题自适应高质感图文解析) -->
+    <OnlineFixGuideModal v-model="showGuide" />
 
     <!-- ============================================== -->
     <!-- TAB 1: 联机启动模式 (主模式) -->
@@ -1074,6 +989,7 @@ import {
 } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
 import { steamCardImageFallback } from '../utils/imageFallback';
+import OnlineFixGuideModal from '../components/onlinefix/OnlineFixGuideModal.vue';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;

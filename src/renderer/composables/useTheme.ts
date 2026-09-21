@@ -86,6 +86,12 @@ export function initThemeEarly() {
       currentTheme.value = 'frost';
     }
     document.documentElement.setAttribute('data-theme', currentTheme.value);
+    const isDark = ['midnight', 'neon', 'emerald'].includes(currentTheme.value);
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
     // 同步原生窗口背景色：与 applyTheme 保持一致，避免冷启动首帧边缘白缝
     const theme = THEME_LIST.find((t) => t.id === currentTheme.value);
     if (theme?.bgHex) {
@@ -112,6 +118,12 @@ export function useTheme() {
     currentTheme.value = themeId;
     localStorage.setItem('app_theme', themeId);
     document.documentElement.setAttribute('data-theme', themeId);
+    const isDark = ['midnight', 'neon', 'emerald'].includes(themeId);
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
     // 同步原生窗口背景色：覆盖 DPI 缩放下 WebView 与窗口边缘原生缝隙的默认白底
     const theme = THEME_LIST.find((t) => t.id === themeId);
     if (theme?.bgHex) {

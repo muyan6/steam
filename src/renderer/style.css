@@ -1041,3 +1041,115 @@ button.hover-lift:not(:disabled):active {
   background: linear-gradient(135deg, #059669 0%, #0d9488 50%, #0284c7 100%);
 }
 
+/* ==========================================================================
+   指南模态弹窗多主题高质感自适应系统 (Guide Modals Multi-Theme Adaptation)
+   覆盖 6 套主题（深色 + 浅色）：自适应柔和渐变、高对比度、防发黑、防发灰
+   ========================================================================== */
+
+/* 模式卡片 A - 天蓝/青绿系 (跟随最新模式等) */
+.guide-card-accent-a {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.14) 0%, rgba(15, 23, 42, 0.75) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+[data-theme="frost"] .guide-card-accent-a,
+[data-theme="dawn"] .guide-card-accent-a,
+[data-theme="mint"] .guide-card-accent-a {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
+  border-color: #7dd3fc !important;
+  box-shadow: 0 4px 16px rgba(2, 132, 199, 0.08) !important;
+}
+
+/* 模式卡片 B - 紫罗兰系 (版本锁定模式等) */
+.guide-card-accent-b {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.14) 0%, rgba(15, 23, 42, 0.75) 100%);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+}
+
+[data-theme="frost"] .guide-card-accent-b,
+[data-theme="dawn"] .guide-card-accent-b,
+[data-theme="mint"] .guide-card-accent-b {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%) !important;
+  border-color: #d8b4fe !important;
+  box-shadow: 0 4px 16px rgba(147, 51, 234, 0.08) !important;
+}
+
+/* 模式卡片 C - 翡翠绿系 (Steam通道联机等) */
+.guide-card-accent-emerald {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14) 0%, rgba(15, 23, 42, 0.75) 100%);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+[data-theme="frost"] .guide-card-accent-emerald,
+[data-theme="dawn"] .guide-card-accent-emerald,
+[data-theme="mint"] .guide-card-accent-emerald {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%) !important;
+  border-color: #86efac !important;
+  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.08) !important;
+}
+
+/* 模式卡片 D - 琥珀金/橙色系 (联机补丁注入等) */
+.guide-card-accent-amber {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14) 0%, rgba(15, 23, 42, 0.75) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+[data-theme="frost"] .guide-card-accent-amber,
+[data-theme="dawn"] .guide-card-accent-amber,
+[data-theme="mint"] .guide-card-accent-amber {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
+  border-color: #fcd34d !important;
+  box-shadow: 0 4px 16px rgba(217, 119, 6, 0.08) !important;
+}
+
+/* 通用功能图解微卡片与徽章条目 */
+.guide-sub-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+[data-theme="frost"] .guide-sub-card,
+[data-theme="dawn"] .guide-sub-card,
+[data-theme="mint"] .guide-sub-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05) !important;
+}
+
+.guide-sub-card:hover {
+  border-color: var(--color-border-hover);
+}
+
+/* 浅色主题下半透明白色背景与边框的优雅映射 */
+[data-theme="frost"] .border-white\/15,
+[data-theme="dawn"] .border-white\/15,
+[data-theme="mint"] .border-white\/15 {
+  border-color: #e2e8f0 !important;
+}
+
+[data-theme="frost"] .border-white\/20,
+[data-theme="dawn"] .border-white\/20,
+[data-theme="mint"] .border-white\/20 {
+  border-color: #cbd5e1 !important;
+}
+
+[data-theme="frost"] .bg-white\/5,
+[data-theme="dawn"] .bg-white\/5,
+[data-theme="mint"] .bg-white\/5 {
+  background-color: #f8fafc !important;
+}
+
+[data-theme="frost"] .bg-white\/10,
+[data-theme="dawn"] .bg-white\/10,
+[data-theme="mint"] .bg-white\/10 {
+  background-color: #f1f5f9 !important;
+}
+
+[data-theme="frost"] .bg-white\/15,
+[data-theme="dawn"] .bg-white\/15,
+[data-theme="mint"] .bg-white\/15 {
+  background-color: #e2e8f0 !important;
+}
+
+
