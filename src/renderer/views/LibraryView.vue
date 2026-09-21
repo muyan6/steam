@@ -84,23 +84,28 @@
 
     <!-- 功能说明面板 -->
     <div v-if="showGuide" class="mb-4 p-4 xl:p-5 rounded-2xl bg-slate-900/70 border border-white/10 text-xs shrink-0 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2.5">
-      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-0.5">顶部操作</div>
+      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-0.5">顶部与全局操作</div>
       <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">检查更新</strong><span class="text-slate-400">检查「已锁定」版本的游戏是否落后官方最新版；跟随最新的游戏会自动跳过</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">刷新列表</strong><span class="text-slate-400">重新读取规则目录，刷新卡片的密钥、清单与版本状态</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">重启 Steam</strong><span class="text-slate-400">入库即时生效一般用不着，仅在 Steam 偶发未识别规则时救急</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-rose-300 shrink-0 w-16">清空所有</strong><span class="text-slate-400">删除全部游戏的入库规则（危险操作，需确认）</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">刷新列表</strong><span class="text-slate-400">重新扫描规则目录，刷新所有卡片的密钥、清单与版本状态</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-emerald-300 shrink-0 w-16">三态筛选</strong><span class="text-slate-400">在「全部」、「生效中」、「已停用」间快速切换，灵活分类管理已归档游戏</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">账号秒切</strong><span class="text-slate-400">左侧边栏底部支持免密一键切换本地保存的 Steam 登录账号，自动重启应用生效</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">重启 Steam</strong><span class="text-slate-400">入库即时生效一般无须重启，仅在 Steam 偶发未识别规则时救急</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-rose-300 shrink-0 w-16">清空所有</strong><span class="text-slate-400">一键清空全部游戏的入库规则（高危操作，需二次确认）</span></div>
+
       <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mt-1.5 mb-0.5">卡片操作</div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-emerald-300 shrink-0 w-16">下载 / 运行</strong><span class="text-slate-400">在 Steam 中触发该游戏的下载安装 / 直接启动游戏</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-slate-200 shrink-0 w-16">锁定版本</strong><span class="text-slate-400">钉死当前官方最新版，联机和朋友对版本时用；此后官方更新不自动跟进</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-amber-300 shrink-0 w-16">跟随最新</strong><span class="text-slate-400">解除锁定，此后每次下载自动获取官方最新清单，无须手动更新</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-slate-200 shrink-0 w-16">预缓存</strong><span class="text-slate-400">尽力把清单文件下载到本地加速首次下载；失败不影响下载，运行时会自动拉取</span></div>
-      <div class="flex gap-2 leading-relaxed"><strong class="text-rose-300 shrink-0 w-16">出库</strong><span class="text-slate-400">删除该游戏的规则文件，将其移出库</span></div>
-      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mt-1.5 mb-0.5">卡片徽标（状态）</div>
-      <div class="md:col-span-2 leading-relaxed text-slate-400">
-        <span class="text-emerald-400 font-semibold">密钥已注入</span>：解密密钥已写入规则（正常下载的前提）；
-        <span class="text-purple-400 font-semibold">Token</span>：已配置 PICS 访问令牌；
-        <span class="text-cyan-400 font-semibold">跟随最新</span> / <span class="text-slate-300 font-semibold">已锁定</span> / <span class="text-amber-400 font-semibold">有更新</span>：当前版本策略；
-        <span class="text-emerald-400 font-semibold">本地清单</span> / <span class="text-sky-400 font-semibold">动态清单</span>：清单是否已缓存到本地，两者都能正常下载
+      <div class="flex gap-2 leading-relaxed"><strong class="text-emerald-300 shrink-0 w-16">下载 / 运行</strong><span class="text-slate-400">直接调起 Steam 触发高速下载安装，或直接拉起启动游戏</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-sky-300 shrink-0 w-16">停用 / 启用</strong><span class="text-slate-400">将规则软归档至 Disable 目录，Steam 中立即隐身且不占用空间，保留密钥随时可一键恢复</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-slate-200 shrink-0 w-16">锁定 / 跟随</strong><span class="text-slate-400">【锁定】钉死当前版本供联机对版本；【跟随】解除锁定，每次自动获取官方最新清单</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-amber-300 shrink-0 w-16">预缓存</strong><span class="text-slate-400">仅锁定模式需要，将对应版本实体清单提前写入 depotcache 目录以确保下载无误</span></div>
+      <div class="flex gap-2 leading-relaxed"><strong class="text-rose-300 shrink-0 w-16">出库</strong><span class="text-slate-400">彻底删除该游戏的 Lua 规则文件，从库中完全移除</span></div>
+
+      <div class="md:col-span-2 text-[11px] font-bold text-slate-300 uppercase tracking-wider mt-1.5 mb-0.5">卡片徽标（模式与状态）</div>
+      <div class="md:col-span-2 leading-relaxed text-slate-400 space-y-1">
+        <div><span class="text-emerald-400 font-semibold">已生效</span> / <span class="text-slate-400 font-semibold">已停用</span>：当前 Lua 规则是否已挂载到 Steam 运行；</div>
+        <div><span class="text-emerald-400 font-semibold">密钥</span>：已注入 Depot 解密密钥（正常下载解密的前提）；<span class="text-purple-400 font-semibold">Token</span>：已配置 PICS 访问令牌；</div>
+        <div><span class="text-cyan-400 font-semibold">跟随最新</span>：【推荐】内核直连 CDN 动态获取最新清单，永远跟随官方更新，天然支持工坊，无需本地实体清单；</div>
+        <div><span class="text-slate-300 font-semibold">已锁定</span>：版本已钉死，依赖本地实体清单，官方出新版后不自动跟进（适合联机对版本）；</div>
+        <div><span class="text-amber-400 font-semibold">待缓存</span>：锁定版本模式下本地缺少实体清单，需点击卡片下方的预缓存按钮拉取。</div>
       </div>
     </div>
 
@@ -168,104 +173,104 @@
           class="game-card-surface p-4 xl:p-4 flex flex-col justify-between gap-3.5 group transition-all"
           :class="game.isDisabled ? 'opacity-75 border-dashed border-slate-700/80 bg-slate-950/40 hover:opacity-100' : ''"
         >
-          <!-- 封面小图与信息 -->
-          <div class="flex items-center gap-3.5 min-w-0">
-            <img
-              :src="`https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${game.appId}/capsule_184x69.jpg`"
-              class="w-20 h-10 object-cover rounded-xl bg-slate-900 shadow-sm shrink-0 border border-white/10 group-hover:scale-105 transition-transform duration-300"
-              loading="lazy"
-              @error="handleImgError($event, game.appId)"
-            />
-            <div class="min-w-0 flex-1">
-              <div class="font-bold text-sm text-slate-100 truncate group-hover:theme-text-accent transition-colors" :title="game.name">
-                {{ game.name }}
+          <!-- 封面小图与信息行 -->
+          <div>
+            <div class="flex items-center gap-3 min-w-0">
+              <img
+                :src="`https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${game.appId}/capsule_184x69.jpg`"
+                class="w-16 h-8 object-cover rounded-lg bg-slate-900 shadow-sm shrink-0 border border-white/10 group-hover:scale-105 transition-transform duration-300"
+                loading="lazy"
+                @error="handleImgError($event, game.appId)"
+              />
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-sm text-slate-100 truncate group-hover:theme-text-accent transition-colors" :title="game.name">
+                  {{ game.name }}
+                </div>
+                <div class="text-[11px] font-mono text-slate-400 mt-0.5">
+                  AppID: <span class="text-slate-300 font-semibold">{{ game.appId }}</span>
+                </div>
               </div>
-              <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                <span class="text-[11px] font-mono theme-text-accent bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20 font-bold">
-                  ID: {{ game.appId }}
-                </span>
+            </div>
 
-                <!-- 规则生效状态 (纯只读徽章，无点击互动) -->
-                <span
-                  class="text-[11px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold border select-none"
-                  :class="game.isDisabled
-                    ? 'bg-slate-700/50 text-slate-300 border-slate-600/30'
-                    : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'"
-                  :title="game.isDisabled ? '已停用入库：文件已归档到 Disable 目录' : '入库生效中：OpenSteamTool 正常挂载'"
-                >
-                  <CheckCircle2 v-if="!game.isDisabled" class="w-3 h-3 text-emerald-400" />
-                  <PauseCircle v-else class="w-3 h-3 text-slate-400" />
-                  <span>{{ game.isDisabled ? '已停用' : '已生效' }}</span>
-                </span>
+            <!-- 状态徽章栏 (独占卡片全宽横向排布，不挤压，简洁明了) -->
+            <div class="flex items-center gap-1.5 mt-2.5 flex-wrap">
+              <!-- 1. 运行状态 -->
+              <span
+                class="text-[11px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold border select-none"
+                :class="game.isDisabled
+                  ? 'bg-slate-700/40 text-slate-300 border-slate-600/30'
+                  : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'"
+                :title="game.isDisabled ? '已停用入库：文件在 Disable 目录' : '入库生效中：OpenSteamTool 正常识别'"
+              >
+                <CheckCircle2 v-if="!game.isDisabled" class="w-3 h-3 text-emerald-400" />
+                <PauseCircle v-else class="w-3 h-3 text-slate-400" />
+                <span>{{ game.isDisabled ? '已停用' : '已生效' }}</span>
+              </span>
 
-                <!-- 密钥状态 -->
-                <span
-                  v-if="game.hasDepotKeys"
-                  class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/30 font-semibold"
-                  title="已注入 Depot 解密密钥"
-                >
-                  <Key class="w-3 h-3" />
-                  <span>密钥已注入</span>
-                </span>
+              <!-- 2. 密钥注入状态 (简明两字) -->
+              <span
+                v-if="game.hasDepotKeys"
+                class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/25 font-semibold select-none"
+                title="已注入 Depot 解密密钥"
+              >
+                <Key class="w-3 h-3" />
+                <span>密钥</span>
+              </span>
 
-                <!-- Token 状态 -->
-                <span
-                  v-if="game.hasToken"
-                  class="text-[11px] px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-400 font-mono flex items-center gap-1 border border-purple-500/30 font-semibold"
-                  title="已配置 PICS Token"
-                >
-                  <Zap class="w-3 h-3" />
-                  <span>Token</span>
-                </span>
+              <!-- 3. Token 状态 -->
+              <span
+                v-if="game.hasToken"
+                class="text-[11px] px-2 py-0.5 rounded-lg bg-purple-500/15 text-purple-400 font-mono flex items-center gap-1 border border-purple-500/25 font-semibold select-none"
+                title="已配置 PICS Token"
+              >
+                <Zap class="w-3 h-3" />
+                <span>Token</span>
+              </span>
 
-                <!-- 版本策略状态 -->
-                <span
-                  v-if="!isPinned(game)"
-                  class="text-[11px] px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-400 font-mono flex items-center gap-1 border border-cyan-500/30 font-semibold"
-                  title="未锁定版本：每次下载自动获取官方最新清单，永远自动保持最新版"
-                >
-                  <Zap class="w-3 h-3" />
-                  <span>跟随最新</span>
-                </span>
-                <span
-                  v-else-if="updateStatuses[game.appId]?.hasUpdate"
-                  class="text-[11px] px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 font-mono flex items-center gap-1 border border-amber-500/30 font-semibold"
-                  title="锁定的版本已落后官方最新版，点击下方「跟随最新」解除锁定"
-                >
-                  <ArrowUpCircle class="w-3 h-3" />
-                  <span>有更新</span>
-                </span>
-                <span
-                  v-else
-                  class="text-[11px] px-2 py-0.5 rounded-lg bg-slate-500/20 text-slate-400 font-mono flex items-center gap-1 border border-slate-500/30 font-semibold"
-                  title="已锁定清单版本，官方出新版后不会自动跟进（联机对版本用）"
-                >
-                  <Lock class="w-3 h-3" />
-                  <span>已锁定</span>
-                </span>
+              <!-- 4. 模式判定（权威唯一定位，彻底消除模式冲突）：跟随最新 / 已锁定 / 待缓存 / 有更新 -->
+              <!-- 模式 A: 跟随最新（动态清单模式，永不跟本地旧清单混淆） -->
+              <span
+                v-if="!isPinned(game)"
+                class="text-[11px] px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-400 font-mono flex items-center gap-1 border border-cyan-500/25 font-semibold select-none"
+                title="跟随官方最新模式：直连 CDN 动态获取最新清单，永远自动跟进官方更新，免维护本地实体清单"
+              >
+                <Zap class="w-3 h-3" />
+                <span>跟随最新</span>
+              </span>
 
-                <!-- 清单状态：本地实体清单仅锁定版本模式才存在，跟随最新时为官方动态获取 -->
-                <span
-                  v-if="manifestStatuses[game.appId]?.hasManifest || game.hasManifest"
-                  class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono flex items-center gap-1 border border-emerald-500/30 font-semibold"
-                  title="本地 depotcache 实体清单文件已就绪（锁定版本模式）"
-                >
-                  <Box class="w-3 h-3" />
-                  <span>本地清单</span>
-                </span>
-                <span
-                  v-else
-                  class="text-[11px] px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-400 font-mono flex items-center gap-1 border border-sky-500/30 font-semibold"
-                  title="官方清单动态获取：点击下载时 OST 内核自动取当时最新 GID，直连 Valve CDN 拉取，天然支持实时更新与创意工坊"
-                >
-                  <Zap class="w-3 h-3" />
-                  <span>动态清单</span>
-                </span>
-              </div>
+              <!-- 模式 B: 锁定版本（且有官方新版本待更新） -->
+              <span
+                v-else-if="updateStatuses[game.appId]?.hasUpdate"
+                class="text-[11px] px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-400 font-mono flex items-center gap-1 border border-amber-500/30 font-semibold select-none"
+                title="版本已锁定，但官方已发布新版本，点击下方「跟随」可跟进最新"
+              >
+                <ArrowUpCircle class="w-3 h-3" />
+                <span>有更新</span>
+              </span>
+
+              <!-- 模式 C: 锁定版本（本地实体清单已就绪） -->
+              <span
+                v-else-if="manifestStatuses[game.appId]?.hasManifest || game.hasManifest"
+                class="text-[11px] px-2 py-0.5 rounded-lg bg-slate-600/30 text-slate-300 font-mono flex items-center gap-1 border border-slate-500/30 font-semibold select-none"
+                title="版本已锁定：本地 depotcache 实体清单已就绪"
+              >
+                <Lock class="w-3 h-3 text-slate-400" />
+                <span>已锁定</span>
+              </span>
+
+              <!-- 模式 D: 锁定版本（但缺少本地实体清单，需预缓存） -->
+              <span
+                v-else
+                class="text-[11px] px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-400 font-mono flex items-center gap-1 border border-amber-500/25 font-semibold select-none"
+                title="版本已锁定，但本地 depotcache 尚未缓存实体清单，建议点击下方预缓存"
+              >
+                <AlertCircle class="w-3 h-3 text-amber-400" />
+                <span>待缓存</span>
+              </span>
             </div>
           </div>
 
-          <!-- 操作按钮条 (统一规范化对齐排布) -->
+          <!-- 操作按钮条 (统一规范化对齐排布，2字简练杜绝截断) -->
           <div class="pt-3 border-t border-white/10 space-y-2">
             <!-- 第 1 行：主要运行动作 (下载与运行，等宽对半分) -->
             <div class="grid grid-cols-2 gap-2">
@@ -290,17 +295,17 @@
 
             <!-- 第 2 行：规则管理动作 (版本控制、规则启停、移出库，均分 1/3) -->
             <div class="grid grid-cols-3 gap-2">
-              <!-- 按钮 1: 版本策略 (锁定版本 / 跟随最新) -->
+              <!-- 按钮 1: 版本策略 (锁定 / 跟随) -->
               <button
                 v-if="!isPinned(game)"
                 @click="handleSetVersionStrategy(game.appId, game.name, true)"
                 :disabled="updatingAppId === game.appId"
                 title="钉死当前官方最新版本（联机对版本用）；官方出新版后不会自动跟进"
-                class="h-8 px-2 btn-soft-action text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-60 cursor-pointer"
+                class="h-8 px-1.5 btn-soft-action text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
                 <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <Lock v-else class="w-3.5 h-3.5" />
-                <span class="truncate">{{ updatingAppId === game.appId ? '处理中' : '锁定版本' }}</span>
+                <span>{{ updatingAppId === game.appId ? '处理中' : '锁定' }}</span>
               </button>
 
               <button
@@ -311,14 +316,14 @@
                 :class="updateStatuses[game.appId]?.hasUpdate
                   ? 'bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300'
                   : 'btn-soft-action text-slate-300'"
-                class="h-8 px-2 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-60 cursor-pointer"
+                class="h-8 px-1.5 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
                 <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <ArrowUpCircle v-else class="w-3.5 h-3.5" />
-                <span class="truncate">{{ updatingAppId === game.appId ? '处理中' : '跟随最新' }}</span>
+                <span>{{ updatingAppId === game.appId ? '处理中' : '跟随' }}</span>
               </button>
 
-              <!-- 按钮 2: Lua 规则启停开关 (软停用 / 恢复启用) -->
+              <!-- 按钮 2: Lua 规则启停开关 (停用 / 启用) -->
               <button
                 @click="onToggleGameStatus(game.appId, !game.isDisabled)"
                 :disabled="togglingAppId === game.appId"
@@ -326,13 +331,13 @@
                 :class="game.isDisabled
                   ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300'
                   : 'btn-soft-action text-slate-300 hover:text-slate-100'"
-                class="h-8 px-2 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-60 cursor-pointer"
+                class="h-8 px-1.5 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
                 <RotateCw v-if="togglingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <template v-else>
                   <PlayCircle v-if="game.isDisabled" class="w-3.5 h-3.5 text-emerald-400" />
                   <PauseCircle v-else class="w-3.5 h-3.5 text-slate-400" />
-                  <span class="truncate">{{ game.isDisabled ? '恢复启用' : '停用规则' }}</span>
+                  <span>{{ game.isDisabled ? '启用' : '停用' }}</span>
                 </template>
               </button>
 
@@ -340,10 +345,10 @@
               <button
                 @click="removeGame(game.appId, game.name)"
                 title="将该游戏移出库（彻底删除 Lua 规则）"
-                class="h-8 px-2 bg-rose-600/15 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98 cursor-pointer"
+                class="h-8 px-1.5 bg-rose-600/15 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 cursor-pointer"
               >
                 <Trash2 class="w-3.5 h-3.5" />
-                <span class="truncate">出库</span>
+                <span>出库</span>
               </button>
             </div>
 
@@ -386,7 +391,8 @@ import {
   ChevronDown,
   CheckCircle2,
   PauseCircle,
-  PlayCircle
+  PlayCircle,
+  AlertCircle
 } from 'lucide-vue-next';
 import { AppManifestStatus, GameUpdateStatus, LuaGameInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
