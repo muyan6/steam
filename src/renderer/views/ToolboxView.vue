@@ -31,7 +31,7 @@
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
         <div class="h-28 tool-banner-a flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
+          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
             <Eraser class="w-8 h-8" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
@@ -83,7 +83,7 @@
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
         <div class="h-28 tool-banner-d flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
+          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
             <Wrench class="w-8 h-8" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
@@ -130,7 +130,7 @@
       <!-- 卡片 2.5: 同步最新内核 (GitHub release 在线同步) -->
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <div class="h-28 tool-banner-e flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
+          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
             <CloudDownload class="w-8 h-8" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
@@ -196,7 +196,7 @@
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
         <div class="h-28 tool-banner-b flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
+          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
             <Puzzle class="w-8 h-8" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
@@ -248,7 +248,7 @@
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
         <div class="h-28 tool-banner-c flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
+          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
             <ArrowLeftRight class="w-8 h-8" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
@@ -296,7 +296,7 @@
       <!--
       <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
         <div class="h-28 tool-banner-f flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
+          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
             <Globe class="w-8 h-8" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>

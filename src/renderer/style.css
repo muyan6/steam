@@ -1041,6 +1041,22 @@ button.hover-lift:not(:disabled):active {
   background: linear-gradient(135deg, #059669 0%, #0d9488 50%, #0284c7 100%);
 }
 
+/* 实用工具箱横幅图标悬浮徽标：保证在任何深浅主题与渐变下均拥有高对比通透玻璃质感 */
+.tool-banner-badge {
+  background: rgba(255, 255, 255, 0.22) !important;
+  border: 1px solid rgba(255, 255, 255, 0.38) !important;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  color: #ffffff !important;
+}
+
+.tool-banner-badge svg {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35)) !important;
+  stroke: #ffffff !important;
+  color: #ffffff !important;
+}
+
 /* ==========================================================================
    指南模态弹窗系统：全量同步软件全局主题变量 (Theme-Synchronized Guide System)
    严格联动 6 套主题（3深+3浅）的 CSS 变量，确保与整体软件高度一致、通透雅致
@@ -1125,37 +1141,6 @@ button.hover-lift:not(:disabled):active {
 [data-theme="mint"] .guide-item-card:hover {
   border-color: var(--color-accent-primary) !important;
   box-shadow: 0 6px 18px -2px rgba(15, 23, 42, 0.08) !important;
-}
-
-/* 浅色主题下半透明白色背景与边框的优雅映射 */
-[data-theme="frost"] .border-white\/15,
-[data-theme="dawn"] .border-white\/15,
-[data-theme="mint"] .border-white\/15 {
-  border-color: #e2e8f0 !important;
-}
-
-[data-theme="frost"] .border-white\/20,
-[data-theme="dawn"] .border-white\/20,
-[data-theme="mint"] .border-white\/20 {
-  border-color: #cbd5e1 !important;
-}
-
-[data-theme="frost"] .bg-white\/5,
-[data-theme="dawn"] .bg-white\/5,
-[data-theme="mint"] .bg-white\/5 {
-  background-color: #f8fafc !important;
-}
-
-[data-theme="frost"] .bg-white\/10,
-[data-theme="dawn"] .bg-white\/10,
-[data-theme="mint"] .bg-white\/10 {
-  background-color: #f1f5f9 !important;
-}
-
-[data-theme="frost"] .bg-white\/15,
-[data-theme="dawn"] .bg-white\/15,
-[data-theme="mint"] .bg-white\/15 {
-  background-color: #e2e8f0 !important;
 }
 
 
