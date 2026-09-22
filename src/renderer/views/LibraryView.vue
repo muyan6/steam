@@ -285,15 +285,15 @@
               </a>
             </div>
 
-            <!-- 第 2 行：规则管理动作 (版本控制、规则启停、移出库，均分 1/3) -->
-            <div class="grid grid-cols-3 gap-2">
+            <!-- 第 2 行：规则管理动作 (版本控制、DLC检测、规则启停、移出库，均分 1/4) -->
+            <div class="grid grid-cols-4 gap-1.5">
               <!-- 按钮 1: 版本策略 (锁定 / 跟随) -->
               <button
                 v-if="!isPinned(game)"
                 @click="handleSetVersionStrategy(game.appId, game.name, true)"
                 :disabled="updatingAppId === game.appId"
                 title="钉死当前官方最新版本（联机对版本用）；官方出新版后不会自动跟进"
-                class="h-8 px-1.5 btn-soft-action text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
+                class="h-8 px-1 btn-soft-action text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
                 <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <Lock v-else class="w-3.5 h-3.5" />
@@ -308,14 +308,29 @@
                 :class="updateStatuses[game.appId]?.hasUpdate
                   ? 'bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300'
                   : 'btn-soft-action text-slate-300'"
-                class="h-8 px-1.5 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
+                class="h-8 px-1 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
                 <RotateCw v-if="updatingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <ArrowUpCircle v-else class="w-3.5 h-3.5" />
                 <span>{{ updatingAppId === game.appId ? '处理中' : '跟随' }}</span>
               </button>
 
-              <!-- 按钮 2: Lua 规则启停开关 (停用 / 启用) -->
+              <!-- 按钮 2: 检测 DLC 增量更新 -->
+              <button
+                @click="handleCheckDlc(game.appId)"
+                :disabled="dlcDiffs[game.appId]?.checking || dlcDiffs[game.appId]?.appending"
+                title="检测云端最新 DLC 分包，对比当前入库规则是否有缺失"
+                :class="dlcDiffs[game.appId]?.missingDlcs?.length
+                  ? 'bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/35 text-amber-300 shadow-sm'
+                  : 'btn-soft-action text-slate-300 hover:text-slate-100'"
+                class="h-8 px-1 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
+              >
+                <RotateCw v-if="dlcDiffs[game.appId]?.checking" class="w-3.5 h-3.5 animate-spin text-amber-400" />
+                <Layers v-else class="w-3.5 h-3.5 text-sky-400" />
+                <span>{{ dlcDiffs[game.appId]?.checking ? '检测中' : (dlcDiffs[game.appId]?.missingDlcs?.length ? '有新DLC' : '检测DLC') }}</span>
+              </button>
+
+              <!-- 按钮 3: Lua 规则启停开关 (停用 / 启用) -->
               <button
                 @click="onToggleGameStatus(game.appId, !game.isDisabled)"
                 :disabled="togglingAppId === game.appId"
@@ -323,7 +338,7 @@
                 :class="game.isDisabled
                   ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300'
                   : 'btn-soft-action text-slate-300 hover:text-slate-100'"
-                class="h-8 px-1.5 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
+                class="h-8 px-1 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
               >
                 <RotateCw v-if="togglingAppId === game.appId" class="w-3.5 h-3.5 animate-spin" />
                 <template v-else>
@@ -333,11 +348,11 @@
                 </template>
               </button>
 
-              <!-- 按钮 3: 移出库 (物理删除规则) -->
+              <!-- 按钮 4: 移出库 (物理删除规则) -->
               <button
                 @click="removeGame(game.appId, game.name)"
                 title="将该游戏移出库（彻底删除 Lua 规则）"
-                class="h-8 px-1.5 bg-rose-600/15 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 cursor-pointer"
+                class="h-8 px-1 bg-rose-600/15 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 cursor-pointer"
               >
                 <Trash2 class="w-3.5 h-3.5" />
                 <span>出库</span>
