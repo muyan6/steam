@@ -461,13 +461,13 @@
             <h3 class="font-bold text-base text-slate-100">Steam 补丁与内核注入管理</h3>
             <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1.5">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>核心已就绪 · 4级容灾码源全自动调度</span>
+              <span>核心已就绪 · 多级高可用容灾集群全自动调度</span>
             </span>
           </div>
         </div>
 
         <p class="text-xs text-slate-400 mb-5 leading-relaxed">
-          负责管理本地 Steam 运行环境下的 OpenSteamTool 核心组件、动态清单调度及注入状态运维。入库游戏时将自动通过 4 级平级容灾链路（云端中继 → ManifestDeX → 古韵自有码库 → 20770407）全自动下发清单，遇到故障毫秒级自动切换兜底。
+          负责管理本地 Steam 运行环境下的 OpenSteamTool 核心组件、动态清单调度及注入状态运维。入库游戏时将自动通过多级高可用平级容灾链路全自动下发清单，遇到故障毫秒级自动无感切换兜底。
         </p>
 
         <div class="flex items-center justify-between pt-4 border-t border-white/10 flex-wrap gap-3">

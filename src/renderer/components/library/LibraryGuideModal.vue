@@ -27,7 +27,7 @@
                   已入库规则管理与核心模式详解
                 </h3>
                 <span class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
-                  v2.8.0 指南
+                  v{{ APP_CONFIG.VERSION }} 指南
                 </span>
               </div>
               <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -459,6 +459,7 @@ import {
   AlertTriangle,
   ArrowUpCircle
 } from 'lucide-vue-next';
+import { APP_CONFIG } from '../../../config/appConfig';
 
 defineProps<{
   modelValue: boolean;
