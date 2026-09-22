@@ -10,6 +10,7 @@ build/
 out/
 *.log
 *.exe
+!src-tauri/assets/tools/**/*.exe
 
 # Environment & Local files
 .env

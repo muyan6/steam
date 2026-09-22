@@ -202,25 +202,22 @@
                 <span>Token</span>
               </span>
 
-              <!-- 3.5. DLC 状态与增量核验徽章 (点击可比对云端最新 DLC) -->
-              <button
-                @click.stop="handleCheckDlc(game.appId)"
-                :disabled="dlcDiffs[game.appId]?.checking || dlcDiffs[game.appId]?.appending"
-                class="text-[11px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold border transition cursor-pointer select-none active:scale-95"
+              <!-- 3.5. DLC 状态只读徽章（严格遵循顶部只放只读元数据规范，杜绝功能按钮置于卡片顶部） -->
+              <span
+                class="text-[11px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold border select-none"
                 :class="dlcDiffs[game.appId]?.missingDlcs?.length
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 hover:bg-amber-500/30 shadow-sm'
-                  : 'bg-slate-700/30 text-slate-300 border-slate-600/30 hover:bg-slate-700/50 hover:text-slate-100'"
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/35 shadow-sm'
+                  : 'bg-slate-700/30 text-slate-300 border-slate-600/30'"
                 :title="dlcDiffs[game.appId]?.missingDlcs?.length
-                  ? `发现 ${dlcDiffs[game.appId].missingDlcs.length} 个新 DLC 未入库，点击卡片下方按钮可一键补全`
-                  : `当前含 ${game.dlcCount || 0} 个 DLC，点击可在线核验云端最新 DLC`"
+                  ? `发现 ${dlcDiffs[game.appId].missingDlcs.length} 个新 DLC 未入库，卡片下方可一键补全`
+                  : `当前包含 ${game.dlcCount || 0} 个 DLC 分包`"
               >
-                <RotateCw v-if="dlcDiffs[game.appId]?.checking" class="w-3 h-3 animate-spin text-amber-400" />
-                <Layers v-else class="w-3 h-3 text-sky-400" />
+                <Layers class="w-3 h-3 text-sky-400" />
                 <span v-if="dlcDiffs[game.appId]?.missingDlcs?.length" class="text-amber-300 font-bold">
                   +{{ dlcDiffs[game.appId].missingDlcs.length }} 新DLC
                 </span>
                 <span v-else>{{ game.dlcCount || 0 }} DLC</span>
-              </button>
+              </span>
 
               <!-- 4. 模式判定（权威唯一定位，彻底消除模式冲突）：跟随最新 / 已锁定 / 待缓存 / 有更新 -->
               <!-- 模式 A: 跟随最新（动态清单模式，永不跟本地旧清单混淆） -->

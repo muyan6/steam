@@ -30,12 +30,49 @@ pub fn get_sam_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// 递归（限深）查找 SAM.Game.exe。
-///
-/// 保留目录层级解压后，SAM.Game.exe 可能位于 SAM.Game/ 子目录下，
-/// 固定一层的旧实现会漏掉更深层级；同时输出顺序必须确定，
-/// 不能依赖 read_dir 的返回顺序。
-pub fn find_sam_game_exe(dir: &Path) -> Option<PathBuf> {
+/// 候选 SAM 路径：应用打包资源目录 / exe 同级目录 / 本地工程 assets 目录
+fn candidate_sam_paths(resource_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(rd) = resource_dir {
+        paths.push(rd.join("assets").join("tools").join("sam").join("SAM.Game.exe"));
+        paths.push(rd.join("tools").join("sam").join("SAM.Game.exe"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            paths.push(dir.join("tools").join("sam").join("SAM.Game.exe"));
+            paths.push(dir.join("assets").join("tools").join("sam").join("SAM.Game.exe"));
+            if let Some(parent) = dir.parent() {
+                paths.push(parent.join("tools").join("sam").join("SAM.Game.exe"));
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join("src-tauri").join("assets").join("tools").join("sam").join("SAM.Game.exe"));
+        paths.push(cwd.join("assets").join("tools").join("sam").join("SAM.Game.exe"));
+    }
+    paths
+}
+
+/// 查找 SAM.Game.exe（支持打包内置资源、工程资产与 APPDATA 动态安装目录）
+pub fn find_sam_game_exe(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    for p in candidate_sam_paths(resource_dir) {
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // 备用：从 APPDATA 递归查找
+    if let Ok(dir) = get_sam_dir() {
+        if let Some(p) = find_sam_game_in_dir(&dir) {
+            return Some(p);
+        }
+    }
+
+    None
+}
+
+/// 递归（限深）查找目录下的 SAM.Game.exe
+pub fn find_sam_game_in_dir(dir: &Path) -> Option<PathBuf> {
     fn walk(dir: &Path, depth: usize) -> Option<PathBuf> {
         if depth > 4 {
             return None;
@@ -56,7 +93,6 @@ pub fn find_sam_game_exe(dir: &Path) -> Option<PathBuf> {
                     candidates.push(p);
                 }
             }
-            // 同一层有多个时按路径排序，保证结果稳定可复现
             candidates.sort();
             if let Some(first) = candidates.into_iter().next() {
                 return Some(first);
@@ -73,14 +109,14 @@ pub fn find_sam_game_exe(dir: &Path) -> Option<PathBuf> {
     walk(dir, 0)
 }
 
-/// 查询本地 SAM 状态
-pub fn get_sam_status() -> Result<SamStatus, String> {
-    let dir = get_sam_dir()?;
-    if let Some(exe) = find_sam_game_exe(&dir) {
+/// 查询本地 SAM 状态（支持内置与 APPDATA 两种来源）
+pub fn get_sam_status_with_resource(resource_dir: Option<&Path>) -> Result<SamStatus, String> {
+    if let Some(exe) = find_sam_game_exe(resource_dir) {
+        let is_bundled = exe.to_string_lossy().contains("assets") || exe.to_string_lossy().contains("tools\\sam");
         Ok(SamStatus {
             is_installed: true,
             exe_path: Some(exe.to_string_lossy().to_string()),
-            version: Some("7.0.25".to_string()),
+            version: Some(if is_bundled { "7.0.41 (内置就绪)".to_string() } else { "7.0.41".to_string() }),
         })
     } else {
         Ok(SamStatus {
@@ -91,12 +127,22 @@ pub fn get_sam_status() -> Result<SamStatus, String> {
     }
 }
 
-/// 下载并部署 SAM
+pub fn get_sam_status() -> Result<SamStatus, String> {
+    get_sam_status_with_resource(None)
+}
+
+/// 下载并部署 SAM（版本 7.0.41，带国内镜像加速回退）
 pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, String> {
     let dir = get_sam_dir()?;
-    let url = download_url.unwrap_or_else(|| {
-        "https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.25/SteamAchievementManager-7.0.25.zip".to_string()
-    });
+    let urls: Vec<String> = if let Some(u) = download_url {
+        vec![u]
+    } else {
+        vec![
+            "https://ghfast.top/https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string(),
+            "https://gh-proxy.com/https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string(),
+            "https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string(),
+        ]
+    };
 
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
@@ -104,20 +150,29 @@ pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, Str
         .build()
         .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))?;
 
-    let resp = client.get(&url)
-        .header("User-Agent", "chunfengdu-client")
-        .send().await
-        .map_err(|e| format!("下载 SAM 工具失败: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("下载 SAM 失败，HTTP 状态码: {}", resp.status()));
+    let mut last_err = String::new();
+    let mut bytes = Vec::new();
+    for u in &urls {
+        match client.get(u).header("User-Agent", "chunfengdu-client").send().await {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(b) = resp.bytes().await {
+                    if b.len() >= 1000 {
+                        bytes = b.to_vec();
+                        break;
+                    }
+                }
+            }
+            Ok(resp) => {
+                last_err = format!("HTTP 状态码: {}", resp.status());
+            }
+            Err(e) => {
+                last_err = e.to_string();
+            }
+        }
     }
 
-    let bytes = resp.bytes().await
-        .map_err(|e| format!("接收 SAM 数据流失败: {}", e))?;
-
-    if bytes.len() < 1000 {
-        return Err("下载的 SAM 压缩包体积异常".to_string());
+    if bytes.is_empty() {
+        return Err(format!("下载 SAM 失败: {}", last_err));
     }
 
     let mut archive = zip::ZipArchive::new(Cursor::new(&bytes))
@@ -163,13 +218,12 @@ pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, Str
     get_sam_status()
 }
 
-/// 针对指定游戏 AppID 启动 SAM 解锁器
-pub fn launch_sam_for_game(app_id: u32) -> Result<bool, String> {
-    let dir = get_sam_dir()?;
-    let exe = find_sam_game_exe(&dir)
-        .ok_or_else(|| "本地尚未安装 SAM 成就管理器，请先点击一键安装".to_string())?;
+/// 针对指定游戏 AppID 启动 SAM 解锁器（支持内置与安装目录）
+pub fn launch_sam_for_game_with_resource(app_id: u32, resource_dir: Option<&Path>) -> Result<bool, String> {
+    let exe = find_sam_game_exe(resource_dir)
+        .ok_or_else(|| "本地尚未就绪 SAM 成就管理器".to_string())?;
 
-    let work_dir = exe.parent().unwrap_or(&dir);
+    let work_dir = exe.parent().ok_or_else(|| "无法获取 SAM 工作目录".to_string())?;
 
     #[cfg(windows)]
     {
@@ -193,6 +247,10 @@ pub fn launch_sam_for_game(app_id: u32) -> Result<bool, String> {
         cmd.spawn().map_err(|e| format!("启动 SAM 失败: {}", e))?;
         Ok(true)
     }
+}
+
+pub fn launch_sam_for_game(app_id: u32) -> Result<bool, String> {
+    launch_sam_for_game_with_resource(app_id, None)
 }
 
 /// 打开 SAM 存放目录

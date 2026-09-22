@@ -1788,8 +1788,9 @@ fn delete_trainer(app_id: u32) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn get_sam_status() -> Result<achievements::SamStatus, String> {
-    achievements::get_sam_status()
+fn get_sam_status(app: AppHandle) -> Result<achievements::SamStatus, String> {
+    let resource_dir = app.path().resource_dir().ok();
+    achievements::get_sam_status_with_resource(resource_dir.as_deref())
 }
 
 #[tauri::command]
@@ -1798,8 +1799,9 @@ async fn download_sam(download_url: Option<String>) -> Result<achievements::SamS
 }
 
 #[tauri::command]
-fn launch_sam_for_game(app_id: u32) -> Result<bool, String> {
-    achievements::launch_sam_for_game(app_id)
+fn launch_sam_for_game(app: AppHandle, app_id: u32) -> Result<bool, String> {
+    let resource_dir = app.path().resource_dir().ok();
+    achievements::launch_sam_for_game_with_resource(app_id, resource_dir.as_deref())
 }
 
 #[tauri::command]
