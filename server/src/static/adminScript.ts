@@ -781,7 +781,7 @@ async function checkManifestSources() {
     if (!/^\d+$/.test(depotId) || !/^\d+$/.test(gid) || gid === '0') {
       out.innerHTML =
         '<div style="color:var(--c-amber);font-size:12px;line-height:1.7;padding:10px 12px;border-radius:8px;background:rgba(245,158,11,.10);">' +
-          '⚠️ depotId 与 gid 必须为<strong>大于 0 的纯数字</strong>。<br>' +
+          '⚠️ depotId 与 gid 必须为<strong>纯数字（gid 不能为 0）</strong>。<br>' +
           '输入包含非法字符或 gid 为 0 时将被服务端忽略并退回自动探测。请修正后重试，或<strong>清空两项</strong>直接使用自动探测。' +
         '</div>';
       return;

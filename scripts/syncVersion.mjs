@@ -131,29 +131,77 @@ function isPlaceholderChangelog(items) {
   return list.every((c) => /^[-\s]*$/.test(c));
 }
 
-// ==================== 1. 确定目标版本号（写盘延迟至校验通过后） ====================
+// ==================== 1. 预检并解析全部待同步文件（全内存校验，任一损坏零写盘） ====================
 
 const pkgPath = path.join(rootDir, 'package.json');
-const pkg = readJson(pkgPath);
-
-const targetVersion = String(cliVersion || pkg.version || '').trim();
-if (!/^\d+\.\d+\.\d+/.test(targetVersion)) {
-  console.error(`[VersionSync] ❌ 目标版本号非法: "${targetVersion}"`);
-  process.exit(1);
-}
-
+const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
+const serverPkgPath = path.join(rootDir, 'server', 'package.json');
 const versionJsonPath = path.join(rootDir, 'server', 'data', 'version.json');
 const versionsJsonPath = path.join(rootDir, 'server', 'data', 'versions.json');
 
+let pkg;
+try {
+  pkg = readJson(pkgPath);
+} catch (e) {
+  console.error(`[VersionSync] ❌ 读取或解析 package.json 失败: ${e.message}`);
+  process.exit(1);
+}
+
+const targetVersion = String(cliVersion || pkg.version || '').trim();
+if (!/^\d+\.\d+\.\d+$/.test(targetVersion)) {
+  console.error(`[VersionSync] ❌ 目标版本号非法（必须为严格的 X.Y.Z 格式）: "${targetVersion}"`);
+  process.exit(1);
+}
+
+const hasTauriConf = fs.existsSync(tauriConfPath);
+let tauriConf = null;
+if (hasTauriConf) {
+  try {
+    tauriConf = readJson(tauriConfPath);
+  } catch (e) {
+    console.error(`[VersionSync] ❌ 读取或解析 src-tauri/tauri.conf.json 失败: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+const hasServerPkg = fs.existsSync(serverPkgPath);
+let serverPkg = null;
+if (hasServerPkg) {
+  try {
+    serverPkg = readJson(serverPkgPath);
+  } catch (e) {
+    console.error(`[VersionSync] ❌ 读取或解析 server/package.json 失败: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 const hasVersionJson = fs.existsSync(versionJsonPath);
+let versionJson = null;
+if (hasVersionJson) {
+  try {
+    versionJson = readJson(versionJsonPath);
+  } catch (e) {
+    console.error(`[VersionSync] ❌ 读取或解析 server/data/version.json 失败: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 const hasVersionsJson = fs.existsSync(versionsJsonPath);
+let versionsList = [];
+if (hasVersionsJson) {
+  try {
+    const raw = readJson(versionsJsonPath);
+    if (!Array.isArray(raw)) {
+      throw new Error('versions.json 根结构必须为数组');
+    }
+    versionsList = raw;
+  } catch (e) {
+    console.error(`[VersionSync] ❌ 读取或解析 server/data/versions.json 失败: ${e.message}`);
+    process.exit(1);
+  }
+}
 
 // ==================== 2. 判定目标版本的更新日志来源（fail-closed） ====================
-
-const versionJson = hasVersionJson ? readJson(versionJsonPath) : null;
-const versionsList = hasVersionsJson && Array.isArray(readJson(versionsJsonPath))
-  ? readJson(versionsJsonPath)
-  : [];
 
 const versionJsonIsTarget = Boolean(versionJson && String(versionJson.version).trim() === targetVersion);
 const existingEntry = versionsList.find((it) => String(it?.version).trim() === targetVersion) || null;
@@ -239,30 +287,22 @@ if (pkg.version !== targetVersion) {
 
 // ==================== 4. 同步 src-tauri/tauri.conf.json ====================
 
-const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
-if (fs.existsSync(tauriConfPath)) {
-  const tauriConf = readJson(tauriConfPath);
-  if (tauriConf.version !== targetVersion) {
-    const old = tauriConf.version;
-    tauriConf.version = targetVersion;
-    writeJson(tauriConfPath, tauriConf);
-    console.log(`[VersionSync] ✅ src-tauri/tauri.conf.json 已自动对齐: v${old} -> v${targetVersion}`);
-    syncedAny = true;
-  }
+if (tauriConf && tauriConf.version !== targetVersion) {
+  const old = tauriConf.version;
+  tauriConf.version = targetVersion;
+  writeJson(tauriConfPath, tauriConf);
+  console.log(`[VersionSync] ✅ src-tauri/tauri.conf.json 已自动对齐: v${old} -> v${targetVersion}`);
+  syncedAny = true;
 }
 
 // ==================== 5. 同步 server/package.json ====================
 
-const serverPkgPath = path.join(rootDir, 'server', 'package.json');
-if (fs.existsSync(serverPkgPath)) {
-  const serverPkg = readJson(serverPkgPath);
-  if (serverPkg.version !== targetVersion) {
-    const old = serverPkg.version;
-    serverPkg.version = targetVersion;
-    writeJson(serverPkgPath, serverPkg);
-    console.log(`[VersionSync] ✅ server/package.json 已自动对齐: v${old} -> v${targetVersion}`);
-    syncedAny = true;
-  }
+if (serverPkg && serverPkg.version !== targetVersion) {
+  const old = serverPkg.version;
+  serverPkg.version = targetVersion;
+  writeJson(serverPkgPath, serverPkg);
+  console.log(`[VersionSync] ✅ server/package.json 已自动对齐: v${old} -> v${targetVersion}`);
+  syncedAny = true;
 }
 
 // ==================== 6. 写入 versions.json（发布历史唯一权威） ====================
