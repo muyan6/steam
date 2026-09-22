@@ -453,55 +453,28 @@
         </div>
       </div>
 
-      <!-- 4. OpenSteamTool 内核与公共清单源设置 -->
+      <!-- 4. Steam 补丁与内核注入管理 -->
       <div class="theme-card-static rounded-3xl p-5 xl:p-6 shadow-lg border">
-        <div class="flex items-center gap-2.5 mb-3">
-          <Globe class="w-5 h-5 theme-text-accent" />
-          <h3 class="font-bold text-base text-slate-100">公共清单 (Manifest) 上游 API 端点配置</h3>
-        </div>
-        <p class="text-xs text-slate-400 mb-4 leading-relaxed">
-          OpenSteamTool 会在入库未拥有游戏时，自动向以下公用端点获取加密清单请求码 (GMRC)，解决个人服务器带宽限制。
-        </p>
-        <p class="text-xs text-amber-400/90 mb-4 leading-relaxed">
-          注：原先提供的 SteamRun / WUDRM / OpenSteamTool 三个节点经实测均已失效（持续 502/503 或返回滞后码，
-          用其码会让 Steam 拉不到清单，表现为「无网络连接 / 0 字节下载」），已从选项中移除。
-        </p>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-4">
-          <div
-            @click="setManifestApi('manifestdex')"
-            class="p-4 rounded-2xl border cursor-pointer bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/50 shadow-md"
-          >
-            <div class="font-bold text-sm text-slate-100 mb-1 flex items-center gap-2">
-              <span>ManifestDeX 权威码源</span>
-              <span class="text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 font-bold border border-sky-500/30">官方主节点</span>
-            </div>
-            <div class="text-xs text-slate-400 font-mono break-all">manifest.manifestdex.com</div>
-            <div class="text-xs text-slate-500 mt-1.5 leading-relaxed">OpenSteamTool 官方直连核心节点，已由系统固定为底层默认</div>
-          </div>
-
-          <div class="p-4 rounded-2xl border theme-card">
-            <div class="font-bold text-sm text-slate-300 mb-1 flex items-center gap-2">
-              <span>完整取码链路 (4级平级容灾)</span>
-              <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">全部生效</span>
-            </div>
-            <div class="text-xs text-slate-400 leading-relaxed space-y-1">
-              <div>1. 春风渡云端中继（带缓存与单航班去重）</div>
-              <div>2. ManifestDeX 权威源直连</div>
-              <div>3. 古韵自有码库（独立高速缓存源）</div>
-              <div>4. 20770407.xyz（独立平级冗余源）</div>
-            </div>
-            <div class="text-xs text-slate-500 mt-1.5 leading-relaxed">
-              全部 4 个源均独立生效；按顺序级联，遇到故障自动毫秒级下切兜底
-            </div>
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div class="flex items-center gap-2.5">
+            <Cpu class="w-5 h-5 theme-text-accent" />
+            <h3 class="font-bold text-base text-slate-100">Steam 补丁与内核注入管理</h3>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>核心已就绪 · 4级容灾码源全自动调度</span>
+            </span>
           </div>
         </div>
+
+        <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+          负责管理本地 Steam 运行环境下的 OpenSteamTool 核心组件、动态清单调度及注入状态运维。入库游戏时将自动通过 4 级平级容灾链路（云端中继 → ManifestDeX → 古韵自有码库 → 20770407）全自动下发清单，遇到故障毫秒级自动切换兜底。
+        </p>
 
         <div class="flex items-center justify-between pt-4 border-t border-white/10 flex-wrap gap-3">
           <div class="flex items-center gap-2.5">
             <button
               @click="emit('relaunch-wizard')"
-              class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-2xl text-xs text-sky-400 font-semibold transition flex items-center gap-2"
+              class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-2xl text-xs text-sky-400 font-semibold transition flex items-center gap-2 shadow-sm"
             >
               <Sparkles class="w-4 h-4" />
               <span>重新运行注入向导</span>
@@ -509,7 +482,7 @@
             <button
               @click="handleUninstallOST"
               :disabled="deploying"
-              class="px-4 py-2.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-2xl text-xs font-semibold transition flex items-center gap-2"
+              class="px-4 py-2.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-2xl text-xs font-semibold transition flex items-center gap-2 shadow-sm"
             >
               <Trash2 class="w-3.5 h-3.5" />
               <span>卸载注入</span>
@@ -518,9 +491,9 @@
           <button
             @click="handleDeployOSTEnv"
             :disabled="deploying"
-            class="theme-btn-primary px-4 py-2 disabled:opacity-50 text-xs font-bold rounded-2xl shadow transition flex items-center gap-1.5"
+            class="theme-btn-primary px-5 py-2.5 disabled:opacity-50 text-xs font-bold rounded-2xl shadow transition flex items-center gap-2"
           >
-            <Zap class="w-3.5 h-3.5" />
+            <Zap class="w-4 h-4" />
             <span>{{ deploying ? '正在写入...' : '一键同步/重建环境' }}</span>
           </button>
         </div>
@@ -569,7 +542,8 @@ import {
   Folder, 
   FolderOpen, 
   Save, 
-  Globe, 
+  Globe,
+  Cpu, 
   Sparkles, 
   Trash2, 
   ShieldAlert,
