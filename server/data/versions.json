@@ -1,5 +1,27 @@
 [
   {
+    "version": "2.8.1",
+    "channel": "stable",
+    "releaseDate": "2026-09-22",
+    "title": "春风渡 v2.8.1 源体检与发布链路加固版",
+    "changelog": [
+      "🎯 清单取码链路顺序优化：以权威实时源为第一优先级，滞后镜像降级为末位兜底；管理台「出码体检」新增多源码值一致性判定 —— 实测同一 (depot, gid) 下不同源可能返回互相矛盾的码值，滞后码会让 Steam 拉不到清单（表现为「无网络连接 / 0 字节下载」），此前只看「是否返回纯数字」无法检出这类故障",
+      "🩺 管理台源体检修复：出码体检恢复「留空自动选码库最新记录」，无记录才退回通用包 Depot 731；一键测 Ping 的连通判定收紧为 HTTP < 500（停服源的 502/503 不再被误报为「连通正常」）；探针只填半项或填入非法字符时显式告警，不再静默退回自动探测",
+      "🛡️ 修改器与成就检索稳定性加固：直连缓存改为正/负 TTL 分离（真实结果 1 小时、网络失败 120 秒），修复瞬时故障被冻结成一小时「暂未收录」；缓存增加容量上限；云端兜底超时恢复到与服务端预算匹配（不再必然 abort）",
+      "🧩 成就与修改项文案修复：新增 HTML 实体解码（You&#39;re 这类不再原样显示），Rust 侧解码按 UTF-8 边界安全收缩，FLiNG 标题破折号归一化",
+      "⚙️ 版本发布流程加固：发布历史改为单向权威（versions.json 为准，version.json 仅作派生快照，不再反向覆盖已发布条目）；版本号写盘前先全量预检所有配置文件，任一损坏即零写盘；版本号正则严格锚定 X.Y.Z",
+      "🔧 其他修复：Steam 平滑退出窗口在检测到下载/写盘活动时自动放宽（避免 VDF 与分块损坏），空闲时仍保持 5 秒快速退出；SAM 内嵌包解压增加必需文件校验并把失败原因透传到错误信息；客户端 HTTP 权限收窄为仅 https"
+    ],
+    "downloadUrl": "https://gitee.com/muyan6/steam/releases/download/2.8.1/ChunFengDu_2.8.1_x64-setup.exe",
+    "downloadUrlBackup": "https://github.com/muyan6/steam/releases/download/v2.8.1/ChunFengDu_2.8.1_x64-setup.exe",
+    "forceUpdate": true,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-22T13:36:00.063Z",
+    "updatedAt": "2026-09-22T13:36:00.063Z"
+  },
+  {
     "version": "2.8.0",
     "channel": "stable",
     "releaseDate": "2026-09-16",
