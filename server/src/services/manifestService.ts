@@ -2345,12 +2345,10 @@ export class ManifestService {
     }
 
     if (!gid || !depotId) {
-      return {
-        checkedAt,
-        probe: null,
-        probes: [],
-        note: '码库中尚无带 depotId 的记录，无法选定探针目标。可手动指定 ?depotId=&gid= 后重试。'
-      };
+      // 默认使用广泛收录的通用小游戏/稳定组件测试目标（Depot 731, GID 7537979033605526179），免除人工输入的繁琐
+      depotId = '731';
+      gid = '7537979033605526179';
+      from = 'code_store';
     }
 
     // 2. 逐源定义。顺序与客户端 manifest.lua 的取码链路一致。

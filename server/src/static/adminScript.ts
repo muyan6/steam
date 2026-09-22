@@ -706,11 +706,11 @@ async function checkManifestSources() {
   var out = document.getElementById('probeResult');
   if (!out) return;
 
-  var depotId = (document.getElementById('probeDepotId') || {}).value || '';
-  var gid = (document.getElementById('probeGid') || {}).value || '';
+  var depotId = ((document.getElementById('probeDepotId') || {}).value || '').trim() || '731';
+  var gid = ((document.getElementById('probeGid') || {}).value || '').trim() || '7537979033605526179';
   var qs = [];
-  if (depotId.trim()) qs.push('depotId=' + encodeURIComponent(depotId.trim()));
-  if (gid.trim()) qs.push('gid=' + encodeURIComponent(gid.trim()));
+  if (depotId) qs.push('depotId=' + encodeURIComponent(depotId));
+  if (gid) qs.push('gid=' + encodeURIComponent(gid));
   var url = '/api/admin/manifests/sources' + (qs.length ? ('?' + qs.join('&')) : '');
 
   if (btn) { btn.disabled = true; btn.innerText = '探测中...'; }

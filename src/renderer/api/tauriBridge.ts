@@ -12,6 +12,7 @@ import type {
   TrainerInfo,
   TrainerStatus,
   GameAchievementsData,
+  AchievementItem,
   SamStatus
 } from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
@@ -61,6 +62,21 @@ export async function getJson<T = any>(url: string, timeoutMs = 8000): Promise<T
     return null;
   } finally {
     // 无论成功、失败或超时都必须清理定时器，避免定时器泄漏
+    clearTimeout(timer);
+  }
+}
+
+/** 获取纯文本/HTML 响应（无 CORS 限制）；失败返回 null */
+export async function getText(url: string, timeoutMs = 8000, headers?: Record<string, string>): Promise<string | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await httpFetch(url, { signal: ctrl.signal, headers });
+    if (!resp.ok) return null;
+    return await resp.text();
+  } catch {
+    return null;
+  } finally {
     clearTimeout(timer);
   }
 }
@@ -1365,21 +1381,18 @@ export const createTauriBridge = () => {
       }
     },
 
-    // 修改器与成就管理 (Trainer & Achievement Management)
+    // ==================== 修改器与成就管理 (Trainer & Achievement Management) ====================
     matchTrainer: async (name: string, appId?: number): Promise<TrainerInfo | null> => {
       try {
         const query = `name=${encodeURIComponent(name)}${appId ? `&appId=${appId}` : ''}`;
-        // 服务端最坏预算：WP REST 8s + 文章页 8s + 302 追踪 6s = 22s。
-        // 用默认 8s 会在慢网提前 abort，异常又被吞成 null，
-        // 界面把「网络超时」误报为「暂未收录该修改器」。这里给足 25s。
-        const res = await getJson<any>(`${API}/api/trainers/match?${query}`, 25000);
-        if (res && res.success) {
+        // 优先请求云端（4s 快速超时；若云端未部署该接口或超时，无缝回退到客户端直连官方）
+        const res = await getJson<any>(`${API}/api/trainers/match?${query}`, 4000);
+        if (res && res.success && res.data && res.data.matched) {
           return res.data;
         }
-        return null;
-      } catch {
-        return null;
-      }
+      } catch {}
+      // 客户端走无 CORS 限制的 Tauri Rust 通道直连 FLiNG 官方检索与解析
+      return directMatchTrainer(name, appId);
     },
     getTrainerStatus: async (appId: number): Promise<TrainerStatus> => {
       return invoke('get_trainer_status', { appId });
@@ -1399,22 +1412,21 @@ export const createTauriBridge = () => {
 
     getGameAchievements: async (appId: number, lang = 'schinese'): Promise<GameAchievementsData | null> => {
       try {
-        // 服务端最坏预算：社区页抓取 10s + 官方统计兜底 8s = 18s，同理给足 20s
-        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`, 20000);
-        if (res && res.success) {
+        // 优先尝试云端接口（4s 超时，若云端 404 或故障立即回退到客户端直连）
+        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`, 4000);
+        if (res && res.success && res.data && res.data.achievements?.length > 0) {
           return res.data;
         }
-        return null;
-      } catch {
-        return null;
-      }
+      } catch {}
+      // 客户端直接通过 Tauri 通道直连 Steam Community / Web API 抓取全量成就
+      return directFetchGameAchievements(appId, lang);
     },
     getSamStatus: async (): Promise<SamStatus> => {
       return invoke('get_sam_status');
     },
     downloadSam: async (downloadUrl?: string): Promise<SamStatus> => {
-      const url = downloadUrl || `${API}/api/achievements/sam/download`;
-      return invoke('download_sam', { downloadUrl: url });
+      // 直接由 Rust 核心结合高速国内镜像（ghfast/gh-proxy/GitHub）自动高可用下载
+      return invoke('download_sam', { downloadUrl: downloadUrl || undefined });
     },
     launchSamForGame: async (appId: number): Promise<boolean> => {
       return invoke('launch_sam_for_game', { appId });
@@ -1424,6 +1436,263 @@ export const createTauriBridge = () => {
     }
   };
 };
+
+// 常见修改项中英对照映射
+const CHEAT_TRANSLATIONS: Array<[RegExp, string]> = [
+  [/infinite\s+health/i, '无限生命'],
+  [/god\s+mode/i, '无敌模式 / 锁血'],
+  [/infinite\s+stamina/i, '无限耐力/体力'],
+  [/infinite\s+mana|infinite\s+mp|infinite\s+fp/i, '无限法力/专注值'],
+  [/infinite\s+items?|unlimited\s+items?/i, '无限道具/物品'],
+  [/infinite\s+ammo|unlimited\s+ammo/i, '无限弹药'],
+  [/no\s+reload/i, '无需装弹'],
+  [/items?\s+won'?t\s+decrease/i, '道具数量不减'],
+  [/healing\s+items?\s+no\s+cooldown/i, '治疗物品无冷却'],
+  [/one\s+hit\s+kill|instant\s+kill/i, '一击必杀'],
+  [/damage\s+multiplier/i, '伤害倍率调节'],
+  [/defense\s+multiplier/i, '防御倍率调节'],
+  [/set\s+player\s+speed/i, '设定玩家移速'],
+  [/set\s+game\s+speed/i, '设定游戏速度'],
+  [/super\s+jump/i, '超级跳跃'],
+  [/infinite\s+jumps?/i, '无限连跳'],
+  [/stealth\s+mode|invisible/i, '隐匿潜行 / 不被发现'],
+  [/infinite\s+(?:money|gold|credits|cash|currency)/i, '无限金钱/货币'],
+  [/infinite\s+(?:exp|experience)/i, '无限经验值'],
+  [/exp\s+multiplier/i, '经验倍率调节'],
+  [/zero\s+weight|max\s+weight/i, '负重清零 / 最大负重'],
+  [/ignore\s+crafting\s+requirements/i, '无视制作/锻造需求'],
+  [/easy\s+crafting/i, '简易制作'],
+  [/freeze\s+daytime|freeze\s+timer?/i, '时间静止 / 冻结倒计时'],
+  [/no\s+cooldown/i, '技能无冷却'],
+  [/maximum\s+stats?/i, '属性全满'],
+  [/infinite\s+durability/i, '装备无限耐久'],
+  [/edit\s+(?:money|gold|credits)/i, '编辑金钱数额'],
+  [/set\s+fly\s+speed/i, '设定飞行速度'],
+  [/set\s+fly\s+height/i, '设定飞行高度']
+];
+
+function translateCheat(en: string): string {
+  for (const [regex, zh] of CHEAT_TRANSLATIONS) {
+    if (regex.test(en)) return zh;
+  }
+  return en;
+}
+
+function parseCheatsFromHtml(html: string): Array<{ raw: string; hotkey: string; descriptionEn: string; descriptionZh: string }> {
+  const items: Array<{ raw: string; hotkey: string; descriptionEn: string; descriptionZh: string }> = [];
+  const clean = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<\/p>|<br\s*\/?>|<li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&#8211;|–|—/g, '-');
+
+  const lines = clean.split('\n');
+  const hotkeyRegex = /^((?:(?:Shift|Ctrl|Alt)\s*\+\s*)?(?:Num\s*[\d\+\-\*\/]|F\d{1,2}|PageUp|PageDown|\d+))\s*[-–:]\s*(.+)$/i;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const m = line.match(hotkeyRegex);
+    if (m) {
+      const hotkey = m[1].trim();
+      const descEn = m[2].trim();
+      items.push({
+        raw: line,
+        hotkey,
+        descriptionEn: descEn,
+        descriptionZh: translateCheat(descEn)
+      });
+    }
+  }
+  return items;
+}
+
+// 客户端内存缓存，避免短时间内频繁重复向官方发送外部请求
+const directTrainerCache = new Map<string, { data: TrainerInfo; time: number }>();
+const directAchievementCache = new Map<string, { data: GameAchievementsData; time: number }>();
+
+/** 客户端直接直连 FLiNG 检索官方修改器 */
+async function directMatchTrainer(rawName: string, appId?: number): Promise<TrainerInfo | null> {
+  const cacheKey = `trainer:${appId || rawName.trim().toLowerCase()}`;
+  const cached = directTrainerCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < 3600_000) {
+    return cached.data;
+  }
+
+  const queries: string[] = [];
+
+  // 1. 如果有 AppID，先在本地内置库匹配官方英文原名
+  if (appId) {
+    const found = GAMES_DATABASE.find(g => g.appId === appId);
+    if (found && found.name) {
+      queries.push(found.name);
+    }
+  }
+
+  // 2. 清洗原始名称
+  const clean = (rawName || '')
+    .replace(/[\u2122\u00AE\u00A9]/g, '') // ™ ® ©
+    .replace(/[:\-–—_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (clean && !queries.includes(clean)) {
+    const englishOnly = clean.replace(/[\u4e00-\u9fa5]/g, '').trim();
+    if (englishOnly.length >= 3 && !queries.includes(englishOnly)) {
+      queries.push(englishOnly);
+    }
+    queries.push(clean);
+  }
+
+  // 3. 主标题（冒号/横线前的前缀）
+  const prefix = (rawName || '').split(/[:\-–—]/)[0].trim();
+  if (prefix && prefix.length >= 3 && !queries.includes(prefix)) {
+    queries.push(prefix);
+  }
+
+  for (const q of queries) {
+    if (!q || q.length < 2) continue;
+    try {
+      const searchUrl = `https://flingtrainer.com/wp-json/wp/v2/posts?search=${encodeURIComponent(q)}&per_page=5`;
+      const posts = await getJson<any[]>(searchUrl, 8000);
+      if (Array.isArray(posts) && posts.length > 0) {
+        const matchedPost = posts.find((p) => /trainer/i.test(p.title?.rendered || '')) || posts[0];
+        const postTitle = (matchedPost.title?.rendered || '').replace(/&#8211;/g, '-').replace(/<[^>]+>/g, '').trim();
+        const postUrl = matchedPost.link;
+        const publishedAt = matchedPost.date;
+        const contentHtml = matchedPost.content?.rendered || '';
+        const cheats = parseCheatsFromHtml(contentHtml);
+
+        let latestVersion = '';
+        let downloadPageUrl = '';
+        let directDownloadUrl = '';
+
+        if (postUrl) {
+          try {
+            const pageHtml = await getText(postUrl, 8000, {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+              'Referer': 'https://flingtrainer.com/'
+            });
+            if (pageHtml) {
+              const dlMatches = [...pageHtml.matchAll(/<a[^>]+href="(https:\/\/flingtrainer\.com\/downloads\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
+              if (dlMatches.length > 0) {
+                downloadPageUrl = dlMatches[0][1];
+                latestVersion = dlMatches[0][2].replace(/<[^>]+>/g, '').trim();
+
+                try {
+                  const redirResp = await httpFetch(downloadPageUrl, {
+                    method: 'GET',
+                    headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                      'Referer': postUrl
+                    }
+                  });
+                  if (redirResp.url && redirResp.url !== downloadPageUrl) {
+                    directDownloadUrl = redirResp.url;
+                  }
+                } catch {}
+              }
+            }
+          } catch {}
+        }
+
+        const resData: TrainerInfo = {
+          matched: true,
+          postTitle,
+          postUrl,
+          publishedAt,
+          version: latestVersion,
+          downloadUrl: directDownloadUrl || downloadPageUrl || postUrl,
+          directDownloadUrl: directDownloadUrl || downloadPageUrl,
+          cheatsCount: cheats.length,
+          cheats
+        };
+        directTrainerCache.set(cacheKey, { data: resData, time: Date.now() });
+        return resData;
+      }
+    } catch {}
+  }
+
+  const emptyData: TrainerInfo = { matched: false };
+  directTrainerCache.set(cacheKey, { data: emptyData, time: Date.now() });
+  return emptyData;
+}
+
+/** 客户端直接直连 Steam Community / Web API 抓取全量成就 */
+async function directFetchGameAchievements(appId: number, lang = 'schinese'): Promise<GameAchievementsData | null> {
+  const cacheKey = `achievements:${appId}:${lang}`;
+  const cached = directAchievementCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < 3600_000) {
+    return cached.data;
+  }
+
+  // 1. Steam Community 官方社区成就页面（带中文标题、描述、图标与达成率）
+  try {
+    const communityUrl = `https://steamcommunity.com/stats/${appId}/achievements/?l=${encodeURIComponent(lang)}`;
+    const html = await getText(communityUrl, 8000, {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Cookie': `Steam_Language=${encodeURIComponent(lang)}`
+    });
+
+    if (html && html.includes('achieveRow')) {
+      const achievements: AchievementItem[] = [];
+      const rowRegex = /<div class="achieveRow\s*">([\s\S]*?)<div style="clear: both;"><\/div>/g;
+      let match;
+      while ((match = rowRegex.exec(html)) !== null) {
+        const block = match[1];
+        const imgMatch = block.match(/<img[^>]+src="([^">]+)"/);
+        const titleMatch = block.match(/<h3>([\s\S]*?)<\/h3>/);
+        const descMatch = block.match(/<h5>([\s\S]*?)<\/h5>/);
+        const percentMatch = block.match(/<div class="achievePercent">([^<]+)<\/div>/);
+
+        const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+        if (!title) continue;
+
+        achievements.push({
+          title,
+          description: descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '',
+          icon: imgMatch ? imgMatch[1].trim() : '',
+          percent: percentMatch ? percentMatch[1].trim() : '0%'
+        });
+      }
+
+      if (achievements.length > 0) {
+        const resData: GameAchievementsData = { appId, count: achievements.length, achievements };
+        directAchievementCache.set(cacheKey, { data: resData, time: Date.now() });
+        return resData;
+      }
+    }
+  } catch {}
+
+  // 2. Steam 官方 Web API 兜底
+  try {
+    const statsUrl = `https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002/?gameid=${appId}`;
+    const statsResp = await getJson<any>(statsUrl, 6000);
+    const list = statsResp?.achievementpercentages?.achievements;
+    if (Array.isArray(list) && list.length > 0) {
+      const fallbackItems: AchievementItem[] = list.map((item: any) => ({
+        name: String(item.name || ''),
+        title: String(item.name || ''),
+        description: `全球达成率 ${Number(item.percent || 0).toFixed(1)}%`,
+        icon: '',
+        percent: `${Number(item.percent || 0).toFixed(1)}%`
+      }));
+      const resData: GameAchievementsData = {
+        appId,
+        count: fallbackItems.length,
+        achievements: fallbackItems
+      };
+      directAchievementCache.set(cacheKey, { data: resData, time: Date.now() });
+      return resData;
+    }
+  } catch {}
+
+  const emptyData: GameAchievementsData = { appId, count: 0, achievements: [] };
+  directAchievementCache.set(cacheKey, { data: emptyData, time: Date.now() });
+  return emptyData;
+}
 
 
 // Tauri 版设备心跳：对齐 Electron 版行为（启动一次 + 每 30 分钟一次），

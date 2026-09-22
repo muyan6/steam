@@ -46,10 +46,7 @@
     </div>
 
     <!-- 顶部功能横幅指引：清晰明确的成就解锁与修改器指南 (完全对齐指南弹窗的清爽通透风格) -->
-    <div class="mb-5 p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-3.5 shrink-0 shadow-sm backdrop-blur-md">
-      <div class="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 flex items-center justify-center shrink-0 font-bold text-base shadow-xs">
-        <Sparkles class="w-5 h-5 text-sky-500" />
-      </div>
+    <div class="mb-5 p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 text-xs text-slate-600 dark:text-slate-300 flex items-start shrink-0 shadow-sm backdrop-blur-md">
       <div class="leading-relaxed flex-1 space-y-2.5">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="px-2.5 py-0.5 rounded-lg bg-sky-500/15 text-sky-600 dark:text-sky-300 font-bold text-[11px] border border-sky-500/25">核心能力速览</span>

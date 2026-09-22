@@ -264,12 +264,12 @@
 
           <!-- 操作按钮条 (统一规范化对齐排布，2字简练杜绝截断) -->
           <div class="pt-3 border-t border-white/10 space-y-2">
-            <!-- 第 1 行：主要运行动作 (下载与运行，等宽对半分) -->
-            <div class="grid grid-cols-2 gap-2">
+            <!-- 第 1 行：主要运行动作 (下载、运行、检测DLC，均分 1/3) -->
+            <div class="grid grid-cols-3 gap-2">
               <a
                 :href="`steam://install/${game.appId}`"
                 title="在 Steam 客户端直接触发下载"
-                class="h-8 px-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
+                class="h-8 px-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-sm active:scale-98"
               >
                 <Download class="w-3.5 h-3.5" />
                 <span>下载</span>
@@ -278,15 +278,30 @@
               <a
                 :href="`steam://rungameid/${game.appId}`"
                 title="在 Steam 客户端启动游戏"
-                class="h-8 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 active:scale-98"
+                class="h-8 px-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-98"
               >
                 <Play class="w-3.5 h-3.5 fill-current" />
                 <span>运行</span>
               </a>
+
+              <!-- 检测 DLC 增量更新 -->
+              <button
+                @click="handleCheckDlc(game.appId)"
+                :disabled="dlcDiffs[game.appId]?.checking || dlcDiffs[game.appId]?.appending"
+                title="检测云端最新 DLC 分包，对比当前入库规则是否有缺失"
+                :class="dlcDiffs[game.appId]?.missingDlcs?.length
+                  ? 'bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/35 text-amber-300 shadow-sm'
+                  : 'btn-soft-action text-slate-300 hover:text-slate-100'"
+                class="h-8 px-1 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
+              >
+                <RotateCw v-if="dlcDiffs[game.appId]?.checking" class="w-3.5 h-3.5 animate-spin text-amber-400" />
+                <Layers v-else class="w-3.5 h-3.5 text-sky-400" />
+                <span>{{ dlcDiffs[game.appId]?.checking ? '检测中' : (dlcDiffs[game.appId]?.missingDlcs?.length ? '有新DLC' : '检测DLC') }}</span>
+              </button>
             </div>
 
-            <!-- 第 2 行：规则管理动作 (版本控制、DLC检测、规则启停、移出库，均分 1/4) -->
-            <div class="grid grid-cols-4 gap-1.5">
+            <!-- 第 2 行：规则管理动作 (版本策略、启停开关、移出库，均分 1/3) -->
+            <div class="grid grid-cols-3 gap-2">
               <!-- 按钮 1: 版本策略 (锁定 / 跟随) -->
               <button
                 v-if="!isPinned(game)"
@@ -315,22 +330,7 @@
                 <span>{{ updatingAppId === game.appId ? '处理中' : '跟随' }}</span>
               </button>
 
-              <!-- 按钮 2: 检测 DLC 增量更新 -->
-              <button
-                @click="handleCheckDlc(game.appId)"
-                :disabled="dlcDiffs[game.appId]?.checking || dlcDiffs[game.appId]?.appending"
-                title="检测云端最新 DLC 分包，对比当前入库规则是否有缺失"
-                :class="dlcDiffs[game.appId]?.missingDlcs?.length
-                  ? 'bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/35 text-amber-300 shadow-sm'
-                  : 'btn-soft-action text-slate-300 hover:text-slate-100'"
-                class="h-8 px-1 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
-              >
-                <RotateCw v-if="dlcDiffs[game.appId]?.checking" class="w-3.5 h-3.5 animate-spin text-amber-400" />
-                <Layers v-else class="w-3.5 h-3.5 text-sky-400" />
-                <span>{{ dlcDiffs[game.appId]?.checking ? '检测中' : (dlcDiffs[game.appId]?.missingDlcs?.length ? '有新DLC' : '检测DLC') }}</span>
-              </button>
-
-              <!-- 按钮 3: Lua 规则启停开关 (停用 / 启用) -->
+              <!-- 按钮 2: Lua 规则启停开关 (停用 / 启用) -->
               <button
                 @click="onToggleGameStatus(game.appId, !game.isDisabled)"
                 :disabled="togglingAppId === game.appId"
@@ -348,7 +348,7 @@
                 </template>
               </button>
 
-              <!-- 按钮 4: 移出库 (物理删除规则) -->
+              <!-- 按钮 3: 移出库 (物理删除规则) -->
               <button
                 @click="removeGame(game.appId, game.name)"
                 title="将该游戏移出库（彻底删除 Lua 规则）"

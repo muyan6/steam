@@ -134,15 +134,17 @@ pub fn get_sam_status() -> Result<SamStatus, String> {
 /// 下载并部署 SAM（版本 7.0.41，带国内镜像加速回退）
 pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, String> {
     let dir = get_sam_dir()?;
-    let urls: Vec<String> = if let Some(u) = download_url {
-        vec![u]
-    } else {
-        vec![
-            "https://ghfast.top/https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string(),
-            "https://gh-proxy.com/https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string(),
-            "https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string(),
-        ]
-    };
+    let mut urls: Vec<String> = Vec::new();
+    if let Some(ref u) = download_url {
+        let trimmed = u.trim();
+        if !trimmed.is_empty() {
+            urls.push(trimmed.to_string());
+        }
+    }
+    // 始终追加多条镜像与官方兜底，确保无论自定义地址是否 404，都能顺利下载
+    urls.push("https://ghfast.top/https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string());
+    urls.push("https://gh-proxy.com/https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string());
+    urls.push("https://github.com/gibbed/SteamAchievementManager/releases/download/7.0.41/SteamAchievementManager-7.0.41.zip".to_string());
 
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))

@@ -938,8 +938,8 @@ const ADMIN_HTML = `<!DOCTYPE html>
               </div>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <input id="probeDepotId" placeholder="depotId（可选）" class="input-ctrl" style="width: 130px; font-family: monospace; font-size: 12px;">
-              <input id="probeGid" placeholder="gid（可选）" class="input-ctrl" style="width: 190px; font-family: monospace; font-size: 12px;">
+              <input id="probeDepotId" placeholder="depotId" value="731" class="input-ctrl" style="width: 130px; font-family: monospace; font-size: 12px;" title="预设为稳定小游戏测试分包 Depot 731">
+              <input id="probeGid" placeholder="gid" value="7537979033605526179" class="input-ctrl" style="width: 190px; font-family: monospace; font-size: 12px;" title="预设为稳定小游戏测试清单 GID 7537979033605526179">
               <button id="probeSourcesBtn" onclick="checkManifestSources()" class="btn btn-primary">🩺 开始体检</button>
             </div>
           </div>
