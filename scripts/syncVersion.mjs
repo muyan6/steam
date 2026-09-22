@@ -17,6 +17,15 @@
  *   - 目标版本若没有任何可用更新日志来源，脚本**直接报错退出**（绝不静默沿用旧日志）；
  *   - releaseDate / createdAt / updatedAt 一律按目标版本重新生成，不再继承上一版。
  *
+ * ⚠️ 发布历史单向权威（2026-09 二次事故修复）：
+ * versions.json 是**已发布历史**的唯一权威，version.json 只是它的一条派生快照。
+ * 本脚本早期版本允许"version.json 的日志反向覆写 versions.json 中已存在的同版本条目"，
+ * 与"派生物"的定位自相矛盾 —— 而 predev / prebuild:web / pretauri:build / prerelease:upload
+ * 都挂了本脚本，于是每次构建都会把已发布条目的 changelog/title/releaseDate 归一化并
+ * bump updatedAt；若有人通过管理后台改过某条历史版本，下次构建会被静默回滚。
+ * 现在：**已存在的条目**只允许更新 downloadUrl / downloadUrlBackup / forceUpdate，
+ * 日志与元信息一律以 versions.json 自身为准；要改写已发布日志必须显式传 --changelog。
+ *
  * 用法：
  *   npm run version:bump 2.9.0 -- --title "春风渡 v2.9.0 xxx版" --changelog "🛠️ 第一条" --changelog "🛠️ 第二条"
  *   npm run version:bump 2.9.0 -- --notes-file RELEASE_NOTES.md   # 每行一条（可带 - 前缀）
@@ -161,21 +170,28 @@ let releaseChangelog = null;
 let releaseDate = null;
 let releaseSource = null;
 
+const needsNewEntry = !existingEntry;
+
+// 只有命令行显式给出的日志，才允许改写一条**已发布**的历史条目。
+// 这是"发布历史单向权威"的唯一例外，且必须是人的显式意图。
+const explicitLogRewrite = cliChangelog.length > 0;
+const explicitMetaRewrite = Boolean(cliTitle || cliDate);
+
 // 优先级 1：命令行显式提供（version:bump 的标准用法）
-if (cliChangelog.length > 0) {
+if (explicitLogRewrite) {
   releaseChangelog = cliChangelog;
   releaseSource = '命令行 --changelog/--notes-file';
-} else if (versionJsonIsTarget && !isPlaceholderChangelog(versionJson.changelog)) {
-  // 优先级 2：开发者已手改 version.json 的当前版本日志（旧工作流，继续兼容）
-  releaseChangelog = normalizeChangelog(versionJson.changelog);
-  releaseSource = 'server/data/version.json 的手写日志';
 } else if (existingEntry && !isPlaceholderChangelog(existingEntry.changelog)) {
-  // 优先级 3：versions.json 中该版本已有日志（补跑同步时复用自己那一版，不会串版）
+  // 优先级 2：versions.json 中该版本已有日志 —— 已发布历史的权威，禁止被 version.json 覆盖。
+  // 该值只用于"新旧一致所以不必改动"的比对，不会产生写入。
   releaseChangelog = normalizeChangelog(existingEntry.changelog);
-  releaseSource = 'server/data/versions.json 中该版本已有条目';
+  releaseSource = 'server/data/versions.json 中该版本已有条目（权威，不覆写）';
+} else if (versionJsonIsTarget && !isPlaceholderChangelog(versionJson.changelog)) {
+  // 优先级 3：仅当 versions.json 中**没有**该版本条目时，才把 version.json 的手写日志
+  // 当作新版本的内容来源（旧工作流兼容）。一旦条目已存在，version.json 就没有发言权。
+  releaseChangelog = normalizeChangelog(versionJson.changelog);
+  releaseSource = 'server/data/version.json 的手写日志（该版本尚未进入发布历史）';
 }
-
-const needsNewEntry = !existingEntry;
 
 if (needsNewEntry && !releaseChangelog) {
   console.error(
@@ -197,9 +213,13 @@ if (needsNewEntry && !releaseChangelog) {
 }
 
 if (releaseChangelog) {
+  // 元信息来源也必须服从"发布历史单向权威"：
+  // - 条目已存在且未显式传参 → 一律沿用 versions.json 中的 title/releaseDate（不覆写）；
+  // - 仅在新条目、或显式传了 --title/--date 时，才允许从 version.json 取初始值。
+  const metaFromHistory = Boolean(existingEntry) && !explicitMetaRewrite;
   releaseTitle = cliTitle
+    || (metaFromHistory && existingEntry.title ? String(existingEntry.title) : null)
     || (versionJsonIsTarget && versionJson.title ? String(versionJson.title) : null)
-    || (existingEntry && existingEntry.title ? String(existingEntry.title) : null)
     || `春风渡 v${targetVersion} 版本`;
   // 标题里的版本号必须与目标版本一致，防止沿用上一版标题
   releaseTitle = releaseTitle.replace(/v?\d+\.\d+\.\d+/, `v${targetVersion}`);
@@ -207,6 +227,7 @@ if (releaseChangelog) {
     releaseTitle = `春风渡 v${targetVersion} ${releaseTitle}`.trim();
   }
   releaseDate = cliDate
+    || (metaFromHistory && existingEntry.releaseDate ? String(existingEntry.releaseDate) : null)
     || (versionJsonIsTarget && versionJson.releaseDate ? String(versionJson.releaseDate) : null)
     || today();
 }
@@ -267,23 +288,35 @@ if (hasVersionsJson) {
     console.log(`[VersionSync] ✅ server/data/versions.json 已追加新版本 v${targetVersion}（日志来源：${releaseSource}）`);
     syncedAny = true;
   } else {
+    // 该版本已在发布历史中 —— 这是一条**已发布记录**，不是可随手改写的草稿。
+    //
+    // 只有人的显式参数（--changelog / --notes-file / --title / --date）才允许改写日志与元信息。
+    // 无参数重跑本脚本（predev / prebuild:web / pretauri:build / prerelease:upload 都会触发）
+    // 必须对这些字段完全只读，否则每次构建都会把已发布文案归一化并 bump updatedAt，
+    // 且会静默回滚管理后台对历史版本做过的编辑。
     let touched = false;
-    if (releaseChangelog) {
+
+    if (explicitLogRewrite) {
       const prevLog = JSON.stringify(normalizeChangelog(existingEntry.changelog));
       const nextLog = JSON.stringify(releaseChangelog);
       if (prevLog !== nextLog) {
         existingEntry.changelog = releaseChangelog;
         touched = true;
+        console.log(`[VersionSync] ✍️ 已按命令行显式参数改写 v${targetVersion} 的发布日志`);
       }
-      if (releaseTitle && existingEntry.title !== releaseTitle) {
+    }
+    if (explicitMetaRewrite) {
+      if (cliTitle && existingEntry.title !== releaseTitle) {
         existingEntry.title = releaseTitle;
         touched = true;
       }
-      if (releaseDate && existingEntry.releaseDate !== releaseDate) {
+      if (cliDate && existingEntry.releaseDate !== releaseDate) {
         existingEntry.releaseDate = releaseDate;
         touched = true;
       }
     }
+
+    // 下载直链是派生字段（可由版本号推导），允许无条件校正
     if (existingEntry.downloadUrl !== giteeUrl) {
       existingEntry.downloadUrl = giteeUrl;
       touched = true;

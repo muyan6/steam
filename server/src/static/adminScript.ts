@@ -764,6 +764,21 @@ async function checkManifestSources() {
 
   var depotId = ((document.getElementById('probeDepotId') || {}).value || '').trim();
   var gid = ((document.getElementById('probeGid') || {}).value || '').trim();
+
+  // 只填一项时必须显式提示，不能静默丢弃。
+  // 上游码库的 (depot, gid) 是联合键，服务端校验到任一项非法就会把两者一起清空并
+  // 退回「码库最新记录」——用户以为自己指定了目标，实际探测的是完全另一条组合，
+  // 而且从输出里看不出任何异常。预设值已从输入框移除，这个半填场景更容易被触发。
+  if ((depotId && !gid) || (!depotId && gid)) {
+    out.innerHTML =
+      '<div style="color:var(--c-amber);font-size:12px;line-height:1.7;padding:10px 12px;border-radius:8px;background:rgba(245,158,11,.10);">' +
+        '⚠️ 自定义探针需要 depotId 与 gid <strong>同时填写</strong>（上游码库以 (depot, gid) 为联合键，缺一不可）。<br>' +
+        '当前只填了 <code>' + (depotId ? 'depotId' : 'gid') + '</code>，会被退回「码库最新记录」，你填的值将被忽略。<br>' +
+        '请补齐另一项后重试，或<strong>清空两项</strong>直接使用自动探测。' +
+      '</div>';
+    return;
+  }
+
   var qs = [];
   if (depotId) qs.push('depotId=' + encodeURIComponent(depotId));
   if (gid) qs.push('gid=' + encodeURIComponent(gid));
