@@ -292,11 +292,11 @@
                 :class="dlcDiffs[game.appId]?.missingDlcs?.length
                   ? 'bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/35 text-amber-300 shadow-sm'
                   : 'btn-soft-action text-slate-300 hover:text-slate-100'"
-                class="h-8 px-1 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer"
+                class="h-8 px-2 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 disabled:opacity-60 cursor-pointer whitespace-nowrap"
               >
-                <RotateCw v-if="dlcDiffs[game.appId]?.checking" class="w-3.5 h-3.5 animate-spin text-amber-400" />
-                <Layers v-else class="w-3.5 h-3.5 text-sky-400" />
-                <span>{{ dlcDiffs[game.appId]?.checking ? '检测中' : (dlcDiffs[game.appId]?.missingDlcs?.length ? '有新DLC' : '检测DLC') }}</span>
+                <RotateCw v-if="dlcDiffs[game.appId]?.checking" class="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />
+                <Layers v-else class="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span class="whitespace-nowrap font-mono font-bold">{{ dlcDiffs[game.appId]?.checking ? '检测' : (dlcDiffs[game.appId]?.missingDlcs?.length ? '新DLC' : 'DLC') }}</span>
               </button>
             </div>
 

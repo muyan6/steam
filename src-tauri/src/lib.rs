@@ -1809,6 +1809,11 @@ fn open_sam_dir() -> Result<bool, String> {
     achievements::open_sam_dir()
 }
 
+#[tauri::command]
+async fn fetch_game_achievements(app_id: u32, lang: Option<String>) -> Result<achievements::GameAchievementsData, String> {
+    achievements::fetch_game_achievements(app_id, lang).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1936,7 +1941,8 @@ pub fn run() {
             get_sam_status,
             download_sam,
             launch_sam_for_game,
-            open_sam_dir
+            open_sam_dir,
+            fetch_game_achievements
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

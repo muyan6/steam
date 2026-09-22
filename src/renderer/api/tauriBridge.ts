@@ -1411,14 +1411,25 @@ export const createTauriBridge = () => {
     },
 
     getGameAchievements: async (appId: number, lang = 'schinese'): Promise<GameAchievementsData | null> => {
+      // 1. 优先走 Rust 原生网络栈（底层 reqwest 直连，完全脱离前端安全沙箱限制，速度最快最稳定）
       try {
-        // 优先尝试云端接口（4s 超时，若云端 404 或故障立即回退到客户端直连）
-        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`, 4000);
+        const nativeData = await invoke<GameAchievementsData>('fetch_game_achievements', { appId, lang });
+        if (nativeData && nativeData.achievements && nativeData.achievements.length > 0) {
+          return nativeData;
+        }
+      } catch (e) {
+        console.warn('Rust fetch_game_achievements fallback:', e);
+      }
+
+      // 2. 尝试云端服务器接口
+      try {
+        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`, 3000);
         if (res && res.success && res.data && res.data.achievements?.length > 0) {
           return res.data;
         }
       } catch {}
-      // 客户端直接通过 Tauri 通道直连 Steam Community / Web API 抓取全量成就
+
+      // 3. 前端 direct fetch 兜底
       return directFetchGameAchievements(appId, lang);
     },
     getSamStatus: async (): Promise<SamStatus> => {

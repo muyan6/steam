@@ -109,14 +109,53 @@ pub fn find_sam_game_in_dir(dir: &Path) -> Option<PathBuf> {
     walk(dir, 0)
 }
 
+const EMBEDDED_SAM_ZIP: &[u8] = include_bytes!("../resources/sam/SAM.zip");
+
+/// 从编译期嵌入的资源解压释放 SAM（100% 完整内嵌，免去用户手动下载安装）
+pub fn extract_embedded_sam(target_dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(target_dir).map_err(|e| format!("创建 SAM 目录失败: {}", e))?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(EMBEDDED_SAM_ZIP))
+        .map_err(|e| format!("解析内置 SAM 归档失败: {}", e))?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| format!("读取 SAM 归档文件项失败: {}", e))?;
+        let name = file.name().to_string();
+        if name.contains("__MACOSX") {
+            continue;
+        }
+        let rel = Path::new(&name);
+        if rel.is_absolute() || rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            continue;
+        }
+        let out_path = target_dir.join(rel);
+        if file.is_dir() {
+            fs::create_dir_all(&out_path).ok();
+        } else {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            let mut outfile = fs::File::create(&out_path).map_err(|e| format!("创建文件失败: {}", e))?;
+            std::io::copy(&mut file, &mut outfile).map_err(|e| format!("写入文件失败: {}", e))?;
+        }
+    }
+    Ok(())
+}
+
 /// 查询本地 SAM 状态（支持内置与 APPDATA 两种来源）
 pub fn get_sam_status_with_resource(resource_dir: Option<&Path>) -> Result<SamStatus, String> {
+    // 首次检测到未部署时，直接自动解压释放内嵌的 SAM，实现 100% 免安装开箱即用
+    if let Ok(dir) = get_sam_dir() {
+        let sam_exe = dir.join("SAM.Game.exe");
+        if !sam_exe.exists() {
+            let _ = extract_embedded_sam(&dir);
+        }
+    }
+
     if let Some(exe) = find_sam_game_exe(resource_dir) {
-        let is_bundled = exe.to_string_lossy().contains("assets") || exe.to_string_lossy().contains("tools\\sam");
         Ok(SamStatus {
             is_installed: true,
             exe_path: Some(exe.to_string_lossy().to_string()),
-            version: Some(if is_bundled { "7.0.41 (内置就绪)".to_string() } else { "7.0.41".to_string() }),
+            version: Some("7.0.41 (内置就绪)".to_string()),
         })
     } else {
         Ok(SamStatus {
@@ -131,9 +170,21 @@ pub fn get_sam_status() -> Result<SamStatus, String> {
     get_sam_status_with_resource(None)
 }
 
-/// 下载并部署 SAM（版本 7.0.41，带国内镜像加速回退）
+/// 下载并部署 SAM（版本 7.0.41，优先释放内嵌资源，带国内镜像加速回退）
 pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, String> {
     let dir = get_sam_dir()?;
+
+    // 首先释放内嵌包（零延迟秒级就绪）
+    if extract_embedded_sam(&dir).is_ok() {
+        if let Some(exe) = find_sam_game_exe(None) {
+            return Ok(SamStatus {
+                is_installed: true,
+                exe_path: Some(exe.to_string_lossy().to_string()),
+                version: Some("7.0.41 (内置就绪)".to_string()),
+            });
+        }
+    }
+
     let mut urls: Vec<String> = Vec::new();
     if let Some(ref u) = download_url {
         let trimmed = u.trim();
@@ -271,3 +322,175 @@ pub fn open_sam_dir() -> Result<bool, String> {
         Ok(false)
     }
 }
+
+// ==================== 原生成就数据抓取 (Rust 核心网络栈，0 浏览器受限) ====================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AchievementItem {
+    pub name: Option<String>,
+    pub title: String,
+    pub description: String,
+    pub icon: String,
+    pub percent: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameAchievementsData {
+    pub app_id: u32,
+    pub count: usize,
+    pub achievements: Vec<AchievementItem>,
+}
+
+fn strip_html_tags(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for c in s.chars() {
+        if c == '<' {
+            in_tag = true;
+        } else if c == '>' {
+            in_tag = false;
+        } else if !in_tag {
+            out.push(c);
+        }
+    }
+    out.trim().to_string()
+}
+
+fn extract_html_tag_content(block: &str, tag: &str) -> String {
+    let open = format!("<{}", tag);
+    let close = format!("</{}>", tag);
+    if let Some(start_pos) = block.find(&open) {
+        let rest = &block[start_pos..];
+        if let Some(tag_end) = rest.find('>') {
+            let inner = &rest[tag_end + 1..];
+            if let Some(close_pos) = inner.find(&close) {
+                return strip_html_tags(&inner[..close_pos]);
+            }
+        }
+    }
+    String::new()
+}
+
+fn extract_img_src_attr(block: &str) -> String {
+    if let Some(pos) = block.find("src=\"") {
+        let rest = &block[pos + 5..];
+        if let Some(end) = rest.find('"') {
+            return rest[..end].to_string();
+        }
+    }
+    String::new()
+}
+
+fn extract_class_inner(block: &str, class_name: &str) -> String {
+    let needle = format!("class=\"{}\"", class_name);
+    if let Some(pos) = block.find(&needle) {
+        let rest = &block[pos + needle.len()..];
+        if let Some(tag_end) = rest.find('>') {
+            let inner = &rest[tag_end + 1..];
+            if let Some(close_pos) = inner.find('<') {
+                return inner[..close_pos].trim().to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+/// 由 Rust 底层原生拉取 Steam 官方成就（优先 Steam Community，兜底 Steam Web API）
+pub async fn fetch_game_achievements(app_id: u32, lang: Option<String>) -> Result<GameAchievementsData, String> {
+    let lang_str = lang.unwrap_or_else(|| "schinese".to_string());
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP 客户端构建失败: {}", e))?;
+
+    // 1. Steam Community 官方社区页面抓取（包含中文标题、描述、图标与达成率）
+    let community_url = format!("https://steamcommunity.com/stats/{}/achievements/?l={}", app_id, lang_str);
+    if let Ok(resp) = client.get(&community_url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        .header("Cookie", format!("Steam_Language={}", lang_str))
+        .send().await
+    {
+        if resp.status().is_success() {
+            if let Ok(html) = resp.text().await {
+                if html.contains("achieveRow") {
+                    let mut items = Vec::new();
+                    let parts: Vec<&str> = html.split("<div class=\"achieveRow").collect();
+                    for part in parts.iter().skip(1) {
+                        let end_idx = part.find("<div style=\"clear: both;\">").unwrap_or_else(|| part.len().min(1500));
+                        let block = &part[..end_idx];
+
+                        let title = extract_html_tag_content(block, "h3");
+                        if title.is_empty() {
+                            continue;
+                        }
+                        let desc = extract_html_tag_content(block, "h5");
+                        let img = extract_img_src_attr(block);
+                        let pct = extract_class_inner(block, "achievePercent");
+
+                        items.push(AchievementItem {
+                            name: None,
+                            title,
+                            description: desc,
+                            icon: img,
+                            percent: if pct.is_empty() { "0%".to_string() } else { pct },
+                        });
+                    }
+
+                    if !items.is_empty() {
+                        let count = items.len();
+                        return Ok(GameAchievementsData {
+                            app_id,
+                            count,
+                            achievements: items,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Steam 官方 Web API 兜底
+    let stats_url = format!("https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002/?gameid={}", app_id);
+    if let Ok(resp) = client.get(&stats_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(list) = json.pointer("/achievementpercentages/achievements").and_then(|v| v.as_array()) {
+                    let mut items = Vec::new();
+                    for item in list {
+                        let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if name.is_empty() {
+                            continue;
+                        }
+                        let pct_val = item.get("percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let pct_str = format!("{:.1}%", pct_val);
+                        items.push(AchievementItem {
+                            name: Some(name.clone()),
+                            title: name,
+                            description: format!("全球达成率 {}", pct_str),
+                            icon: String::new(),
+                            percent: pct_str,
+                        });
+                    }
+                    if !items.is_empty() {
+                        let count = items.len();
+                        return Ok(GameAchievementsData {
+                            app_id,
+                            count,
+                            achievements: items,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(GameAchievementsData {
+        app_id,
+        count: 0,
+        achievements: Vec::new(),
+    })
+}
+

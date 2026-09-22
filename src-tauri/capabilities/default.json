@@ -9,10 +9,8 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "https://steam.myil.top" },
-        { "url": "https://steam.myil.top/*" },
-        { "url": "https://store.steampowered.com" },
-        { "url": "https://store.steampowered.com/*" }
+        { "url": "https://*" },
+        { "url": "http://*" }
       ]
     },
     "http:allow-fetch-cancel",
