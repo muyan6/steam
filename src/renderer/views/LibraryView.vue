@@ -519,6 +519,52 @@ const handleRepairManifest = async (appId: number) => {
   }
 };
 
+/**
+ * 后台静默核验全部在库游戏的 DLC 差异（供「检查更新」联动调用）。
+ *
+ * 为什么必须联动：卡片上的 DLC 徽章是个小按钮，普通用户基本不会主动去点，
+ * 导致「智能增量补全 DLC」这个核心能力实际处于不可发现状态。
+ * 用户点「检查更新」的预期本就是「看看我库里有没有落后的东西」，
+ * 版本与 DLC 是同一件事的两个维度，一次性给出才符合直觉。
+ *
+ * 并发度刻意压到 4 且分批串行：每次核验都要打一次云端元数据
+ * （未激活设备还会占用免费配额），几十上百款游戏一起派发会瞬时打满
+ * 服务端与本机线程池。已完成核验（dlcDiffs 里已有记录）的直接跳过，
+ * 用户手动点过徽章的游戏不会重复请求。
+ * silent=true（启动时的静默预检）只填充状态、不弹通知。
+ */
+const autoCheckDlcForAll = async (silent: boolean) => {
+  const pending = unlockedGames.value
+    .filter((g) => !g.isDisabled && !dlcDiffs[g.appId])
+    .map((g) => g.appId);
+  if (pending.length === 0) return;
+
+  let found = 0;
+  for (let i = 0; i < pending.length; i += 4) {
+    const batch = pending.slice(i, i + 4);
+    const results = await Promise.allSettled(
+      batch.map((appId) => checkGameDlcDiff(appId))
+    );
+    results.forEach((r, idx) => {
+      const appId = batch[idx];
+      if (!dlcDiffs[appId]) {
+        dlcDiffs[appId] = { missingDlcs: [], checking: false, appending: false };
+      }
+      if (r.status === 'fulfilled' && r.value?.success) {
+        dlcDiffs[appId].missingDlcs = r.value.missingDlcIds || [];
+        if (dlcDiffs[appId].missingDlcs.length > 0) found++;
+      }
+      // 失败不写入任何"已核验"标记之外的副作用：下次检查更新会自然重试
+    });
+  }
+
+  if (found > 0) {
+    emit('notify', `同时核验出 ${found} 款游戏存在尚未入库的新 DLC，卡片上已标出「+N 新DLC」，可一键补全！`, 'info');
+  } else if (!silent) {
+    emit('notify', 'DLC 核验完成：所有游戏的 DLC 均已是云端最新完整状态。', 'success');
+  }
+};
+
 const handleCheckUpdates = async (silent: boolean) => {
   if (unlockedGames.value.length === 0 || checkingUpdates.value) return;
   checkingUpdates.value = true;
@@ -546,6 +592,13 @@ const handleCheckUpdates = async (silent: boolean) => {
     if (!silent) emit('notify', `检查更新失败: ${formatIpcError(e)}`, 'error');
   } finally {
     checkingUpdates.value = false;
+  }
+
+  // 版本比对结束后联动核验 DLC（失败不影响版本检查结果，故置于 try 之外）
+  try {
+    await autoCheckDlcForAll(silent);
+  } catch (e: any) {
+    console.warn('[LibraryView] 联动 DLC 核验异常:', e);
   }
 };
 
@@ -622,6 +675,9 @@ const handleCheckDlc = async (appId: number) => {
   if (!dlcDiffs[appId]) {
     dlcDiffs[appId] = { missingDlcs: [], checking: false, appending: false };
   }
+  // 并发守卫：徽章按钮在 loading 期间已 disabled，但联动核验与手动点击
+  // 可能同时命中同一 AppID，重复请求会白白多消耗一次云端配额
+  if (dlcDiffs[appId].checking) return;
   dlcDiffs[appId].checking = true;
   try {
     const res = await checkGameDlcDiff(appId);

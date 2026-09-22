@@ -994,25 +994,26 @@ export const checkDlcDiff = async (req: Request, res: Response) => {
       }
     }
 
-    // 3. 兜底：索引/缓存给出的 DLC 明显少于元数据缓存里的权威分包关联时，从
-    //    ManifestHub3 补齐。
+    // 3. 兜底：始终从 ManifestHub3 幂等合并，补齐索引/缓存可能残缺的 DLC。
     //
-    // 原实现的条件是 `remoteDlcIds.length === 0`，与上面的注释「索引为空或较少」
-    // 不符：只要索引里恰好有 1 条 DLC，就永远不会走兜底，返回残缺结果。
-    // 判据改为「与已缓存元数据的 DLC 数量比对」，只有确实更少时才补。
-    const cachedDlcCount = new Set(
-      (cached?.dlcDepots || [])
-        .map((x) => parseInt(String(x.dlcAppId), 10))
-        .filter((n) => !isNaN(n) && n > 0 && n !== appId)
-    ).size;
-    if (remoteDlcIds.length === 0 || remoteDlcIds.length < cachedDlcCount) {
-      const hubData = await fetchManifestHub3(appId);
-      if (hubData && hubData.dlcIds) {
-        for (const idStr of hubData.dlcIds) {
-          const dId = parseInt(idStr, 10);
-          if (!isNaN(dId) && dId > 0 && dId !== appId && !remoteDlcIds.includes(dId)) {
-            remoteDlcIds.push(dId);
-          }
+    // 为什么是「无条件」而不是某个数量判据 —— 这里踩过两次同一个坑：
+    //   第一版条件 `remoteDlcIds.length === 0`：第 2 步已经把 cached.dlcDepots
+    //     的 DLC 全部并入 remoteDlcIds，只要缓存里有过哪怕 1 条就永不成立；
+    //   第二版条件 `remoteDlcIds.length < cachedDlcCount`：cachedDlcCount 同样
+    //     由 cached.dlcDepots 算出，而它的元素已被第 2 步全部并入且两边过滤条件
+    //     完全一致，于是 `length >= count` 恒成立 —— 仍是死分支。
+    // 任何「用同一份数据自我参照」的判据都注定恒真或恒假，唯一可靠的参照物
+    // 只能来自另一条独立链路（ManifestHub3）。
+    //
+    // 无条件调用的成本可控：fetchManifestHub3 自带 6 小时正缓存、60 秒负缓存
+    // 与容量淘汰，重复调用绝大多数落在内存缓存上，不会持续打上游；
+    // 合并本身幂等（只 push 尚不存在的 id），不会污染已有结果。
+    const hubData = await fetchManifestHub3(appId);
+    if (hubData && hubData.dlcIds) {
+      for (const idStr of hubData.dlcIds) {
+        const dId = parseInt(idStr, 10);
+        if (!isNaN(dId) && dId > 0 && dId !== appId && !remoteDlcIds.includes(dId)) {
+          remoteDlcIds.push(dId);
         }
       }
     }

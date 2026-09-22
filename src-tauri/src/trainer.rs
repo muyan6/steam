@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -104,22 +107,98 @@ fn find_trainer_exe_recursive(dir: &Path, app_id: u32, depth: usize) -> Option<P
     None
 }
 
-/// 检查某 Exe 文件名是否正在运行
-fn is_exe_running(exe_name: &str) -> bool {
-    #[cfg(windows)]
-    {
-        let filter = format!("IMAGENAME eq {}", exe_name);
-        let output = Command::new("tasklist")
-            .args(["/FI", &filter, "/NH"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
+/// 全系统进程映像名快照的缓存有效期。
+///
+/// 修改器的「是否正在运行」状态对实时性要求很低（用户点一下页面看一眼），
+/// 20 秒的陈旧窗口完全无感，却能把几十次子进程派生压成 1 次。
+const PROCESS_SNAPSHOT_TTL: Duration = Duration::from_secs(20);
 
-        if let Ok(out) = output {
-            let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
-            return text.contains(&exe_name.to_lowercase());
+struct ProcessSnapshot {
+    taken_at: Instant,
+    names: HashSet<String>,
+}
+
+fn snapshot_cell() -> &'static Mutex<Option<ProcessSnapshot>> {
+    static CELL: OnceLock<Mutex<Option<ProcessSnapshot>>> = OnceLock::new();
+    CELL.get_or_init(|| Mutex::new(None))
+}
+
+/// 取一次全系统进程映像名快照（带 TTL 内存缓存）。
+///
+/// 为什么必须批量抓取：
+/// 前端进入「修改器与成就」页会对**每款本地游戏**查询一次修改器状态，
+/// 原实现对每个 exe 都派生一次 `tasklist /FI "IMAGENAME eq xxx"`。
+/// 用户装了数十款修改器时，就是数十个命令行子进程瞬时并发，造成明显的
+/// CPU 颠簸与句柄压力。改为每 20 秒只抓一次全量快照，其余查询全在内存
+/// 里做集合判定，开销与游戏数量无关。
+fn running_process_names() -> Option<HashSet<String>> {
+    {
+        let guard = match snapshot_cell().lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some(snap) = guard.as_ref() {
+            if snap.taken_at.elapsed() < PROCESS_SNAPSHOT_TTL {
+                return Some(snap.names.clone());
+            }
         }
     }
-    false
+
+    #[cfg(windows)]
+    {
+        // /FO CSV 让输出可稳定解析：首列即 "映像名称"，无需处理变长空格对齐
+        let output = Command::new("tasklist")
+            .args(["/NH", "/FO", "CSV"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()?;
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut names = HashSet::new();
+        for line in text.lines() {
+            let line = line.trim();
+            if !line.starts_with('"') {
+                continue;
+            }
+            // 取第一个引号对之间的内容即可：映像名不含引号，
+            // 无需处理 CSV 转义，避免为一个简单字段引入解析器
+            if let Some(end) = line[1..].find('"') {
+                let name = &line[1..1 + end];
+                if !name.is_empty() {
+                    names.insert(name.to_lowercase());
+                }
+            }
+        }
+        if names.is_empty() {
+            // tasklist 异常无输出：不缓存空结果，下次调用重试
+            return None;
+        }
+
+        let mut guard = match snapshot_cell().lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *guard = Some(ProcessSnapshot {
+            taken_at: Instant::now(),
+            names: names.clone(),
+        });
+        return Some(names);
+    }
+
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+/// 检查某 Exe 文件名是否正在运行（精确匹配映像名，走 20 秒快照缓存）
+fn is_exe_running(exe_name: &str) -> bool {
+    match running_process_names() {
+        Some(names) => names.contains(&exe_name.to_lowercase()),
+        // 快照不可用时保守返回「未运行」，绝不回退到逐进程 tasklist ——
+        // 那正是本函数要消除的开销。状态显示为未运行不影响任何写操作。
+        None => false,
+    }
 }
 
 /// 查询本地修改器状态。
