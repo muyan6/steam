@@ -503,7 +503,28 @@ pub struct AppMetadata {
 pub fn parse_metadata(app_id: u32, need_gid: bool) -> Result<AppMetadata, String> {
     // 只要 GID 的场景（入库预取）由 parse_metadata_with_gids 显式调用；
     // 这里保持原语义：need_gid 同时决定「要 GID」与「做 Hub3 对齐」。
-    parse_metadata_ex(app_id, need_gid, need_gid)
+    parse_metadata_ex(app_id, need_gid, need_gid, false)
+}
+
+/// 免配额的只读检视取元数据（走 `/api/metadata/:appId/inspect`）。
+///
+/// 专供「版本检测 / DLC 差异核验」这类**不需要任何密钥**的只读功能。
+///
+/// 为什么必须与 parse_metadata 分开：
+/// `/api/metadata/:appId` 挂在服务端 requireKeyAccess 之后，对未激活设备按
+/// 「每个 AppID 每日一次」扣减免费入库额度（默认上限仅 2）。而该端点同时
+/// 承担了两件性质不同的事 —— 发放 Depot 解密密钥（该收费），以及提供
+/// DLC 列表与 manifestGid（SteamCMD 公开数据，不该收费）。只读功能只需要
+/// 后者，却被迫为前者交过路费：未激活用户点一次「检查更新」，库里超过 2 款
+/// 游戏就会把当天额度烧光，接着连真正要入库的游戏都被 403 挡住。
+///
+/// 服务端的 inspect 路由会用 projectInspectionPayload 强制投影，
+/// 响应里 appLevelKey / accessToken / depotKey 一律为空 —— 免配额的前提
+/// 正是它不发放任何密钥，绝不能把它当成「免费密钥接口」使用。
+pub fn parse_metadata_inspect(app_id: u32, need_gid: bool) -> Result<AppMetadata, String> {
+    // with_gids 恒为 true：检视链路要的就是 GID（版本比对）与 DLC 列表。
+    // 该参数只影响服务端是否回填 manifestGid 字段，不触发实体清单下载。
+    parse_metadata_ex(app_id, need_gid, true, true)
 }
 
 /// 只要清单 GID、但不需要社区对齐（也不下载任何实体清单）的轻量取元数据。
@@ -512,7 +533,7 @@ pub fn parse_metadata(app_id: u32, need_gid: bool) -> Result<AppMetadata, String
 /// 而 Hub3 对齐（align_manifest_gids_with_hub3）是为「锁定版本」把 GID 钉到
 /// 镜像里真实存在的实体上，对本场景纯属多余的网络等待。
 pub fn parse_metadata_with_gids(app_id: u32) -> Result<AppMetadata, String> {
-    parse_metadata_ex(app_id, false, true)
+    parse_metadata_ex(app_id, false, true, false)
 }
 
 /// `need_gid` 与 `with_gids` 的分工：
@@ -521,8 +542,13 @@ pub fn parse_metadata_with_gids(app_id: u32) -> Result<AppMetadata, String> {
 ///
 /// 二者必须分开：入库预取要 GID 但不要 Hub3 对齐的 2.5~4 秒探测；
 /// 而默认模式两者都为 false，才真正是「零上游请求」的快路径。
-fn parse_metadata_ex(app_id: u32, need_gid: bool, with_gids: bool) -> Result<AppMetadata, String> {
-    match parse_metadata_from_server(app_id, with_gids) {
+fn parse_metadata_ex(
+    app_id: u32,
+    need_gid: bool,
+    with_gids: bool,
+    inspect: bool,
+) -> Result<AppMetadata, String> {
+    match parse_metadata_from_server(app_id, with_gids, inspect) {
         Ok(mut m) if !m.depots.is_empty() => {
             if need_gid {
                 // 与 ManifestHub3 对齐真实存在的清单实体 GID（仅锁定模式需要）
@@ -1037,19 +1063,31 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
 /// 实体清单都下载沉淀到服务端缓存（见 metadataController 第 7 步）。入库预取只要
 /// GID 这个数字去换请求码，绝不能顺带把实体清单拉下来 —— 这正是单独开
 /// `withGids` 参数的原因。
-fn parse_metadata_from_server(app_id: u32, with_gids: bool) -> Result<AppMetadata, String> {
+fn parse_metadata_from_server(app_id: u32, with_gids: bool, inspect: bool) -> Result<AppMetadata, String> {
     // deviceId 同时经请求头与 query 传递：新服务端优先读头，
     // 旧服务端（未升级）仍可从 query 兜底，保证向前兼容。
     // withGids 仅新服务端识别：旧服务端会忽略它并走完整链路，
     // 属安全降级（只是慢一些，不会缺数据）
     let device_id = crate::device::get_device_id();
-    let url = format!(
-        "{}/api/metadata/{}?deviceId={}{}",
-        SERVER_API,
-        app_id,
-        urlencoding_query(&device_id),
-        if with_gids { "&withGids=1" } else { "" }
-    );
+    // inspect=true 走 `/metadata/:appId/inspect`：该路由不挂 requireKeyAccess，
+    // 不消耗未激活设备的每日免费入库额度，响应也由服务端强制投影剥掉全部密钥。
+    // 仅用于「版本检测 / DLC 差异核验」这类不需要密钥的只读功能。
+    let url = if inspect {
+        format!(
+            "{}/api/metadata/{}/inspect?deviceId={}&withGids=1",
+            SERVER_API,
+            app_id,
+            urlencoding_query(&device_id)
+        )
+    } else {
+        format!(
+            "{}/api/metadata/{}?deviceId={}{}",
+            SERVER_API,
+            app_id,
+            urlencoding_query(&device_id),
+            if with_gids { "&withGids=1" } else { "" }
+        )
+    };
     // 超时放宽到 25 秒：服务端在「锁定版本」模式下要实时查 SteamCMD 与
     // 四个 ManifestHub3 镜像（实测 5~7 秒，偶发更高）。原先的 10 秒余量过紧，
     // 会让偶发卡顿直接触发降级，日志里刷出大量「云端服务不可达」。

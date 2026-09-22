@@ -527,14 +527,18 @@ const handleRepairManifest = async (appId: number) => {
  * 用户点「检查更新」的预期本就是「看看我库里有没有落后的东西」，
  * 版本与 DLC 是同一件事的两个维度，一次性给出才符合直觉。
  *
- * **只允许由显式点击触发，绝不可用于启动静默预检**：
- * 每次核验底层都要打一次 `/api/metadata/:appId`，该路由挂在 requireKeyAccess
- * 之后 —— 已激活设备零成本，但未激活设备会按「每个 AppID 每日一次」
- * 扣减免费入库额度（默认上限仅 2）。静默联动会在用户毫无察觉的情况下
- * 把当日额度烧光，反而挡住他真正要做的入库操作。
+ * 底层走 `parse_metadata_inspect` → `/api/metadata/:appId/inspect`，
+ * 该端点不挂 requireKeyAccess，**不消耗任何免费入库额度**（详见
+ * manifests.rs 的 parse_metadata_inspect 注释）。所以「核验 DLC 会烧掉
+ * 入库额度」这个隐患已经消除，用户显式点击时联动它是安全的。
  *
- * 并发度刻意压到 4 且分批串行：几十上百款游戏一起派发会瞬时打满服务端与
- * 本机线程池。已在 dlcDiffs 里有记录的直接跳过，避免重复请求重复扣额度。
+ * 但仍**不在启动静默预检里跑**：那是纯上游成本问题，与配额无关。
+ * 服务端 inspect 端点限流 90/分钟，而核验是逐款游戏打一次元数据，
+ * 上百款游戏的开机预检会贴着限流上限打上游，也拖慢首屏。
+ * 用户点「检查更新」是明确的批量查询意图，放这里最合适。
+ *
+ * 并发度压到 4 且分批串行：几十上百款游戏一起派发会瞬时打满服务端与
+ * 本机线程池。已在 dlcDiffs 里有记录的直接跳过，避免重复请求。
  */
 const autoCheckDlcForAll = async () => {
   const pending = unlockedGames.value

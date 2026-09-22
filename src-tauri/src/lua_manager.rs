@@ -264,8 +264,13 @@ pub fn check_game_dlc_diff(steam_path: &Path, app_id: u32) -> Result<DlcDiffResu
     let local_ids = crate::ost::extract_addappid_ids(&content);
     let local_dlc_count = local_ids.iter().filter(|&&id| id != app_id).count();
 
-    // 从云端/备用容灾源拉取完整元数据（包含全部最新 DLC）
-    let meta = crate::manifests::parse_metadata(app_id, false)
+    // 从云端/备用容灾源拉取完整元数据（包含全部最新 DLC）。
+    //
+    // 走 inspect 链路（免配额）：DLC 差异核验只看 dlcIds 与分包归属，
+    // 不需要任何 Depot 解密密钥。若沿用 parse_metadata，未激活设备每核验
+    // 一款游戏就扣一次每日免费入库额度（默认仅 2 次），而「核验 DLC」
+    // 本就不该与「入库发密钥」共用同一份额度。
+    let meta = crate::manifests::parse_metadata_inspect(app_id, false)
         .map_err(|e| format!("获取云端游戏元数据失败: {}", e))?;
 
     // 铁律：凡是出现在 meta.depots 里的 id 一律归属「分包」管辖，绝不当 DLC 补。
@@ -322,7 +327,10 @@ pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Re
     // 二次防御：即便上游/前端把分包 id 混进来，也绝不以裸 addappid 形式写入。
     // 重新拉一次元数据构造分包白名单（与 ost::generate_lua_script 的 all_depot_ids 同源）；
     // 拉取失败时退化为空集合（只影响过滤强度，不影响用户明确点选的正常 DLC）。
-    let depot_id_set: HashSet<u32> = match crate::manifests::parse_metadata(app_id, false) {
+    //
+    // 同样走 inspect 链路：这里只取 depot_id 做白名单，不需要任何密钥，
+    // 免配额也意味着「补全 DLC」不会额外吃掉用户的入库额度。
+    let depot_id_set: HashSet<u32> = match crate::manifests::parse_metadata_inspect(app_id, false) {
         Ok(meta) => meta
             .depots
             .iter()

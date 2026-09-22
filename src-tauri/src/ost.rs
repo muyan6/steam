@@ -1272,8 +1272,13 @@ pub fn check_game_update_status(steam_path: &Path, app_id: u32) -> GameUpdateSta
         };
     }
 
-    // 版本检查的本质就是比对「钉死的 GID」与云端最新 GID，必须拿真实 GID
-    match crate::manifests::parse_metadata(app_id, true) {
+    // 版本检查的本质就是比对「钉死的 GID」与云端最新 GID，必须拿真实 GID。
+    //
+    // 走 inspect 链路（免配额）：版本检测只需要 manifestGid 与分包归属，
+    // 完全不需要 Depot 解密密钥。若沿用 parse_metadata，未激活设备每检查
+    // 一款游戏就会扣一次每日免费入库额度（默认仅 2 次）——「检查更新」
+    // 这种纯只读操作把当天入库机会烧光，用户完全无从理解。
+    match crate::manifests::parse_metadata_inspect(app_id, true) {
         Ok(meta) => {
             let mut changed = Vec::new();
             for d in &meta.depots {

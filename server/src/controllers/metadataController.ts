@@ -396,6 +396,76 @@ function computeManifestInfo(
   };
 }
 
+/** 元数据响应体的结构（检视投影与完整响应共用） */
+interface MetadataPayloadLike {
+  appId: number;
+  name: string;
+  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean }>;
+  dlcIds: string[];
+  dlcDepots: Array<{
+    dlcAppId: string;
+    depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean };
+  }>;
+  appLevelKey?: string;
+  accessToken?: string;
+  manifestInfo: unknown;
+}
+
+/**
+ * 只读检视投影：剥离全部解密密钥与 PICS 访问令牌，只保留公开结构数据。
+ *
+ * 为什么必须剥离：`GET /api/metadata/:appId/inspect` 不挂 requireKeyAccess
+ * （因此不消耗免费入库额度），若把 DepotKey 一起吐出去，等于把原本由配额
+ * 与激活闸门保护的资产变成公开资源 —— 配额体系会被完全绕过。
+ * 检视端点存在的意义，只是让「版本检测 / DLC 核验」这类**不需要密钥**的
+ * 只读功能不再被迫交过路费，绝不能顺带把密钥也免了。
+ */
+function projectInspectionPayload(payload: MetadataPayloadLike) {
+  return {
+    appId: payload.appId,
+    name: payload.name,
+    // 分包只留归属与版本信息：depotId 用于匹配本地规则，manifestGid 用于版本比对
+    depots: payload.depots.map((d) => ({
+      depotId: d.depotId,
+      manifestGid: d.manifestGid,
+      size: d.size,
+      keyMissing: d.keyMissing
+    })),
+    dlcIds: [...payload.dlcIds],
+    dlcDepots: payload.dlcDepots.map((x) => ({
+      dlcAppId: x.dlcAppId,
+      depot: {
+        depotId: x.depot.depotId,
+        manifestGid: x.depot.manifestGid,
+        keyMissing: x.depot.keyMissing
+      }
+    })),
+    // 显式置空而非省略：让调用方能明确区分「检视模式无密钥」与「该游戏本来就没有密钥」
+    appLevelKey: undefined,
+    accessToken: undefined,
+    manifestInfo: payload.manifestInfo
+  };
+}
+
+/**
+ * 是否处于只读检视模式。
+ *
+ * 两种进入方式：
+ * - 走 `/metadata/:appId/inspect` 路由（由 markMetadataInspect 中间件打标）；
+ * - 或显式带 `?inspect=1`（兼容旧客户端与手工调试）。
+ */
+function isInspectRequest(req: Request): boolean {
+  if ((req as any).metadataInspect === true) return true;
+  const q = req.query.inspect;
+  return q === '1' || q === 'true';
+}
+
+/** 供 `/metadata/:appId/inspect` 路由使用：给请求打上检视标记 */
+export const markMetadataInspect = (req: Request, _res: Response, next: any) => {
+  (req as any).metadataInspect = true;
+  return next();
+};
+
 export const getGameMetadata = async (req: Request, res: Response) => {
   try {
     const rawAppId = Array.isArray(req.params.appId) ? req.params.appId[0] : req.params.appId;
@@ -403,6 +473,9 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     if (isNaN(appId)) {
       return res.status(400).json({ success: false, message: '无效的 AppID' });
     }
+
+    // 检视模式：响应投影剥离密钥，且（由路由保证）不消耗免费入库额度
+    const inspect = isInspectRequest(req);
 
     const sAppId = appId.toString();
     // 客户端自报的游戏名只作提示回显：去除控制字符并截断，防止反射注入与超大参数
@@ -428,18 +501,19 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       // 返回副本：缓存条目在 10 分钟 TTL 内会被反复复用，直接交出内部数组引用
       // 会让任何下游就地修改永久污染缓存（与 cloneHub3Data 的处理保持一致）
       const cachedDepots = cached.depots.map((d) => ({ ...d }));
+      const cachedPayload: MetadataPayloadLike = {
+        appId: cached.appId,
+        name: cached.name,
+        depots: cachedDepots,
+        dlcIds: [...cached.dlcIds],
+        dlcDepots: cached.dlcDepots.map((x) => ({ dlcAppId: x.dlcAppId, depot: { ...x.depot } })),
+        appLevelKey: cached.appLevelKey,
+        accessToken: cached.accessToken,
+        manifestInfo: computeManifestInfo(appId, cachedDepots, !cached.withGid)
+      };
       return res.json({
         success: true,
-        data: {
-          appId: cached.appId,
-          name: cached.name,
-          depots: cachedDepots,
-          dlcIds: [...cached.dlcIds],
-          dlcDepots: cached.dlcDepots.map((x) => ({ dlcAppId: x.dlcAppId, depot: { ...x.depot } })),
-          appLevelKey: cached.appLevelKey,
-          accessToken: cached.accessToken,
-          manifestInfo: computeManifestInfo(appId, cachedDepots, !cached.withGid)
-        }
+        data: inspect ? projectInspectionPayload(cachedPayload) : cachedPayload
       });
     }
 
@@ -857,18 +931,20 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       fetchedAt: Date.now()
     });
 
+    const fullPayload: MetadataPayloadLike = {
+      appId, // 统一 number 类型
+      name: gameName || `AppID ${sAppId}`,
+      depots,
+      dlcIds,
+      dlcDepots,
+      appLevelKey,
+      accessToken,
+      manifestInfo
+    };
+
     return res.json({
       success: true,
-      data: {
-        appId, // 统一 number 类型
-        name: gameName || `AppID ${sAppId}`,
-        depots,
-        dlcIds,
-        dlcDepots,
-        appLevelKey,
-        accessToken,
-        manifestInfo
-      }
+      data: inspect ? projectInspectionPayload(fullPayload) : fullPayload
     });
   } catch (e: any) {
     console.error('[MetadataController] 获取游戏元数据异常:', e);
@@ -1021,6 +1097,16 @@ export const checkDlcDiff = async (req: Request, res: Response) => {
     const existingSet = new Set(existingDlcIds);
     const missingDlcIds = remoteDlcIds.filter((id) => !existingSet.has(id));
 
+    // 分包归属一并返回：客户端在增量补全前要用它构造「分包白名单」，
+    // 防止把本身就是分包的 id 当 DLC 裸挂上去（见 lua_manager.rs 的事故注释）。
+    // 只回 id，不含任何密钥 —— 本端点免配额，绝不能泄出密钥。
+    const depotIds: number[] = [];
+    const fullForDepots = readMetadataCache(appId, false);
+    for (const d of fullForDepots?.depots || []) {
+      const id = parseInt(String(d.depotId), 10);
+      if (!isNaN(id) && id > 0 && !depotIds.includes(id)) depotIds.push(id);
+    }
+
     return res.json({
       success: true,
       data: {
@@ -1028,7 +1114,8 @@ export const checkDlcDiff = async (req: Request, res: Response) => {
         totalRemoteDlcs: remoteDlcIds.length,
         existingCount: existingDlcIds.length,
         missingDlcIds,
-        missingCount: missingDlcIds.length
+        missingCount: missingDlcIds.length,
+        depotIds
       }
     });
   } catch (e: any) {

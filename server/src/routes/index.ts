@@ -9,7 +9,8 @@ import {
   getGameMetadata,
   refreshAppMetadataIndexAdmin,
   getMetadataIndexAdmin,
-  checkDlcDiff
+  checkDlcDiff,
+  markMetadataInspect
 } from '../controllers/metadataController.js';
 import { getTokenForApp, getTokensStats } from '../controllers/tokenController.js';
 import {
@@ -332,9 +333,47 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
   return next();
 };
 
+// ==================== 免配额的只读检视端点 ====================
+//
+// 为什么要单独开这两个端点，而不是让客户端继续用 /metadata/:appId：
+//
+// /api/metadata/:appId 挂在 requireKeyAccess 之后，对**未激活**设备按
+// 「每个 AppID 每日一次」扣减免费入库额度（FREE_DAILY_LIMIT 默认仅 2）。
+// 但该端点承担了两件性质完全不同的事：
+//   1. 返回 Depot 解密密钥 —— 有商业价值，配额理应保护它；
+//   2. 返回 DLC ID 列表与 manifestGid —— SteamCMD 公开数据，本不该收费。
+// 「检查更新」「DLC 差异核验」只需要第 2 类数据，却被迫为第 1 类交过路费。
+// 实测后果：未激活用户点一次「检查更新」，若库里有 3 款以上游戏就会把当天
+// 额度烧光，之后连真正要入库的游戏都被 403 挡住 —— 用户完全无从理解。
+//
+// 因此拆出两个免配额端点，它们**只回结构数据、绝不回任何密钥或令牌**
+// （由 metadataController 的 projectInspectionPayload 强制投影）：
+//   GET /metadata/:appId/inspect   —— 分包归属 + manifestGid + DLC 列表
+//   GET/POST /metadata/:appId/dlc-diff —— 直接算出缺失 DLC，附 depotIds 白名单
+//
+// 注意：路由必须注册在 `/metadata/:appId` **之前**。虽然 Express 的
+// 路径段数不同不会真的冲突，但保持「更具体的路由在前」能让阅读者一眼看清
+// 哪些端点有配额、哪些没有，避免日后又有人把 requireKeyAccess 顺手加上去。
+//
+// 免配额不等于免限流：两个端点每次未命中缓存都要打 SteamCMD / ManifestHub3，
+// 必须配自己的限流器，否则会变成对上游的放大器。额度按分钟给得较宽，
+// 因为客户端在「检查更新」时会对整个库逐款调用（分批并发 4）。
+const inspectLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 90,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '只读检视请求过于频繁，请稍后再试' }
+});
+
+router.get('/metadata/:appId/inspect', inspectLimiter, markMetadataInspect, getGameMetadata);
+router.get('/metadata/:appId/dlc-diff', inspectLimiter, checkDlcDiff);
+router.post('/metadata/:appId/dlc-diff', inspectLimiter, checkDlcDiff);
+
+// ==================== 配额保护端点（含 Depot 解密密钥）====================
+// 只有这两个真正发放密钥的端点保留 requireKeyAccess：
+// 未激活设备消耗每日免费入库额度，已激活设备直通。
 router.get('/metadata/:appId', requireKeyAccess, getGameMetadata);
-router.post('/metadata/:appId/dlc-diff', requireKeyAccess, checkDlcDiff);
-router.get('/metadata/:appId/dlc-diff', requireKeyAccess, checkDlcDiff);
 
 // 客户端公开查询当前设备每日免费配额与最新云端上限
 router.get('/quota/status', getDeviceQuotaStatus);
