@@ -131,21 +131,14 @@ function isPlaceholderChangelog(items) {
   return list.every((c) => /^[-\s]*$/.test(c));
 }
 
-// ==================== 1. 版本号主源：根 package.json ====================
+// ==================== 1. 确定目标版本号（写盘延迟至校验通过后） ====================
 
 const pkgPath = path.join(rootDir, 'package.json');
 const pkg = readJson(pkgPath);
 
-if (cliVersion && cliVersion !== pkg.version) {
-  const oldVer = pkg.version;
-  pkg.version = cliVersion;
-  writeJson(pkgPath, pkg);
-  console.log(`[VersionSync] 🎯 根目录 package.json 版本已更新: v${oldVer} -> v${cliVersion}`);
-}
-
-const targetVersion = String(pkg.version || '').trim();
+const targetVersion = String(cliVersion || pkg.version || '').trim();
 if (!/^\d+\.\d+\.\d+/.test(targetVersion)) {
-  console.error(`[VersionSync] ❌ 根目录 package.json 的 version 非法: "${targetVersion}"`);
+  console.error(`[VersionSync] ❌ 目标版本号非法: "${targetVersion}"`);
   process.exit(1);
 }
 
@@ -232,9 +225,19 @@ if (releaseChangelog) {
     || today();
 }
 
-// ==================== 3. 同步 src-tauri/tauri.conf.json ====================
+// ==================== 3. 校验通过，写入根目录 package.json ====================
 
 let syncedAny = false;
+
+if (pkg.version !== targetVersion) {
+  const oldVer = pkg.version;
+  pkg.version = targetVersion;
+  writeJson(pkgPath, pkg);
+  console.log(`[VersionSync] 🎯 根目录 package.json 版本已更新: v${oldVer} -> v${targetVersion}`);
+  syncedAny = true;
+}
+
+// ==================== 4. 同步 src-tauri/tauri.conf.json ====================
 
 const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
 if (fs.existsSync(tauriConfPath)) {
@@ -248,7 +251,7 @@ if (fs.existsSync(tauriConfPath)) {
   }
 }
 
-// ==================== 4. 同步 server/package.json ====================
+// ==================== 5. 同步 server/package.json ====================
 
 const serverPkgPath = path.join(rootDir, 'server', 'package.json');
 if (fs.existsSync(serverPkgPath)) {
@@ -262,7 +265,7 @@ if (fs.existsSync(serverPkgPath)) {
   }
 }
 
-// ==================== 5. 写入 versions.json（发布历史唯一权威） ====================
+// ==================== 6. 写入 versions.json（发布历史唯一权威） ====================
 
 const nowIso = new Date().toISOString();
 const giteeUrl = `https://gitee.com/muyan6/steam/releases/download/${targetVersion}/ChunFengDu_${targetVersion}_x64-setup.exe`;
@@ -342,7 +345,7 @@ if (hasVersionsJson) {
   console.warn('[VersionSync] ⚠️ 未找到 server/data/versions.json，跳过发布历史同步');
 }
 
-// ==================== 6. 由 versions.json 派生 version.json（不再双写） ====================
+// ==================== 7. 由 versions.json 派生 version.json（不再双写） ====================
 
 if (hasVersionsJson && versionsList.length > 0) {
   const latest = versionsList[0];

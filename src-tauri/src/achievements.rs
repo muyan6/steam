@@ -334,20 +334,32 @@ pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, Str
 
 /// 针对指定游戏 AppID 启动 SAM 解锁器（支持内置与安装目录）
 pub fn launch_sam_for_game_with_resource(app_id: u32, resource_dir: Option<&Path>) -> Result<bool, String> {
+    let mut extract_err: Option<String> = None;
     let exe = find_sam_game_exe(resource_dir).or_else(|| {
         let dir = get_sam_dir().ok()?;
         // 按需释放内嵌包，并**保留失败原因**。
         //
         // 早期写法是 `let _ = extract_embedded_sam(&dir)`，把 Err 直接吞掉 ——
         // 而 extract_embedded_sam 里那些「缺少必需文件 / 未找到 SAM.Game.exe /
-        // 缺 SAM.API.dll」正是排障唯一可用的线索，吞掉后只剩下笼统的
-        // 「本地尚未就绪 SAM 成就管理器」，用户与日志都无从判断到底哪一步坏了。
+        // 缺 SAM.API.dll」正是排障唯一可用的线索。
         // 释放失败也要继续走一次目录查找：用户可能已有一份手工安装的副本。
         if let Err(e) = extract_embedded_sam(&dir) {
             eprintln!("[SAM] 内嵌包释放失败，回退查找既有安装: {}", e);
+            extract_err = Some(e);
         }
         find_sam_game_in_dir(&dir)
-    }).ok_or_else(|| "本地尚未就绪 SAM 成就管理器".to_string())?;
+    });
+
+    let exe = match exe {
+        Some(p) => p,
+        None => {
+            if let Some(err) = extract_err {
+                return Err(format!("本地尚未就绪 SAM 成就管理器（自动释放失败: {}）", err));
+            } else {
+                return Err("本地尚未就绪 SAM 成就管理器".to_string());
+            }
+        }
+    };
 
     // 工作目录优先取 exe 所在目录（内置资源/安装目录，SAM 与它的 DLL 在一起）；
     // 取不到时回退到 APPDATA 下的 SAM 目录 —— 旧实现只有 `exe.parent()` 一条路，
