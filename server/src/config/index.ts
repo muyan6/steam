@@ -101,6 +101,10 @@ export const CONFIG = {
   MAX_LOGIN_ATTEMPTS: 5,
   LOCKOUT_TIME_MS: 15 * 60 * 1000, // 输错5次锁定15分钟
   DATA_DIR: resolveDataDir(),
+  // 春风渡云端 API 基址（唯一来源）。
+  // 旧实现把 'https://steam.myil.top' 硬编码散落在 manifestService / toolboxService 里，
+  // 迁移域名时必然漏改其中一处 —— 例如管理台「测 Ping」会一直探测一个已经不存在的地址。
+  CLOUD_API_BASE: (process.env.CLOUD_API_BASE || 'https://steam.myil.top').replace(/\/+$/, ''),
   CORS_ORIGIN: process.env.CORS_ORIGIN || '',
   TRUST_PROXY: resolveTrustProxy(),
   // 未激活设备每日免费入库款数（按游戏计数，同一游戏含全部 DLC 只算 1 款，不重复计数）

@@ -728,7 +728,11 @@ async function pingManifestSources() {
         ? '<span class="badge badge-green">✅ 连通正常</span>'
         : '<span class="badge badge-rose">✖ 无法连接</span>';
       var latency = p.latencyMs >= 0 ? (p.latencyMs + ' ms') : '—';
-      var latencyColor = p.latencyMs >= 0 && p.latencyMs < 500 ? 'var(--c-green)' : (p.latencyMs < 1500 ? 'var(--c-amber)' : 'var(--c-rose)');
+      // 失败（-1）必须是灰色「—」，而不是落进琥珀档 —— 否则红色「✖ 无法连接」
+      // 徽章旁边却显示琥珀色延迟，视觉上自相矛盾
+      var latencyColor = p.latencyMs < 0
+        ? 'var(--text-dim)'
+        : (p.latencyMs < 500 ? 'var(--c-green)' : (p.latencyMs < 1500 ? 'var(--c-amber)' : 'var(--c-rose)'));
       return '<tr>' +
         '<td style="white-space:nowrap;"><strong>' + escapeHtml(p.label) + '</strong></td>' +
         '<td style="font-family:monospace;font-size:11px;color:var(--text-dim);">' + escapeHtml(p.host) + '</td>' +
@@ -790,25 +794,40 @@ async function checkManifestSources() {
           ? '<span class="badge" style="background:rgba(56,189,248,.15);color:var(--c-blue);">○ 连通在线 (库无此清单)</span>'
           : '<span class="badge badge-rose">✖ 异常</span>';
       var latency = p.latencyMs >= 0 ? (p.latencyMs + ' ms') : '—';
+      // 各源码值是否一致：不一致时给"出码成功"的源加警标记号，
+      // 因为滞后码同样是 HTTP 200 + 纯数字，只看徽章区分不出来
+      var fpCell = p.codeFingerprint
+        ? '<code style="font-family:monospace;font-size:11px;color:var(--c-blue);">' + escapeHtml(p.codeFingerprint) + '</code>'
+        : '<span style="color:var(--text-dim);">—</span>';
+      var mismatchMark = (d.codeConsistent === false && p.ok)
+        ? ' <span class="badge badge-amber" title="该源返回的码与其它源不一致，可能是滞后值">码值不一致</span>'
+        : '';
       return '<tr>' +
         '<td style="white-space:nowrap;"><strong>' + escapeHtml(p.label) + '</strong></td>' +
         '<td style="font-family:monospace;color:var(--text-dim);">' + (p.httpStatus === null ? '—' : p.httpStatus) + '</td>' +
         '<td style="font-family:monospace;color:var(--text-mid);">' + latency + '</td>' +
-        '<td>' + badge + '</td>' +
+        '<td>' + fpCell + '</td>' +
+        '<td>' + badge + mismatchMark + '</td>' +
         '<td style="color:var(--text-mid);font-size:12px;">' + escapeHtml(p.detail) + '</td>' +
       '</tr>';
     }).join('');
+
+    var sourceLabel = d.probe.from === 'override'
+      ? '手动指定'
+      : (d.probe.from === 'preset' ? '预设测试 ID（码库暂无带 depotId 的记录）' : '码库中最新鲜的一条');
+    var noteBg = d.codeConsistent === false ? 'rgba(245,158,11,.10)' : 'rgba(56,189,248,.06)';
+    var noteColor = d.codeConsistent === false ? 'var(--c-amber)' : 'var(--text-mid)';
 
     out.innerHTML =
       '<div style="font-size:12px;color:var(--text-mid);margin-bottom:10px;line-height:1.6;">' +
         '探针 <code style="color:var(--c-blue);">depotId=' + escapeHtml(d.probe.depotId) + '</code> / ' +
         '<code style="color:var(--c-blue);">gid=' + escapeHtml(d.probe.gid) + '</code>' +
-        '（来源：' + (d.probe.from === 'override' ? '预设测试ID' : '码库中最新鲜的一条') + '）' +
+        '（来源：' + escapeHtml(sourceLabel) + '）' +
       '</div>' +
       '<div class="table-container"><table><thead><tr>' +
-        '<th>源</th><th>状态码</th><th>延迟</th><th>结果</th><th>说明</th>' +
+        '<th>源</th><th>状态码</th><th>延迟</th><th>码值指纹</th><th>结果</th><th>说明</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-      '<div style="font-size:12px;color:var(--text-mid);margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(56,189,248,.06);line-height:1.6;">' +
+      '<div style="font-size:12px;color:' + noteColor + ';margin-top:12px;padding:10px 12px;border-radius:8px;background:' + noteBg + ';line-height:1.6;">' +
         escapeHtml(d.note || '') +
       '</div>';
   } catch (e) {

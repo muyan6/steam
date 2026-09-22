@@ -306,6 +306,19 @@ pub fn get_steam_info(custom_path: Option<&str>) -> SteamEnvironmentInfo {
     }
 }
 
+/// Steam 当前是否正在下载/安装（`steamapps/downloading` 下存在应用目录即为真）。
+///
+/// 用途只有一个：判断强杀前的平滑等待要不要放宽。Steam 在下载中会持续写
+/// `.vdf` / 分块文件，粗暴 taskkill 可能留下损坏的 appmanifest 与半截分块。
+/// 该探测是尽力而为的启发式：读不到目录一律返回 false（绝不影响正常退出路径）。
+fn is_steam_downloading(steam_path: &Path) -> bool {
+    let downloading = steam_path.join("steamapps").join("downloading");
+    match std::fs::read_dir(&downloading) {
+        Ok(mut entries) => entries.any(|e| e.map(|x| x.path().is_dir()).unwrap_or(false)),
+        Err(_) => false,
+    }
+}
+
 pub fn kill_steam() -> bool {
     // Steam 未运行时直接返回，不做任何等待
     if !is_steam_running() {
@@ -313,17 +326,24 @@ pub fn kill_steam() -> bool {
     }
 
     // 1. 先尝试 Steam 官方安全退出，避免粗暴强杀导致本地 VDF 数据库损坏或下载未写盘
-    if let Some(steam_path) = detect_steam_path() {
-        let shutdown = steam_path.join("steam.exe");
+    let steam_path = detect_steam_path();
+    if let Some(ref p) = steam_path {
+        let shutdown = p.join("steam.exe");
         if shutdown.exists() {
             let _ = Command::new(&shutdown).arg("-shutdown").spawn();
         }
     }
 
-    // 轮询等待平滑退出（最多 5 秒，每 500ms 检查一次）：
-    // 若 Steam 正常退出并保存好本地数据，一旦确认退出立即返回，无需执行暴力强杀；
-    // 超过 5 秒未响应则及时转入强杀流程，防止 Steam 卡死/挂起导致客户端 UI 假死等待 15 秒
-    for _ in 0..10 {
+    // 平滑退出等待窗口：
+    // - 空闲时 5 秒 —— 超时立即转入强杀，避免 Steam 挂起让客户端 UI 假死 15 秒；
+    // - **检测到正在下载/安装时放宽到 30 秒** —— 这一路是原先 15s 窗口的存在理由，
+    //   压到 5 秒等于把「等 Steam 写完 appmanifest 与分块文件」的时间砍掉三分之二，
+    //   在机械盘或大下载量下会引入 VDF/分块损坏风险。两者必须同时成立才安全。
+    let downloading = steam_path.as_deref().map(is_steam_downloading).unwrap_or(false);
+    let wait_rounds = if downloading { 60 } else { 10 };
+
+    // 每 500ms 检查一次；一旦确认退出立即返回，无需执行暴力强杀
+    for _ in 0..wait_rounds {
         std::thread::sleep(std::time::Duration::from_millis(500));
         clear_steam_running_cache();
         if !is_steam_running() {
@@ -331,7 +351,7 @@ pub fn kill_steam() -> bool {
         }
     }
 
-    // 2. 超时兜底：若 5 秒后仍在运行（例如界面卡死或进程无响应），轮询强制结束全家桶
+    // 2. 超时兜底：若等待窗口内仍无响应（例如界面卡死或进程无响应），轮询强制结束全家桶
     for _ in 0..4 {
         clear_steam_running_cache();
         if !is_steam_running() {

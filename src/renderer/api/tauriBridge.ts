@@ -1385,8 +1385,10 @@ export const createTauriBridge = () => {
     matchTrainer: async (name: string, appId?: number): Promise<TrainerInfo | null> => {
       try {
         const query = `name=${encodeURIComponent(name)}${appId ? `&appId=${appId}` : ''}`;
-        // 优先请求云端（4s 快速超时；若云端未部署该接口或超时，无缝回退到客户端直连官方）
-        const res = await getJson<any>(`${API}/api/trainers/match?${query}`, 4000);
+        // 云端超时必须覆盖服务端自身的最坏预算：WP REST 8s + 文章页 8s + 302 追踪 6s ≈ 22s。
+        // 曾把这里压到 4s「快速回退」，结果是云端分支必然 abort —— 看似有兜底实则永不命中，
+        // 服务端 /api/trainers/match 也再不会被真实流量验证。这里恢复为 25s。
+        const res = await getJson<any>(`${API}/api/trainers/match?${query}`, 25000);
         if (res && res.success && res.data && res.data.matched) {
           return res.data;
         }
@@ -1421,9 +1423,9 @@ export const createTauriBridge = () => {
         console.warn('Rust fetch_game_achievements fallback:', e);
       }
 
-      // 2. 尝试云端服务器接口
+      // 2. 尝试云端服务器接口（同理给足 20s：社区页 10s + 官方统计兜底 8s）
       try {
-        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`, 3000);
+        const res = await getJson<any>(`${API}/api/achievements/${appId}?lang=${lang}`, 20000);
         if (res && res.success && res.data && res.data.achievements?.length > 0) {
           return res.data;
         }
@@ -1489,14 +1491,54 @@ function translateCheat(en: string): string {
   return en;
 }
 
+/**
+ * 解码 Steam / FLiNG 页面里最常见的 HTML 实体。
+ *
+ * 与 Rust 侧 `decode_html_entities` 保持同一份语义：只剥标签不解码，会把
+ * `You&#39;re a Winner` 原样显示成乱码般的文本。
+ */
+function decodeHtmlEntities(s: string): string {
+  if (!s.includes('&')) return s;
+  const NAMED: Record<string, string> = {
+    amp: '&',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    apos: "'",
+    '#39': "'",
+    nbsp: ' ',
+    hellip: '…',
+    mdash: '—',
+    ndash: '–',
+    ldquo: '“',
+    rdquo: '”'
+  };
+  return s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, body: string) => {
+    if (body.startsWith('#')) {
+      const code = body[1] === 'x' || body[1] === 'X'
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) && code > 0 ? String.fromCodePoint(code) : whole;
+    }
+    return NAMED[body] ?? whole;
+  });
+}
+
+/** 剥标签 + 解码实体（成就/修改项文案的统一清洗入口） */
+function cleanHtmlText(s: string): string {
+  return decodeHtmlEntities(s.replace(/<[^>]+>/g, '')).trim();
+}
+
 function parseCheatsFromHtml(html: string): Array<{ raw: string; hotkey: string; descriptionEn: string; descriptionZh: string }> {
   const items: Array<{ raw: string; hotkey: string; descriptionEn: string; descriptionZh: string }> = [];
-  const clean = html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<\/p>|<br\s*\/?>|<li>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&#8211;|–|—/g, '-');
+  // 先剥标签、再解码实体（顺序不能反：解码后可能引入 '<'，再剥就会误删正文）
+  const clean = decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<\/p>|<br\s*\/?>|<li>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+  ).replace(/–|—/g, '-');
 
   const lines = clean.split('\n');
   const hotkeyRegex = /^((?:(?:Shift|Ctrl|Alt)\s*\+\s*)?(?:Num\s*[\d\+\-\*\/]|F\d{1,2}|PageUp|PageDown|\d+))\s*[-–:]\s*(.+)$/i;
@@ -1519,17 +1561,60 @@ function parseCheatsFromHtml(html: string): Array<{ raw: string; hotkey: string;
   return items;
 }
 
-// 客户端内存缓存，避免短时间内频繁重复向官方发送外部请求
-const directTrainerCache = new Map<string, { data: TrainerInfo; time: number }>();
-const directAchievementCache = new Map<string, { data: GameAchievementsData; time: number }>();
+/**
+ * 客户端直连缓存（避免短时间内频繁重复向官方发送外部请求）。
+ *
+ * 两条硬约束，均是历史缺陷的回归防线：
+ * 1. **正/负缓存 TTL 分离**：只有拿到真实结果才允许缓存 1 小时；网络失败/超时得到的空结果
+ *    只缓存 120 秒。旧实现把失败也写成 1 小时有效，用户点「检索」在 1 小时内不会发出任何
+ *    网络请求，界面永远停在「暂未收录」——瞬时故障被冻结成确定性结论。
+ * 2. **容量上限**：Map 必须有界，防止长时间运行后无界增长。
+ */
+const POSITIVE_TTL_MS = 3600_000;
+const NEGATIVE_TTL_MS = 120_000;
+const DIRECT_CACHE_MAX = 500;
+
+interface DirectCacheEntry<T> {
+  data: T;
+  time: number;
+  /** false = 负缓存（网络失败/空结果），按 NEGATIVE_TTL_MS 过期 */
+  positive: boolean;
+}
+
+function cacheGet<T>(cache: Map<string, DirectCacheEntry<T>>, key: string): T | null {
+  const hit = cache.get(key);
+  if (!hit) return null;
+  const ttl = hit.positive ? POSITIVE_TTL_MS : NEGATIVE_TTL_MS;
+  if (Date.now() - hit.time >= ttl) {
+    cache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function cacheSet<T>(cache: Map<string, DirectCacheEntry<T>>, key: string, data: T, positive: boolean): void {
+  // 先删后插，让最近写入的键排在 Map 迭代顺序的末尾（近似 LRU）
+  cache.delete(key);
+  cache.set(key, { data, time: Date.now(), positive });
+  while (cache.size > DIRECT_CACHE_MAX) {
+    const oldest = cache.keys().next();
+    if (oldest.done) break;
+    cache.delete(oldest.value);
+  }
+}
+
+const directTrainerCache = new Map<string, DirectCacheEntry<TrainerInfo>>();
+const directAchievementCache = new Map<string, DirectCacheEntry<GameAchievementsData>>();
 
 /** 客户端直接直连 FLiNG 检索官方修改器 */
 async function directMatchTrainer(rawName: string, appId?: number): Promise<TrainerInfo | null> {
   const cacheKey = `trainer:${appId || rawName.trim().toLowerCase()}`;
-  const cached = directTrainerCache.get(cacheKey);
-  if (cached && Date.now() - cached.time < 3600_000) {
-    return cached.data;
+  const cached = cacheGet(directTrainerCache, cacheKey);
+  if (cached) {
+    return cached;
   }
+  // 记录本轮是否真的碰到过网络异常：碰到就不写正缓存，避免把瞬时故障固化
+  let sawNetworkFailure = false;
 
   const queries: string[] = [];
 
@@ -1567,9 +1652,13 @@ async function directMatchTrainer(rawName: string, appId?: number): Promise<Trai
     try {
       const searchUrl = `https://flingtrainer.com/wp-json/wp/v2/posts?search=${encodeURIComponent(q)}&per_page=5`;
       const posts = await getJson<any[]>(searchUrl, 8000);
+      if (posts === null) {
+        // getJson 内部吞掉异常并返回 null：这是「网络失败/超时」，不是「确实没有」
+        sawNetworkFailure = true;
+      }
       if (Array.isArray(posts) && posts.length > 0) {
         const matchedPost = posts.find((p) => /trainer/i.test(p.title?.rendered || '')) || posts[0];
-        const postTitle = (matchedPost.title?.rendered || '').replace(/&#8211;/g, '-').replace(/<[^>]+>/g, '').trim();
+        const postTitle = cleanHtmlText(matchedPost.title?.rendered || '').replace(/-/g, '-');
         const postUrl = matchedPost.link;
         const publishedAt = matchedPost.date;
         const contentHtml = matchedPost.content?.rendered || '';
@@ -1619,33 +1708,43 @@ async function directMatchTrainer(rawName: string, appId?: number): Promise<Trai
           cheatsCount: cheats.length,
           cheats
         };
-        directTrainerCache.set(cacheKey, { data: resData, time: Date.now() });
+        cacheSet(directTrainerCache, cacheKey, resData, true);
         return resData;
       }
-    } catch {}
+    } catch {
+      sawNetworkFailure = true;
+    }
   }
 
+  // 匹配失败：只有在没碰到任何网络异常时才算「确认未收录」（正缓存 1 小时），
+  // 否则写负缓存（120 秒）让用户重试能真正重新发请求
   const emptyData: TrainerInfo = { matched: false };
-  directTrainerCache.set(cacheKey, { data: emptyData, time: Date.now() });
+  cacheSet(directTrainerCache, cacheKey, emptyData, !sawNetworkFailure);
   return emptyData;
 }
 
 /** 客户端直接直连 Steam Community / Web API 抓取全量成就 */
 async function directFetchGameAchievements(appId: number, lang = 'schinese'): Promise<GameAchievementsData | null> {
   const cacheKey = `achievements:${appId}:${lang}`;
-  const cached = directAchievementCache.get(cacheKey);
-  if (cached && Date.now() - cached.time < 3600_000) {
-    return cached.data;
+  const cached = cacheGet(directAchievementCache, cacheKey);
+  if (cached) {
+    return cached;
   }
+  let sawNetworkFailure = false;
 
   // 1. Steam Community 官方社区成就页面（带中文标题、描述、图标与达成率）
   try {
     const communityUrl = `https://steamcommunity.com/stats/${appId}/achievements/?l=${encodeURIComponent(lang)}`;
+    // 注意：tauri-plugin-http 默认未启用 `unsafe-headers` 特性，插件会按 fetch 规范
+    // 静默丢弃 Cookie/Referer 等禁用头（仅打印 WARNING）。因此这里**不再传 Cookie**，
+    // 改用 Accept-Language + URL 的 ?l= 参数表达语言，避免「写了却没生效」的误导。
     const html = await getText(communityUrl, 8000, {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      'Cookie': `Steam_Language=${encodeURIComponent(lang)}`
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
     });
+    if (html === null) {
+      sawNetworkFailure = true;
+    }
 
     if (html && html.includes('achieveRow')) {
       const achievements: AchievementItem[] = [];
@@ -1658,29 +1757,35 @@ async function directFetchGameAchievements(appId: number, lang = 'schinese'): Pr
         const descMatch = block.match(/<h5>([\s\S]*?)<\/h5>/);
         const percentMatch = block.match(/<div class="achievePercent">([^<]+)<\/div>/);
 
-        const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+        // 统一走 cleanHtmlText：剥标签 + 解码实体（`You&#39;re a Winner` 不再原样显示）
+        const title = titleMatch ? cleanHtmlText(titleMatch[1]) : '';
         if (!title) continue;
 
         achievements.push({
           title,
-          description: descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '',
+          description: descMatch ? cleanHtmlText(descMatch[1]) : '',
           icon: imgMatch ? imgMatch[1].trim() : '',
-          percent: percentMatch ? percentMatch[1].trim() : '0%'
+          percent: percentMatch ? cleanHtmlText(percentMatch[1]) : '0%'
         });
       }
 
       if (achievements.length > 0) {
         const resData: GameAchievementsData = { appId, count: achievements.length, achievements };
-        directAchievementCache.set(cacheKey, { data: resData, time: Date.now() });
+        cacheSet(directAchievementCache, cacheKey, resData, true);
         return resData;
       }
     }
-  } catch {}
+  } catch {
+    sawNetworkFailure = true;
+  }
 
   // 2. Steam 官方 Web API 兜底
   try {
     const statsUrl = `https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002/?gameid=${appId}`;
     const statsResp = await getJson<any>(statsUrl, 6000);
+    if (statsResp === null) {
+      sawNetworkFailure = true;
+    }
     const list = statsResp?.achievementpercentages?.achievements;
     if (Array.isArray(list) && list.length > 0) {
       const fallbackItems: AchievementItem[] = list.map((item: any) => ({
@@ -1695,13 +1800,16 @@ async function directFetchGameAchievements(appId: number, lang = 'schinese'): Pr
         count: fallbackItems.length,
         achievements: fallbackItems
       };
-      directAchievementCache.set(cacheKey, { data: resData, time: Date.now() });
+      cacheSet(directAchievementCache, cacheKey, resData, true);
       return resData;
     }
-  } catch {}
+  } catch {
+    sawNetworkFailure = true;
+  }
 
+  // 同修改器：只有确认「社区页与官方统计都正常响应且确实没有成就」才算正缓存
   const emptyData: GameAchievementsData = { appId, count: 0, achievements: [] };
-  directAchievementCache.set(cacheKey, { data: emptyData, time: Date.now() });
+  cacheSet(directAchievementCache, cacheKey, emptyData, !sawNetworkFailure);
   return emptyData;
 }
 

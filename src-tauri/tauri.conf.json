@@ -32,7 +32,6 @@
     "targets": ["nsis"],
     "resources": {
       "assets/tools/steamless/": "assets/tools/steamless/",
-      "assets/tools/sam/": "assets/tools/sam/",
       "assets/libs/WebView2Loader.dll": "WebView2Loader.dll"
     },
     "icon": [

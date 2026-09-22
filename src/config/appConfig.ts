@@ -14,9 +14,12 @@ export const APP_CONFIG = {
    */
   VERSION: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0-dev',
 
-  // 云端官方服务器地址
-  // 注意：修改此地址须同步更新 src-tauri/capabilities/default.json 的
-  // http:allow-fetch 主机白名单，否则前端 fetch 将被拒绝
+  // 云端官方服务器地址。
+  //
+  // 权限说明：src-tauri/capabilities/default.json 的 http:allow-fetch 现为
+  // `https://*` 通配（客户端需要直连 FLiNG 与 Steam Community 抓取数据），
+  // 因此**不再**需要为新增域名单独维护白名单。明文 `http://*` 已被刻意移除 ——
+  // 客户端没有任何必须走明文 HTTP 的目标，保留它只会让 XSS 具备降级外发能力。
   API_BASE_URL: 'https://steam.myil.top',
 
   REQUEST_TIMEOUT_MS: 8000

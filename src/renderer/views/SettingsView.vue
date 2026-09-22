@@ -542,7 +542,6 @@ import {
   Folder, 
   FolderOpen, 
   Save, 
-  Globe,
   Cpu, 
   Sparkles, 
   Trash2, 
@@ -609,7 +608,7 @@ const steamPathInput = ref('');
  * 下次注入就会把一个坏节点带进 opensteamtool.toml —— 随后被
  * ensure_toml_optimized 改回 manifestdex，两边来回打架。
  */
-const VALID_MANIFEST_APIS = ['manifestdex', 'https://steam.myil.top'] as const;
+const VALID_MANIFEST_APIS = ['manifestdex'] as const;
 type ManifestApiValue = (typeof VALID_MANIFEST_APIS)[number];
 
 const readSavedManifestApi = (): ManifestApiValue => {
@@ -620,20 +619,14 @@ const readSavedManifestApi = (): ManifestApiValue => {
     : 'manifestdex';
 };
 
+// 清单节点不再由用户选择（内核已硬编码 manifest.lua 的取码链路，该配置只用于写入
+// opensteamtool.toml 的展示性字段）。保留 ref 是为了继续向 ensureOSTEnv /
+// activateInjection 传值，并让老版本 localStorage 里的坏节点被就地迁移。
 const manifestApi = ref<ManifestApiValue>(readSavedManifestApi());
 
-// 存量迁移：把 localStorage 里的坏节点就地改写，避免「界面显示正确、
-// 但下次注入仍读到旧值」的隐性不一致
 if (localStorage.getItem('chunfengdu_manifest_api') !== manifestApi.value) {
   localStorage.setItem('chunfengdu_manifest_api', manifestApi.value);
 }
-
-const setManifestApi = (v: ManifestApiValue) => {
-  manifestApi.value = v;
-  localStorage.setItem('chunfengdu_manifest_api', v);
-  // 设置在下次「一键修复内核」/ 激活注入时才写入 opensteamtool.toml，明确告知避免误解
-  emit('notify', '清单源已保存，将在下次「一键修复内核」或激活注入时生效', 'info');
-};
 const deploying = ref(false);
 const refreshing = ref(false);
 const checkingHealth = ref(false);

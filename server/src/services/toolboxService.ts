@@ -21,7 +21,14 @@ export class ToolboxService {
     {
       id: 'cloud_direct',
       name: '春风渡 云端直连中继节点',
-      endpoint: 'steam.myil.top',
+      // 取 CONFIG.CLOUD_API_BASE 的 host 部分，避免域名迁移时这里成为漏改点
+      endpoint: (() => {
+        try {
+          return new URL(CONFIG.CLOUD_API_BASE).host;
+        } catch {
+          return CONFIG.CLOUD_API_BASE;
+        }
+      })(),
       region: '腾讯云 华东 BGP（带缓存与单航班收敛）',
       isRecommended: true,
       status: 'online',

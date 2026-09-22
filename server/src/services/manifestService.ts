@@ -2310,7 +2310,7 @@ export class ManifestService {
     gid?: string;
   }): Promise<{
     checkedAt: string;
-    probe: { depotId: string; gid: string; from: 'override' | 'code_store' } | null;
+    probe: { depotId: string; gid: string; from: 'override' | 'code_store' | 'preset' } | null;
     probes: Array<{
       id: string;
       label: string;
@@ -2321,14 +2321,22 @@ export class ManifestService {
       codeFingerprint: string | null;
       detail: string;
     }>;
+    /** 各源返回的码值是否互相矛盾（滞后码/陈旧节点的核心信号） */
+    codeConsistent: boolean;
+    distinctCodeCount: number;
     note: string;
   }> {
     const checkedAt = new Date().toISOString();
 
-    // 1. 选定探针目标：显式传入 > 码库里最新鲜的一条（带 depotId 的）
+    // 1. 选定探针目标：显式传入 > 码库里最新鲜的一条（带 depotId 的）> 预设测试 ID
+    //
+    // 预设目标（Depot 731 / GID 7537979033605526179）只在码库为空时兜底。
+    // 它必须用独立的 from='preset' 上报 —— 早期实现把它标成 'code_store'，
+    // 界面于是显示成"码库中最新鲜的一条"，与事实不符，也会让排障者
+    // 误以为探测的是自己刚入库的真实组合。
     let depotId = String(override?.depotId || '').trim();
     let gid = String(override?.gid || '').trim();
-    let from: 'override' | 'code_store' = 'override';
+    let from: 'override' | 'code_store' | 'preset' = 'override';
     if (!/^\d+$/.test(depotId) || !/^\d+$/.test(gid) || gid === '0') {
       depotId = '';
       gid = '';
@@ -2345,10 +2353,11 @@ export class ManifestService {
     }
 
     if (!gid || !depotId) {
-      // 默认使用广泛收录的通用小游戏/稳定组件测试目标（Depot 731, GID 7537979033605526179），免除人工输入的繁琐
+      // 码库尚无带 depotId 的记录：退回稳定小游戏测试目标（Depot 731），
+      // 明确标记为 preset，界面按"预设测试ID"如实展示
       depotId = '731';
       gid = '7537979033605526179';
-      from = 'code_store';
+      from = 'preset';
     }
 
     // 2. 逐源定义。顺序与客户端 manifest.lua 的取码链路一致。
@@ -2451,14 +2460,33 @@ export class ManifestService {
     });
 
     const okCount = probes.filter((p) => p.ok).length;
+
+    // 码值一致性判定：只数「出码」不够 —— 一个源可以返回 HTTP 200 + 纯数字，
+    // 但那个数字是**滞后码**（上游还没刷新完），用它向 Valve CDN 请求清单会拿不到数据，
+    // 表现为「无网络连接 / 0 字节下载」。多源码值不一致正是滞后节点的唯一可观测信号。
+    // 说明：只统计原始码，指纹（含位数）不参与比较，避免同码不同位数被误判。
+    const rawCodes = settled
+      .map((s) => (s.status === 'fulfilled' && typeof s.value.resp.data === 'string' ? s.value.resp.data.trim() : ''))
+      .filter((b) => /^\d+$/.test(b) && b !== '0');
+    const distinctCodeCount = new Set(rawCodes).size;
+    const codeConsistent = distinctCodeCount <= 1;
+
+    let note: string;
+    if (okCount === 0) {
+      note = `本次探测中 ${probes.length} 个源都未返回有效码。注意：若探针 gid 恰好已被 Valve 轮换，各源返回 404/401 也属正常，请换一条较新的 (depotId, gid) 复测。`;
+    } else if (!codeConsistent) {
+      note = `⚠️ ${okCount}/${probes.length} 个源出码，但各源返回了 ${distinctCodeCount} 个**互相矛盾**的码值。这通常意味着部分源（通常是刷新节奏滞后的镜像）给出了陈旧值 —— 用陈旧码向 Valve CDN 请求清单会失败，表现为「无网络连接 / 0 字节下载」。请以上方 ManifestDeX 权威源的码值为准，并优先排查给出不同码值的镜像源。`;
+    } else {
+      note = `${okCount}/${probes.length} 个源可正常出码，且各源码值一致。只要权威源（ManifestDeX）恢复，客户端就会自动跳过后续兜底源 —— 熔断窗口仅 60 秒，无需任何手动干预。`;
+    }
+
     return {
       checkedAt,
       probe: { depotId, gid, from },
       probes,
-      note:
-        okCount > 0
-          ? `${okCount}/${probes.length} 个源可正常出码。只要权威源（ManifestDeX）恢复，客户端就会自动跳过后续兜底源 —— 熔断窗口仅 60 秒，无需任何手动干预。`
-          : `本次探测中 ${probes.length} 个源都未返回有效码。注意：若探针 gid 恰好已被 Valve 轮换，各源返回 404/401 也属正常，请换一条较新的 (depotId, gid) 复测。`
+      codeConsistent,
+      distinctCodeCount,
+      note
     };
   }
 
@@ -2503,7 +2531,7 @@ export class ManifestService {
       {
         id: 'cloud_direct',
         label: '春风渡 云端直连中继',
-        host: 'https://steam.myil.top/api/health',
+        host: `${CONFIG.CLOUD_API_BASE}/api/health`,
         headers: { 'User-Agent': 'ChunFengDu/1.0' },
         note: '服务端单航班收敛缓存，秒级下发'
       },
@@ -2534,7 +2562,8 @@ export class ManifestService {
       pingTargets.map(async (t) => {
         const started = Date.now();
         const resp = await axios.get(t.host, {
-          timeout: 6000,
+          // 与前端提示文案保持一致（"最长约 5 秒"）；原 6s 会让用户觉得已经卡住
+          timeout: 5000,
           headers: t.headers,
           validateStatus: () => true
         });
@@ -2556,7 +2585,10 @@ export class ManifestService {
         };
       }
       const { resp, latencyMs } = s.value;
-      const isAlive = resp.status > 0 && resp.status < 500;
+      // 纯连通性判定：收到任何 HTTP 响应就说明「DNS + TCP + TLS + 服务端在应答」都通了。
+      // 4xx 也算连通（探测根路径时 403/404 很常见），但它**不代表该源可用** ——
+      // 出码可用性由「出码体检」负责，两者语义必须分开，文案里已明确写清。
+      const isAlive = resp.status > 0;
       return {
         id: t.id,
         label: t.label,
@@ -2565,7 +2597,7 @@ export class ManifestService {
         httpStatus: resp.status,
         latencyMs,
         detail: isAlive
-          ? `${t.note ? t.note + ' · ' : ''}连通正常 · 服务器在线响应 (HTTP ${resp.status})`
+          ? `${t.note ? t.note + ' · ' : ''}连通正常 · 服务器在线响应 (HTTP ${resp.status})；本项只测连通与延迟，出码可用性请看「出码体检」`
           : `${t.note ? t.note + ' · ' : ''}服务器响应异常 (HTTP ${resp.status})`
       };
     });

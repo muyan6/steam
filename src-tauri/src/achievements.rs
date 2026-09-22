@@ -111,11 +111,21 @@ pub fn find_sam_game_in_dir(dir: &Path) -> Option<PathBuf> {
 
 const EMBEDDED_SAM_ZIP: &[u8] = include_bytes!("../resources/sam/SAM.zip");
 
-/// 从编译期嵌入的资源解压释放 SAM（100% 完整内嵌，免去用户手动下载安装）
+/// SAM 可用的最小文件集：主程序 + 原生 API DLL。
+/// 缺任何一项都属于「解压不完整」，绝不能对外报「已就绪」。
+const SAM_REQUIRED_FILES: [&str; 2] = ["SAM.Game.exe", "SAM.API.dll"];
+
+/// 从编译期嵌入的资源解压释放 SAM（100% 完整内嵌，免去用户手动下载安装）。
+///
+/// 关键点：**写入完成后必须校验必需文件存在**。旧实现只要 `copy` 都返回 Ok 就返回
+/// `Ok(())`，调用方随即报 `7.0.41 (内置就绪)`；一旦内嵌包被裁剪、条目名变化或磁盘
+/// 写入被安全软件拦截，用户看到的是「已就绪」，点启动才失败，且没有任何可诊断信息。
 pub fn extract_embedded_sam(target_dir: &Path) -> Result<(), String> {
     fs::create_dir_all(target_dir).map_err(|e| format!("创建 SAM 目录失败: {}", e))?;
     let mut archive = zip::ZipArchive::new(Cursor::new(EMBEDDED_SAM_ZIP))
         .map_err(|e| format!("解析内置 SAM 归档失败: {}", e))?;
+
+    let mut written: Vec<String> = Vec::new();
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| format!("读取 SAM 归档文件项失败: {}", e))?;
@@ -136,9 +146,60 @@ pub fn extract_embedded_sam(target_dir: &Path) -> Result<(), String> {
             }
             let mut outfile = fs::File::create(&out_path).map_err(|e| format!("创建文件失败: {}", e))?;
             std::io::copy(&mut file, &mut outfile).map_err(|e| format!("写入文件失败: {}", e))?;
+            written.push(name);
         }
     }
+
+    // 完整性校验：必需文件必须既在归档条目里、也真实落在磁盘上
+    for required in SAM_REQUIRED_FILES {
+        let in_archive = written.iter().any(|n| {
+            Path::new(n)
+                .file_name()
+                .map(|f| f.to_string_lossy().eq_ignore_ascii_case(required))
+                .unwrap_or(false)
+        });
+        if !in_archive {
+            return Err(format!("内置 SAM 归档缺少必需文件: {}", required));
+        }
+    }
+
+    // 条目名可能带子目录（如 SAM.Game/SAM.Game.exe），用递归查找确认可执行体真的落地
+    if find_sam_game_in_dir(target_dir).is_none() {
+        return Err("内置 SAM 解压完成但未找到可执行的 SAM.Game.exe".to_string());
+    }
+    if !target_dir.join("SAM.API.dll").exists()
+        && find_sam_api_dll(target_dir).is_none()
+    {
+        return Err("内置 SAM 解压完成但缺少 SAM.API.dll 依赖".to_string());
+    }
+
     Ok(())
+}
+
+/// 递归（限深）查找 SAM.API.dll —— 归档保留目录层级时它可能不在根目录
+fn find_sam_api_dll(dir: &Path) -> Option<PathBuf> {
+    fn walk(dir: &Path, depth: usize) -> Option<PathBuf> {
+        if depth > 4 {
+            return None;
+        }
+        let entries = fs::read_dir(dir).ok()?;
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                if let Some(found) = walk(&p, depth + 1) {
+                    return Some(found);
+                }
+            } else if p
+                .file_name()
+                .map(|f| f.to_string_lossy().eq_ignore_ascii_case("SAM.API.dll"))
+                .unwrap_or(false)
+            {
+                return Some(p);
+            }
+        }
+        None
+    }
+    walk(dir, 0)
 }
 
 /// 查询本地 SAM 状态（支持内置与 APPDATA 两种来源）
@@ -276,7 +337,14 @@ pub fn launch_sam_for_game_with_resource(app_id: u32, resource_dir: Option<&Path
     let exe = find_sam_game_exe(resource_dir)
         .ok_or_else(|| "本地尚未就绪 SAM 成就管理器".to_string())?;
 
-    let work_dir = exe.parent().ok_or_else(|| "无法获取 SAM 工作目录".to_string())?;
+    // 工作目录优先取 exe 所在目录（内置资源/安装目录，SAM 与它的 DLL 在一起）；
+    // 取不到时回退到 APPDATA 下的 SAM 目录 —— 旧实现只有 `exe.parent()` 一条路，
+    // 一旦 exe 路径异常就直接报错，连兜底都没有。
+    let fallback_dir = get_sam_dir().ok();
+    let work_dir = exe
+        .parent()
+        .or(fallback_dir.as_deref())
+        .ok_or_else(|| "无法获取 SAM 工作目录".to_string())?;
 
     #[cfg(windows)]
     {
@@ -343,6 +411,67 @@ pub struct GameAchievementsData {
     pub achievements: Vec<AchievementItem>,
 }
 
+/// 解码 Steam 页面里最常见的 HTML 实体。
+///
+/// 旧实现只剥标签、不解码实体，于是成就标题/描述里会原样显示 `&#39;`
+/// （Steam 的 `You&#39;re a Winner` 这类文案非常常见），用户看到的是乱码般的文本。
+fn decode_html_entities(s: &str) -> String {
+    if !s.contains('&') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'&' {
+            // 只处理短实体（最长 &nbsp; / &#39;），超长即视为普通 & 字符。
+            // 必须用 get() 而非直接切片：窗口右端可能落在 UTF-8 字符中间，
+            // 直接切片会 panic（Steam 描述里中文字符紧随 & 的情况真实存在）。
+            let end = (i + 12).min(bytes.len());
+            let window = s.get(i..end).unwrap_or(&s[i..]);
+            if let Some(semi_rel) = window.find(';') {
+                let entity = &s[i + 1..i + semi_rel];
+                let decoded: Option<String> = match entity {
+                    "amp" => Some("&".to_string()),
+                    "lt" => Some("<".to_string()),
+                    "gt" => Some(">".to_string()),
+                    "quot" => Some("\"".to_string()),
+                    "apos" | "#39" => Some("'".to_string()),
+                    "nbsp" => Some(" ".to_string()),
+                    "hellip" => Some("…".to_string()),
+                    "mdash" => Some("—".to_string()),
+                    "ndash" => Some("–".to_string()),
+                    _ => {
+                        // 数字实体：&#123; / &#x1F600;
+                        if let Some(num) = entity.strip_prefix('#') {
+                            let code = if let Some(hex) =
+                                num.strip_prefix('x').or_else(|| num.strip_prefix('X'))
+                            {
+                                u32::from_str_radix(hex, 16).ok()
+                            } else {
+                                num.parse::<u32>().ok()
+                            };
+                            code.and_then(char::from_u32).map(|c| c.to_string())
+                        } else {
+                            None
+                        }
+                    }
+                };
+                if let Some(text) = decoded {
+                    out.push_str(&text);
+                    i += semi_rel + 1;
+                    continue;
+                }
+            }
+        }
+        // 非实体的位置：按 UTF-8 边界推进一个字符
+        let ch = s[i..].chars().next().unwrap_or('&');
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
 fn strip_html_tags(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_tag = false;
@@ -355,7 +484,7 @@ fn strip_html_tags(s: &str) -> String {
             out.push(c);
         }
     }
-    out.trim().to_string()
+    decode_html_entities(out.trim())
 }
 
 fn extract_html_tag_content(block: &str, tag: &str) -> String {
