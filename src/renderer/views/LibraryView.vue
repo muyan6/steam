@@ -520,26 +520,30 @@ const handleRepairManifest = async (appId: number) => {
 };
 
 /**
- * 后台静默核验全部在库游戏的 DLC 差异（供「检查更新」联动调用）。
+ * 核验全部在库游戏的 DLC 差异（供用户显式点击「检查更新」时联动）。
  *
  * 为什么必须联动：卡片上的 DLC 徽章是个小按钮，普通用户基本不会主动去点，
  * 导致「智能增量补全 DLC」这个核心能力实际处于不可发现状态。
  * 用户点「检查更新」的预期本就是「看看我库里有没有落后的东西」，
  * 版本与 DLC 是同一件事的两个维度，一次性给出才符合直觉。
  *
- * 并发度刻意压到 4 且分批串行：每次核验都要打一次云端元数据
- * （未激活设备还会占用免费配额），几十上百款游戏一起派发会瞬时打满
- * 服务端与本机线程池。已完成核验（dlcDiffs 里已有记录）的直接跳过，
- * 用户手动点过徽章的游戏不会重复请求。
- * silent=true（启动时的静默预检）只填充状态、不弹通知。
+ * **只允许由显式点击触发，绝不可用于启动静默预检**：
+ * 每次核验底层都要打一次 `/api/metadata/:appId`，该路由挂在 requireKeyAccess
+ * 之后 —— 已激活设备零成本，但未激活设备会按「每个 AppID 每日一次」
+ * 扣减免费入库额度（默认上限仅 2）。静默联动会在用户毫无察觉的情况下
+ * 把当日额度烧光，反而挡住他真正要做的入库操作。
+ *
+ * 并发度刻意压到 4 且分批串行：几十上百款游戏一起派发会瞬时打满服务端与
+ * 本机线程池。已在 dlcDiffs 里有记录的直接跳过，避免重复请求重复扣额度。
  */
-const autoCheckDlcForAll = async (silent: boolean) => {
+const autoCheckDlcForAll = async () => {
   const pending = unlockedGames.value
     .filter((g) => !g.isDisabled && !dlcDiffs[g.appId])
     .map((g) => g.appId);
   if (pending.length === 0) return;
 
   let found = 0;
+  let failed = 0;
   for (let i = 0; i < pending.length; i += 4) {
     const batch = pending.slice(i, i + 4);
     const results = await Promise.allSettled(
@@ -547,20 +551,27 @@ const autoCheckDlcForAll = async (silent: boolean) => {
     );
     results.forEach((r, idx) => {
       const appId = batch[idx];
-      if (!dlcDiffs[appId]) {
-        dlcDiffs[appId] = { missingDlcs: [], checking: false, appending: false };
-      }
       if (r.status === 'fulfilled' && r.value?.success) {
-        dlcDiffs[appId].missingDlcs = r.value.missingDlcIds || [];
+        dlcDiffs[appId] = {
+          missingDlcs: r.value.missingDlcIds || [],
+          checking: false,
+          appending: false
+        };
         if (dlcDiffs[appId].missingDlcs.length > 0) found++;
+      } else {
+        // 失败（含未激活设备额度耗尽导致的 403）绝不写入条目：
+        // 否则该 AppID 会被当成「已核验」而被后续联动永久跳过，
+        // 用户即便额度恢复后重试也拿不到 DLC 结果。
+        failed++;
       }
-      // 失败不写入任何"已核验"标记之外的副作用：下次检查更新会自然重试
     });
   }
 
   if (found > 0) {
     emit('notify', `同时核验出 ${found} 款游戏存在尚未入库的新 DLC，卡片上已标出「+N 新DLC」，可一键补全！`, 'info');
-  } else if (!silent) {
+  } else if (failed > 0) {
+    emit('notify', `DLC 核验完成：未发现新 DLC（${failed} 款未能完成，多为云端额度或网络受限，可稍后重试）`, 'info');
+  } else {
     emit('notify', 'DLC 核验完成：所有游戏的 DLC 均已是云端最新完整状态。', 'success');
   }
 };
@@ -594,11 +605,17 @@ const handleCheckUpdates = async (silent: boolean) => {
     checkingUpdates.value = false;
   }
 
-  // 版本比对结束后联动核验 DLC（失败不影响版本检查结果，故置于 try 之外）
-  try {
-    await autoCheckDlcForAll(silent);
-  } catch (e: any) {
-    console.warn('[LibraryView] 联动 DLC 核验异常:', e);
+  // 版本比对结束后联动核验 DLC（失败不影响版本检查结果，故置于 try 之外）。
+  //
+  // 只在**用户显式点击**（silent=false）时联动：DLC 核验对未激活设备会消耗
+  // 每日免费入库额度（默认 2 款），启动静默预检绝不能在用户无感知的情况下
+  // 把它烧光 —— 那会直接挡住用户真正要做的入库操作。
+  if (!silent) {
+    try {
+      await autoCheckDlcForAll();
+    } catch (e: any) {
+      console.warn('[LibraryView] 联动 DLC 核验异常:', e);
+    }
   }
 };
 
@@ -672,13 +689,10 @@ const handleImgError = (e: Event, appId: number) => {
 };
 
 const handleCheckDlc = async (appId: number) => {
-  if (!dlcDiffs[appId]) {
-    dlcDiffs[appId] = { missingDlcs: [], checking: false, appending: false };
-  }
   // 并发守卫：徽章按钮在 loading 期间已 disabled，但联动核验与手动点击
   // 可能同时命中同一 AppID，重复请求会白白多消耗一次云端配额
-  if (dlcDiffs[appId].checking) return;
-  dlcDiffs[appId].checking = true;
+  if (dlcDiffs[appId]?.checking) return;
+  dlcDiffs[appId] = { missingDlcs: dlcDiffs[appId]?.missingDlcs || [], checking: true, appending: false };
   try {
     const res = await checkGameDlcDiff(appId);
     if (res.success) {
@@ -689,12 +703,14 @@ const handleCheckDlc = async (appId: number) => {
         emit('notify', `AppID ${appId}: 本地 DLC 规则已是最新完整状态，无需补全。`, 'success');
       }
     } else {
+      // 失败绝不留下 dlcDiffs 条目：留下就等于给这个 AppID 打上「已核验」标记，
+      // 后续联动会永久跳过它，用户重试也拿不到结果。
+      delete dlcDiffs[appId];
       emit('notify', res.message || 'DLC 核验未完成', 'warning');
     }
   } catch (e: any) {
+    delete dlcDiffs[appId];
     emit('notify', `DLC 核验异常: ${formatIpcError(e)}`, 'error');
-  } finally {
-    dlcDiffs[appId].checking = false;
   }
 };
 
