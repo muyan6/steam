@@ -989,6 +989,9 @@ pub fn extract_addappid_ids(content: &str) -> Vec<u32> {
             }
             if j < bytes.len() && bytes[j] == b'(' {
                 j += 1;
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
                 let start = j;
                 while j < bytes.len() && bytes[j].is_ascii_digit() {
                     j += 1;
@@ -1705,4 +1708,21 @@ pub fn sync_ost_latest(steam_path: &Path) -> Result<String, String> {
         "已同步 OpenSteamTool 内核 {} → {}（{} 个核心组件已部署）！重新启动 Steam 后生效。",
         current_tag, tag, core.len()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_addappid_ids() {
+        let lua_standard = "addappid(12345)\naddappid(67890)";
+        assert_eq!(extract_addappid_ids(lua_standard), vec![12345, 67890]);
+
+        let lua_spaced = "addappid( 12345 )\naddappid(   67890 , 1)";
+        assert_eq!(extract_addappid_ids(lua_spaced), vec![12345, 67890]);
+
+        let lua_mixed = "-- comment\nAddAppId( 730 )\naddappid ( 570 )";
+        assert_eq!(extract_addappid_ids(lua_mixed), vec![730, 570]);
+    }
 }

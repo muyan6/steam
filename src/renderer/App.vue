@@ -524,6 +524,7 @@ import Toast, { ToastItem } from './components/Toast.vue';
 import { SteamEnvironmentInfo, ClientLicenseInfo } from '../types';
 import { useTheme } from './composables/useTheme';
 import appLogo from './assets/logo.svg';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { formatIpcError, sanitizeChangelogText } from './api/tauriBridge';
 import { APP_CONFIG } from '../config/appConfig';
 
@@ -838,9 +839,8 @@ const installUpdateInPlace = async () => {
   if (!versionModal.value || updateState.value !== 'idle') return;
   updateState.value = 'downloading';
   updateProgress.value = { downloaded: 0, total: 0 };
-  let unlisten: (() => void) | null = null;
+  let unlisten: UnlistenFn | null = null;
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     unlisten = await listen<{ downloaded: number; total?: number | null }>('update-download-progress', (e) => {
       updateProgress.value = { downloaded: e.payload.downloaded, total: e.payload.total ?? 0 };
     });

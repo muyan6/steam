@@ -320,9 +320,10 @@ pub fn kill_steam() -> bool {
         }
     }
 
-    // 轮询等待平滑退出（最多 15 秒，每 500ms 检查一次）：
-    // 若 Steam 正常退出并保存好本地数据，一旦确认退出立即返回，无需执行暴力强杀
-    for _ in 0..30 {
+    // 轮询等待平滑退出（最多 5 秒，每 500ms 检查一次）：
+    // 若 Steam 正常退出并保存好本地数据，一旦确认退出立即返回，无需执行暴力强杀；
+    // 超过 5 秒未响应则及时转入强杀流程，防止 Steam 卡死/挂起导致客户端 UI 假死等待 15 秒
+    for _ in 0..10 {
         std::thread::sleep(std::time::Duration::from_millis(500));
         clear_steam_running_cache();
         if !is_steam_running() {
@@ -330,7 +331,7 @@ pub fn kill_steam() -> bool {
         }
     }
 
-    // 2. 超时兜底：若 15 秒后仍在运行（例如界面卡死或进程无响应），轮询强制结束全家桶
+    // 2. 超时兜底：若 5 秒后仍在运行（例如界面卡死或进程无响应），轮询强制结束全家桶
     for _ in 0..4 {
         clear_steam_running_cache();
         if !is_steam_running() {
