@@ -701,6 +701,58 @@ async function loadSources() {
  * 这个按钮把「逐源快照」直接摆到管理台，尤其能一眼看出 Cloudflare 52x 这类
  * 源站级故障（它会被判为 transient，既不熔断也不写负缓存，只看日志很难定位）。
  */
+/**
+ * 一键极速测 Ping（对标 Fluent Steam Lua 连通测试）：
+ * 毫秒级探测各源服务器域名解析、TCP握手与网络延迟，判定源站是否存活在线。
+ * 完全无需输入任何参数，点击即测！
+ */
+async function pingManifestSources() {
+  var btn = document.getElementById('pingSourcesBtn');
+  var out = document.getElementById('probeResult');
+  if (!out) return;
+
+  if (btn) { btn.disabled = true; btn.innerText = '测速中...'; }
+  out.innerHTML = '<div style="color:var(--text-mid);font-size:12px;">正在并发测试各上游清单源网络连通性与 Ping 延迟（最长约 5 秒）...</div>';
+
+  try {
+    var resp = await fetch('/api/admin/manifests/sources?type=ping', { headers: getHeaders() });
+    if (resp.status === 401) { handleLogout(); return; }
+    var json = await resp.json();
+    if (!json || !json.success) {
+      out.innerHTML = '<div style="color:var(--c-rose);font-size:12px;">连通测试失败：' + escapeHtml((json && json.message) || '未知错误') + '</div>';
+      return;
+    }
+    var d = json.data || {};
+    var rows = (d.probes || []).map(function(p) {
+      var badge = p.ok
+        ? '<span class="badge badge-green">✅ 连通正常</span>'
+        : '<span class="badge badge-rose">✖ 无法连接</span>';
+      var latency = p.latencyMs >= 0 ? (p.latencyMs + ' ms') : '—';
+      var latencyColor = p.latencyMs >= 0 && p.latencyMs < 500 ? 'var(--c-green)' : (p.latencyMs < 1500 ? 'var(--c-amber)' : 'var(--c-rose)');
+      return '<tr>' +
+        '<td style="white-space:nowrap;"><strong>' + escapeHtml(p.label) + '</strong></td>' +
+        '<td style="font-family:monospace;font-size:11px;color:var(--text-dim);">' + escapeHtml(p.host) + '</td>' +
+        '<td style="font-family:monospace;color:' + latencyColor + ';font-weight:700;">' + latency + '</td>' +
+        '<td style="font-family:monospace;color:var(--text-dim);">' + (p.httpStatus === null ? '—' : ('HTTP ' + p.httpStatus)) + '</td>' +
+        '<td>' + badge + '</td>' +
+        '<td style="color:var(--text-mid);font-size:12px;">' + escapeHtml(p.detail) + '</td>' +
+      '</tr>';
+    }).join('');
+
+    out.innerHTML =
+      '<div style="font-size:12px;color:var(--c-green);font-weight:700;margin-bottom:10px;">' +
+        '⚡ 上游清单源连通性测试快照（检测时间：' + new Date().toLocaleTimeString() + '）' +
+      '</div>' +
+      '<div class="table-container"><table><thead><tr>' +
+        '<th>源名称</th><th>探测地址</th><th>Ping 延迟</th><th>响应码</th><th>连通状态</th><th>判定说明</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  } catch (e) {
+    out.innerHTML = '<div style="color:var(--c-rose);font-size:12px;">连通测试请求异常：' + escapeHtml(e && e.message ? e.message : String(e)) + '</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = '⚡ 一键测Ping (连通测试)'; }
+  }
+}
+
 async function checkManifestSources() {
   var btn = document.getElementById('probeSourcesBtn');
   var out = document.getElementById('probeResult');
@@ -731,11 +783,11 @@ async function checkManifestSources() {
     }
 
     var rows = (d.probes || []).map(function(p) {
-      // 状态徽章：出码=绿；404/401=灰（该源没有，非故障）；429/403/5xx=琥珀或红
+      // 状态徽章：出码=绿；404/401=蓝（该源在线但没有该特定清单）；429/403/5xx=琥珀或红
       var badge = p.ok
-        ? '<span class="badge badge-green">✅ 正常</span>'
+        ? '<span class="badge badge-green">✅ 出码成功</span>'
         : (p.httpStatus === 404 || p.httpStatus === 401)
-          ? '<span class="badge" style="background:rgba(148,163,184,.15);color:var(--text-mid);">○ 无此码</span>'
+          ? '<span class="badge" style="background:rgba(56,189,248,.15);color:var(--c-blue);">○ 连通在线 (库无此清单)</span>'
           : '<span class="badge badge-rose">✖ 异常</span>';
       var latency = p.latencyMs >= 0 ? (p.latencyMs + ' ms') : '—';
       return '<tr>' +
@@ -751,7 +803,7 @@ async function checkManifestSources() {
       '<div style="font-size:12px;color:var(--text-mid);margin-bottom:10px;line-height:1.6;">' +
         '探针 <code style="color:var(--c-blue);">depotId=' + escapeHtml(d.probe.depotId) + '</code> / ' +
         '<code style="color:var(--c-blue);">gid=' + escapeHtml(d.probe.gid) + '</code>' +
-        '（来源：' + (d.probe.from === 'override' ? '手动指定' : '码库中最新鲜的一条') + '）' +
+        '（来源：' + (d.probe.from === 'override' ? '预设测试ID' : '码库中最新鲜的一条') + '）' +
       '</div>' +
       '<div class="table-container"><table><thead><tr>' +
         '<th>源</th><th>状态码</th><th>延迟</th><th>结果</th><th>说明</th>' +
@@ -762,7 +814,7 @@ async function checkManifestSources() {
   } catch (e) {
     out.innerHTML = '<div style="color:var(--c-rose);font-size:12px;">体检请求异常：' + escapeHtml(e && e.message ? e.message : String(e)) + '</div>';
   } finally {
-    if (btn) { btn.disabled = false; btn.innerText = '🩺 开始体检'; }
+    if (btn) { btn.disabled = false; btn.innerText = '🩺 出码体检'; }
   }
 }
 

@@ -2462,6 +2462,98 @@ export class ManifestService {
     };
   }
 
+  /**
+   * 上游清单数据源极速连通性与 Ping 延迟测试（纯网络连通性探测，对标 Fluent Steam Lua 连通测试，零输入、毫秒级响应）
+   */
+  async pingManifestSources(): Promise<{
+    checkedAt: string;
+    probes: Array<{
+      id: string;
+      label: string;
+      host: string;
+      ok: boolean;
+      httpStatus: number | null;
+      latencyMs: number;
+      detail: string;
+    }>;
+  }> {
+    const checkedAt = new Date().toISOString();
+    const pingTargets = [
+      {
+        id: 'manifestdex',
+        label: 'ManifestDeX 权威码源',
+        host: 'https://manifest.manifestdex.com/',
+        headers: { 'User-Agent': 'ManifestDeX/1.0' }
+      },
+      {
+        id: 'guyun_index',
+        label: '古韵自有码库 index.php',
+        host: 'https://gmrc.guyunsq.com/index.php',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+      },
+      {
+        id: 'x20770407',
+        label: '20770407.xyz（同源冗余）',
+        host: 'https://20770407.xyz/',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+      },
+      {
+        id: 'guyun_dex',
+        label: '古韵 dex.php（gid-only 聚合层）',
+        host: 'https://gmrc.guyunsq.com/dex.php',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+      },
+      {
+        id: 'steamrun',
+        label: 'SteamRun / 备用清单节点',
+        host: 'https://gmrc.guyunsq.com/',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+      }
+    ];
+
+    const settled = await Promise.allSettled(
+      pingTargets.map(async (t) => {
+        const started = Date.now();
+        const resp = await axios.get(t.host, {
+          timeout: 6000,
+          headers: t.headers,
+          validateStatus: () => true
+        });
+        return { t, resp, latencyMs: Date.now() - started };
+      })
+    );
+
+    const probes = settled.map((s, i) => {
+      const t = pingTargets[i];
+      if (s.status === 'rejected') {
+        return {
+          id: t.id,
+          label: t.label,
+          host: t.host,
+          ok: false,
+          httpStatus: null,
+          latencyMs: -1,
+          detail: `连接失败：${s.reason?.message || '网络超时'}`
+        };
+      }
+      const { resp, latencyMs } = s.value;
+      const isAlive = resp.status > 0 && resp.status < 500;
+      return {
+        id: t.id,
+        label: t.label,
+        host: t.host,
+        ok: isAlive,
+        httpStatus: resp.status,
+        latencyMs,
+        detail: isAlive
+          ? `连通正常 · 服务器在线响应 (HTTP ${resp.status})`
+          : `服务器响应异常 (HTTP ${resp.status})`
+      };
+    });
+
+    return { checkedAt, probes };
+  }
+
   // 补码循环句柄：保存下来才能停止。旧实现丢弃 setInterval 返回值，
   // 进程退出时无法 clearInterval，且 server.ts 若被重复调用（热重载/多次初始化）
   // 会叠加多个循环 —— backfillRunning 只能防单轮重叠，防不住多循环并存。

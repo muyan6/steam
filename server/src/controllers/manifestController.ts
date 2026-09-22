@@ -84,6 +84,12 @@ export const downloadManifestFile = async (req: Request, res: Response) => {
  */
 export const checkManifestSources = async (req: Request, res: Response) => {
   try {
+    const rawType = Array.isArray(req.query.type) ? req.query.type[0] : req.query.type;
+    if (String(rawType || '').trim().toLowerCase() === 'ping') {
+      const result = await manifestService.pingManifestSources();
+      return res.json({ success: true, data: result });
+    }
+
     const rawDepot = Array.isArray(req.query.depotId) ? req.query.depotId[0] : req.query.depotId;
     const rawGid = Array.isArray(req.query.gid) ? req.query.gid[0] : req.query.gid;
     const result = await manifestService.checkAllSources({
