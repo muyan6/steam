@@ -1658,7 +1658,7 @@ async function directMatchTrainer(rawName: string, appId?: number): Promise<Trai
       }
       if (Array.isArray(posts) && posts.length > 0) {
         const matchedPost = posts.find((p) => /trainer/i.test(p.title?.rendered || '')) || posts[0];
-        const postTitle = cleanHtmlText(matchedPost.title?.rendered || '').replace(/-/g, '-');
+        const postTitle = cleanHtmlText(matchedPost.title?.rendered || '').replace(/[–—]/g, '-');
         const postUrl = matchedPost.link;
         const publishedAt = matchedPost.date;
         const contentHtml = matchedPost.content?.rendered || '';
@@ -1832,7 +1832,9 @@ export async function sendTauriHeartbeatNow(): Promise<void> {
         isActivated: !!(license && license.isActivated),
         licenseCode: license?.code
       }),
-      // 心跳每 30 分钟一次：无超时的话，一次「半死」连接会让这个 promise\n      // 永久悬挂（30 分钟定时器仍会再发一次，形成累积的悬挂请求）\n      signal: AbortSignal.timeout(10000)
+      // 心跳每 30 分钟一次：无超时的话，一次「半死」连接会让这个 promise
+      // 永久悬挂（30 分钟定时器仍会再发一次，形成累积的悬挂请求）
+      signal: AbortSignal.timeout(10000)
     });
   } catch {}
 }

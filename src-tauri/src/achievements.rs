@@ -334,8 +334,14 @@ pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, Str
 
 /// 针对指定游戏 AppID 启动 SAM 解锁器（支持内置与安装目录）
 pub fn launch_sam_for_game_with_resource(app_id: u32, resource_dir: Option<&Path>) -> Result<bool, String> {
-    let exe = find_sam_game_exe(resource_dir)
-        .ok_or_else(|| "本地尚未就绪 SAM 成就管理器".to_string())?;
+    let exe = find_sam_game_exe(resource_dir).or_else(|| {
+        if let Ok(dir) = get_sam_dir() {
+            let _ = extract_embedded_sam(&dir);
+            find_sam_game_in_dir(&dir)
+        } else {
+            None
+        }
+    }).ok_or_else(|| "本地尚未就绪 SAM 成就管理器".to_string())?;
 
     // 工作目录优先取 exe 所在目录（内置资源/安装目录，SAM 与它的 DLL 在一起）；
     // 取不到时回退到 APPDATA 下的 SAM 目录 —— 旧实现只有 `exe.parent()` 一条路，
@@ -425,10 +431,13 @@ fn decode_html_entities(s: &str) -> String {
     while i < bytes.len() {
         if bytes[i] == b'&' {
             // 只处理短实体（最长 &nbsp; / &#39;），超长即视为普通 & 字符。
-            // 必须用 get() 而非直接切片：窗口右端可能落在 UTF-8 字符中间，
-            // 直接切片会 panic（Steam 描述里中文字符紧随 & 的情况真实存在）。
-            let end = (i + 12).min(bytes.len());
-            let window = s.get(i..end).unwrap_or(&s[i..]);
+            // 严格按 UTF-8 边界收缩截断：窗口右端若落在多字节字符中间，向前退至有效边界，
+            // 杜绝全串扫描退化，并避免直接切片 panic
+            let mut end = (i + 12).min(bytes.len());
+            while !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            let window = &s[i..end];
             if let Some(semi_rel) = window.find(';') {
                 let entity = &s[i + 1..i + semi_rel];
                 let decoded: Option<String> = match entity {

@@ -2585,10 +2585,10 @@ export class ManifestService {
         };
       }
       const { resp, latencyMs } = s.value;
-      // 纯连通性判定：收到任何 HTTP 响应就说明「DNS + TCP + TLS + 服务端在应答」都通了。
-      // 4xx 也算连通（探测根路径时 403/404 很常见），但它**不代表该源可用** ——
-      // 出码可用性由「出码体检」负责，两者语义必须分开，文案里已明确写清。
-      const isAlive = resp.status > 0;
+      // 连通性判定：
+      // - 1xx-4xx（< 500）：收到响应（含探测根路径时的 403/404 正常路由限制）均说明链路与服务在线（注：不代表出码可用）
+      // - 5xx（>= 500）：服务器故障/网关挂起/源站宕机（如 503 停服、Cloudflare 521 源站断开），明确标记为响应异常
+      const isAlive = resp.status > 0 && resp.status < 500;
       return {
         id: t.id,
         label: t.label,

@@ -726,7 +726,7 @@ async function pingManifestSources() {
     var rows = (d.probes || []).map(function(p) {
       var badge = p.ok
         ? '<span class="badge badge-green">✅ 连通正常</span>'
-        : '<span class="badge badge-rose">✖ 无法连接</span>';
+        : (p.httpStatus ? '<span class="badge badge-rose">✖ 响应异常</span>' : '<span class="badge badge-rose">✖ 无法连接</span>');
       var latency = p.latencyMs >= 0 ? (p.latencyMs + ' ms') : '—';
       // 失败（-1）必须是灰色「—」，而不是落进琥珀档 —— 否则红色「✖ 无法连接」
       // 徽章旁边却显示琥珀色延迟，视觉上自相矛盾
@@ -762,8 +762,8 @@ async function checkManifestSources() {
   var out = document.getElementById('probeResult');
   if (!out) return;
 
-  var depotId = ((document.getElementById('probeDepotId') || {}).value || '').trim() || '731';
-  var gid = ((document.getElementById('probeGid') || {}).value || '').trim() || '7537979033605526179';
+  var depotId = ((document.getElementById('probeDepotId') || {}).value || '').trim();
+  var gid = ((document.getElementById('probeGid') || {}).value || '').trim();
   var qs = [];
   if (depotId) qs.push('depotId=' + encodeURIComponent(depotId));
   if (gid) qs.push('gid=' + encodeURIComponent(gid));

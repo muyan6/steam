@@ -934,13 +934,13 @@ const ADMIN_HTML = `<!DOCTYPE html>
               <strong style="color: var(--text-strong); font-size: 15px; font-weight: 700;">🩺 清单取码源体检</strong>
               <div style="color: var(--text-mid); font-size: 12px; margin-top: 4px; line-height: 1.6;">
                 支持「一键测Ping」纯网络连通性测试（对标 Fluent Steam Lua，毫秒级测出源站存活与延迟）；<br>
-                亦可进行「出码体检」（默认预设稳定测试 ID：Depot 731，GID 7537979033605526179，无需手动输入）。
+                亦可进行「出码体检」（留空默认自动选码库最新记录，无记录退回通用包 Depot 731，亦支持自定义）。
               </div>
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
               <button id="pingSourcesBtn" onclick="pingManifestSources()" class="btn btn-primary" style="background: linear-gradient(135deg, #06b6d4, #0284c7);">⚡ 一键测Ping (连通测试)</button>
-              <input id="probeDepotId" placeholder="depotId" value="731" class="input-ctrl" style="width: 100px; font-family: monospace; font-size: 12px;" title="预设为稳定小游戏测试分包 Depot 731">
-              <input id="probeGid" placeholder="gid" value="7537979033605526179" class="input-ctrl" style="width: 170px; font-family: monospace; font-size: 12px;" title="预设为稳定小游戏测试清单 GID 7537979033605526179">
+              <input id="probeDepotId" placeholder="depotId (选填)" class="input-ctrl" style="width: 110px; font-family: monospace; font-size: 12px;" title="留空自动探测码库中最新鲜的一条记录，亦可指定特定 Depot">
+              <input id="probeGid" placeholder="gid (选填)" class="input-ctrl" style="width: 160px; font-family: monospace; font-size: 12px;" title="留空自动探测码库中最新鲜的一条记录，亦可指定特定 GID">
               <button id="probeSourcesBtn" onclick="checkManifestSources()" class="btn btn-secondary">🩺 出码体检</button>
             </div>
           </div>
