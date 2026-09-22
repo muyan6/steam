@@ -2362,19 +2362,19 @@ export class ManifestService {
       },
       {
         id: 'guyun_index',
-        label: '古韵自有码库 index.php',
+        label: '古韵自有码库 (Depot+GID主通道)',
         url: `https://gmrc.guyunsq.com/index.php/${depotId}/${gid}`,
         headers: { 'User-Agent': 'ChunFengDu/1.0' }
       },
       {
         id: 'x20770407',
-        label: '20770407.xyz（与古韵同源冗余）',
+        label: '20770407.xyz (同源冗余镜像)',
         url: `https://20770407.xyz/manifest/${depotId}/${gid}`,
         headers: { 'User-Agent': 'ChunFengDu/1.0' }
       },
       {
         id: 'guyun_dex',
-        label: '古韵 dex.php（gid-only 聚合层）',
+        label: '古韵聚合接口 (纯GID备用通道)',
         url: `https://gmrc.guyunsq.com/dex.php/${gid}`,
         headers: { 'User-Agent': 'ChunFengDu/1.0' }
       }
@@ -2483,31 +2483,50 @@ export class ManifestService {
         id: 'manifestdex',
         label: 'ManifestDeX 权威码源',
         host: 'https://manifest.manifestdex.com/',
-        headers: { 'User-Agent': 'ManifestDeX/1.0' }
-      },
-      {
-        id: 'guyun_index',
-        label: '古韵自有码库 index.php',
-        host: 'https://gmrc.guyunsq.com/index.php',
-        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+        headers: { 'User-Agent': 'ManifestDeX/1.0' },
+        note: '当前全网唯一实时维护的权威源（全球 CDN）'
       },
       {
         id: 'x20770407',
-        label: '20770407.xyz（同源冗余）',
+        label: '20770407.xyz 同源镜像',
         host: 'https://20770407.xyz/',
-        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+        headers: { 'User-Agent': 'ChunFengDu/1.0' },
+        note: 'Fluent 常用镜像，与古韵码库互为冗余'
       },
       {
-        id: 'guyun_dex',
-        label: '古韵 dex.php（gid-only 聚合层）',
-        host: 'https://gmrc.guyunsq.com/dex.php',
-        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+        id: 'guyun',
+        label: '古韵 GMRC 自有码库',
+        host: 'https://gmrc.guyunsq.com/',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' },
+        note: '国内自有码库单点（国内直连）'
+      },
+      {
+        id: 'cloud_direct',
+        label: '春风渡 云端直连中继',
+        host: 'https://steam.myil.top/api/health',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' },
+        note: '服务端单航班收敛缓存，秒级下发'
       },
       {
         id: 'steamrun',
-        label: 'SteamRun / 备用清单节点',
-        host: 'https://gmrc.guyunsq.com/',
-        headers: { 'User-Agent': 'ChunFengDu/1.0' }
+        label: 'SteamRun 官方源 (已停服)',
+        host: 'https://manifest.steam.run/',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' },
+        note: '早期老版源，目前已停服不可用'
+      },
+      {
+        id: 'wudrm',
+        label: 'WUDRM 高速源 (已停服)',
+        host: 'http://gmrc.wudrm.com/',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' },
+        note: '早期老版源，持续 503 已停服'
+      },
+      {
+        id: 'opensteamtool',
+        label: 'OpenSteamTool 社区源 (已停服)',
+        host: 'https://opensteamtool.com/',
+        headers: { 'User-Agent': 'ChunFengDu/1.0' },
+        note: '早期 OST 社区源，已停服无法连通'
       }
     ];
 
@@ -2533,7 +2552,7 @@ export class ManifestService {
           ok: false,
           httpStatus: null,
           latencyMs: -1,
-          detail: `连接失败：${s.reason?.message || '网络超时'}`
+          detail: `${t.note ? t.note + ' · ' : ''}连接失败：${s.reason?.message || '网络超时或服务已停机'}`
         };
       }
       const { resp, latencyMs } = s.value;
@@ -2546,8 +2565,8 @@ export class ManifestService {
         httpStatus: resp.status,
         latencyMs,
         detail: isAlive
-          ? `连通正常 · 服务器在线响应 (HTTP ${resp.status})`
-          : `服务器响应异常 (HTTP ${resp.status})`
+          ? `${t.note ? t.note + ' · ' : ''}连通正常 · 服务器在线响应 (HTTP ${resp.status})`
+          : `${t.note ? t.note + ' · ' : ''}服务器响应异常 (HTTP ${resp.status})`
       };
     });
 
