@@ -49,115 +49,89 @@
         </div>
       </div>
 
-      <!-- 0.5 界面外观与主题配色 (包含 3 款深色 + 3 款浅色共 6 种精选配色) -->
-      <div class="theme-card-static rounded-3xl p-5 xl:p-6 shadow-lg border">
+      <!-- 0.5 界面外观与主题配色 (紧凑精选 6 种配色，高度大幅优化) -->
+      <div class="theme-card-static rounded-2xl p-4 xl:p-5 shadow-sm border">
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div class="flex items-center gap-2.5">
-            <Palette class="w-5 h-5 theme-text-accent" />
-            <h3 class="font-bold text-base text-slate-100">界面外观与主题配色</h3>
-            <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800/80 text-slate-300 font-mono border border-white/10 font-bold">
+          <div class="flex items-center gap-2">
+            <Palette class="w-4 h-4 theme-text-accent" />
+            <h3 class="font-bold text-sm text-slate-100">界面外观与主题配色</h3>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-300 font-mono border border-white/10">
               6 种精选配色 (3深 + 3浅)
             </span>
           </div>
 
           <!-- 深浅分类过滤切换 -->
-          <div class="flex items-center gap-1 bg-slate-950/40 p-1 rounded-xl border border-white/10 text-xs">
+          <div class="flex items-center gap-1 bg-slate-950/40 p-0.5 rounded-xl border border-white/10 text-xs">
             <button
               @click="themeFilter = 'all'"
-              class="px-3 py-1 rounded-lg transition font-medium text-xs"
+              class="px-2.5 py-0.5 rounded-lg transition font-medium text-[11px]"
               :class="themeFilter === 'all' ? 'theme-btn-primary font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
             >
               全部 (6)
             </button>
             <button
               @click="themeFilter = 'dark'"
-              class="px-3 py-1 rounded-lg transition font-medium text-xs flex items-center gap-1.5"
+              class="px-2.5 py-0.5 rounded-lg transition font-medium text-[11px] flex items-center gap-1"
               :class="themeFilter === 'dark' ? 'theme-btn-primary font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
             >
-              <Moon class="w-3.5 h-3.5" />
+              <Moon class="w-3 h-3" />
               <span>深色 (3)</span>
             </button>
             <button
               @click="themeFilter = 'light'"
-              class="px-3 py-1 rounded-lg transition font-medium text-xs flex items-center gap-1.5"
+              class="px-2.5 py-0.5 rounded-lg transition font-medium text-[11px] flex items-center gap-1"
               :class="themeFilter === 'light' ? 'theme-btn-primary font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
             >
-              <Sun class="w-3.5 h-3.5" />
+              <Sun class="w-3 h-3" />
               <span>浅色 (3)</span>
             </button>
           </div>
         </div>
 
-        <p class="text-xs text-slate-400 mb-4 leading-relaxed">
-          提供针对现代游戏桌面端设计的专属高质感主题，涵盖深空钛金、赛博紫晶、铂金翡翠以及全新皓月霜白、香槟晨曦与森林薄荷：
-        </p>
-
-        <!-- 6 款主题选择卡片网格 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div
+        <!-- 6 款精选主题紧凑网格 -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+          <button
             v-for="theme in filteredThemes"
             :key="theme.id"
             @click="handleSelectTheme(theme.id)"
-            class="p-4 xl:p-5 rounded-2xl border transition-all duration-200 cursor-pointer relative overflow-hidden group flex flex-col justify-between"
+            :title="`${theme.name} (${theme.nameEn}): ${theme.description}`"
+            class="p-2.5 rounded-xl border transition-all text-left flex flex-col justify-between relative group cursor-pointer overflow-hidden"
             :class="currentTheme === theme.id 
-              ? 'ring-2 ring-offset-2 ring-offset-transparent shadow-xl' 
-              : 'theme-card hover:-translate-y-0.5 hover:shadow-md'"
+              ? 'ring-2 ring-offset-1 ring-offset-transparent shadow-md font-bold' 
+              : 'theme-card hover:border-sky-400/40 hover:-translate-y-0.5'"
             :style="currentTheme === theme.id ? { borderColor: theme.accentHex, backgroundColor: theme.cardHex } : {}"
           >
-            <div>
-              <!-- 色彩调色板预览圆点 & 深浅模式标签 + 当前使用徽章 (流式排版，完全并列不重叠) -->
-              <div class="flex items-center justify-between mb-3 gap-2">
-                <div class="flex items-center gap-2 shrink-0">
-                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.bgHex }" title="背景色"></span>
-                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.cardHex }" title="卡片色"></span>
-                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.accentHex }" title="高亮主色"></span>
-                  <span class="w-4 h-4 rounded-full border border-black/10 shadow-sm" :style="{ backgroundColor: theme.secondaryHex }" title="辅助渐变色"></span>
-                </div>
-
-                <div class="flex items-center gap-2 flex-wrap justify-end">
-                  <span 
-                    class="text-xs px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 border shrink-0"
-                    :class="theme.type === 'dark' ? 'bg-slate-800/80 text-slate-300 border-white/10' : 'bg-amber-500/10 text-amber-600 border-amber-500/20 font-bold'"
-                  >
-                    <Moon v-if="theme.type === 'dark'" class="w-3 h-3" />
-                    <Sun v-else class="w-3 h-3 text-amber-500" />
-                    <span>{{ theme.type === 'dark' ? '深色' : '浅色' }}</span>
-                  </span>
-
-                  <!-- 当前使用徽章 -->
-                  <span 
-                    v-if="currentTheme === theme.id"
-                    class="text-xs font-bold px-2.5 py-0.5 rounded-full shadow flex items-center gap-1 shrink-0"
-                    :style="{ backgroundColor: theme.accentHex, color: '#ffffff' }"
-                  >
-                    <Check class="w-3 h-3 stroke-[3]" />
-                    <span>当前使用</span>
-                  </span>
-                </div>
+            <!-- 顶部微型调色板预览与深浅微标签 -->
+            <div class="flex items-center justify-between gap-1 mb-2">
+              <div class="flex items-center gap-1">
+                <span class="w-2.5 h-2.5 rounded-full border border-black/20 shrink-0" :style="{ backgroundColor: theme.bgHex }" title="背景色"></span>
+                <span class="w-2.5 h-2.5 rounded-full border border-black/20 shrink-0" :style="{ backgroundColor: theme.cardHex }" title="卡片色"></span>
+                <span class="w-2.5 h-2.5 rounded-full border border-black/20 shrink-0" :style="{ backgroundColor: theme.accentHex }" title="主强调色"></span>
               </div>
-
-              <!-- 主题名称 -->
-              <div class="font-bold text-base text-slate-100 flex items-center gap-2 mb-1.5">
-                <span>{{ theme.name }}</span>
-                <span class="text-xs font-mono text-slate-400 font-normal">({{ theme.nameEn }})</span>
-              </div>
-
-              <!-- 主题描述 -->
-              <p class="text-xs text-slate-400 leading-relaxed">
-                {{ theme.description }}
-              </p>
-            </div>
-
-            <div class="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
-              <span class="font-mono text-slate-400">#{{ theme.id }}</span>
               <span 
-                class="font-medium group-hover:underline flex items-center gap-1"
-                :style="{ color: theme.accentHex }"
+                class="text-[10px] px-1 py-0.2 rounded font-mono shrink-0"
+                :class="theme.type === 'dark' ? 'bg-slate-800/80 text-slate-400' : 'bg-amber-500/15 text-amber-500 font-bold'"
               >
-                {{ currentTheme === theme.id ? '已应用' : '点击切换 ➔' }}
+                {{ theme.type === 'dark' ? '深' : '浅' }}
               </span>
             </div>
-          </div>
+
+            <!-- 主题名称与勾选状态 -->
+            <div class="flex items-center justify-between gap-1">
+              <div class="font-bold text-xs truncate text-slate-100">
+                {{ theme.name }}
+              </div>
+              <Check v-if="currentTheme === theme.id" class="w-3.5 h-3.5 shrink-0 stroke-[3]" :style="{ color: theme.accentHex }" />
+            </div>
+
+            <!-- 底部状态指示 -->
+            <div 
+              class="text-[10px] mt-1 font-mono truncate"
+              :style="{ color: currentTheme === theme.id ? theme.accentHex : '#94a3b8' }"
+            >
+              {{ currentTheme === theme.id ? '● 已应用' : '#' + theme.id }}
+            </div>
+          </button>
         </div>
       </div>
 
