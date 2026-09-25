@@ -21,10 +21,10 @@
         <button
           @click="handleOpenSponsorLink"
           class="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/30 transition flex items-center gap-2 text-xs font-bold cursor-pointer shadow-sm active:scale-95"
-          title="前往爱发电支持春风渡"
+          title="赞助支持春风渡"
         >
           <HeartHandshake class="w-4 h-4 text-rose-400" />
-          <span>在爱发电支持我们</span>
+          <span>支持我们</span>
           <ExternalLink class="w-3.5 h-3.5 opacity-75" />
         </button>
 
