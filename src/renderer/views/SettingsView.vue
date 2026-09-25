@@ -208,6 +208,54 @@
           </div>
         </div>
 
+        <!-- 2.5) 入库清单调度模式 (官方最新 vs 实体清单应急模式) -->
+        <div class="p-3 rounded-xl bg-slate-500/5 dark:bg-slate-900/60 border border-slate-200/60 dark:border-white/5 flex items-center justify-between flex-wrap gap-3">
+          <div class="space-y-1 max-w-xl">
+            <div class="flex items-center gap-2 flex-wrap text-xs">
+              <Layers class="w-3.5 h-3.5 text-sky-400" />
+              <span class="font-semibold text-slate-300">入库清单调度模式:</span>
+              <span
+                class="px-2 py-0.5 rounded-full text-[11px] font-bold border transition flex items-center gap-1.5"
+                :class="manifestDispatchMode === 'entity'
+                  ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'"
+              >
+                <span class="w-1.5 h-1.5 rounded-full" :class="manifestDispatchMode === 'entity' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'"></span>
+                <span>{{ manifestDispatchMode === 'entity' ? '实体清单直载模式 (应急中)' : '跟随官方最新 (默认推荐)' }}</span>
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              {{ manifestDispatchMode === 'entity'
+                ? '已开启应急模式：入库时直接锁定版本并下载本地实体清单，零取码绕过云端故障（仅建议在作者发公告时使用）。'
+                : '默认模式：入库自动直连官方 CDN 动态获取最新清单与创意工坊，免占用本地存储。' }}
+            </p>
+          </div>
+
+          <!-- 模式切换选择器 -->
+          <div class="flex items-center gap-1.5 bg-slate-950/10 dark:bg-slate-950/60 p-1 rounded-xl border border-slate-200/60 dark:border-white/5 text-xs shrink-0">
+            <button
+              @click="handleSelectDispatchMode('official')"
+              class="px-3 py-1.5 rounded-lg transition font-medium text-xs flex items-center gap-1.5 cursor-pointer"
+              :class="manifestDispatchMode === 'official'
+                ? 'theme-btn-primary font-bold shadow-xs'
+                : 'text-slate-400 hover:text-slate-200'"
+            >
+              <Zap class="w-3 h-3" />
+              <span>官方最新 (推荐)</span>
+            </button>
+            <button
+              @click="handleSelectDispatchMode('entity')"
+              class="px-3 py-1.5 rounded-lg transition font-medium text-xs flex items-center gap-1.5 cursor-pointer"
+              :class="manifestDispatchMode === 'entity'
+                ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                : 'text-amber-500/80 hover:text-amber-400 hover:bg-amber-500/10'"
+            >
+              <FileArchive class="w-3 h-3" />
+              <span>实体清单 (应急)</span>
+            </button>
+          </div>
+        </div>
+
         <!-- 3) 环境健康体检诊断区 (可折叠，按钮直接置于体检标题右侧) -->
         <div class="pt-3 border-t border-white/5 space-y-2.5">
           <!-- 总体健康状态条与操作按钮 (点击收起/展开，诊断详情直接在下方呈现) -->
@@ -447,6 +495,60 @@
       @refresh="loadLicenseData(true)"
       @notify="(msg, type) => emit('notify', msg, type)"
     />
+
+    <!-- 实体清单应急模式危险警告弹窗 (防止普通用户误切) -->
+    <div
+      v-if="showEntityWarningModal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
+      @click.self="showEntityWarningModal = false"
+    >
+      <div class="w-full max-w-md theme-card rounded-2xl p-6 shadow-2xl border border-amber-500/40 relative space-y-4">
+        <!-- 弹窗标题 -->
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-400">
+            <AlertTriangle class="w-6 h-6 stroke-[2.5]" />
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+              <span>重要警告：切换至实体清单应急模式</span>
+            </h3>
+            <p class="text-xs text-amber-400/90 font-medium mt-0.5">
+              此模式为云端源全线故障时的紧急备用通道
+            </p>
+          </div>
+        </div>
+
+        <!-- 详细风险说明 (严格遵从用户指示) -->
+        <div class="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/25 text-xs text-slate-300 space-y-2 leading-relaxed">
+          <div class="font-bold text-amber-300 flex items-center gap-1.5">
+            <Info class="w-4 h-4 shrink-0 text-amber-400" />
+            <span>如果当前入库与下载功能正常，请绝对不要切换该模式！</span>
+          </div>
+          <ul class="list-disc list-inside space-y-1.5 text-slate-400">
+            <li><strong class="text-slate-200">游戏数量较少</strong>：该模式依赖已归档的物理清单文件，收录游戏数量少于全量云端库；</li>
+            <li><strong class="text-slate-200">无法保证最新版本</strong>：锁定的为历史稳定版本，入库后不会跟随官方自动更新；</li>
+            <li><strong class="text-amber-300">使用前提</strong>：仅当作者在官方交流群或公告中明确通知“后端源故障”时，才进行切换！</li>
+          </ul>
+        </div>
+
+        <!-- 底部操作按钮 -->
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            @click="showEntityWarningModal = false"
+            class="px-4 py-2 rounded-xl border border-white/10 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition cursor-pointer"
+          >
+            取消 (保持推荐模式)
+          </button>
+          <button
+            @click="confirmSwitchToEntityMode"
+            class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-bold text-xs transition shadow-md cursor-pointer flex items-center gap-1.5"
+          >
+            <Check class="w-3.5 h-3.5 stroke-[3]" />
+            <span>我已知晓风险，确认切换</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -476,7 +578,10 @@ import {
   Sun,
   Heart,
   Laptop,
-  ZoomIn
+  ZoomIn,
+  Layers,
+  FileArchive,
+  Info
 } from 'lucide-vue-next';
 import { EnvironmentDiagnosticResult, EnvironmentCheckItem, AppThemeId, ClientLicenseInfo } from '../../types';
 import { useTheme } from '../composables/useTheme';
@@ -525,6 +630,31 @@ const licenseInfo = ref<ClientLicenseInfo>({
 });
 
 const steamPathInput = ref('');
+
+// 入库清单调度模式 (官方最新 vs 实体清单应急模式)
+const MANIFEST_DISPATCH_STORAGE_KEY = 'chunfengdu_manifest_dispatch_mode';
+const manifestDispatchMode = ref<'official' | 'entity'>(
+  (localStorage.getItem(MANIFEST_DISPATCH_STORAGE_KEY) as 'official' | 'entity') || 'official'
+);
+const showEntityWarningModal = ref(false);
+
+const handleSelectDispatchMode = (mode: 'official' | 'entity') => {
+  if (mode === manifestDispatchMode.value) return;
+  if (mode === 'entity') {
+    showEntityWarningModal.value = true;
+  } else {
+    manifestDispatchMode.value = 'official';
+    localStorage.setItem(MANIFEST_DISPATCH_STORAGE_KEY, 'official');
+    emit('notify', '已恢复为「跟随官方最新模式」（默认推荐）！', 'success');
+  }
+};
+
+const confirmSwitchToEntityMode = () => {
+  manifestDispatchMode.value = 'entity';
+  localStorage.setItem(MANIFEST_DISPATCH_STORAGE_KEY, 'entity');
+  showEntityWarningModal.value = false;
+  emit('notify', '已切换为「实体清单直载模式」（应急备用）！新入库游戏将自动下发本地实体清单。', 'warning');
+};
 /**
  * 清单节点取值。
  *

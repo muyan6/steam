@@ -690,18 +690,24 @@ export const createTauriBridge = () => {
         customApiUrl: options?.customApiUrl,
         restartSteam: options?.restartSteam ?? true
       }),
-    unlockGame: async (game: SteamGame): Promise<{ success: boolean; message: string; scriptPath?: string; keyCount?: number; manifestCount?: number; warmedCodes?: number; metadataOk?: boolean; metadataMessage?: string | null }> => {
+    unlockGame: async (game: SteamGame, explicitLockVersion?: boolean): Promise<{ success: boolean; message: string; scriptPath?: string; keyCount?: number; manifestCount?: number; warmedCodes?: number; metadataOk?: boolean; metadataMessage?: string | null }> => {
       const depots = game.depots ? Object.entries(game.depots).map(([k, v]) => ({
         depotId: parseInt(k, 10),
         depotKey: v
       })) : [];
+      // 若全局开启了实体清单应急模式，默认自动锁定版本并预缓存实体清单到 depotcache
+      const isEntityMode = localStorage.getItem('chunfengdu_manifest_dispatch_mode') === 'entity';
+      const lockVersion = (typeof explicitLockVersion === 'boolean')
+        ? explicitLockVersion
+        : (isEntityMode ? true : false);
       return invoke('unlock_game', {
         payload: {
           appId: game.appId,
           name: game.name,
           nameZh: game.nameZh,
           depots,
-          dlcs: game.dlcs
+          dlcs: game.dlcs,
+          lockVersion
         }
       });
     },
