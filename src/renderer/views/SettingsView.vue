@@ -130,34 +130,18 @@
 
       <!-- 2. Steam 客户端本地环境与核心引擎 (路径 + 注入运维 + 健康体检闭环) -->
       <div class="theme-card-static rounded-2xl p-4 xl:p-5 shadow-sm border space-y-4">
-        <!-- 头部：标题与状态指示 -->
+        <!-- 头部：标题与状态指示 (保持清爽) -->
         <div class="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-white/5">
           <div class="flex items-center gap-2">
             <Cpu class="w-4 h-4 theme-text-accent" />
             <h3 class="font-bold text-sm text-slate-100">Steam 客户端环境与核心引擎</h3>
-            <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1.5">
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1.5">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               <span>OpenSteam 核心 Hook 就绪</span>
             </span>
-          </div>
-
-          <!-- 全面检测按钮 -->
-          <div class="flex items-center gap-2">
-            <button
-              v-if="healthResult && !checkingHealth"
-              @click="toggleManualExpand"
-              class="px-2.5 py-1 text-slate-400 hover:text-slate-200 text-xs font-medium transition flex items-center gap-1 rounded-lg hover:bg-slate-800/60 cursor-pointer"
-            >
-              <span>{{ isExpandedView ? '收起诊断 ▴' : '诊断详情 ▾' }}</span>
-            </button>
-            <button
-              @click="handleStartHealthCheck"
-              :disabled="checkingHealth"
-              class="theme-btn-primary px-3.5 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
-            >
-              <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': checkingHealth }" />
-              <span>{{ checkingHealth ? '正在全面体检...' : '开始全面检测' }}</span>
-            </button>
           </div>
         </div>
 
@@ -172,13 +156,13 @@
               v-model="steamPathInput"
               type="text"
               placeholder="自动从注册表探测，或点击右侧浏览手动选择..."
-              class="flex-1 bg-slate-900/90 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50"
+              class="flex-1 bg-slate-950/5 dark:bg-slate-900/90 border border-slate-300/60 dark:border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50"
             />
             <button
               @click="handleBrowseSteamPath"
-              class="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-xs text-slate-200 font-semibold transition flex items-center gap-1.5 cursor-pointer"
+              class="px-3.5 py-2 bg-slate-500/10 hover:bg-slate-500/20 border border-slate-400/20 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
             >
-              <FolderOpen class="w-3.5 h-3.5 text-slate-300" />
+              <FolderOpen class="w-3.5 h-3.5 text-slate-400" />
               <span>浏览路径</span>
             </button>
             <button
@@ -191,8 +175,8 @@
           </div>
         </div>
 
-        <!-- 2) 核心注入与运维操作快捷工具栏 -->
-        <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-between flex-wrap gap-2">
+        <!-- 2) 核心注入与运维操作快捷工具栏 (配色全面适配深浅主题) -->
+        <div class="p-3 rounded-xl bg-slate-500/5 dark:bg-slate-900/60 border border-slate-200/60 dark:border-white/5 flex items-center justify-between flex-wrap gap-2">
           <div class="text-xs text-slate-400 flex items-center gap-1.5">
             <Zap class="w-3.5 h-3.5 text-amber-400" />
             <span>内核与 Hook 运维：入库将自动通过多级高可用容灾调度下发清单</span>
@@ -200,17 +184,17 @@
           <div class="flex items-center gap-2 flex-wrap">
             <button
               @click="emit('relaunch-wizard')"
-              class="px-3 py-1.5 bg-slate-800/90 hover:bg-slate-700 border border-white/10 rounded-xl text-xs text-sky-300 font-semibold transition flex items-center gap-1.5 cursor-pointer"
+              class="px-3 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-600 dark:text-sky-300 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
-              <Sparkles class="w-3.5 h-3.5 text-sky-400" />
+              <Sparkles class="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
               <span>重新运行向导</span>
             </button>
             <button
               @click="handleUninstallOST"
               :disabled="deploying"
-              class="px-3 py-1.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+              class="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-600 dark:text-rose-300 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
             >
-              <Trash2 class="w-3.5 h-3.5" />
+              <Trash2 class="w-3.5 h-3.5 text-rose-500" />
               <span>卸载注入</span>
             </button>
             <button
@@ -224,13 +208,13 @@
           </div>
         </div>
 
-        <!-- 3) 环境健康体检诊断区 (可折叠) -->
-        <div class="pt-2 border-t border-white/5 space-y-2.5">
-          <!-- 总体健康状态条 -->
+        <!-- 3) 环境健康体检诊断区 (可折叠，按钮直接置于体检标题右侧) -->
+        <div class="pt-3 border-t border-white/5 space-y-2.5">
+          <!-- 总体健康状态条与操作按钮 (点击收起/展开，诊断详情直接在下方呈现) -->
           <div class="flex items-center justify-between text-xs flex-wrap gap-2">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
               <Activity class="w-3.5 h-3.5 text-sky-400" />
-              <span class="font-semibold text-slate-300">运行环境健康体检状态:</span>
+              <span class="font-semibold text-slate-300">运行环境健康体检:</span>
               <span
                 v-if="healthResult"
                 class="px-2.5 py-0.5 rounded-full text-[11px] font-bold transition"
@@ -242,10 +226,28 @@
                 <AlertTriangle class="w-3.5 h-3.5" />
                 <span>发现 {{ abnormalItemsCount }} 项异常待处理</span>
               </span>
+              <span v-if="healthResult" class="text-[11px] text-slate-400 font-mono">
+                ({{ healthResult.checkedAt }})
+              </span>
             </div>
 
-            <div v-if="healthResult" class="text-[11px] text-slate-400 font-mono">
-              检测时间: {{ healthResult.checkedAt }}
+            <!-- 检测与展开按钮直接紧挨在体检条右侧！ -->
+            <div class="flex items-center gap-2">
+              <button
+                v-if="healthResult && !checkingHealth"
+                @click="toggleManualExpand"
+                class="px-2.5 py-1 text-sky-400 hover:text-sky-300 text-xs font-medium transition flex items-center gap-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 cursor-pointer"
+              >
+                <span>{{ isExpandedView ? '收起诊断 ▴' : '诊断详情 ▾' }}</span>
+              </button>
+              <button
+                @click="handleStartHealthCheck"
+                :disabled="checkingHealth"
+                class="theme-btn-primary px-3 py-1 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
+              >
+                <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': checkingHealth }" />
+                <span>{{ checkingHealth ? '正在全面体检...' : '开始全面检测' }}</span>
+              </button>
             </div>
           </div>
 
