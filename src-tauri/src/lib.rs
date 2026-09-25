@@ -351,17 +351,17 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                 }
             } else if res.metadata_ok && res.manifest_count > 0 {
                 format!(
-                    "成功为「{}」写入入库规则（已固定 {} 条清单 GID，但服务端暂无可用分包密钥{}），直接下载可能为 0 字节！建议稍后重新入库以补齐密钥。",
+                    "【入库受限】已为「{}」写入基础规则（已同步 {} 条清单 GID，但服务端与社区暂无可用分包密钥{}），Steam 直接下载可能为 0 字节或提示内容加密！建议等待社区收录密钥后重新入库。",
                     name, res.manifest_count, precache_text
                 )
             } else if res.metadata_ok {
                 format!(
-                    "成功为「{}」写入入库授权（服务器暂无该游戏的密钥/清单数据，共 {} 个分包{}）！若下载提示加密，请重启 Steam 或稍后重试入库。",
+                    "【入库受限】已为「{}」写入基础授权（服务器与社区暂无该游戏的密钥/清单数据，共 {} 个分包{}），暂无法正常解密下载。建议稍后重试入库。",
                     name, res.depot_count, precache_text
                 )
             } else {
                 format!(
-                    "已为「{}」写入本地规则（离线模式），但未获取到云端密钥与清单数据。若下载提示无许可，请联网后重试入库！",
+                    "【入库受限】已为「{}」写入本地规则（离线模式），未获取到云端密钥与清单数据。若下载提示无许可，请联网后重试入库！",
                     name
                 )
             };

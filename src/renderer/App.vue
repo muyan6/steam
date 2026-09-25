@@ -409,14 +409,19 @@
           </div>
           <div class="min-w-0 flex-1">
             <h3 class="text-sm font-bold text-slate-100">
-              {{ unlockResult.level === 'success' ? '入库完成' : unlockResult.level === 'warning' ? '入库完成（有提示）' : '入库未成功' }}
+              {{ unlockResult.level === 'success' ? '入库完成' : unlockResult.level === 'warning' ? '入库受限（暂缺密钥）' : '入库未成功' }}
             </h3>
             <p class="text-xs text-slate-400 leading-relaxed mt-1 whitespace-pre-line break-words">{{ unlockResult.message }}</p>
           </div>
         </div>
         <button
           @click="unlockResult = null"
-          class="w-full py-2.5 theme-btn-primary rounded-xl text-xs font-bold transition cursor-pointer active:scale-[0.98]"
+          class="w-full py-2.5 rounded-xl text-xs font-bold transition cursor-pointer active:scale-[0.98]"
+          :class="unlockResult.level === 'success'
+            ? 'theme-btn-primary'
+            : unlockResult.level === 'warning'
+            ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30'
+            : 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30'"
         >
           我知道了
         </button>

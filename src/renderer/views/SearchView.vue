@@ -690,8 +690,8 @@ const unlockGame = async (game: SteamGame) => {
     const res = await window.electronAPI.unlockGame(plainGame);
     if (res.success) {
       let message = res.message;
-      // 是否真正拿到达可用数据（分包密钥或清单实体）：没拿到视为"入库未成功"，不扣本地次数
-      const usable = (res.keyCount || 0) > 0 || (res.manifestCount || 0) > 0;
+      // 是否真正拿到可用解密密钥：只有拿到分包密钥才算真正可用入库，无密钥时不扣减免费额度
+      const usable = (res.keyCount || 0) > 0;
       if (!activated && usable) {
         // 本地额度仅作展示参考，权威计数在服务端（按 AppID/游戏每日去重，DLC 不额外计次）
         try {
@@ -709,10 +709,9 @@ const unlockGame = async (game: SteamGame) => {
       if (usable && !(res.warmedCodes && res.warmedCodes > 0)) {
         message += '【提示】本次未能预置清单请求码，若首次点击下载提示「无网络连接」，等 5~10 秒再点一次即可（码已缓存在内核中）。';
       }
-      // 未获取到任何密钥（如免费额度耗尽被云端拒绝）时按警告而非成功提示，
-      // 服务端原因已在 res.message / metadataMessage 中透传。
-      // 使用全局模态框而非易转瞬即逝的 Toast，确保切换界面后仍能看到并要求确认
-      const blocked = !res.keyCount && res.metadataMessage;
+      // 未获取到有效解密密钥或云端拒绝时，按警告（入库受限）而非成功提示，
+      // 使用全局模态框而非易转瞬即逝的 Toast，确保切换界面后仍能看到并明确知晓状态
+      const blocked = !res.keyCount || res.keyCount === 0 || !!res.metadataMessage;
       emit('unlock-result', { message, level: blocked ? 'warning' : 'success' });
       await loadUnlockedList();
       emit('refresh-status');

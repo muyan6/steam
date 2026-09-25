@@ -322,7 +322,18 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
   const originalJson = res.json.bind(res);
   let explicitFailure = false;
   res.json = (body: any) => {
-    if (body && body.success === false) explicitFailure = true;
+    if (body && body.success === false) {
+      explicitFailure = true;
+    } else if (body && body.success === true && body.data) {
+      // 若请求元数据但服务端未收录任何有效解密密钥，视为服务受限，不扣减未激活用户的每日免费额度
+      const d = body.data;
+      const hasAnyKey =
+        (Array.isArray(d.depots) && d.depots.some((dp: any) => Boolean(dp.depotKey))) ||
+        Boolean(d.appLevelKey);
+      if (useAppId && !hasAnyKey) {
+        explicitFailure = true;
+      }
+    }
     return originalJson(body);
   };
   res.on('finish', () => {
