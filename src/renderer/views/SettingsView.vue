@@ -175,10 +175,10 @@
           </div>
         </div>
 
-        <!-- 2) 核心注入与运维操作快捷工具栏 (配色全面适配深浅主题) -->
-        <div class="p-3 rounded-xl bg-slate-500/5 dark:bg-slate-900/60 border border-slate-200/60 dark:border-white/5 flex items-center justify-between flex-wrap gap-2">
-          <div class="text-xs text-slate-400 flex items-center gap-1.5">
-            <Zap class="w-3.5 h-3.5 text-amber-400" />
+        <!-- 2) 核心注入与运维操作快捷工具栏 (平铺无多余深底，消除割裂感) -->
+        <div class="pt-3 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between flex-wrap gap-3">
+          <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <Zap class="w-3.5 h-3.5 text-amber-500" />
             <span>内核与 Hook 运维：入库将自动通过多级高可用容灾调度下发清单</span>
           </div>
           <div class="flex items-center gap-2 flex-wrap">
@@ -208,23 +208,23 @@
           </div>
         </div>
 
-        <!-- 2.5) 入库清单调度模式 (官方最新 vs 实体清单应急模式) -->
-        <div class="p-3 rounded-xl bg-slate-500/5 dark:bg-slate-900/60 border border-slate-200/60 dark:border-white/5 flex items-center justify-between flex-wrap gap-3">
+        <!-- 2.5) 入库清单调度模式 (平铺无多余深底，与整个卡片背景浑然一体) -->
+        <div class="pt-3 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between flex-wrap gap-3">
           <div class="space-y-1 max-w-xl">
             <div class="flex items-center gap-2 flex-wrap text-xs">
-              <Layers class="w-3.5 h-3.5 text-sky-400" />
-              <span class="font-semibold text-slate-300">入库清单调度模式:</span>
+              <Layers class="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
+              <span class="font-semibold text-slate-700 dark:text-slate-300">入库清单调度模式:</span>
               <span
                 class="px-2 py-0.5 rounded-full text-[11px] font-bold border transition flex items-center gap-1.5"
                 :class="manifestDispatchMode === 'entity'
-                  ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
-                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'"
+                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                  : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'"
               >
                 <span class="w-1.5 h-1.5 rounded-full" :class="manifestDispatchMode === 'entity' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'"></span>
                 <span>{{ manifestDispatchMode === 'entity' ? '实体清单直载模式 (应急中)' : '跟随官方最新 (默认推荐)' }}</span>
               </span>
             </div>
-            <p class="text-[11px] text-slate-400 leading-relaxed">
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
               {{ manifestDispatchMode === 'entity'
                 ? '已开启应急模式：入库时直接锁定版本并下载本地实体清单，零取码绕过云端故障（仅建议在作者发公告时使用）。'
                 : '默认模式：入库自动直连官方 CDN 动态获取最新清单与创意工坊，免占用本地存储。' }}
@@ -232,13 +232,13 @@
           </div>
 
           <!-- 模式切换选择器 -->
-          <div class="flex items-center gap-1.5 bg-slate-950/10 dark:bg-slate-950/60 p-1 rounded-xl border border-slate-200/60 dark:border-white/5 text-xs shrink-0">
+          <div class="flex items-center gap-1.5 p-1 rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-slate-900/60 text-xs shrink-0">
             <button
               @click="handleSelectDispatchMode('official')"
               class="px-3 py-1.5 rounded-lg transition font-medium text-xs flex items-center gap-1.5 cursor-pointer"
               :class="manifestDispatchMode === 'official'
                 ? 'theme-btn-primary font-bold shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'"
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'"
             >
               <Zap class="w-3 h-3" />
               <span>官方最新 (推荐)</span>
@@ -248,7 +248,7 @@
               class="px-3 py-1.5 rounded-lg transition font-medium text-xs flex items-center gap-1.5 cursor-pointer"
               :class="manifestDispatchMode === 'entity'
                 ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                : 'text-amber-500/80 hover:text-amber-400 hover:bg-amber-500/10'"
+                : 'text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'"
             >
               <FileArchive class="w-3 h-3" />
               <span>实体清单 (应急)</span>
@@ -257,7 +257,7 @@
         </div>
 
         <!-- 3) 环境健康体检诊断区 (可折叠，按钮直接置于体检标题右侧) -->
-        <div class="pt-3 border-t border-white/5 space-y-2.5">
+        <div class="pt-3 border-t border-slate-200/60 dark:border-white/5 space-y-2.5">
           <!-- 总体健康状态条与操作按钮 (点击收起/展开，诊断详情直接在下方呈现) -->
           <div class="flex items-center justify-between text-xs flex-wrap gap-2">
             <div class="flex items-center gap-2 flex-wrap">
