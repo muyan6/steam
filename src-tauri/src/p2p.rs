@@ -91,6 +91,14 @@ pub struct ParsedShareCode {
     pub game_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct P2pRealtimeState {
+    pub stage: String, // 'idle' | 'starting' | 'punching' | 'direct' | 'relay' | 'error'
+    pub nat_type: String,
+    pub detail: String,
+}
+
 fn get_p2p_dir() -> PathBuf {
     let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
     let dir = PathBuf::from(base).join("com.chunfengdu.app").join("openp2p");
@@ -338,6 +346,94 @@ pub fn get_status() -> P2pStatusInfo {
         } else {
             "P2P 隧道服务未启动".to_string()
         },
+    }
+}
+
+/// 获取当前实时连接与打洞状态（分析 openp2p 日志）
+pub fn get_realtime_state() -> P2pRealtimeState {
+    let running = is_p2p_running();
+    if !running {
+        return P2pRealtimeState {
+            stage: "idle".to_string(),
+            nat_type: "未检测".to_string(),
+            detail: "服务待命中".to_string(),
+        };
+    }
+
+    let dir = get_p2p_dir();
+    let log_file = dir.join("log").join("openp2p.log");
+    if !log_file.is_file() {
+        return P2pRealtimeState {
+            stage: "starting".to_string(),
+            nat_type: "检测中".to_string(),
+            detail: "服务已启动，等待网络就绪...".to_string(),
+        };
+    }
+
+    let content = match fs::read_to_string(&log_file) {
+        Ok(c) => c,
+        Err(_) => {
+            return P2pRealtimeState {
+                stage: "starting".to_string(),
+                nat_type: "检测中".to_string(),
+                detail: "服务运行中".to_string(),
+            };
+        }
+    };
+
+    let lines: Vec<&str> = content.lines().rev().take(30).collect();
+    let mut nat = "检测中".to_string();
+    let mut stage = "starting".to_string();
+    let mut detail = "服务已启动，节点已上线".to_string();
+
+    // 逆序查找 NAT 类型
+    for line in &lines {
+        if line.contains("NAT type:") {
+            if let Some(pos) = line.find("NAT type:") {
+                let sub = &line[pos + 9..];
+                let num_str: String = sub.chars().take_while(|c| c.is_digit(10)).collect();
+                if let Ok(n) = num_str.parse::<u32>() {
+                    nat = match n {
+                        1 => "NAT 1 (全锥型 · 极佳)".to_string(),
+                        2 => "NAT 2 (受限锥型 · 良好)".to_string(),
+                        3 => "NAT 3 (端口受限 · 正常)".to_string(),
+                        4 => "NAT 4 (对称型 · 需中继)".to_string(),
+                        _ => format!("NAT {}", n),
+                    };
+                    break;
+                }
+            }
+        }
+    }
+
+    // 逆序查找最新隧道连接状态
+    for line in &lines {
+        if line.contains("Punch ok") || line.contains("TCP4 Punch ok") || line.contains("UDP Punch ok") {
+            stage = "direct".to_string();
+            detail = "P2P 隧道已成功直连！(Direct Connected)".to_string();
+            break;
+        } else if line.contains("relay") || line.contains("Relay") || line.contains("share node") {
+            stage = "relay".to_string();
+            detail = "已自动切换为公网共享节点中继转发".to_string();
+            break;
+        } else if line.contains("try TCP4 Punch") || line.contains("try UDP Punch") || line.contains("punching") {
+            stage = "punching".to_string();
+            detail = "正在与对端节点打洞握手中...".to_string();
+            break;
+        } else if line.contains("read msg error") || line.contains("timeout") || line.contains("connect error") {
+            stage = "error".to_string();
+            detail = "打洞握手暂时超时，正在自动重试...".to_string();
+            break;
+        } else if line.contains("login ok") {
+            stage = "starting".to_string();
+            detail = "节点已登录公网信令网络，随时可被连接".to_string();
+        }
+    }
+
+    P2pRealtimeState {
+        stage,
+        nat_type: nat,
+        detail,
     }
 }
 

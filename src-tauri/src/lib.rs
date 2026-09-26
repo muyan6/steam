@@ -1826,6 +1826,11 @@ fn p2p_get_status() -> p2p::P2pStatusInfo {
 }
 
 #[tauri::command]
+fn p2p_get_realtime_state() -> p2p::P2pRealtimeState {
+    p2p::get_realtime_state()
+}
+
+#[tauri::command]
 fn p2p_start_daemon() -> Result<bool, String> {
     p2p::start_p2p_daemon()
 }
@@ -1996,6 +2001,7 @@ pub fn run() {
             fetch_game_achievements,
             p2p_get_node_id,
             p2p_get_status,
+            p2p_get_realtime_state,
             p2p_start_daemon,
             p2p_stop_all,
             p2p_connect_tunnel,

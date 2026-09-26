@@ -517,5 +517,11 @@ export interface ParsedShareCode {
   gameName: string;
 }
 
+export interface P2pRealtimeState {
+  stage: 'idle' | 'starting' | 'punching' | 'direct' | 'relay' | 'error';
+  natType: string;
+  detail: string;
+}
+
 
 

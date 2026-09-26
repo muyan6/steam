@@ -17,7 +17,8 @@ import type {
   P2pStatusInfo,
   P2pAppConfig,
   P2pTunnelPayload,
-  ParsedShareCode
+  ParsedShareCode,
+  P2pRealtimeState
 } from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
@@ -1958,4 +1959,15 @@ export async function openExternalUrl(url: string): Promise<void> {
     } catch {}
   }
   window.open(url, '_blank');
+}
+
+export async function p2pGetRealtimeState(): Promise<P2pRealtimeState> {
+  if (!isTauriEnvironment()) {
+    return {
+      stage: 'idle',
+      natType: '未检测',
+      detail: '非客户端环境',
+    };
+  }
+  return await invoke<P2pRealtimeState>('p2p_get_realtime_state');
 }
