@@ -107,34 +107,55 @@ fn get_p2p_dir() -> PathBuf {
 }
 
 pub fn locate_openp2p_bin() -> Option<PathBuf> {
-    // 1. 优先当前工作目录 assets/tools/openp2p/openp2p.exe
-    let local_path = PathBuf::from("src-tauri/assets/tools/openp2p/openp2p.exe");
-    if local_path.is_file() {
-        return Some(local_path.canonicalize().unwrap_or(local_path));
-    }
+    let p2p_dir = get_p2p_dir();
+    let appdata_bin = p2p_dir.join("openp2p.exe");
 
-    // 2. 检查可执行程序所在目录相对 tools/openp2p/openp2p.exe
+    // 候选的源二进制路径列表（优先寻找春风度自带并已去提权的 asInvoker 版本）
+    let mut candidate_sources: Vec<PathBuf> = Vec::new();
+
+    // 1. 编译期 CARGO_MANIFEST_DIR 绝对路径（针对本地开发 npm run tauri dev，100% 绝对命中）
+    let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/tools/openp2p/openp2p.exe");
+    candidate_sources.push(dev_path);
+
+    // 2. 当前工作目录相对路径
+    candidate_sources.push(PathBuf::from("src-tauri/assets/tools/openp2p/openp2p.exe"));
+    candidate_sources.push(PathBuf::from("assets/tools/openp2p/openp2p.exe"));
+
+    // 3. 安装包打包后可执行程序相对路径
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let p1 = dir.join("assets").join("tools").join("openp2p").join("openp2p.exe");
-            if p1.is_file() {
-                return Some(p1);
-            }
-            let p2 = dir.join("tools").join("openp2p").join("openp2p.exe");
-            if p2.is_file() {
-                return Some(p2);
-            }
-            let p3 = dir.join("openp2p.exe");
-            if p3.is_file() {
-                return Some(p3);
-            }
+            candidate_sources.push(dir.join("assets").join("tools").join("openp2p").join("openp2p.exe"));
+            candidate_sources.push(dir.join("tools").join("openp2p").join("openp2p.exe"));
+            candidate_sources.push(dir.join("openp2p.exe"));
         }
     }
 
-    // 3. 检查系统全局 Program Files 安装路径
-    let sys_path = PathBuf::from(r"C:\Program Files\OpenP2P\openp2p.exe");
-    if sys_path.is_file() {
-        return Some(sys_path);
+    // 遍历查找自带的已修补 asInvoker 二进制文件，并同步至用户数据目录
+    for src in candidate_sources {
+        if src.is_file() {
+            let need_copy = match fs::metadata(&appdata_bin) {
+                Ok(meta) => {
+                    let src_meta = fs::metadata(&src).ok();
+                    src_meta.map(|sm| sm.len() != meta.len()).unwrap_or(false)
+                }
+                Err(_) => true,
+            };
+
+            if need_copy {
+                let _ = fs::copy(&src, &appdata_bin);
+            }
+
+            // 优先返回用户独立 APPDATA 运行目录下的可执行文件
+            if appdata_bin.is_file() {
+                return Some(appdata_bin);
+            }
+            return Some(src.canonicalize().unwrap_or(src));
+        }
+    }
+
+    // 4. 若 AppData 目录中已有可用二进制
+    if appdata_bin.is_file() {
+        return Some(appdata_bin);
     }
 
     None
@@ -275,7 +296,7 @@ pub fn start_p2p_daemon() -> Result<bool, String> {
         .current_dir(&dir)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
-        .map_err(|e| format!("启动 openp2p 失败: {}", e))?;
+        .map_err(|e| format!("启动 openp2p 失败 (路径: {}): {}", exe_path.display(), e))?;
 
     let mut guard = ACTIVE_P2P_CHILD.lock().unwrap();
     *guard = Some(child);
