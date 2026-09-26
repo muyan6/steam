@@ -3,8 +3,8 @@
     <!-- 顶部统一标准 Header -->
     <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
       <div class="flex items-center gap-3.5">
-        <div class="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-sm shrink-0">
-          <Trophy class="w-5 h-5 theme-text-accent" />
+        <div class="w-11 h-11 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/25 dark:border-amber-500/30 flex items-center justify-center shadow-xs shrink-0 text-amber-500 dark:text-amber-400">
+          <Trophy class="w-5 h-5" />
         </div>
         <div>
           <div class="flex items-center gap-2.5">

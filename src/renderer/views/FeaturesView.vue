@@ -3,8 +3,8 @@
     <!-- 顶部统一标准 Header -->
     <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 flex-wrap shrink-0">
       <div class="flex items-center gap-3.5">
-        <div class="w-11 h-11 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-sm shrink-0">
-          <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
+        <div class="w-11 h-11 rounded-2xl bg-sky-500/10 dark:bg-sky-500/15 border border-sky-500/25 dark:border-sky-500/30 flex items-center justify-center shadow-xs shrink-0 text-sky-500 dark:text-sky-400">
+          <Sparkles class="w-5 h-5" />
         </div>
         <div>
           <div class="flex items-center gap-2.5">
@@ -231,7 +231,6 @@
 import { isTauriEnvironment, formatIpcError } from '../api/tauriBridge';
 import { APP_CONFIG } from '../../config/appConfig';
 import { ref, onMounted } from 'vue';
-import appLogo from '../assets/logo.svg';
 import {
   RotateCw, 
   ShieldAlert, 

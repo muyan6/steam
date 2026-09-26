@@ -380,6 +380,22 @@
   border-color: #e2e8f0 !important;
 }
 
+/* 浅色模式下弱白半透明背景自适应淡灰微质感，避免浅色底上完全隐形 */
+[data-theme="frost"] .bg-white\/5,
+[data-theme="dawn"] .bg-white\/5,
+[data-theme="mint"] .bg-white\/5 {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-theme="frost"] .bg-white\/10,
+[data-theme="dawn"] .bg-white\/10,
+[data-theme="mint"] .bg-white\/10,
+[data-theme="frost"] .hover\:bg-white\/10:hover,
+[data-theme="dawn"] .hover\:bg-white\/10:hover,
+[data-theme="mint"] .hover\:bg-white\/10:hover {
+  background-color: rgba(15, 23, 42, 0.07) !important;
+}
+
 /* 输入框在浅色模式下的美化 */
 [data-theme="frost"] input,
 [data-theme="dawn"] input,

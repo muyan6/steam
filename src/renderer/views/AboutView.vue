@@ -3,8 +3,8 @@
     <!-- 顶部统一标准 Header -->
     <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 flex-wrap shrink-0">
       <div class="flex items-center gap-3.5">
-        <div class="w-11 h-11 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-sm shrink-0">
-          <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
+        <div class="w-11 h-11 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-white/10 shadow-sm shrink-0 flex items-center justify-center p-1">
+          <img :src="appLogo" alt="春风渡" class="w-full h-full object-contain" draggable="false" />
         </div>
         <div>
           <div class="flex items-center gap-2.5">

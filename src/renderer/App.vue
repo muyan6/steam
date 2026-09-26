@@ -6,8 +6,8 @@
       <div>
         <!-- 品牌 Logo & 窗口拖拽区域 -->
         <div class="p-4 flex items-center gap-3 border-b border-white/5 app-drag-region">
-          <div class="w-9 h-9 rounded-2xl overflow-hidden shadow-lg relative group shrink-0 app-no-drag bg-slate-950/40">
-            <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
+          <div class="w-9 h-9 rounded-2xl overflow-hidden shadow-xs relative group shrink-0 app-no-drag bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 p-0.5 flex items-center justify-center">
+            <img :src="appLogo" alt="春风渡" class="w-full h-full object-contain" draggable="false" />
             <div class="absolute inset-0 rounded-2xl bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </div>
           <div class="min-w-0 flex-1 app-no-drag">

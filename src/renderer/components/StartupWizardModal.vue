@@ -4,8 +4,8 @@
       <!-- 顶部 Header -->
       <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl overflow-hidden shadow-lg bg-slate-950/40 shrink-0">
-            <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
+          <div class="w-9 h-9 rounded-xl overflow-hidden shadow-xs bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 p-0.5 flex items-center justify-center shrink-0">
+            <img :src="appLogo" alt="春风渡" class="w-full h-full object-contain" draggable="false" />
           </div>
           <div>
             <h2 class="font-bold text-sm text-slate-100 flex items-center gap-2">
