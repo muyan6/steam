@@ -226,3 +226,22 @@ export interface AfdianConfig {
   updatedAt: string;
 }
 
+export interface P2pGamePreset {
+  id: string;
+  name: string;
+  remotePort: number;
+  localPort: number;
+  protocol: 'tcp' | 'udp';
+  category: string;
+  note?: string;
+}
+
+export interface P2pConfigResponse {
+  success: boolean;
+  publicToken: string;
+  serverHost: string;
+  serverPort: number;
+  presets: P2pGamePreset[];
+}
+
+

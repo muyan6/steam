@@ -62,6 +62,18 @@
         <Wrench class="w-3.5 h-3.5" />
         <span>方案二 · 联机补丁注入</span>
       </button>
+
+      <button
+        @click="activeMainTab = 'p2p'"
+        class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
+        :class="activeMainTab === 'p2p'
+          ? 'theme-btn-primary shadow-xs'
+          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
+      >
+        <Network class="w-3.5 h-3.5" />
+        <span>异地联机组网</span>
+        <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 font-mono">P2P</span>
+      </button>
     </div>
 
     <!-- 联机方案提示横幅 + 可折叠功能说明 (紧凑精致) -->
@@ -69,9 +81,10 @@
       <div class="flex items-center gap-2 min-w-0">
         <span class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 text-xs font-bold">💡</span>
         <span class="truncate">
-          <strong class="text-sky-300 font-semibold">联机两大方案：</strong>
+          <strong class="text-sky-300 font-semibold">联机模式：</strong>
           <strong class="text-emerald-400 font-bold">方案一·Steam通道</strong>（免改直启P2P）；
-          <strong class="text-amber-400 font-bold">方案二·联机补丁</strong>（DLL补丁/大厅强鉴权）。绿色徽章优先方案一。
+          <strong class="text-amber-400 font-bold">方案二·联机补丁</strong>（DLL补丁/大厅强鉴权）；
+          <strong class="text-sky-300 font-bold">异地联机组网</strong>（P2P隧道直连/局域网互通）。
         </span>
       </div>
       <button
@@ -537,7 +550,7 @@
     <!-- ============================================== -->
     <!-- TAB 2: 联机补丁模式 (Online-Fix.me 自动下载解压安装) -->
     <!-- ============================================== -->
-    <div v-else class="space-y-6 flex-1 flex flex-col min-h-0 pb-10">
+    <div v-else-if="activeMainTab === 'patch'" class="space-y-6 flex-1 flex flex-col min-h-0 pb-10">
       <!-- 快捷操作与搜索栏 -->
       <div class="flex items-center justify-between gap-3.5 flex-wrap shrink-0">
         <div class="flex items-center gap-3 flex-wrap">
@@ -925,6 +938,14 @@
     </div>
 
     <!-- ============================================== -->
+    <!-- TAB 3: 异地联机组网 (P2P 穿透/局域网互通) -->
+    <!-- ============================================== -->
+    <P2pNetworkingPanel
+      v-else-if="activeMainTab === 'p2p'"
+      @toast="(msg) => emit('notify', msg, 'info')"
+    />
+
+    <!-- ============================================== -->
     <!-- 弹窗 3: Spacewar 未安装提示弹窗 -->
     <!-- ============================================== -->
     <div
@@ -996,7 +1017,8 @@ import {
   HelpCircle,
   ShieldAlert,
   User,
-  X
+  X,
+  Network
 } from 'lucide-vue-next';
 import {
   LocalInstalledGame,
@@ -1007,13 +1029,14 @@ import {
 import { formatIpcError } from '../api/tauriBridge';
 import { steamCardImageFallback } from '../utils/imageFallback';
 import OnlineFixGuideModal from '../components/onlinefix/OnlineFixGuideModal.vue';
+import P2pNetworkingPanel from '../components/onlinefix/P2pNetworkingPanel.vue';
 
 const emit = defineEmits<{
   (e: 'notify', msg: string, type: 'success' | 'error' | 'warning' | 'info'): void;
 }>();
 
-// 主 Tab: 'launch' (联机启动模式) | 'patch' (联机补丁模式)
-const activeMainTab = ref<'launch' | 'patch'>('launch');
+// 主 Tab: 'launch' (联机启动模式) | 'patch' (联机补丁模式) | 'p2p' (异地联机组网)
+const activeMainTab = ref<'launch' | 'patch' | 'p2p'>('launch');
 
 // 选中的联机启动模式: 'open' | 'spacewar' | 'bat'
 const selectedLaunchMode = ref<OnlineLaunchMode>('open');

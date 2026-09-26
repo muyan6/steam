@@ -473,4 +473,49 @@ export interface SamStatus {
   version?: string | null;
 }
 
+export interface P2pGamePreset {
+  id: string;
+  name: string;
+  remotePort: number;
+  localPort: number;
+  protocol: 'tcp' | 'udp';
+  category: string;
+  note?: string;
+}
+
+export interface P2pAppConfig {
+  appName: string;
+  peerNode: string;
+  dstHost: string;
+  dstPort: number;
+  srcPort: number;
+  protocol: string;
+}
+
+export interface P2pTunnelPayload {
+  peerUid: string;
+  remotePort: number;
+  localPort: number;
+  protocol: string;
+  gameName?: string;
+}
+
+export interface P2pStatusInfo {
+  running: boolean;
+  nodeId: string;
+  exeFound: boolean;
+  activeTunnels: P2pAppConfig[];
+  binaryPath: string;
+  message: string;
+}
+
+export interface ParsedShareCode {
+  uid: string;
+  remotePort: number;
+  localPort: number;
+  protocol: string;
+  gameName: string;
+}
+
+
 

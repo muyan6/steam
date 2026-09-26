@@ -13,7 +13,11 @@ import type {
   TrainerStatus,
   GameAchievementsData,
   AchievementItem,
-  SamStatus
+  SamStatus,
+  P2pStatusInfo,
+  P2pAppConfig,
+  P2pTunnelPayload,
+  ParsedShareCode
 } from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
@@ -1859,4 +1863,89 @@ export function startTauriHeartbeat(): void {
   heartbeatStarted = true;
   void sendTauriHeartbeatNow();
   setInterval(sendTauriHeartbeatNow, 30 * 60 * 1000);
+}
+
+// ==================== P2P 异地联机组网桥接 ====================
+export async function p2pGetNodeId(): Promise<string> {
+  if (!isTauriEnvironment()) return '0000000000000000';
+  return await invoke<string>('p2p_get_node_id');
+}
+
+export async function p2pGetStatus(): Promise<P2pStatusInfo> {
+  if (!isTauriEnvironment()) {
+    return {
+      running: false,
+      nodeId: '',
+      exeFound: false,
+      activeTunnels: [],
+      binaryPath: '',
+      message: '非客户端环境',
+    };
+  }
+  return await invoke<P2pStatusInfo>('p2p_get_status');
+}
+
+export async function p2pStartDaemon(): Promise<boolean> {
+  if (!isTauriEnvironment()) return false;
+  return await invoke<boolean>('p2p_start_daemon');
+}
+
+export async function p2pStopAll(): Promise<boolean> {
+  if (!isTauriEnvironment()) return false;
+  return await invoke<boolean>('p2p_stop_all');
+}
+
+export async function p2pConnectTunnel(payload: P2pTunnelPayload): Promise<P2pAppConfig> {
+  if (!isTauriEnvironment()) throw new Error('仅在客户端环境下支持建立 P2P 隧道');
+  return await invoke<P2pAppConfig>('p2p_connect_tunnel', { payload });
+}
+
+export async function p2pRemoveTunnel(localPort: number): Promise<boolean> {
+  if (!isTauriEnvironment()) return false;
+  return await invoke<boolean>('p2p_remove_tunnel', { localPort });
+}
+
+export async function p2pGenerateCode(payload: {
+  uid: string;
+  remotePort: number;
+  localPort: number;
+  protocol: string;
+  gameName: string;
+}): Promise<string> {
+  if (!isTauriEnvironment()) {
+    const raw = JSON.stringify(payload);
+    return `CFD://${btoa(raw)}`;
+  }
+  return await invoke<string>('p2p_generate_code', {
+    uid: payload.uid,
+    remotePort: payload.remotePort,
+    localPort: payload.localPort,
+    protocol: payload.protocol,
+    gameName: payload.gameName,
+  });
+}
+
+export async function p2pParseCode(codeStr: string): Promise<ParsedShareCode> {
+  if (!isTauriEnvironment()) {
+    const clean = codeStr.replace(/^(CFD|cfd|OPL|opl):\/\//, '');
+    const obj = JSON.parse(atob(clean));
+    return {
+      uid: obj.uid || '',
+      remotePort: obj.remotePort || obj.Sport || obj.port || 0,
+      localPort: obj.localPort || obj.Cport || obj.remotePort || 0,
+      protocol: obj.protocol || obj.type || 'udp',
+      gameName: obj.gameName || obj.name || '自定义游戏',
+    };
+  }
+  return await invoke<ParsedShareCode>('p2p_parse_code', { codeStr });
+}
+
+export async function p2pCheckFirewall(): Promise<boolean> {
+  if (!isTauriEnvironment()) return false;
+  return await invoke<boolean>('p2p_check_firewall');
+}
+
+export async function p2pAllowFirewall(): Promise<boolean> {
+  if (!isTauriEnvironment()) return false;
+  return await invoke<boolean>('p2p_allow_firewall');
 }

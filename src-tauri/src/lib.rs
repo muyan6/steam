@@ -15,6 +15,7 @@ pub mod lua_watcher;
 pub mod steam_worker;
 pub mod trainer;
 pub mod achievements;
+pub mod p2p;
 
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -1814,6 +1815,56 @@ async fn fetch_game_achievements(app_id: u32, lang: Option<String>) -> Result<ac
     achievements::fetch_game_achievements(app_id, lang).await
 }
 
+#[tauri::command]
+fn p2p_get_node_id() -> String {
+    p2p::get_or_generate_node_id()
+}
+
+#[tauri::command]
+fn p2p_get_status() -> p2p::P2pStatusInfo {
+    p2p::get_status()
+}
+
+#[tauri::command]
+fn p2p_start_daemon() -> Result<bool, String> {
+    p2p::start_p2p_daemon()
+}
+
+#[tauri::command]
+fn p2p_stop_all() -> Result<bool, String> {
+    p2p::stop_p2p()
+}
+
+#[tauri::command]
+fn p2p_connect_tunnel(payload: p2p::P2pTunnelPayload) -> Result<p2p::P2pAppConfig, String> {
+    p2p::connect_tunnel(payload)
+}
+
+#[tauri::command]
+fn p2p_remove_tunnel(local_port: u16) -> Result<bool, String> {
+    p2p::remove_tunnel(local_port)
+}
+
+#[tauri::command]
+fn p2p_generate_code(uid: String, remote_port: u16, local_port: u16, protocol: String, game_name: String) -> String {
+    p2p::generate_share_code(&uid, remote_port, local_port, &protocol, &game_name)
+}
+
+#[tauri::command]
+fn p2p_parse_code(code_str: String) -> Result<p2p::ParsedShareCode, String> {
+    p2p::parse_share_code(&code_str)
+}
+
+#[tauri::command]
+fn p2p_check_firewall() -> bool {
+    p2p::check_firewall_rule()
+}
+
+#[tauri::command]
+fn p2p_allow_firewall() -> Result<bool, String> {
+    p2p::allow_firewall_rule()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1942,7 +1993,17 @@ pub fn run() {
             download_sam,
             launch_sam_for_game,
             open_sam_dir,
-            fetch_game_achievements
+            fetch_game_achievements,
+            p2p_get_node_id,
+            p2p_get_status,
+            p2p_start_daemon,
+            p2p_stop_all,
+            p2p_connect_tunnel,
+            p2p_remove_tunnel,
+            p2p_generate_code,
+            p2p_parse_code,
+            p2p_check_firewall,
+            p2p_allow_firewall
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

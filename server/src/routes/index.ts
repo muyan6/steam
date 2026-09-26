@@ -58,6 +58,7 @@ import {
   deleteSponsorAdmin
 } from '../controllers/sponsorController.js';
 import { getSourcesList, triggerSyncFromSources } from '../controllers/sourceController.js';
+import { getP2pConfig } from '../controllers/p2pController.js';
 import { getAppLinks, updateAppLinks } from '../controllers/linksController.js';
 import { getOnlineRules, syncOnlineRulesFromCharts } from '../controllers/onlineRulesController.js';
 import {
@@ -193,6 +194,10 @@ router.post('/auth/login', loginLimiter, login);
 
 // 溯源与上游引用清单只读查看
 router.get('/sources', getSourcesList);
+
+// P2P 异地联机组网预设与公共配置
+router.get('/p2p/config', getP2pConfig);
+router.get('/p2p/presets', getP2pConfig);
 
 // 公告通知（客户端拉取）
 router.get('/notice/latest', getLatestNotice);
