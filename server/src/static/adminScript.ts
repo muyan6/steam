@@ -916,6 +916,7 @@ async function loadAdminSettings() {
         var uEl = document.getElementById('cfgAfdianUserId'); if (uEl) uEl.value = afRes.data.userId || '';
         var tEl = document.getElementById('cfgAfdianToken'); if (tEl) tEl.value = afRes.data.token || '';
         var sEl = document.getElementById('cfgAfdianAutoSync'); if (sEl) sEl.checked = afRes.data.autoSync !== false;
+        var saEl = document.getElementById('cfgAfdianShowAmount'); if (saEl) saEl.checked = !!afRes.data.showAmount;
       }
     }
   } catch(e) { console.warn('loadAfdianConfig error:', e); }
@@ -925,6 +926,7 @@ async function handleAfdianConfigSubmit() {
   var userId = (document.getElementById('cfgAfdianUserId').value || '').trim();
   var token = (document.getElementById('cfgAfdianToken').value || '').trim();
   var autoSync = !!(document.getElementById('cfgAfdianAutoSync') && document.getElementById('cfgAfdianAutoSync').checked);
+  var showAmount = !!(document.getElementById('cfgAfdianShowAmount') && document.getElementById('cfgAfdianShowAmount').checked);
   var btn = document.getElementById('btnSaveAfdian');
   var msg = document.getElementById('afdianMsg');
   var msgText = document.getElementById('afdianMsgText');
@@ -933,7 +935,7 @@ async function handleAfdianConfigSubmit() {
     var resp = await fetch('/api/admin/sponsors/config', {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ userId: userId, token: token, autoSync: autoSync })
+      body: JSON.stringify({ userId: userId, token: token, autoSync: autoSync, showAmount: showAmount })
     });
     var res = await resp.json();
     if (res && res.success) {

@@ -615,6 +615,7 @@ export const sanitizeSponsorResponse = (data: any, fallbackUrl = ''): SponsorDat
     return {
       totalCount: 0,
       totalAmount: 0,
+      showAmount: false,
       updatedAt: new Date().toISOString().slice(0, 10),
       source: 'afdian',
       sponsorUrl: fallbackUrl,
@@ -622,17 +623,24 @@ export const sanitizeSponsorResponse = (data: any, fallbackUrl = ''): SponsorDat
     };
   }
 
+  const showAmount = Boolean(data.showAmount);
   const rawList: SponsorItem[] = Array.isArray(data.sponsors) ? data.sponsors : [];
   const realSponsors = rawList.filter(s => !isMockSponsor(s));
   const totalAmount = realSponsors.reduce((sum, item) => sum + (item.allSumAmount || 0), 0);
 
+  // 当关闭公开金额时，条目金额脱敏为 0，防止金额泄露
+  const sanitizedSponsors = showAmount
+    ? realSponsors
+    : realSponsors.map(s => ({ ...s, allSumAmount: 0 }));
+
   return {
     totalCount: realSponsors.length,
-    totalAmount: Math.round(totalAmount * 100) / 100,
+    totalAmount: showAmount ? Math.round(totalAmount * 100) / 100 : 0,
+    showAmount,
     updatedAt: data.updatedAt || new Date().toISOString().slice(0, 10),
     source: data.source || 'afdian',
     sponsorUrl: typeof data.sponsorUrl === 'string' ? data.sponsorUrl.trim() : (fallbackUrl || ''),
-    sponsors: realSponsors
+    sponsors: sanitizedSponsors
   };
 };
 

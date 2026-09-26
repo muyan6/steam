@@ -209,6 +209,7 @@ export interface SponsorItem {
 export interface SponsorDataResponse {
   totalCount: number;
   totalAmount: number;
+  showAmount?: boolean;   // 是否公开展示赞助金额（默认 false 保护作者隐私）
   updatedAt: string;
   source: 'afdian' | 'cache' | 'fallback';
   sponsorUrl?: string;
@@ -221,6 +222,7 @@ export interface AfdianConfig {
   autoSync: boolean;
   syncIntervalMinutes: number;
   sponsorUrl: string;
+  showAmount?: boolean;   // 是否在客户端和公开接口中显示赞助金额 (默认 false 隐藏金额保护收益隐私)
   updatedAt: string;
 }
 

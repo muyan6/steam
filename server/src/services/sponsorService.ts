@@ -12,6 +12,7 @@ const DEFAULT_AFDIAN_CONFIG: AfdianConfig = {
   autoSync: true,
   syncIntervalMinutes: 60,
   sponsorUrl: '',
+  showAmount: false,
   updatedAt: new Date().toISOString()
 };
 
@@ -59,6 +60,7 @@ export class SponsorService {
           autoSync: Boolean(raw.autoSync ?? true),
           syncIntervalMinutes: typeof raw.syncIntervalMinutes === 'number' ? raw.syncIntervalMinutes : 60,
           sponsorUrl: typeof raw.sponsorUrl === 'string' ? raw.sponsorUrl.trim() : '',
+          showAmount: Boolean(raw.showAmount ?? false),
           updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString()
         };
         return this.configCache;
@@ -77,6 +79,7 @@ export class SponsorService {
       autoSync: partial.autoSync !== undefined ? Boolean(partial.autoSync) : current.autoSync,
       syncIntervalMinutes: typeof partial.syncIntervalMinutes === 'number' ? Math.max(5, partial.syncIntervalMinutes) : current.syncIntervalMinutes,
       sponsorUrl: partial.sponsorUrl !== undefined ? String(partial.sponsorUrl).trim() : current.sponsorUrl,
+      showAmount: partial.showAmount !== undefined ? Boolean(partial.showAmount) : current.showAmount,
       updatedAt: new Date().toISOString()
     };
     writeJsonAtomic(this.configFilePath, next);
@@ -107,7 +110,7 @@ export class SponsorService {
     return this.sponsorsCache || [];
   }
 
-  public getSponsors(): SponsorDataResponse {
+  public getSponsors(forPublic: boolean = false): SponsorDataResponse {
     // 优先使用内存缓存：赞助榜单是公开接口，避免每次请求都同步读盘并重新解析。
     // 仅在缓存为空时才首次读盘（写路径 writeJsonAtomic 后都会同步刷新缓存）。
     let list: SponsorItem[];
@@ -149,14 +152,31 @@ export class SponsorService {
     // 优先取 appLinks 中管理员显式配置的跳转地址，未配置则为空，绝不强行回退跳转到爱发电首页
     const activeSponsorUrl = (links.sponsorUrl && links.sponsorUrl.trim()) || (afConfig.sponsorUrl && afConfig.sponsorUrl.trim()) || '';
 
+    const showAmount = Boolean(afConfig.showAmount);
+    const shouldHideAmount = forPublic && !showAmount;
+
+    // 当面向公开接口且未开启显示金额时，脱敏所有条目的金额并设为 0，防止抓包暴露收益
+    const outputSponsors = shouldHideAmount
+      ? rankedList.map(item => ({ ...item, allSumAmount: 0 }))
+      : rankedList;
+
     return {
       totalCount: rankedList.length,
-      totalAmount: Math.round(totalAmount * 100) / 100,
+      totalAmount: shouldHideAmount ? 0 : Math.round(totalAmount * 100) / 100,
+      showAmount,
       updatedAt: this.lastSyncTime || new Date().toISOString(),
       source: this.lastSource,
       sponsorUrl: activeSponsorUrl,
-      sponsors: rankedList
+      sponsors: outputSponsors
     };
+  }
+
+  public getPublicSponsors(): SponsorDataResponse {
+    return this.getSponsors(true);
+  }
+
+  public getSponsorsAdmin(): SponsorDataResponse {
+    return this.getSponsors(false);
   }
 
   /**

@@ -13,7 +13,7 @@ const getClientIp = (req: Request): string => {
  */
 export function getPublicSponsors(_req: Request, res: Response) {
   try {
-    const data = sponsorService.getSponsors();
+    const data = sponsorService.getPublicSponsors();
     res.json({ success: true, data });
   } catch (e: any) {
     console.error('[SponsorController] 获取赞助榜异常:', e);
@@ -61,7 +61,7 @@ export function updateAfdianConfigAdmin(req: Request, res: Response) {
       action: 'AFDIAN_CONFIG_UPDATE',
       operator,
       ip: getClientIp(req),
-      details: `更新爱发电配置: userId=${updated.userId ? updated.userId : '(未设置)'} autoSync=${updated.autoSync}`,
+      details: `更新爱发电配置: userId=${updated.userId ? updated.userId : '(未设置)'} autoSync=${updated.autoSync} showAmount=${updated.showAmount}`,
       success: true
     });
 
@@ -77,7 +77,7 @@ export function updateAfdianConfigAdmin(req: Request, res: Response) {
  */
 export function getSponsorsAdmin(_req: Request, res: Response) {
   try {
-    const data = sponsorService.getSponsors();
+    const data = sponsorService.getSponsorsAdmin();
     res.json({ success: true, data });
   } catch (e: any) {
     console.error('[SponsorController] 获取管理端赞助列表异常:', e);

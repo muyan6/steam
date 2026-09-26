@@ -408,6 +408,7 @@ export interface SponsorItem {
 export interface SponsorDataResponse {
   totalCount: number;
   totalAmount: number;
+  showAmount?: boolean;
   updatedAt: string;
   source: 'afdian' | 'cache' | 'fallback';
   sponsorUrl?: string;

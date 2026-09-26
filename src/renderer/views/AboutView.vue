@@ -196,10 +196,18 @@
               </div>
             </div>
             <div class="h-8 w-px bg-white/10"></div>
-            <div>
+            <!-- 公开金额展示控制：默认隐藏总金额，保护收益隐私 -->
+            <div v-if="sponsorsData.showAmount">
               <div class="text-[11px] text-slate-400">累计支持金额</div>
               <div class="text-lg font-black text-amber-400 font-mono mt-0.5">
                 ¥{{ (sponsorsData.totalAmount || 0).toFixed(2) }}
+              </div>
+            </div>
+            <div v-else>
+              <div class="text-[11px] text-slate-400">开源共建致谢</div>
+              <div class="text-xs font-bold text-amber-300/90 flex items-center gap-1.5 mt-1">
+                <Heart class="w-3.5 h-3.5 fill-rose-500 text-rose-400" />
+                <span>感恩同行 · 温暖常在</span>
               </div>
             </div>
           </div>
@@ -275,14 +283,25 @@
               </div>
             </div>
 
-            <!-- 赞助金额与支持标志 -->
+            <!-- 赞助金额与支持标志 (支持隐私隐藏) -->
             <div class="text-right shrink-0">
-              <div class="font-mono font-black text-xs text-rose-400">
-                ¥{{ (sponsor.allSumAmount || 0).toFixed(2) }}
-              </div>
-              <div class="text-[10px] text-slate-400 mt-0.5">
-                发电贡献
-              </div>
+              <template v-if="sponsorsData.showAmount && (sponsor.allSumAmount || 0) > 0">
+                <div class="font-mono font-black text-xs text-rose-400">
+                  ¥{{ (sponsor.allSumAmount || 0).toFixed(2) }}
+                </div>
+                <div class="text-[10px] text-slate-400 mt-0.5">
+                  发电贡献
+                </div>
+              </template>
+              <template v-else>
+                <div class="flex items-center justify-end gap-1 text-xs font-bold text-rose-400">
+                  <Heart class="w-3.5 h-3.5 fill-rose-500/80 text-rose-400" />
+                  <span>荣誉致谢</span>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-0.5">
+                  爱心发电
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -382,6 +401,7 @@ const changelogs = ref<VersionChangelogItem[]>([]);
 const sponsorsData = ref<SponsorDataResponse>({
   totalCount: 0,
   totalAmount: 0,
+  showAmount: false,
   updatedAt: new Date().toISOString().slice(0, 10),
   source: 'cache',
   sponsors: []

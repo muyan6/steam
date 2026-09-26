@@ -1099,6 +1099,10 @@ const ADMIN_HTML = `<!DOCTYPE html>
               <input type="checkbox" id="cfgAfdianAutoSync" style="width: 16px; height: 16px;" checked />
               <label for="cfgAfdianAutoSync" style="margin: 0; color: var(--text-strong); cursor: pointer;">启用定时自动同步 (默认每 60 分钟)</label>
             </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+              <input type="checkbox" id="cfgAfdianShowAmount" style="width: 16px; height: 16px;" />
+              <label for="cfgAfdianShowAmount" style="margin: 0; color: var(--text-strong); cursor: pointer;">公开显示赞助金额 (默认关闭：关闭后客户端与公开接口将隐藏总金额与单笔金额，保护收益隐私)</label>
+            </div>
             <div id="afdianMsg" class="alert-box alert-success d-none" style="margin-bottom: 12px;"><span id="afdianMsgText"></span></div>
             <div style="display: flex; gap: 12px;">
               <button type="button" id="btnSaveAfdian" onclick="handleAfdianConfigSubmit()" class="btn btn-primary" style="flex: 1; justify-content: center;">保存爱发电配置</button>
