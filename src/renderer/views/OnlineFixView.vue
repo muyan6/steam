@@ -1,36 +1,29 @@
 <template>
-  <div class="h-full flex flex-col p-6 xl:p-8 overflow-y-auto">
-    <!-- 顶部主导航 Tab 栏 -->
-    <div class="flex items-center gap-4 mb-6 border-b border-white/10 pb-4 shrink-0 flex-wrap">
-      <div class="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-white/10 shadow-inner">
-        <button
-          @click="activeMainTab = 'launch'"
-          class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 cursor-pointer"
-          :class="activeMainTab === 'launch'
-            ? 'theme-btn-primary shadow-md'
-            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
-        >
-          <Rocket class="w-4 h-4" />
-          <span>方案一 · Steam 通道联机</span>
-        </button>
-
-        <button
-          @click="activeMainTab = 'patch'"
-          class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 cursor-pointer"
-          :class="activeMainTab === 'patch'
-            ? 'theme-btn-primary shadow-md'
-            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
-        >
-          <Wrench class="w-4 h-4" />
-          <span>方案二 · 联机补丁注入</span>
-        </button>
+  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto">
+    <!-- 顶部统一标准 Header -->
+    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
+      <div class="flex items-center gap-3.5">
+        <div class="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-sm shrink-0">
+          <Rocket class="w-5 h-5 theme-text-accent" />
+        </div>
+        <div>
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">联机中心</h1>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-500/10 theme-text-accent font-mono font-bold border border-sky-500/20">
+              双模式联机引擎
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1.5 leading-none">
+            支持 Spacewar 官方通道联机、Goldberg 局域网虚拟专网与 OnlineFix 原生联机修复
+          </p>
+        </div>
       </div>
 
       <!-- Spacewar 核心依赖微型指示器 -->
-      <div class="ml-auto flex items-center gap-2.5">
+      <div class="flex items-center gap-2.5">
         <button
           @click="!spacewarStatus.isInstalled ? (showSpacewarModal = true) : fetchSpacewarStatus(true)"
-          class="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2 transition cursor-pointer"
+          class="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2 transition cursor-pointer shadow-sm"
           :title="spacewarStatus.isInstalled ? 'Spacewar (AppID: 480) 已就绪' : '未检测到 Spacewar，点击查看安装向导'"
         >
           <span class="text-slate-400">Spacewar:</span>
@@ -44,6 +37,31 @@
           </span>
         </button>
       </div>
+    </div>
+
+    <!-- 方案选择 Tab 栏 -->
+    <div class="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-white/10 shadow-inner mb-5 self-start">
+      <button
+        @click="activeMainTab = 'launch'"
+        class="px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 cursor-pointer"
+        :class="activeMainTab === 'launch'
+          ? 'theme-btn-primary shadow-md'
+          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
+      >
+        <Rocket class="w-3.5 h-3.5" />
+        <span>方案一 · Steam 通道联机</span>
+      </button>
+
+      <button
+        @click="activeMainTab = 'patch'"
+        class="px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 cursor-pointer"
+        :class="activeMainTab === 'patch'
+          ? 'theme-btn-primary shadow-md'
+          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
+      >
+        <Wrench class="w-3.5 h-3.5" />
+        <span>方案二 · 联机补丁注入</span>
+      </button>
     </div>
 
     <!-- 联机方案提示横幅 + 可折叠功能说明（徽章图例 / 两大方案 / 启动方式） -->

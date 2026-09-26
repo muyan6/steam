@@ -1,17 +1,19 @@
 <template>
-  <div class="h-full flex flex-col p-6 xl:p-8 overflow-y-auto theme-bg-subtle">
-    <!-- 顶部主导航栏与状态指示 -->
-    <div class="flex items-center justify-between gap-4 mb-6 border-b border-slate-200 dark:border-white/10 pb-4 shrink-0 flex-wrap">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-2xl theme-btn-primary flex items-center justify-center text-white shrink-0 shadow-md">
-          <Trophy class="w-5 h-5" />
+  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto theme-bg-subtle">
+    <!-- 顶部统一标准 Header -->
+    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
+      <div class="flex items-center gap-3.5">
+        <div class="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-sm shrink-0">
+          <Trophy class="w-5 h-5 theme-text-accent" />
         </div>
         <div>
-          <h2 class="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <span>修改器与成就解锁</span>
-            <span class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-sky-500/10 text-sky-600 dark:text-sky-400 font-bold border border-sky-500/20">一键全成就点亮 · 官方修改器直连</span>
-          </h2>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">自动匹配本地已安装游戏：一键解锁/点亮 Steam 100% 全成就徽章，秒级直连官方下载最新风灵月影修改器</p>
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">修改器与成就解锁</h1>
+            <span class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-sky-500/10 text-sky-400 font-bold border border-sky-500/20">
+              一键全成就点亮 · 官方修改器直连
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1.5 leading-none">自动匹配本地已安装游戏：一键解锁/点亮 Steam 100% 全成就徽章，秒级直连官方下载最新风灵月影修改器</p>
         </div>
       </div>
 

@@ -1,23 +1,31 @@
 <template>
-  <div class="h-full flex flex-col p-6 overflow-y-auto theme-bg-subtle">
-    <!-- 顶部标题 -->
-    <div class="mb-5">
-      <div class="flex items-center justify-between">
+  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto theme-bg-subtle">
+    <!-- 顶部统一标准 Header -->
+    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
+      <div class="flex items-center gap-3.5">
+        <div class="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-sm shrink-0">
+          <Wrench class="w-5 h-5 theme-text-accent" />
+        </div>
         <div>
-          <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2.5">
-            <Wrench class="w-6 h-6 theme-text-accent" />
-            <span>实用工具箱</span>
-          </h2>
-          <p class="text-xs text-slate-400 mt-1">
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">实用工具箱</h1>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold">
+              4 大运维工具
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1.5 leading-none">
             专为 OpenSteamTool 打造的极速排障、缓存清理、内核修复与清单服务器高可用调度中心
           </p>
         </div>
+      </div>
 
-        <!-- 快速刷新状态 -->
+      <!-- 快速刷新状态 -->
+      <div class="flex items-center gap-2.5">
         <button
           @click="fetchStatus"
           :disabled="loadingStatus"
-          class="px-3 py-1.5 rounded-xl btn-soft-action text-xs transition flex items-center gap-1.5 shadow-sm"
+          class="px-3.5 py-2 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
+          title="刷新工具箱状态"
         >
           <RotateCw class="w-3.5 h-3.5 text-slate-400" :class="{ 'animate-spin': loadingStatus }" />
           <span>刷新状态</span>

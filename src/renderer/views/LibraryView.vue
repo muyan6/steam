@@ -1,18 +1,22 @@
 <template>
-  <div class="h-full flex flex-col p-6 xl:p-8 overflow-hidden">
-    <!-- 头部统计与操作 -->
-    <div class="flex items-center justify-between mb-5 flex-wrap gap-3.5 shrink-0">
-      <div>
-        <h2 class="text-2xl font-bold text-slate-100 flex items-center gap-3">
-          <Library class="w-7 h-7 theme-text-accent" />
-          <span>已入库规则管理</span>
-          <span class="text-xs px-3 py-1 rounded-full bg-sky-500/10 theme-text-accent font-mono font-bold border border-sky-500/20">
-            {{ unlockedGames.length }} 款应用
-          </span>
-        </h2>
-        <p class="text-xs text-slate-400 mt-1">
-          OpenSteamTool 标准规则目录：<code class="text-slate-300 font-mono bg-slate-900 px-2.5 py-0.5 rounded-md border border-slate-800">config/lua/*.lua</code>
-        </p>
+  <div class="h-full flex flex-col p-5 xl:p-6 overflow-hidden">
+    <!-- 顶部统一标准 Header -->
+    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 flex-wrap shrink-0">
+      <div class="flex items-center gap-3.5">
+        <div class="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-sm shrink-0">
+          <Library class="w-5 h-5 theme-text-accent" />
+        </div>
+        <div>
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">已入库规则管理</h1>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-500/10 theme-text-accent font-mono font-bold border border-sky-500/20">
+              {{ unlockedGames.length }} 款应用
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1.5 leading-none">
+            OpenSteamTool 标准规则目录：<code class="text-slate-300 font-mono bg-slate-900 px-2 py-0.5 rounded border border-slate-800">config/lua/*.lua</code>
+          </p>
+        </div>
       </div>
 
       <div class="flex items-center gap-2.5">

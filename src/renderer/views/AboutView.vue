@@ -1,19 +1,19 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-7 overflow-hidden space-y-5">
-    <!-- 顶部品牌 Header -->
-    <div class="flex items-center justify-between gap-4 pb-4 border-b border-white/10 flex-wrap shrink-0">
+  <div class="h-full flex flex-col p-5 xl:p-6 overflow-hidden space-y-5">
+    <!-- 顶部统一标准 Header -->
+    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 flex-wrap shrink-0">
       <div class="flex items-center gap-3.5">
-        <div class="w-12 h-12 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-lg shrink-0">
+        <div class="w-11 h-11 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-sm shrink-0">
           <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
         </div>
         <div>
           <div class="flex items-center gap-2.5">
-            <h1 class="text-lg font-black tracking-wide text-slate-100">关于春风渡</h1>
+            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">关于春风渡</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full theme-btn-primary text-slate-950 font-mono font-bold shadow-sm">
               v{{ appVersion }}
             </span>
           </div>
-          <p class="text-xs text-slate-400 mt-0.5">极速入库 · 联机生态引擎 · 专为 Steam 玩家打造的高性能工具</p>
+          <p class="text-xs text-slate-400 mt-1.5 leading-none">极速入库 · 联机生态引擎 · 专为 Steam 玩家打造的高性能工具</p>
         </div>
       </div>
 

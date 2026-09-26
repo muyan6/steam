@@ -1,26 +1,26 @@
 <template>
-  <div class="h-full flex flex-col p-6 xl:p-8 overflow-y-auto space-y-6">
-    <!-- 顶部品牌 Header -->
-    <div class="flex items-center justify-between gap-4 pb-5 border-b border-white/10 flex-wrap shrink-0">
-      <div class="flex items-center gap-4">
-        <div class="w-14 h-14 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-lg shrink-0">
+  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto space-y-5">
+    <!-- 顶部统一标准 Header -->
+    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 flex-wrap shrink-0">
+      <div class="flex items-center gap-3.5">
+        <div class="w-11 h-11 rounded-2xl overflow-hidden bg-slate-950/40 border border-white/10 shadow-sm shrink-0">
           <img :src="appLogo" alt="春风渡" class="w-full h-full object-cover" draggable="false" />
         </div>
         <div>
           <div class="flex items-center gap-2.5">
-            <h1 class="text-xl font-black tracking-wide text-slate-100">功能详解</h1>
+            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">功能详解</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full theme-btn-primary text-slate-950 font-mono font-bold shadow-sm">
               v{{ appVersion }}
             </span>
           </div>
-          <p class="text-xs text-slate-400 mt-1">极速入库 · 联机生态引擎 · 专为 Steam 玩家打造的高性能工具</p>
+          <p class="text-xs text-slate-400 mt-1.5 leading-none">极速入库 · 联机生态引擎 · 专为 Steam 玩家打造的高性能工具</p>
         </div>
       </div>
 
       <div class="flex items-center gap-2.5">
         <button
           @click="handleOpenFeedback"
-          class="px-4 py-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:border-sky-400/50 text-sky-300 hover:text-sky-100 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer hover-lift"
+          class="px-3.5 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:border-sky-400/50 text-sky-300 hover:text-sky-100 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer hover-lift"
           title="加入官方 QQ 交流反馈群"
         >
           <MessageSquare class="w-3.5 h-3.5 text-sky-400" />
@@ -30,7 +30,7 @@
         <button
           @click="checkUpdates"
           :disabled="isCheckingUpdate"
-          class="px-4 py-2.5 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer"
+          class="px-3.5 py-2 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
         >
           <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isCheckingUpdate }" />
           <span>{{ isCheckingUpdate ? '正在检查...' : '检查最新版本' }}</span>
@@ -38,10 +38,10 @@
 
         <button
           @click="emit('open-disclaimer')"
-          class="px-4 py-2.5 theme-btn-primary rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
+          class="px-3.5 py-2 theme-btn-primary rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
         >
           <ShieldAlert class="w-3.5 h-3.5" />
-          <span>查看免责声明</span>
+          <span>免责声明</span>
         </button>
       </div>
     </div>

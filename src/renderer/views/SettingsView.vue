@@ -1,14 +1,35 @@
 <template>
-  <div class="h-full flex flex-col p-6 xl:p-8 overflow-y-auto">
-    <!-- 标题 -->
-    <div class="mb-6">
-      <h2 class="text-2xl font-bold text-slate-100 flex items-center gap-3">
-        <Settings2 class="w-7 h-7 theme-text-accent" />
-        <span>系统设置与运行环境体检</span>
-      </h2>
-      <p class="text-sm text-slate-400 mt-1">
-        自定义软件主题外观、界面字体自适应缩放、深度体检 Steam 客户端环境及云端数据引擎连接状态
-      </p>
+  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto">
+    <!-- 顶部统一标准 Header -->
+    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
+      <div class="flex items-center gap-3.5">
+        <div class="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-sm shrink-0">
+          <Settings2 class="w-5 h-5 theme-text-accent" />
+        </div>
+        <div>
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">系统设置与运行环境体检</h1>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800/80 text-slate-300 font-mono border border-white/10 font-bold">
+              环境与配置
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1.5 leading-none">
+            自定义软件主题外观、界面字体自适应缩放、深度体检 Steam 客户端环境及云端数据引擎连接状态
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <button
+          @click="handleStartDiagnostic"
+          :disabled="checkingHealth"
+          class="px-3.5 py-2 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
+          title="重新执行全项环境体检与诊断"
+        >
+          <RotateCw class="w-3.5 h-3.5 text-slate-400" :class="{ 'animate-spin': checkingHealth }" />
+          <span>{{ checkingHealth ? '正在体检...' : '重新体检' }}</span>
+        </button>
+      </div>
     </div>
 
     <div class="space-y-6 w-full max-w-5xl xl:max-w-6xl pb-10">
