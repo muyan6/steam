@@ -319,63 +319,132 @@
       </div>
     </div>
 
-    <!-- 活跃隧道列表看板 (纯净白底高质感卡片) -->
+    <!-- 常用联机房间与隧道看板 (纯净白底高质感卡片) -->
     <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/90 dark:border-white/10 shadow-sm space-y-3">
       <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2.5">
         <div class="flex items-center gap-2">
-          <Radio class="w-4 h-4 text-emerald-500" />
-          <h3 class="text-xs font-bold text-slate-900 dark:text-slate-100">当前活跃隧道通道 (Active Tunnels)</h3>
+          <Layers class="w-4 h-4 text-emerald-500" />
+          <h3 class="text-xs font-bold text-slate-900 dark:text-slate-100">常用联机房间与隧道通道 (Saved Rooms & Tunnels)</h3>
           <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono font-bold">
-            {{ status.activeTunnels?.length || 0 }}
+            {{ savedTunnels.length }}
           </span>
         </div>
-        <button
-          v-if="status.activeTunnels && status.activeTunnels.length > 0"
-          @click="handleStopAll"
-          class="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 transition cursor-pointer font-medium"
-        >
-          全部关闭
-        </button>
+        <div class="flex items-center gap-3">
+          <button
+            v-if="status.activeTunnels && status.activeTunnels.length > 0"
+            @click="handleStopAll"
+            class="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 transition cursor-pointer font-medium"
+          >
+            全部断开
+          </button>
+          <button
+            v-if="savedTunnels.length > 0 && (!status.activeTunnels || status.activeTunnels.length === 0)"
+            @click="clearAllSavedTunnels"
+            class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition cursor-pointer"
+          >
+            清空列表
+          </button>
+        </div>
       </div>
 
-      <div v-if="!status.activeTunnels || status.activeTunnels.length === 0" class="py-6 text-center text-xs text-slate-400 dark:text-slate-500">
-        暂无运行中的活跃隧道。房主生成联机码或客机建立直连后将在此实时显示。
+      <div v-if="savedTunnels.length === 0" class="py-8 text-center space-y-2">
+        <div class="text-xs text-slate-400 dark:text-slate-500">
+          暂无保存的联机房间。加入好友房间后将自动沉淀在此。
+        </div>
+        <div class="text-[11px] text-slate-400/80 dark:text-slate-500">
+          💡 房主 UID 已永久绑定，后续无需重复索取联机码，在此点击【一键连接】即可直接开玩！
+        </div>
       </div>
 
       <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div
-          v-for="app in status.activeTunnels"
-          :key="app.srcPort"
-          class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/5 flex items-center justify-between gap-3 text-xs shadow-2xs"
+          v-for="tunnel in savedTunnels"
+          :key="tunnel.id"
+          class="p-3.5 rounded-xl transition border flex flex-col justify-between gap-3 text-xs"
+          :class="isTunnelActive(tunnel)
+            ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-300/80 dark:border-emerald-500/30 shadow-xs'
+            : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200/80 dark:border-white/5'"
         >
-          <div class="space-y-1 min-w-0">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span class="font-bold text-slate-800 dark:text-slate-200">{{ app.appName }}</span>
-              <span class="font-mono uppercase text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-700 dark:text-sky-300 font-bold">
-                {{ app.protocol }}
+          <div class="space-y-1.5 min-w-0">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 truncate">
+                <span
+                  class="w-2 h-2 rounded-full shrink-0"
+                  :class="isTunnelActive(tunnel) ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'"
+                ></span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 truncate">{{ tunnel.gameName }}</span>
+                <span class="font-mono uppercase text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-700 dark:text-sky-300 font-bold shrink-0">
+                  {{ tunnel.protocol }}
+                </span>
+              </div>
+              <span
+                class="text-[10px] px-2 py-0.5 rounded-md font-medium shrink-0"
+                :class="isTunnelActive(tunnel)
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold'
+                  : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
+              >
+                {{ isTunnelActive(tunnel) ? '已连接运行中' : '待命 (可一键重连)' }}
               </span>
             </div>
+
             <div class="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate">
-              本地: 127.0.0.1:{{ app.srcPort }} ➔ 远程: {{ app.dstPort }} ({{ app.peerNode.slice(0, 8) }}...)
+              映射: 127.0.0.1:{{ tunnel.localPort }} ➔ 远程: {{ tunnel.remotePort }}
+            </div>
+            <div class="text-[10px] text-slate-400 dark:text-slate-500 font-mono flex items-center gap-1 truncate">
+              <span>房主: {{ tunnel.peerUid }}</span>
+              <button
+                @click="copyText(tunnel.peerUid, '房主 UID 已复制')"
+                class="hover:text-sky-500 cursor-pointer p-0.5"
+                title="复制房主 UID"
+              >
+                <Copy class="w-2.5 h-2.5" />
+              </button>
             </div>
           </div>
 
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              @click="copyText(`127.0.0.1:${app.srcPort}`, '连接地址已复制')"
-              class="px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 text-slate-700 dark:text-slate-300 text-xs border border-slate-200 dark:border-transparent transition cursor-pointer hover:bg-slate-100 shadow-2xs"
-              title="复制本地连接地址"
-            >
-              复制
-            </button>
-            <button
-              @click="handleRemoveTunnel(app.srcPort)"
-              class="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-500 transition cursor-pointer"
-              title="断开此隧道"
-            >
-              <Unlink class="w-4 h-4" />
-            </button>
+          <div class="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-white/5">
+            <div class="text-[10px] text-slate-400 dark:text-slate-500">
+              <span v-if="isTunnelActive(tunnel)" class="text-emerald-600 dark:text-emerald-400 font-medium">游戏内直连: 127.0.0.1:{{ tunnel.localPort }}</span>
+              <span v-else>无需再次输入联机码</span>
+            </div>
+
+            <div class="flex items-center gap-1.5 shrink-0">
+              <!-- 已运行时显示复制地址与断开 -->
+              <template v-if="isTunnelActive(tunnel)">
+                <button
+                  @click="copyText(`127.0.0.1:${tunnel.localPort}`, '游戏直连地址已复制')"
+                  class="px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 text-slate-700 dark:text-slate-300 text-xs border border-slate-200 dark:border-transparent transition cursor-pointer hover:bg-slate-100 shadow-2xs font-medium"
+                >
+                  复制地址
+                </button>
+                <button
+                  @click="handleRemoveTunnel(tunnel.localPort)"
+                  class="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs transition cursor-pointer font-medium"
+                  title="断开此隧道"
+                >
+                  断开
+                </button>
+              </template>
+
+              <!-- 未连接时显示一键连接与删除 -->
+              <template v-else>
+                <button
+                  @click="connectSavedTunnel(tunnel)"
+                  :disabled="isOperating"
+                  class="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-50 flex items-center gap-1"
+                >
+                  <Play class="w-3 h-3" />
+                  <span>一键连接</span>
+                </button>
+                <button
+                  @click="removeSavedTunnel(tunnel.id)"
+                  class="p-1 rounded-lg hover:bg-rose-500/15 text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                  title="删除该记录"
+                >
+                  <Trash2 class="w-3.5 h-3.5" />
+                </button>
+              </template>
+            </div>
           </div>
         </div>
       </div>
@@ -503,7 +572,9 @@ import {
   X,
   AlertTriangle,
   ExternalLink,
-  Activity
+  Activity,
+  Layers,
+  Trash2
 } from 'lucide-vue-next';
 import {
   p2pGetNodeId,
@@ -522,7 +593,8 @@ import type {
   P2pStatusInfo,
   P2pGamePreset,
   ParsedShareCode,
-  P2pRealtimeState
+  P2pRealtimeState,
+  SavedP2pTunnel
 } from '../../../types';
 
 const emit = defineEmits<{
@@ -640,6 +712,10 @@ const isOperating = ref<boolean>(false);
 const showHelpModal = ref<boolean>(false);
 const detectedClipboardCode = ref<string>('');
 
+// 常用联机房间与隧道沉淀 (永久保存于 localStorage，下次一键免码重连)
+const SAVED_TUNNELS_KEY = 'cfd_saved_p2p_tunnels';
+const savedTunnels = ref<SavedP2pTunnel[]>([]);
+
 const currentPreset = computed(() => {
   return presetsList.value.find((p) => p.id === selectedPresetId.value);
 });
@@ -717,6 +793,28 @@ const fetchStatus = async () => {
     nodeId.value = await p2pGetNodeId();
     status.value = await p2pGetStatus();
     realtimeState.value = await p2pGetRealtimeState();
+
+    // 自动将活跃隧道同步记录至常用列表
+    if (status.value.activeTunnels && status.value.activeTunnels.length > 0) {
+      let changed = false;
+      for (const app of status.value.activeTunnels) {
+        if (!savedTunnels.value.some((t) => t.localPort === app.srcPort)) {
+          savedTunnels.value.unshift({
+            id: `${app.peerNode}_${app.dstPort}`,
+            gameName: app.appName || '联机游戏',
+            peerUid: app.peerNode,
+            remotePort: app.dstPort,
+            localPort: app.srcPort,
+            protocol: app.protocol,
+            createdAt: Date.now(),
+          });
+          changed = true;
+        }
+      }
+      if (changed) {
+        saveTunnelsToStorage();
+      }
+    }
   } catch (err) {
     console.error('获取 P2P 状态失败:', err);
   }
@@ -824,19 +922,107 @@ const applyDetectedCode = () => {
   }
 };
 
+// ===== 常用联机房间与隧道管理逻辑 =====
+const loadSavedTunnels = () => {
+  try {
+    const raw = localStorage.getItem(SAVED_TUNNELS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        savedTunnels.value = parsed;
+      }
+    }
+  } catch (err) {
+    console.error('加载常用联机房间失败:', err);
+  }
+};
+
+const saveTunnelsToStorage = () => {
+  try {
+    localStorage.setItem(SAVED_TUNNELS_KEY, JSON.stringify(savedTunnels.value));
+  } catch (err) {
+    console.error('保存常用联机房间失败:', err);
+  }
+};
+
+const addOrUpdateSavedTunnel = (item: SavedP2pTunnel) => {
+  const idx = savedTunnels.value.findIndex(
+    (t) => t.id === item.id || (t.peerUid === item.peerUid && t.remotePort === item.remotePort)
+  );
+  if (idx >= 0) {
+    savedTunnels.value[idx] = { ...savedTunnels.value[idx], ...item };
+  } else {
+    savedTunnels.value.unshift(item);
+  }
+  saveTunnelsToStorage();
+};
+
+const removeSavedTunnel = (id: string) => {
+  savedTunnels.value = savedTunnels.value.filter((t) => t.id !== id);
+  saveTunnelsToStorage();
+  emit('toast', '已从常用房间中移除');
+};
+
+const clearAllSavedTunnels = () => {
+  savedTunnels.value = [];
+  saveTunnelsToStorage();
+  emit('toast', '常用房间列表已清空');
+};
+
+const isTunnelActive = (tunnel: SavedP2pTunnel): boolean => {
+  return (
+    status.value.activeTunnels?.some(
+      (t) => t.srcPort === tunnel.localPort || (t.peerNode === tunnel.peerUid && t.dstPort === tunnel.remotePort)
+    ) ?? false
+  );
+};
+
+const connectSavedTunnel = async (tunnel: SavedP2pTunnel) => {
+  isOperating.value = true;
+  try {
+    await p2pConnectTunnel({
+      peerUid: tunnel.peerUid,
+      remotePort: tunnel.remotePort,
+      localPort: tunnel.localPort,
+      protocol: tunnel.protocol,
+      gameName: tunnel.gameName,
+    });
+    await fetchStatus();
+    lastConnectedAddress.value = `127.0.0.1:${tunnel.localPort}`;
+    emit('toast', `[${tunnel.gameName}] 隧道建立成功！请在游戏内连接 ${lastConnectedAddress.value}`);
+  } catch (err: any) {
+    emit('toast', `连接失败: ${formatIpcError(err)}`);
+  } finally {
+    isOperating.value = false;
+  }
+};
+
 const handleConnectTunnel = async () => {
   if (!parsedJoinCode.value) return;
   isOperating.value = true;
   try {
+    const codeData = parsedJoinCode.value;
     await p2pConnectTunnel({
-      peerUid: parsedJoinCode.value.uid,
-      remotePort: parsedJoinCode.value.remotePort,
-      localPort: parsedJoinCode.value.localPort,
-      protocol: parsedJoinCode.value.protocol,
-      gameName: parsedJoinCode.value.gameName,
+      peerUid: codeData.uid,
+      remotePort: codeData.remotePort,
+      localPort: codeData.localPort,
+      protocol: codeData.protocol,
+      gameName: codeData.gameName,
     });
     await fetchStatus();
-    lastConnectedAddress.value = `127.0.0.1:${parsedJoinCode.value.localPort}`;
+    lastConnectedAddress.value = `127.0.0.1:${codeData.localPort}`;
+
+    // 自动沉淀至常用联机房间列表
+    addOrUpdateSavedTunnel({
+      id: `${codeData.uid}_${codeData.remotePort}`,
+      gameName: codeData.gameName || '联机游戏',
+      peerUid: codeData.uid,
+      remotePort: codeData.remotePort,
+      localPort: codeData.localPort,
+      protocol: codeData.protocol,
+      createdAt: Date.now(),
+    });
+
     emit('toast', `隧道建立成功！请在游戏内连接 ${lastConnectedAddress.value}`);
   } catch (err: any) {
     emit('toast', `建立直连失败: ${formatIpcError(err)}`);
@@ -873,6 +1059,7 @@ const checkClipboardForCode = async () => {
 let statusTimer: any = null;
 
 onMounted(async () => {
+  loadSavedTunnels();
   await fetchStatus();
   await checkClipboardForCode();
   handlePresetChange();

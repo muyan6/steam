@@ -523,5 +523,15 @@ export interface P2pRealtimeState {
   detail: string;
 }
 
+export interface SavedP2pTunnel {
+  id: string; // `${peerUid}_${remotePort}`
+  gameName: string;
+  peerUid: string;
+  remotePort: number;
+  localPort: number;
+  protocol: string;
+  createdAt: number;
+}
+
 
 

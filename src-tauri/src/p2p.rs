@@ -161,16 +161,53 @@ pub fn locate_openp2p_bin() -> Option<PathBuf> {
     None
 }
 
-/// 获取或生成唯一的 16 位小写十六进制 UID
+fn get_stable_machine_seed() -> String {
+    #[cfg(windows)]
+    {
+        // 尝试从 Windows 注册表获取永久唯一的 MachineGuid
+        if let Ok(output) = Command::new("powershell")
+            .args(&["-NoProfile", "-Command", "(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography').MachineGuid"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            if output.status.success() {
+                let guid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !guid.is_empty() {
+                    return guid;
+                }
+            }
+        }
+    }
+
+    let comp = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "CFD_PC".to_string());
+    let user = std::env::var("USERNAME").unwrap_or_else(|_| "USER".to_string());
+    format!("{}_{}", comp, user)
+}
+
+/// 获取或生成唯一的 16 位小写十六进制 UID（永久固化硬件指纹）
 pub fn get_or_generate_node_id() -> String {
     let dir = get_p2p_dir();
+    let node_file = dir.join("node_id.txt");
+
+    // 1. 优先读取已持久化固化的 node_id.txt 文件
+    if node_file.is_file() {
+        if let Ok(content) = fs::read_to_string(&node_file) {
+            let trimmed = content.trim();
+            if trimmed.len() >= 12 {
+                return trimmed.to_string();
+            }
+        }
+    }
+
+    // 2. 检查现有 config.json 中是否已有节点 ID（若有，将其固化至 node_id.txt 保持不变）
     let config_file = dir.join("config.json");
     if config_file.is_file() {
         if let Ok(content) = fs::read_to_string(&config_file) {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(node) = val.get("Network").and_then(|n| n.get("Node")).and_then(|n| n.as_str()) {
                     let trimmed = node.trim();
-                    if !trimmed.is_empty() {
+                    if trimmed.len() >= 12 {
+                        let _ = fs::write(&node_file, trimmed);
                         return trimmed.to_string();
                     }
                 }
@@ -178,17 +215,15 @@ pub fn get_or_generate_node_id() -> String {
         }
     }
 
-    // 生成稳定随机 16 位十六进制字符串
-    let machine_id = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "CFD_PC".to_string());
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let seed = format!("{}_{}_{}", machine_id, now, std::process::id());
+    // 3. 基于本机唯一物理硬件标识 MachineGuid 生成永久固定 16 位十六进制字符串
+    let seed = get_stable_machine_seed();
     let mut hasher = Sha256::new();
     hasher.update(seed.as_bytes());
     let hex_full = format!("{:x}", hasher.finalize());
     let node_id = hex_full[..16].to_lowercase();
+
+    // 写入永久固化文件
+    let _ = fs::write(&node_file, &node_id);
 
     // 初始化写入默认配置文件
     let default_cfg = P2pFullConfig {
