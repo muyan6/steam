@@ -189,38 +189,39 @@
         <!-- 统计面板大盘卡片 (严谨网格高度对齐，统一顶底基线) -->
         <div class="p-3.5 rounded-2xl bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-sky-500/10 border border-white/10 mb-3.5 flex items-center justify-between shrink-0">
           <div class="flex items-center gap-4">
-            <div class="flex flex-col justify-between h-10">
-              <div class="text-[11px] text-slate-400 leading-none">累计赞助人次</div>
-              <div class="text-lg font-black text-rose-400 font-mono leading-none flex items-baseline gap-1">
-                <span>{{ sponsorsData.totalCount || 0 }}</span>
-                <span class="text-xs font-normal text-slate-400">位</span>
+            <!-- 累计赞助人次 -->
+            <div>
+              <div class="text-[11px] text-slate-400 leading-tight">累计赞助人次</div>
+              <div class="h-6 flex items-center gap-1 mt-1">
+                <span class="text-lg font-black text-rose-400 font-mono leading-none">{{ sponsorsData.totalCount || 0 }}</span>
+                <span class="text-xs font-normal text-slate-400 font-sans leading-none">位</span>
               </div>
             </div>
 
             <div class="h-8 w-px bg-white/10 shrink-0"></div>
 
-            <!-- 公开金额展示控制：默认隐藏总金额，保护收益隐私 -->
-            <div v-if="sponsorsData.showAmount" class="flex flex-col justify-between h-10">
-              <div class="text-[11px] text-slate-400 leading-none">累计支持金额</div>
-              <div class="text-lg font-black text-amber-400 font-mono leading-none">
+            <!-- 共建致谢 / 累计支持金额 -->
+            <div v-if="sponsorsData.showAmount">
+              <div class="text-[11px] text-slate-400 leading-tight">累计支持金额</div>
+              <div class="h-6 flex items-center font-mono font-black text-amber-400 text-lg leading-none mt-1">
                 ¥{{ (sponsorsData.totalAmount || 0).toFixed(2) }}
               </div>
             </div>
-            <div v-else class="flex flex-col justify-between h-10">
-              <div class="text-[11px] text-slate-400 leading-none">共建致谢</div>
-              <div class="text-xs font-bold text-amber-300 flex items-center gap-1.5 leading-none">
+            <div v-else>
+              <div class="text-[11px] text-slate-400 leading-tight">共建致谢</div>
+              <div class="h-6 flex items-center gap-1.5 mt-1">
                 <Heart class="w-3.5 h-3.5 fill-rose-500 text-rose-400 shrink-0" />
-                <span>致谢每一位支持者</span>
+                <span class="text-[12.5px] font-bold text-amber-300 leading-none">致谢每一位支持者</span>
               </div>
             </div>
           </div>
 
-          <div class="text-right flex flex-col justify-between h-10">
-            <div class="flex items-center justify-end gap-1.5 text-[10.5px] text-slate-300 font-medium leading-none">
+          <div class="text-right">
+            <div class="flex items-center justify-end gap-1.5 text-[10.5px] text-slate-300 font-medium leading-tight">
               <span class="w-2 h-2 rounded-full" :class="sponsorsData.source === 'afdian' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"></span>
               <span>{{ sponsorsData.source === 'afdian' ? '爱发电官方实时同步' : '官方赞助榜' }}</span>
             </div>
-            <div class="text-[10px] font-mono text-slate-500 leading-none">
+            <div class="h-6 flex items-center justify-end text-[10px] font-mono text-slate-500 leading-none mt-1">
               更新于: {{ formatUpdatedDate(sponsorsData.updatedAt) }}
             </div>
           </div>
