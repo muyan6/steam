@@ -861,14 +861,16 @@ const fetchStatus = async () => {
     status.value = await p2pGetStatus();
     realtimeState.value = await p2pGetRealtimeState();
 
-    // 自动将活跃隧道同步记录至常用列表
-    if (status.value.activeTunnels && status.value.activeTunnels.length > 0) {
+    // 自动将活跃隧道同步记录至常用列表（仅在服务运行时同步，并使用友好预设名与去重）
+    if (status.value.running && status.value.activeTunnels && status.value.activeTunnels.length > 0) {
       let changed = false;
       for (const app of status.value.activeTunnels) {
-        if (!savedTunnels.value.some((t) => t.localPort === app.srcPort)) {
+        if (!savedTunnels.value.some((t) => t.localPort === app.srcPort || (t.peerUid === app.peerNode && t.remotePort === app.dstPort))) {
+          const matchedPreset = presetsList.value.find((p) => p.remotePort === app.dstPort && p.protocol === app.protocol);
+          const friendlyName = matchedPreset ? matchedPreset.name : (app.appName || '联机游戏');
           savedTunnels.value.unshift({
             id: `${app.peerNode}_${app.dstPort}`,
-            gameName: app.appName || '联机游戏',
+            gameName: friendlyName,
             peerUid: app.peerNode,
             remotePort: app.dstPort,
             localPort: app.srcPort,
@@ -927,11 +929,13 @@ const handleGenerateShareCode = async () => {
     nodeId.value = await p2pGetNodeId();
   }
   const gameName = currentPreset.value?.name || '联机游戏';
-  // 远端端口 = 房主本地服务端口；本地端口 = 客机侧映射端口（来自预设）。
-  // 旧实现把两者都写成 hostPort，导致预设里的 localPort（帕鲁 8211→8212、
-  // 星露谷 24642→24641、泰拉瑞亚 7777→7776）被丢弃，而预设 note 又让玩家去连
-  // 127.0.0.1:<localPort> —— 客机按提示连必然失败。
-  const mappedLocalPort = currentPreset.value?.localPort || hostPort.value;
+  // 远端端口 = 房主本地服务端口；本地端口 = 客机侧映射端口。
+  // 若用户未改动预设端口，沿用预设的最佳客机映射端口（如帕鲁 8211→8212、星露谷 24642→24641、泰拉瑞亚 7777→7776）；
+  // 若用户自定义修改了端口，客机映射端口自动精准对齐 hostPort，防止自定义端口连错
+  const mappedLocalPort =
+    currentPreset.value && hostPort.value === currentPreset.value.remotePort
+      ? currentPreset.value.localPort
+      : hostPort.value;
   try {
     const code = await p2pGenerateCode({
       uid: nodeId.value,
@@ -1043,9 +1047,10 @@ const clearAllSavedTunnels = () => {
 
 const isTunnelActive = (tunnel: SavedP2pTunnel): boolean => {
   return (
-    status.value.activeTunnels?.some(
+    status.value.running &&
+    (status.value.activeTunnels?.some(
       (t) => t.srcPort === tunnel.localPort || (t.peerNode === tunnel.peerUid && t.dstPort === tunnel.remotePort)
-    ) ?? false
+    ) ?? false)
   );
 };
 

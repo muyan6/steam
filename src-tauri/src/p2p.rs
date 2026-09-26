@@ -178,6 +178,7 @@ pub fn locate_openp2p_bin() -> Option<PathBuf> {
     //    在线升级得到的。绝不能因为「安装包里的二进制体积不同」就把它覆盖回去 ——
     //    那会把用户刚同步到的新引擎静默降级（旧实现正是按体积差异无条件覆写）。
     if is_usable_binary(&appdata_bin) {
+        ensure_binary_as_invoker(&appdata_bin);
         return Some(appdata_bin);
     }
 
@@ -185,14 +186,27 @@ pub fn locate_openp2p_bin() -> Option<PathBuf> {
     for src in candidate_sources {
         if is_usable_binary(&src) {
             if fs::copy(&src, &appdata_bin).is_ok() && is_usable_binary(&appdata_bin) {
+                ensure_binary_as_invoker(&appdata_bin);
                 return Some(appdata_bin);
             }
             // 拷贝失败（只读介质 / 权限不足）时退回直接使用源文件
+            ensure_binary_as_invoker(&src);
             return Some(src.canonicalize().unwrap_or(src));
         }
     }
 
     None
+}
+
+/// 确保二进制文件清单为 asInvoker 权限（自动修复老版本残留的 requireAdministrator 提权要求）
+fn ensure_binary_as_invoker(path: &PathBuf) {
+    if let Ok(mut bytes) = fs::read(path) {
+        let target = b"level=\"requireAdministrator\"";
+        if bytes.windows(target.len()).any(|w| w == target) {
+            patch_manifest_to_as_invoker(&mut bytes);
+            let _ = fs::write(path, &bytes);
+        }
+    }
 }
 
 /// 真实 openp2p.exe 约 8.7MB；小于 1MB 的残留/半截文件一律视为不可用
@@ -471,7 +485,10 @@ pub fn remove_tunnel(local_port: u16) -> Result<bool, String> {
     cfg.apps.retain(|a| a.src_port != local_port);
     if cfg.apps.len() != len_before {
         save_config(&cfg)?;
-        start_p2p_daemon()?;
+        // 仅在隧道服务本来就在运行时重启加载；未运行时仅持久化配置，避免误唤醒守护进程
+        if is_p2p_running() {
+            start_p2p_daemon()?;
+        }
     }
     Ok(true)
 }
@@ -487,7 +504,11 @@ pub fn get_status() -> P2pStatusInfo {
         running,
         node_id,
         exe_found: exe.is_some(),
-        active_tunnels: cfg.apps.iter().map(P2pTunnelView::from).collect(),
+        active_tunnels: if running {
+            cfg.apps.iter().map(P2pTunnelView::from).collect()
+        } else {
+            Vec::new()
+        },
         binary_path: exe.map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
         message: if running {
             "P2P 隧道服务正在运行中".to_string()
@@ -610,9 +631,29 @@ pub fn generate_share_code(
     format!("CFD://{}", b64)
 }
 
-/// 解析分享联机码（向下兼容 CFD:// 与 OPL:// 格式）
+/// 解析分享联机码（向下兼容 CFD:// 与 OPL:// 格式，以及直接的 uid:port:protocol 分隔符格式）
 pub fn parse_share_code(code_str: &str) -> Result<ParsedShareCode, String> {
     let trimmed = code_str.trim();
+
+    // 1. 优先尝试直接的分隔符格式：uid:port 或 uid:port:protocol（非 Base64）
+    if trimmed.contains(':') && !trimmed.contains("://") {
+        let parts: Vec<&str> = trimmed.split(':').collect();
+        if parts.len() >= 2 {
+            let uid = parts[0].trim().to_lowercase();
+            let remote_port = parts[1].trim().parse::<u16>().unwrap_or(0);
+            let proto = if parts.len() >= 3 { parts[2].trim().to_lowercase() } else { "udp".to_string() };
+            if !uid.is_empty() && remote_port > 0 {
+                return Ok(ParsedShareCode {
+                    uid,
+                    remote_port,
+                    local_port: remote_port,
+                    protocol: proto,
+                    game_name: "自定义联机".to_string(),
+                });
+            }
+        }
+    }
+
     let b64_part = if let Some(stripped) = trimmed.strip_prefix("CFD://") {
         stripped
     } else if let Some(stripped) = trimmed.strip_prefix("cfd://") {
@@ -625,8 +666,11 @@ pub fn parse_share_code(code_str: &str) -> Result<ParsedShareCode, String> {
         trimmed
     };
 
+    // 过滤换行符、回车与空白，防止从聊天软件复制时引入多余换行导致 base64 解码报错
+    let clean_b64: String = b64_part.chars().filter(|c| !c.is_whitespace()).collect();
+
     let decoded_bytes = base64::engine::general_purpose::STANDARD
-        .decode(b64_part)
+        .decode(&clean_b64)
         .map_err(|_| "联机码 Base64 格式无效，请检查复制内容".to_string())?;
 
     let text = String::from_utf8(decoded_bytes)
@@ -666,7 +710,7 @@ pub fn parse_share_code(code_str: &str) -> Result<ParsedShareCode, String> {
         }
     }
 
-    // 备用尝试简单分隔符格式：uid:port:protocol
+    // 备用尝试 Base64 解码后的简单分隔符格式：uid:port:protocol
     let parts: Vec<&str> = text.split(':').collect();
     if parts.len() >= 2 {
         let uid = parts[0].trim().to_string();

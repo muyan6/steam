@@ -70,6 +70,7 @@ fn window_maximize(window: Window) -> bool {
 
 #[tauri::command]
 fn window_close(window: Window) {
+    let _ = p2p::stop_p2p();
     let _ = window.close();
 }
 
@@ -80,6 +81,7 @@ fn is_window_maximized(window: Window) -> bool {
 
 #[tauri::command]
 fn app_quit(app_handle: AppHandle) {
+    let _ = p2p::stop_p2p();
     app_handle.exit(0);
 }
 
@@ -1941,6 +1943,11 @@ pub fn run() {
                 });
             });
             Ok(())
+        })
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let _ = p2p::stop_p2p();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             window_minimize,

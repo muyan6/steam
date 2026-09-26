@@ -1932,7 +1932,21 @@ export async function p2pGenerateCode(payload: {
 
 export async function p2pParseCode(codeStr: string): Promise<ParsedShareCode> {
   if (!isTauriEnvironment()) {
-    const clean = codeStr.replace(/^(CFD|cfd|OPL|opl):\/\//, '');
+    const trimmed = codeStr.trim();
+    if (trimmed.includes(':') && !trimmed.includes('://')) {
+      const parts = trimmed.split(':');
+      if (parts.length >= 2) {
+        const remote = parseInt(parts[1], 10) || 0;
+        return {
+          uid: parts[0].trim(),
+          remotePort: remote,
+          localPort: remote,
+          protocol: parts[2]?.trim().toLowerCase() || 'udp',
+          gameName: '自定义联机',
+        };
+      }
+    }
+    const clean = trimmed.replace(/^(CFD|cfd|OPL|opl):\/\//, '').replace(/\s+/g, '');
     const obj = JSON.parse(atob(clean));
     return {
       uid: obj.uid || '',
