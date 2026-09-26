@@ -2,23 +2,20 @@
   <div class="h-full flex flex-col p-4 xl:p-5 overflow-y-auto theme-bg-subtle">
     <!-- 顶部统一标准 Header -->
     <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 shrink-0">
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 min-w-0">
         <div class="w-11 h-11 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/25 dark:border-amber-500/30 flex items-center justify-center shadow-xs shrink-0 text-amber-500 dark:text-amber-400">
           <Trophy class="w-5 h-5" />
         </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">修改器与成就解锁</h1>
-            <span class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-sky-500/10 text-sky-400 font-bold border border-sky-500/20">
-              一键全成就点亮 · 官方修改器直连
-            </span>
-          </div>
-          <p class="text-xs text-slate-400 mt-1.5 leading-none">自动匹配本地已安装游戏：一键解锁/点亮 Steam 100% 全成就徽章，秒级直连官方下载最新风灵月影修改器</p>
+        <div class="flex items-center gap-2 min-w-0">
+          <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none shrink-0">修改器与成就解锁</h1>
+          <span class="text-xs px-2 py-0.5 rounded-full font-mono bg-sky-500/10 text-sky-400 font-bold border border-sky-500/20 shrink-0">
+            全成就点亮 · 修改器直连
+          </span>
         </div>
       </div>
 
       <!-- 右侧 SAM 成就解锁引擎微型指示器 & 手动匹配 -->
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 shrink-0">
         <button
           @click="showCustomGameModal = true"
           class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 text-xs font-semibold shrink-0 flex items-center gap-1.5 transition cursor-pointer text-slate-700 dark:text-slate-300 shadow-xs"
@@ -31,13 +28,13 @@
         <button
           @click="showSamModal = true"
           class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 text-xs font-mono shrink-0 flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-          :title="samStatus.isInstalled ? 'Steam 成就解锁引擎 (SAM) 已就绪，可针对任意游戏一键点亮全成就' : '未检测到 Steam 成就解锁引擎，点击一键部署安装'"
+          :title="samStatus.isInstalled ? `Steam 成就解锁引擎 (SAM) ${samStatus.version || '内置就绪'} 已就绪，可针对任意游戏一键点亮全成就` : '未检测到 Steam 成就解锁引擎，点击一键部署安装'"
         >
           <Trophy class="w-3.5 h-3.5 text-emerald-500" />
           <span class="text-slate-600 dark:text-slate-400">SAM 引擎:</span>
           <span v-if="samStatus.isInstalled" class="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>已就绪 ({{ samStatus.version || '内置' }})</span>
+            <span>已就绪</span>
           </span>
           <span v-else class="text-amber-500 font-bold flex items-center gap-1 animate-pulse">
             <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
