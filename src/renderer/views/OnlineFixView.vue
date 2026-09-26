@@ -1,13 +1,13 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-y-auto">
     <!-- 顶部统一标准 Header -->
-    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
-      <div class="flex items-center gap-3.5">
+    <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-3">
         <div class="w-11 h-11 rounded-2xl bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/25 dark:border-rose-500/30 flex items-center justify-center shadow-xs shrink-0 text-rose-500 dark:text-rose-400">
           <Rocket class="w-5 h-5" />
         </div>
         <div>
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">联机中心</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-500/10 theme-text-accent font-mono font-bold border border-sky-500/20">
               双模式联机引擎
@@ -20,19 +20,19 @@
       </div>
 
       <!-- Spacewar 核心依赖微型指示器 -->
-      <div class="flex items-center gap-2.5">
+      <div class="flex items-center gap-2">
         <button
           @click="!spacewarStatus.isInstalled ? (showSpacewarModal = true) : fetchSpacewarStatus(true)"
-          class="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-2 transition cursor-pointer shadow-sm"
+          class="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/10 text-xs font-mono shrink-0 flex items-center gap-1.5 transition cursor-pointer shadow-xs"
           :title="spacewarStatus.isInstalled ? 'Spacewar (AppID: 480) 已就绪' : '未检测到 Spacewar，点击查看安装向导'"
         >
           <span class="text-slate-400">Spacewar:</span>
           <span v-if="spacewarStatus.isInstalled" class="text-emerald-400 font-bold flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             <span>已安装 (480)</span>
           </span>
           <span v-else class="text-amber-400 font-bold flex items-center gap-1.5 animate-pulse">
-            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
             <span>未安装</span>
           </span>
         </button>
@@ -40,12 +40,12 @@
     </div>
 
     <!-- 方案选择 Tab 栏 -->
-    <div class="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-white/10 shadow-inner mb-5 self-start">
+    <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-white/10 shadow-inner mb-3 self-start">
       <button
         @click="activeMainTab = 'launch'"
-        class="px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 cursor-pointer"
+        class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
         :class="activeMainTab === 'launch'
-          ? 'theme-btn-primary shadow-md'
+          ? 'theme-btn-primary shadow-xs'
           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
       >
         <Rocket class="w-3.5 h-3.5" />
@@ -54,9 +54,9 @@
 
       <button
         @click="activeMainTab = 'patch'"
-        class="px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-2 cursor-pointer"
+        class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
         :class="activeMainTab === 'patch'
-          ? 'theme-btn-primary shadow-md'
+          ? 'theme-btn-primary shadow-xs'
           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'"
       >
         <Wrench class="w-3.5 h-3.5" />
@@ -64,20 +64,19 @@
       </button>
     </div>
 
-    <!-- 联机方案提示横幅 + 可折叠功能说明（徽章图例 / 两大方案 / 启动方式） -->
-    <div class="mb-4 p-3.5 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-start gap-3 shrink-0">
-      <div class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 mt-0.5 font-bold">
-        💡
-      </div>
-      <div class="leading-relaxed flex-1">
-        <strong class="text-sky-300 font-semibold">联机只有两大方案：</strong>
-        <strong class="text-emerald-400 font-bold">方案一 · Steam 通道联机</strong>（免改文件直启，推荐原生 P2P 联机游戏）；
-        <strong class="text-amber-400 font-bold">方案二 · 联机补丁注入</strong>（精准替换 DLL 补丁，云端大厅强鉴权与三方网络游戏的必选方案）。
-        先看游戏卡片左上角<strong class="text-sky-300">徽章颜色</strong>：绿色优先方案一，琥珀色/橙色必须切换到方案二安装补丁，卡片亦有智能方案指引。
+    <!-- 联机方案提示横幅 + 可折叠功能说明 (紧凑精致) -->
+    <div class="mb-3 p-2.5 px-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-center justify-between gap-3 shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 text-xs font-bold">💡</span>
+        <span class="truncate">
+          <strong class="text-sky-300 font-semibold">联机两大方案：</strong>
+          <strong class="text-emerald-400 font-bold">方案一·Steam通道</strong>（免改直启P2P）；
+          <strong class="text-amber-400 font-bold">方案二·联机补丁</strong>（DLL补丁/大厅强鉴权）。绿色徽章优先方案一。
+        </span>
       </div>
       <button
         @click="showGuide = true"
-        class="shrink-0 px-3.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+        class="shrink-0 px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
         title="查看联机方案、启动方式及徽章说明"
       >
         <BookOpen class="w-3.5 h-3.5" />
@@ -91,16 +90,16 @@
     <!-- ============================================== -->
     <!-- TAB 1: 联机启动模式 (主模式) -->
     <!-- ============================================== -->
-    <div v-if="activeMainTab === 'launch'" class="space-y-6 flex-1 flex flex-col min-h-0">
+    <div v-if="activeMainTab === 'launch'" class="space-y-3.5 flex-1 flex flex-col min-h-0">
       <!-- 快捷操作栏 -->
-      <div class="flex items-center justify-between gap-3.5 flex-wrap shrink-0">
-        <div class="flex items-center gap-3 flex-wrap">
+      <div class="flex items-center justify-between gap-3 flex-wrap shrink-0">
+        <div class="flex items-center gap-2.5 flex-wrap">
           <button
             @click="handleRefreshLocalGames(true)"
             :disabled="isScanning"
-            class="px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800 border border-white/10 rounded-xl text-xs font-bold text-slate-200 transition flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+            class="px-3 py-1.5 bg-slate-900/80 hover:bg-slate-800 border border-white/10 rounded-xl text-xs font-bold text-slate-200 transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
           >
-            <RotateCw class="w-4 h-4" :class="isScanning ? 'animate-spin' : ''" />
+            <RotateCw class="w-3.5 h-3.5" :class="isScanning ? 'animate-spin' : ''" />
             <span>{{ isScanning ? '扫描中...' : '刷新列表' }}</span>
           </button>
 
@@ -137,60 +136,60 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-3.5 flex-1 max-w-lg justify-end">
+        <div class="flex items-center gap-3 flex-1 max-w-lg justify-end">
           <div class="relative flex-1">
             <input
               v-model="searchQuery"
               type="text"
               placeholder="搜索游戏名称或APPID..."
-              class="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2.5 pl-9 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-400 transition font-mono shadow-inner"
+              class="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3.5 py-1.5 pl-8 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-400 transition font-mono shadow-inner"
             />
-            <Search class="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
+            <Search class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400 pointer-events-none" />
           </div>
 
-          <span class="text-xs font-mono text-slate-400 bg-slate-900/80 px-3 py-2 rounded-xl border border-white/10 shrink-0">
+          <span class="text-xs font-mono text-slate-400 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-white/10 shrink-0">
             共 <strong class="text-slate-100 font-bold">{{ filteredGames.length }}</strong> 个已安装游戏
           </span>
         </div>
       </div>
 
       <!-- 联机启动模式选择器卡片 -->
-      <div class="theme-card-static rounded-3xl p-5 xl:p-6 shadow-xl border">
-        <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-          <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
-            <Gamepad2 class="w-5 h-5 theme-text-accent" />
+      <div class="theme-card-static rounded-2xl p-4 shadow-sm border mb-3.5">
+        <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+          <h3 class="text-sm font-bold text-slate-100 flex items-center gap-2">
+            <Gamepad2 class="w-4 h-4 theme-text-accent" />
             <span>方案一 · 启动方式（三选一）</span>
           </h3>
           <span class="text-xs text-slate-400 font-mono">三种方式同一联机机制，仅启动手法不同</span>
         </div>
-        <p class="text-[11px] leading-relaxed text-amber-300/90 bg-amber-500/5 border border-amber-500/15 rounded-xl px-3 py-2 mb-4">
+        <p class="text-[11px] leading-relaxed text-amber-300/90 bg-amber-500/5 border border-amber-500/15 rounded-xl px-3 py-1.5 mb-3">
           <strong>注意：</strong>以下三种方式<strong>本质都是把联机伪装进 Steam 官方 Spacewar (480) 通道</strong>，联机效果完全相同。
           若 Open 内核联不上某游戏，可切换 Spacewar / BAT 重试（三者同为 480 通道但启动路径不同）；
           仍无效再改用「方案二 · 联机补丁注入」。
         </p>
 
         <!-- 3 个启动方式选项卡片 -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           <!-- 方式 1: Open内核联机模式 -->
           <div
             @click="selectedLaunchMode = 'open'"
-            class="p-4 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center gap-3.5"
+            class="p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center gap-3"
             :class="selectedLaunchMode === 'open'
-              ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/40 shadow-lg'
+              ? 'bg-sky-500/10 border-sky-500/60 ring-2 ring-sky-500/40 shadow-sm'
               : 'bg-slate-900/60 border-white/10 hover:border-sky-500/30'"
           >
             <div
-              class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+              class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
               :class="selectedLaunchMode === 'open' ? 'theme-btn-primary text-slate-950 font-bold' : 'bg-slate-800 text-slate-400'"
             >
-              <ArrowLeftRight class="w-5 h-5" />
+              <ArrowLeftRight class="w-4 h-4" />
             </div>
             <div class="min-w-0">
-              <div class="font-bold text-sm text-slate-100 flex items-center gap-1.5">
+              <div class="font-bold text-xs text-slate-100 flex items-center gap-1.5">
                 <span>Open内核联机</span>
                 <span class="text-[10px] px-1.5 py-[1px] rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold shrink-0">推荐</span>
               </div>
-              <p class="text-xs text-slate-400 truncate mt-0.5">
+              <p class="text-[11px] text-slate-400 truncate mt-0.5">
                 内核拦截 · 好友看到游戏本名
               </p>
             </div>
@@ -199,22 +198,22 @@
           <!-- 方式 2: Spacewar模式 -->
           <div
             @click="selectedLaunchMode = 'spacewar'"
-            class="p-4 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center gap-3.5"
+            class="p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center gap-3"
             :class="selectedLaunchMode === 'spacewar'
-              ? 'bg-purple-500/10 border-purple-500/60 ring-2 ring-purple-500/40 shadow-lg'
+              ? 'bg-purple-500/10 border-purple-500/60 ring-2 ring-purple-500/40 shadow-sm'
               : 'bg-slate-900/60 border-white/10 hover:border-purple-500/30'"
           >
             <div
-              class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+              class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
               :class="selectedLaunchMode === 'spacewar' ? 'bg-purple-500 text-white font-bold' : 'bg-slate-800 text-slate-400'"
             >
-              <Rocket class="w-5 h-5" />
+              <Rocket class="w-4 h-4" />
             </div>
             <div class="min-w-0">
-              <div class="font-bold text-sm text-slate-100">
+              <div class="font-bold text-xs text-slate-100">
                 Spacewar伪装直启
               </div>
-              <p class="text-xs text-slate-400 truncate mt-0.5">
+              <p class="text-[11px] text-slate-400 truncate mt-0.5">
                 同源变体 · 480 大厅启动
               </p>
             </div>
@@ -223,22 +222,22 @@
           <!-- 方式 3: BAT注入模式 -->
           <div
             @click="selectedLaunchMode = 'bat'"
-            class="p-4 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center gap-3.5"
+            class="p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center gap-3"
             :class="selectedLaunchMode === 'bat'
-              ? 'bg-emerald-500/10 border-emerald-500/60 ring-2 ring-emerald-500/40 shadow-lg'
+              ? 'bg-emerald-500/10 border-emerald-500/60 ring-2 ring-emerald-500/40 shadow-sm'
               : 'bg-slate-900/60 border-white/10 hover:border-emerald-500/30'"
           >
             <div
-              class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+              class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
               :class="selectedLaunchMode === 'bat' ? 'bg-emerald-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400'"
             >
-              <Terminal class="w-5 h-5" />
+              <Terminal class="w-4 h-4" />
             </div>
             <div class="min-w-0">
-              <div class="font-bold text-sm text-slate-100">
+              <div class="font-bold text-xs text-slate-100">
                 BAT脚本注入
               </div>
-              <p class="text-xs text-slate-400 truncate mt-0.5">
+              <p class="text-[11px] text-slate-400 truncate mt-0.5">
                 同源变体 · 环境变量脚本启动
               </p>
             </div>
@@ -246,27 +245,27 @@
         </div>
 
         <!-- 联机 AppID 配置栏 -->
-        <div class="flex items-center gap-3 pt-3 border-t border-white/10 flex-wrap">
+        <div class="flex items-center gap-3 pt-2.5 border-t border-white/10 flex-wrap">
           <div class="flex items-center gap-2">
             <span class="text-xs font-semibold text-slate-300">联机AppID:</span>
             <input
               v-model.number="onlineAppId"
               type="number"
-              class="w-24 bg-slate-900/90 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-center font-mono font-bold text-sky-400 focus:outline-none focus:border-sky-400"
+              class="w-20 bg-slate-900/90 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-center font-mono font-bold text-sky-400 focus:outline-none focus:border-sky-400"
             />
           </div>
-          <span class="text-xs text-slate-400 font-mono">
+          <span class="text-[11px] text-slate-400 font-mono">
             仅 Spacewar / BAT 模式使用（Open 模式自动使用游戏真实AppID）；默认480(Spacewar)
           </span>
         </div>
       </div>
 
       <!-- 本地游戏列表展示区 (支持点击标题折叠/收起与缩放) -->
-      <div class="space-y-4 flex-1">
+      <div class="space-y-3.5 flex-1">
         <!-- 列表头部标题栏 (点击标题区域可收起/展开下方游戏卡片) -->
         <div
           @click="isLaunchGamesCollapsed = !isLaunchGamesCollapsed"
-          class="flex items-center justify-between gap-4 flex-wrap bg-slate-900/80 hover:bg-slate-900 p-3.5 rounded-2xl border border-white/10 transition cursor-pointer select-none group"
+          class="flex items-center justify-between gap-3 flex-wrap bg-slate-900/80 hover:bg-slate-900 p-2.5 px-3.5 rounded-xl border border-white/10 transition cursor-pointer select-none group"
         >
           <div class="flex items-center gap-2.5">
             <Library class="w-5 h-5 text-sky-400 group-hover:scale-110 transition-transform" />

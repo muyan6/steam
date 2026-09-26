@@ -1,15 +1,15 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto space-y-5">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-y-auto space-y-3.5">
     <!-- 顶部统一标准 Header -->
-    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 flex-wrap shrink-0">
-      <div class="flex items-center gap-3.5">
+    <div class="flex items-center justify-between gap-3 pb-3 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-3">
         <div class="w-11 h-11 rounded-2xl bg-sky-500/10 dark:bg-sky-500/15 border border-sky-500/25 dark:border-sky-500/30 flex items-center justify-center shadow-xs shrink-0 text-sky-500 dark:text-sky-400">
           <Sparkles class="w-5 h-5" />
         </div>
         <div>
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">功能详解</h1>
-            <span class="text-xs px-2.5 py-0.5 rounded-full theme-btn-primary text-slate-950 font-mono font-bold shadow-sm">
+            <span class="text-xs px-2.5 py-0.5 rounded-full theme-btn-primary text-slate-950 font-mono font-bold shadow-xs">
               v{{ appVersion }}
             </span>
           </div>
@@ -17,10 +17,10 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2.5">
+      <div class="flex items-center gap-2">
         <button
           @click="handleOpenFeedback"
-          class="px-3.5 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:border-sky-400/50 text-sky-300 hover:text-sky-100 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer hover-lift"
+          class="px-3 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:border-sky-400/50 text-sky-300 hover:text-sky-100 border border-sky-500/25 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover-lift shadow-xs"
           title="加入官方 QQ 交流反馈群"
         >
           <MessageSquare class="w-3.5 h-3.5 text-sky-400" />
@@ -30,15 +30,15 @@
         <button
           @click="checkUpdates"
           :disabled="isCheckingUpdate"
-          class="px-3.5 py-2 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
+          class="px-3 py-1.5 btn-soft-action rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
         >
-          <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isCheckingUpdate }" />
+          <RotateCw class="w-3.5 h-3.5 text-slate-400" :class="{ 'animate-spin': isCheckingUpdate }" />
           <span>{{ isCheckingUpdate ? '正在检查...' : '检查最新版本' }}</span>
         </button>
 
         <button
           @click="emit('open-disclaimer')"
-          class="px-3.5 py-2 theme-btn-primary rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
+          class="px-3 py-1.5 theme-btn-primary rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
         >
           <ShieldAlert class="w-3.5 h-3.5" />
           <span>免责声明</span>
@@ -47,7 +47,7 @@
     </div>
 
     <!-- 功能详解 (Features Matrix) -->
-    <div class="theme-card rounded-3xl p-6 xl:p-7 space-y-5">
+    <div class="theme-card rounded-2xl p-4 xl:p-5 space-y-3.5">
       <div class="flex items-center justify-between">
         <div>
           <div class="flex items-center gap-2 text-xs font-mono font-bold theme-text-accent uppercase tracking-wider">
@@ -62,14 +62,14 @@
       </div>
 
       <!-- 10 项特性网格列表 (对齐参考界面) -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         <div
           v-for="(feature, idx) in featuresList"
           :key="idx"
-          class="flex items-center gap-3.5 p-3.5 rounded-2xl bg-slate-950/40 border border-white/5 hover:border-sky-500/30 transition group"
+          class="flex items-center gap-3 p-3 rounded-xl bg-slate-950/40 border border-white/5 hover:border-sky-500/30 transition group"
         >
-          <div class="w-7 h-7 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20 group-hover:scale-110 transition-transform">
-            <Check class="w-4 h-4 stroke-[3]" />
+          <div class="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20 group-hover:scale-110 transition-transform">
+            <Check class="w-3.5 h-3.5 stroke-[3]" />
           </div>
           <div class="min-w-0">
             <div class="font-bold text-xs text-slate-100">{{ feature.title }}</div>
@@ -78,9 +78,9 @@
         </div>
 
         <!-- 红色警告项：不支持类型 -->
-        <div class="md:col-span-2 flex items-start gap-3.5 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-200">
-          <div class="w-7 h-7 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30 mt-0.5">
-            <X class="w-4 h-4 stroke-[3]" />
+        <div class="md:col-span-2 flex items-start gap-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-200">
+          <div class="w-6 h-6 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30 mt-0.5">
+            <X class="w-3.5 h-3.5 stroke-[3]" />
           </div>
           <div class="text-xs leading-relaxed">
             <strong class="font-bold text-rose-300 block mb-0.5">不支持游戏类型提示：</strong>
@@ -91,16 +91,16 @@
     </div>
 
     <!-- 教程与支持中心 -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
       <!-- 使用教程卡片 -->
-      <div class="theme-card rounded-3xl p-6 flex flex-col justify-between space-y-4">
+      <div class="theme-card rounded-2xl p-4 flex flex-col justify-between space-y-3">
         <div>
           <div class="flex items-center gap-2 text-xs font-mono font-bold theme-text-accent uppercase tracking-wider">
             <BookOpen class="w-4 h-4" />
             <span>Tutorial & Guide</span>
           </div>
-          <h3 class="text-base font-bold text-slate-100 mt-1">使用图文教程</h3>
-          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+          <h3 class="text-sm font-bold text-slate-100 mt-1">使用图文教程</h3>
+          <p class="text-xs text-slate-400 mt-1 leading-relaxed">
             首次使用或入库遇到疑问？查看完整的快速上手指南与一键入库全流程演示。
           </p>
         </div>
@@ -109,9 +109,9 @@
           v-if="appLinks.tutorialUrl"
           :href="appLinks.tutorialUrl"
           target="_blank"
-          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 hover:border-sky-500/40 hover:bg-sky-500/5 transition flex items-center justify-between text-xs text-slate-200 group cursor-pointer"
+          class="p-2.5 px-3 rounded-xl bg-slate-950/40 border border-white/10 hover:border-sky-500/40 hover:bg-sky-500/5 transition flex items-center justify-between text-xs text-slate-200 group cursor-pointer"
         >
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <FileText class="w-4 h-4 theme-text-accent" />
             <span>查看完整图文使用教程</span>
           </div>
@@ -119,10 +119,10 @@
         </a>
         <div
           v-else
-          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 transition flex items-center justify-between text-xs text-slate-500 select-none"
+          class="p-2.5 px-3 rounded-xl bg-slate-950/40 border border-white/10 transition flex items-center justify-between text-xs text-slate-500 select-none"
           title="链接暂未配置，敬请期待"
         >
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <FileText class="w-4 h-4 text-slate-500" />
             <span>查看完整图文使用教程（暂未开放）</span>
           </div>
@@ -131,14 +131,14 @@
       </div>
 
       <!-- 问题大全与排错中心 -->
-      <div class="theme-card rounded-3xl p-6 flex flex-col justify-between space-y-4">
+      <div class="theme-card rounded-2xl p-4 flex flex-col justify-between space-y-3">
         <div>
           <div class="flex items-center gap-2 text-xs font-mono font-bold theme-text-accent uppercase tracking-wider">
             <HelpCircle class="w-4 h-4" />
             <span>Troubleshoot</span>
           </div>
-          <h3 class="text-base font-bold text-slate-100 mt-1">入库没有效果？</h3>
-          <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+          <h3 class="text-sm font-bold text-slate-100 mt-1">入库没有效果？</h3>
+          <p class="text-xs text-slate-400 mt-1 leading-relaxed">
             遇到 Steam 提示清单缺失、无下载权限或杀毒软件拦截？一键排查常见问题。
           </p>
         </div>
@@ -147,9 +147,9 @@
           v-if="appLinks.faqUrl"
           :href="appLinks.faqUrl"
           target="_blank"
-          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 hover:border-sky-500/40 hover:bg-sky-500/5 transition flex items-center justify-between text-xs text-slate-200 group cursor-pointer"
+          class="p-2.5 px-3 rounded-xl bg-slate-950/40 border border-white/10 hover:border-sky-500/40 hover:bg-sky-500/5 transition flex items-center justify-between text-xs text-slate-200 group cursor-pointer"
         >
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <HelpCircle class="w-4 h-4 theme-text-accent" />
             <span>查看常见问题大全与自愈中心</span>
           </div>
@@ -157,10 +157,10 @@
         </a>
         <div
           v-else
-          class="p-3.5 rounded-2xl bg-slate-950/40 border border-white/10 transition flex items-center justify-between text-xs text-slate-500 select-none"
+          class="p-2.5 px-3 rounded-xl bg-slate-950/40 border border-white/10 transition flex items-center justify-between text-xs text-slate-500 select-none"
           title="链接暂未配置，敬请期待"
         >
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <HelpCircle class="w-4 h-4 text-slate-500" />
             <span>查看常见问题大全与自愈中心（暂未开放）</span>
           </div>
@@ -169,20 +169,20 @@
       </div>
 
       <!-- QQ 交流反馈群 -->
-      <div v-if="appLinks.qqGroupUrl" class="md:col-span-2 theme-card rounded-3xl p-5 flex items-center justify-between border border-sky-500/20 bg-sky-950/10">
+      <div v-if="appLinks.qqGroupUrl" class="md:col-span-2 theme-card rounded-2xl p-3.5 flex items-center justify-between border border-sky-500/20 bg-sky-950/10">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
-            <MessageSquare class="w-5 h-5" />
+          <div class="w-9 h-9 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 shrink-0">
+            <MessageSquare class="w-4 h-4" />
           </div>
           <div>
-            <h4 class="text-sm font-bold text-slate-100">官方交流与意见反馈群</h4>
-            <p class="text-xs text-slate-400 mt-0.5">遇到使用问题、程序 Bug 或有新功能想法？欢迎加群交流</p>
+            <h4 class="text-xs font-bold text-slate-100">官方交流与意见反馈群</h4>
+            <p class="text-[11px] text-slate-400 mt-0.5">遇到使用问题、程序 Bug 或有新功能想法？欢迎加群交流</p>
           </div>
         </div>
         <a
           :href="appLinks.qqGroupUrl"
           target="_blank"
-          class="px-4 py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 hover:text-sky-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+          class="px-3 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 hover:text-sky-100 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
         >
           <span>加入 QQ 反馈群</span>
           <ExternalLink class="w-3.5 h-3.5" />
@@ -191,34 +191,34 @@
     </div>
 
     <!-- 运行环境与设备参数 -->
-    <div class="theme-card rounded-3xl p-6 space-y-4">
+    <div class="theme-card rounded-2xl p-4 space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-sm font-bold text-slate-100 flex items-center gap-2">
+        <h3 class="text-xs font-bold text-slate-100 flex items-center gap-2">
           <Cpu class="w-4 h-4 theme-text-accent" />
           <span>本地运行环境与设备标识</span>
         </h3>
         <span class="text-xs font-mono text-slate-400">{{ isTauriEnvironment() ? 'Tauri 2.0 + WebView2' : 'Node.js + Electron' }}</span>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-        <div class="p-3 rounded-2xl bg-slate-950/40 border border-white/5">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+        <div class="p-2.5 px-3 rounded-xl bg-slate-950/40 border border-white/5">
           <div class="text-slate-400 text-[11px] mb-1">本机唯一设备码 (Device ID)</div>
-          <div class="font-mono text-slate-200 font-bold truncate" :title="deviceId">
+          <div class="font-mono text-slate-200 font-bold truncate text-xs" :title="deviceId">
             {{ deviceId || '正在探测...' }}
           </div>
         </div>
 
-        <div class="p-3 rounded-2xl bg-slate-950/40 border border-white/5">
+        <div class="p-2.5 px-3 rounded-xl bg-slate-950/40 border border-white/5">
           <div class="text-slate-400 text-[11px] mb-1">Steam 内核状态</div>
-          <div class="font-bold flex items-center gap-1.5" :class="ostInstalled ? 'text-emerald-400' : 'text-amber-400'">
-            <span class="w-2 h-2 rounded-full" :class="ostInstalled ? 'bg-emerald-400' : 'bg-amber-400'"></span>
+          <div class="font-bold flex items-center gap-1.5 text-xs" :class="ostInstalled ? 'text-emerald-400' : 'text-amber-400'">
+            <span class="w-1.5 h-1.5 rounded-full" :class="ostInstalled ? 'bg-emerald-400' : 'bg-amber-400'"></span>
             <span>{{ ostInstalled ? 'OpenSteamTool 已挂载' : '待同步/未安装' }}</span>
           </div>
         </div>
 
-        <div class="p-3 rounded-2xl bg-slate-950/40 border border-white/5">
+        <div class="p-2.5 px-3 rounded-xl bg-slate-950/40 border border-white/5">
           <div class="text-slate-400 text-[11px] mb-1">授权状态</div>
-          <div class="font-bold" :class="isActivated ? 'text-emerald-400' : 'text-slate-300'">
+          <div class="font-bold text-xs" :class="isActivated ? 'text-emerald-400' : 'text-slate-300'">
             {{ isActivated ? '社区赞助版' : '普通用户 (基础版)' }}
           </div>
         </div>

@@ -1,13 +1,13 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-y-auto">
     <!-- 顶部统一标准 Header -->
-    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
-      <div class="flex items-center gap-3.5">
+    <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-3">
         <div class="w-11 h-11 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/15 border border-indigo-500/25 dark:border-indigo-500/30 flex items-center justify-center shadow-xs shrink-0 text-indigo-500 dark:text-indigo-400">
           <Settings2 class="w-5 h-5" />
         </div>
         <div>
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">系统设置与运行环境体检</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800/80 text-slate-300 font-mono border border-white/10 font-bold">
               环境与配置
@@ -19,11 +19,11 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2.5">
+      <div class="flex items-center gap-2">
         <button
           @click="handleStartDiagnostic"
           :disabled="checkingHealth"
-          class="px-3.5 py-2 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
+          class="px-3 py-1.5 btn-soft-action rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
           title="重新执行全项环境体检与诊断"
         >
           <RotateCw class="w-3.5 h-3.5 text-slate-400" :class="{ 'animate-spin': checkingHealth }" />
@@ -32,7 +32,7 @@
       </div>
     </div>
 
-    <div class="space-y-6 w-full max-w-5xl xl:max-w-6xl pb-10">
+    <div class="space-y-3.5 w-full max-w-5xl xl:max-w-6xl pb-8">
       <!-- 1. 界面个性化与显示 (缩放 + 主题合并) -->
       <div class="theme-card-static rounded-2xl p-4 xl:p-5 shadow-sm border space-y-4">
         <!-- 头部：标题与综合状态 -->

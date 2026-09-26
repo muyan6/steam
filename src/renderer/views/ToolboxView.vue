@@ -1,13 +1,13 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto theme-bg-subtle">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-y-auto theme-bg-subtle">
     <!-- 顶部统一标准 Header -->
-    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
-      <div class="flex items-center gap-3.5">
+    <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-3">
         <div class="w-11 h-11 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/25 dark:border-emerald-500/30 flex items-center justify-center shadow-xs shrink-0 text-emerald-500 dark:text-emerald-400">
           <Wrench class="w-5 h-5" />
         </div>
         <div>
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">实用工具箱</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold">
               4 大运维工具
@@ -20,11 +20,11 @@
       </div>
 
       <!-- 快速刷新状态 -->
-      <div class="flex items-center gap-2.5">
+      <div class="flex items-center gap-2">
         <button
           @click="fetchStatus"
           :disabled="loadingStatus"
-          class="px-3.5 py-2 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
+          class="px-3 py-1.5 btn-soft-action rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
           title="刷新工具箱状态"
         >
           <RotateCw class="w-3.5 h-3.5 text-slate-400" :class="{ 'animate-spin': loadingStatus }" />
@@ -34,50 +34,50 @@
     </div>
 
     <!-- 4 大核心工具卡片网格 (2x2 响应式布局) -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-5xl">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-w-5xl">
       <!-- 卡片 1: 清理Steam缓存 (主题强调色渐变) -->
-      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
+      <div class="rounded-2xl tool-card overflow-hidden shadow-sm flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
-        <div class="h-28 tool-banner-a flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
-            <Eraser class="w-8 h-8" />
+        <div class="h-24 tool-banner-a flex items-center justify-center relative overflow-hidden">
+          <div class="w-14 h-14 rounded-xl tool-banner-badge flex items-center justify-center">
+            <Eraser class="w-7 h-7" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
         </div>
 
         <!-- 卡片主体内容 -->
-        <div class="p-5 flex-1 flex flex-col justify-between">
+        <div class="p-4 flex-1 flex flex-col justify-between">
           <div>
-            <h3 class="text-base font-bold text-slate-100">清理Steam缓存</h3>
-            <p class="text-xs text-slate-400 mt-1">解决内核报错、Steam网络错误、下载无连接及入库无效等问题</p>
+            <h3 class="text-sm font-bold text-slate-100">清理Steam缓存</h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">解决内核报错、Steam网络错误、下载无连接及入库无效等问题</p>
 
             <!-- 检查清单 -->
-            <div class="mt-4 space-y-2 text-xs">
+            <div class="mt-3 space-y-1.5 text-xs">
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">结束Steam相关进程</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">清扫depotcache坏清单与DLL内核缓存残留</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">刷新DNS解析并修复Steam网络与下载错误</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">重启Steam，重启完成后需您重新入库一个游戏</span>
               </div>
             </div>
           </div>
 
           <!-- 执行动作按钮 -->
-          <div class="mt-6">
+          <div class="mt-4">
             <button
               @click="handleClearCache"
               :disabled="activeAction !== null"
-              class="w-full py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2"
+              class="w-full py-2 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-semibold rounded-xl transition duration-200 flex items-center justify-center gap-2"
             >
               <RotateCw v-if="activeAction === 'clear_cache'" class="w-3.5 h-3.5 animate-spin" />
               <Play v-else class="w-3.5 h-3.5 fill-current" />
@@ -88,44 +88,44 @@
       </div>
 
       <!-- 卡片 2: 修复OpenSteamTool内核 (主题强调色渐变) -->
-      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
+      <div class="rounded-2xl tool-card overflow-hidden shadow-sm flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
-        <div class="h-28 tool-banner-d flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
-            <Wrench class="w-8 h-8" />
+        <div class="h-24 tool-banner-d flex items-center justify-center relative overflow-hidden">
+          <div class="w-14 h-14 rounded-xl tool-banner-badge flex items-center justify-center">
+            <Wrench class="w-7 h-7" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
         </div>
 
         <!-- 卡片主体内容 -->
-        <div class="p-5 flex-1 flex flex-col justify-between">
+        <div class="p-4 flex-1 flex flex-col justify-between">
           <div>
-            <h3 class="text-base font-bold text-slate-100">修复OpenSteamTool内核</h3>
-            <p class="text-xs text-slate-400 mt-1">清理缓存后修复OpenSteamTool内核，一键重新部署</p>
+            <h3 class="text-sm font-bold text-slate-100">修复OpenSteamTool内核</h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">清理缓存后修复OpenSteamTool内核，一键重新部署</p>
 
             <!-- 检查清单 -->
-            <div class="mt-4 space-y-2 text-xs">
+            <div class="mt-3 space-y-1.5 text-xs">
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">先执行清理Steam缓存</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">部署OpenSteamTool核心组件 (64位三件套)</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">修复内核注册表配置并启动Steam</span>
               </div>
             </div>
           </div>
 
           <!-- 执行动作按钮 -->
-          <div class="mt-6">
+          <div class="mt-4">
             <button
               @click="handleRepairKernel"
               :disabled="activeAction !== null"
-              class="w-full py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2"
+              class="w-full py-2 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-semibold rounded-xl transition duration-200 flex items-center justify-center gap-2"
             >
               <RotateCw v-if="activeAction === 'repair_kernel'" class="w-3.5 h-3.5 animate-spin" />
               <Play v-else class="w-3.5 h-3.5 fill-current" />
@@ -136,33 +136,33 @@
       </div>
 
       <!-- 卡片 2.5: 同步最新内核 (GitHub release 在线同步) -->
-      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
-        <div class="h-28 tool-banner-e flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
-            <CloudDownload class="w-8 h-8" />
+      <div class="rounded-2xl tool-card overflow-hidden shadow-sm flex flex-col justify-between duration-300">
+        <div class="h-24 tool-banner-e flex items-center justify-center relative overflow-hidden">
+          <div class="w-14 h-14 rounded-xl tool-banner-badge flex items-center justify-center">
+            <CloudDownload class="w-7 h-7" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
         </div>
 
-        <div class="p-5 flex-1 flex flex-col justify-between">
+        <div class="p-4 flex-1 flex flex-col justify-between">
           <div>
-            <h3 class="text-base font-bold text-slate-100">同步最新内核</h3>
-            <p class="text-xs text-slate-400 mt-1">从 GitHub 官方 release 在线拉取最新 OpenSteamTool 内核并部署，无需等待春风渡发版</p>
+            <h3 class="text-sm font-bold text-slate-100">同步最新内核</h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">从 GitHub 官方 release 在线拉取最新 OpenSteamTool 内核并部署，无需等待春风渡发版</p>
 
-            <div class="mt-4 space-y-2 text-xs">
+            <div class="mt-3 space-y-1.5 text-xs">
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">需先退出 Steam（内核 DLL 被锁定时无法替换）</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">官方直链 ➔ 加速镜像 多级下载并校验核心三件套</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">覆盖部署并记录版本，重启 Steam 生效</span>
               </div>
-              <div v-if="ostSyncInfo" class="pt-1.5 font-mono text-[11px] text-slate-400">
+              <div v-if="ostSyncInfo" class="pt-1 font-mono text-[11px] text-slate-400">
                 当前内核：{{ ostSyncInfo.currentTag }}
                 <template v-if="ostSyncInfo.latestTag">
                   ｜官方最新：{{ ostSyncInfo.latestTag }}
@@ -173,15 +173,15 @@
               <div v-if="ostSyncInfo?.currentTag?.includes('Debug')" class="text-[11px] text-amber-300/90">
                 当前为同版本 Debug 构建，建议同步为官方 Release 构建（体积更小、性能更优）
               </div>
-              <div v-else-if="ostCheckFailed" class="pt-1.5 text-[11px] text-slate-500">未能获取官方最新版本信息（网络受限时可稍后重试）</div>
+              <div v-else-if="ostCheckFailed" class="pt-1 text-[11px] text-slate-500">未能获取官方最新版本信息（网络受限时可稍后重试）</div>
             </div>
           </div>
 
-          <div class="mt-6 flex items-center gap-2">
+          <div class="mt-4 flex items-center gap-2">
             <button
               @click="handleCheckOstSync()"
               :disabled="activeAction !== null"
-              class="flex-1 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-bold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
+              class="flex-1 py-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-semibold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
               <RotateCw v-if="activeAction === 'ost_check'" class="w-3.5 h-3.5 animate-spin" />
               <Search v-else class="w-3.5 h-3.5" />
@@ -190,7 +190,7 @@
             <button
               @click="handleSyncOst"
               :disabled="activeAction !== null"
-              class="flex-1 py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2"
+              class="flex-1 py-2 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5"
             >
               <RotateCw v-if="activeAction === 'ost_sync'" class="w-3.5 h-3.5 animate-spin" />
               <CloudDownload v-else class="w-3.5 h-3.5" />
@@ -201,48 +201,48 @@
       </div>
 
       <!-- 卡片 3: 补齐Open内核SHA256 (主题强调色渐变) -->
-      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
+      <div class="rounded-2xl tool-card overflow-hidden shadow-sm flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
-        <div class="h-28 tool-banner-b flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
-            <Puzzle class="w-8 h-8" />
+        <div class="h-24 tool-banner-b flex items-center justify-center relative overflow-hidden">
+          <div class="w-14 h-14 rounded-xl tool-banner-badge flex items-center justify-center">
+            <Puzzle class="w-7 h-7" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
         </div>
 
         <!-- 卡片主体内容 -->
-        <div class="p-5 flex-1 flex flex-col justify-between">
+        <div class="p-4 flex-1 flex flex-col justify-between">
           <div>
-            <h3 class="text-base font-bold text-slate-100">补齐Open内核SHA256</h3>
-            <p class="text-xs text-slate-400 mt-1">补齐Open内核所需SHA256，一般都用不上</p>
+            <h3 class="text-sm font-bold text-slate-100">补齐Open内核SHA256</h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">补齐Open内核所需SHA256，一般都用不上</p>
 
             <!-- 检查清单 -->
-            <div class="mt-4 space-y-2 text-xs">
+            <div class="mt-3 space-y-1.5 text-xs">
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">结束Steam相关进程</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">删除旧的opensteamtool文件夹</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">下载内核相关文件并解压到opensteamtool</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">重新启动Steam</span>
               </div>
             </div>
           </div>
 
           <!-- 执行动作按钮 -->
-          <div class="mt-6">
+          <div class="mt-4">
             <button
               @click="handleFillSha256"
               :disabled="activeAction !== null"
-              class="w-full py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2"
+              class="w-full py-2 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-semibold rounded-xl transition duration-200 flex items-center justify-center gap-2"
             >
               <RotateCw v-if="activeAction === 'fill_sha256'" class="w-3.5 h-3.5 animate-spin" />
               <Play v-else class="w-3.5 h-3.5 fill-current" />
@@ -253,44 +253,44 @@
       </div>
 
       <!-- 卡片 4: Open内核清单服务器自动切换 (主题强调色渐变) -->
-      <div class="rounded-3xl tool-card overflow-hidden shadow-xl flex flex-col justify-between duration-300">
+      <div class="rounded-2xl tool-card overflow-hidden shadow-sm flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
-        <div class="h-28 tool-banner-c flex items-center justify-center relative overflow-hidden">
-          <div class="w-16 h-16 rounded-2xl tool-banner-badge flex items-center justify-center">
-            <ArrowLeftRight class="w-8 h-8" />
+        <div class="h-24 tool-banner-c flex items-center justify-center relative overflow-hidden">
+          <div class="w-14 h-14 rounded-xl tool-banner-badge flex items-center justify-center">
+            <ArrowLeftRight class="w-7 h-7" />
           </div>
           <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
         </div>
 
         <!-- 卡片主体内容 -->
-        <div class="p-5 flex-1 flex flex-col justify-between">
+        <div class="p-4 flex-1 flex flex-col justify-between">
           <div>
-            <h3 class="text-base font-bold text-slate-100">Open内核清单服务器自动切换</h3>
-            <p class="text-xs text-slate-400 mt-1">自动轮询全球高速清单节点（①官方直链加速 ➔ ②全球CDN镜像 ➔ ③本地缓存），修复下载无联网与清单缺失</p>
+            <h3 class="text-sm font-bold text-slate-100">Open内核清单服务器自动切换</h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">自动轮询全球高速清单节点（①官方直链加速 ➔ ②全球CDN镜像 ➔ ③本地缓存），修复下载无联网与清单缺失</p>
 
             <!-- 检查清单 -->
-            <div class="mt-4 space-y-2 text-xs">
+            <div class="mt-3 space-y-1.5 text-xs">
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">结束Steam进程</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">开启Open内核清单服务器自动轮询与智能故障自愈</span>
               </div>
               <div class="flex items-center gap-2 text-emerald-400 font-medium">
-                <Check class="w-4 h-4 shrink-0 stroke-[2.5]" />
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
                 <span class="text-slate-200">重新启动Steam</span>
               </div>
             </div>
           </div>
 
           <!-- 执行动作按钮 -->
-          <div class="mt-6">
+          <div class="mt-4">
             <button
               @click="handleAutoSwitchManifest"
               :disabled="activeAction !== null"
-              class="w-full py-2.5 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-bold rounded-xl transition duration-200 flex items-center justify-center gap-2"
+              class="w-full py-2 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-semibold rounded-xl transition duration-200 flex items-center justify-center gap-2"
             >
               <RotateCw v-if="activeAction === 'auto_switch'" class="w-3.5 h-3.5 animate-spin" />
               <Play v-else class="w-3.5 h-3.5 fill-current" />

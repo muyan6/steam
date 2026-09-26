@@ -1,13 +1,13 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-6 overflow-hidden">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-hidden">
     <!-- 顶部统一标准 Header -->
-    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 flex-wrap shrink-0">
-      <div class="flex items-center gap-3.5">
+    <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-3">
         <div class="w-11 h-11 rounded-2xl bg-sky-500/10 dark:bg-sky-500/15 border border-sky-500/25 dark:border-sky-500/30 flex items-center justify-center shadow-xs shrink-0 text-sky-500 dark:text-sky-400">
           <Library class="w-5 h-5" />
         </div>
         <div>
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">已入库规则管理</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-500/10 theme-text-accent font-mono font-bold border border-sky-500/20">
               {{ unlockedGames.length }} 款应用
@@ -19,20 +19,20 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2.5">
+      <div class="flex items-center gap-2">
         <button
           v-if="unlockedGames.length > 0"
           @click="handleCheckUpdates(false)"
           :disabled="checkingUpdates"
-          class="px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/25 hover:border-amber-400/50 border border-amber-500/30 text-amber-300 hover:text-amber-200 rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed hover-lift"
+          class="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/25 hover:border-amber-400/50 border border-amber-500/30 text-amber-300 hover:text-amber-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-xs disabled:opacity-60 disabled:cursor-not-allowed hover-lift"
           title="逐个对比已入库规则的清单版本与云端最新版本（实时查询，游戏越多耗时越长）"
         >
-          <ArrowUpCircle v-if="checkingUpdates" class="w-4 h-4 animate-pulse" />
-          <CloudDownload v-else class="w-4 h-4" />
+          <ArrowUpCircle v-if="checkingUpdates" class="w-3.5 h-3.5 animate-pulse" />
+          <CloudDownload v-else class="w-3.5 h-3.5" />
           <span>{{ checkingUpdates ? '检查中...' : '检查更新' }}</span>
           <span
             v-if="updatableCount > 0"
-            class="px-1.5 py-0.5 rounded-full bg-amber-500/30 text-amber-200 font-mono font-bold text-[10px]"
+            class="px-1.5 py-0.2 rounded-full bg-amber-500/30 text-amber-200 font-mono font-bold text-[10px]"
           >
             {{ updatableCount }}
           </span>
@@ -41,47 +41,46 @@
         <button
           v-if="unlockedGames.length > 0"
           @click="handleClearAll"
-          class="px-4 py-2.5 bg-rose-950/40 hover:bg-rose-900/70 hover:border-rose-500/60 hover:text-rose-200 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-sm hover-lift"
+          class="px-3 py-1.5 bg-rose-950/40 hover:bg-rose-900/70 hover:border-rose-500/60 hover:text-rose-200 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-xs hover-lift"
         >
-          <Trash2 class="w-4 h-4" />
+          <Trash2 class="w-3.5 h-3.5" />
           <span>清空所有</span>
         </button>
 
         <button
           @click="loadLibrary"
-          class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 hover:border-white/25 border border-white/10 rounded-xl text-xs font-semibold text-slate-200 transition flex items-center gap-2 shadow-sm hover-lift"
+          class="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 hover:border-white/25 border border-white/10 rounded-xl text-xs font-semibold text-slate-200 transition flex items-center gap-1.5 shadow-xs hover-lift"
         >
-          <RotateCw class="w-4 h-4" />
+          <RotateCw class="w-3.5 h-3.5" />
           <span>刷新列表</span>
         </button>
 
         <button
           @click="handleRestartSteam"
-          class="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-xs font-semibold text-slate-300 hover:text-white transition flex items-center gap-2 shadow-sm cursor-pointer"
+          class="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 border border-white/10 rounded-xl text-xs font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5 shadow-xs cursor-pointer"
           title="入库即时生效无须重启；仅在 Steam 偶发未识别或卡死时作为备用手段重启"
         >
-          <RotateCw class="w-4 h-4 text-slate-400" />
+          <RotateCw class="w-3.5 h-3.5 text-slate-400" />
           <span>重启 Steam (备用)</span>
         </button>
       </div>
     </div>
 
-    <!-- 入库即时生效温馨提示横幅 -->
-    <div class="mb-4 p-3.5 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-start gap-3 shrink-0">
-      <div class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 mt-0.5 font-bold">
-        💡
-      </div>
-      <div class="leading-relaxed flex-1">
-        <strong class="text-sky-300 font-semibold">入库即时生效提示：</strong>
-        本项目添加游戏后<strong class="text-emerald-400 font-bold">无须重启 Steam</strong>，会自动出现在库中，搜索进行下载即可。如果没有，则可能是注入环境出现问题，请在「系统与环境设置」中检测环境。
-        <span class="block mt-1 text-sky-300/70">若首次点击下载提示「无网络连接 / 0 字节下载」，属清单请求码尚在获取中，等 5~10 秒<strong class="text-sky-200">再点一次下载</strong>即可正常开始。</span>
+    <!-- 入库即时生效温馨提示横幅 (紧凑精致) -->
+    <div class="mb-3 p-2.5 px-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-center justify-between gap-3 shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 text-xs font-bold">💡</span>
+        <span class="truncate">
+          <strong class="text-sky-300 font-semibold">入库即时生效：</strong>
+          添加游戏后<strong class="text-emerald-400 font-bold">无须重启 Steam</strong>，直接在库中下载；若首次提示无网络请等 5~10 秒再点一次下载。
+        </span>
       </div>
       <button
         @click="showGuide = true"
-        class="shrink-0 px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+        class="shrink-0 px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
       >
         <BookOpen class="w-3.5 h-3.5" />
-        <span>模式与功能指南</span>
+        <span>模式指南</span>
       </button>
     </div>
 
@@ -89,16 +88,16 @@
     <LibraryGuideModal v-model="showGuide" />
 
     <!-- 搜索过滤与分级状态栏 (如果有入库游戏) -->
-    <div v-if="unlockedGames.length > 0" class="mb-4 flex items-center justify-between gap-3 flex-wrap shrink-0">
+    <div v-if="unlockedGames.length > 0" class="mb-3 flex items-center justify-between gap-3 flex-wrap shrink-0">
       <div class="flex items-center gap-3 flex-1 min-w-[280px]">
         <div class="relative flex-1 max-w-md">
           <input
             v-model="filterKeyword"
             type="text"
             placeholder="在已入库游戏中快速过滤 (AppID / 游戏名)..."
-            class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-4 py-2.5 pl-10 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30 transition shadow-inner"
+            class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2 pl-9 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30 transition shadow-inner"
           />
-          <Search class="w-4 h-4 absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
+          <Search class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
         </div>
 
         <!-- 状态分级切换标签组 -->

@@ -1,7 +1,7 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-6 overflow-hidden">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-hidden">
     <!-- 顶部搜索栏与操作栏 -->
-    <div class="flex items-center gap-3 mb-3.5 shrink-0 flex-wrap">
+    <div class="flex items-center gap-3 mb-3 shrink-0 flex-wrap">
       <div class="relative flex-1 min-w-[280px]">
         <input
           v-model="searchQuery"

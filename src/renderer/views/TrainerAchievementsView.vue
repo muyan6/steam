@@ -1,13 +1,13 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-6 overflow-y-auto theme-bg-subtle">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-y-auto theme-bg-subtle">
     <!-- 顶部统一标准 Header -->
-    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 shrink-0 flex-wrap">
-      <div class="flex items-center gap-3.5">
+    <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-3">
         <div class="w-11 h-11 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/25 dark:border-amber-500/30 flex items-center justify-center shadow-xs shrink-0 text-amber-500 dark:text-amber-400">
           <Trophy class="w-5 h-5" />
         </div>
         <div>
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">修改器与成就解锁</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-sky-500/10 text-sky-400 font-bold border border-sky-500/20">
               一键全成就点亮 · 官方修改器直连
@@ -18,10 +18,10 @@
       </div>
 
       <!-- 右侧 SAM 成就解锁引擎微型指示器 & 手动匹配 -->
-      <div class="flex items-center gap-2.5">
+      <div class="flex items-center gap-2">
         <button
           @click="showCustomGameModal = true"
-          class="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 text-xs font-semibold shrink-0 flex items-center gap-2 transition cursor-pointer text-slate-700 dark:text-slate-300 shadow-xs"
+          class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 text-xs font-semibold shrink-0 flex items-center gap-1.5 transition cursor-pointer text-slate-700 dark:text-slate-300 shadow-xs"
           title="手动输入 AppID 或游戏名称，匹配未在本地检测到的游戏"
         >
           <Search class="w-3.5 h-3.5 text-sky-500" />
@@ -30,73 +30,61 @@
 
         <button
           @click="showSamModal = true"
-          class="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 text-xs font-mono shrink-0 flex items-center gap-2 transition cursor-pointer shadow-xs"
+          class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 text-xs font-mono shrink-0 flex items-center gap-1.5 transition cursor-pointer shadow-xs"
           :title="samStatus.isInstalled ? 'Steam 成就解锁引擎 (SAM) 已就绪，可针对任意游戏一键点亮全成就' : '未检测到 Steam 成就解锁引擎，点击一键部署安装'"
         >
           <Trophy class="w-3.5 h-3.5 text-emerald-500" />
-          <span class="text-slate-600 dark:text-slate-400">成就解锁引擎 (SAM):</span>
-          <span v-if="samStatus.isInstalled" class="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>解锁核心就绪 ({{ samStatus.version || '内置就绪' }})</span>
+          <span class="text-slate-600 dark:text-slate-400">SAM 引擎:</span>
+          <span v-if="samStatus.isInstalled" class="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <span>已就绪 ({{ samStatus.version || '内置' }})</span>
           </span>
-          <span v-else class="text-amber-500 font-bold flex items-center gap-1.5 animate-pulse">
-            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-            <span>未部署 · 点击一键安装</span>
+          <span v-else class="text-amber-500 font-bold flex items-center gap-1 animate-pulse">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+            <span>未部署</span>
           </span>
         </button>
       </div>
     </div>
 
-    <!-- 顶部功能横幅指引：清晰明确的成就解锁与修改器指南 (完全对齐指南弹窗的清爽通透风格) -->
-    <div class="mb-5 p-4 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 text-xs text-slate-600 dark:text-slate-300 flex items-start shrink-0 shadow-sm backdrop-blur-md">
-      <div class="leading-relaxed flex-1 space-y-2.5">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="px-2.5 py-0.5 rounded-lg bg-sky-500/15 text-sky-600 dark:text-sky-300 font-bold text-[11px] border border-sky-500/25">核心能力速览</span>
-          <span class="text-slate-800 dark:text-slate-100 font-semibold text-xs">本地已安装游戏自动化匹配，双轨功能即点即用</span>
+    <!-- 顶部功能横幅指引 (紧凑精致) -->
+    <div class="mb-3 p-2.5 px-3.5 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-between gap-3 shrink-0 shadow-xs backdrop-blur-md">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 flex-1 text-[11px]">
+        <div class="p-2 rounded-lg bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-500/25 text-slate-700 dark:text-slate-300 leading-relaxed shadow-xs flex items-center gap-2">
+          <Trophy class="w-3.5 h-3.5 text-sky-500 shrink-0" />
+          <span class="truncate"><strong class="text-sky-700 dark:text-sky-300 font-bold">成就一键解锁：</strong>点亮 100% 全成就徽章或自选，Steam 实时同步跳杯。</span>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-0.5 text-[11px]">
-          <div class="p-3 rounded-xl bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-500/25 text-slate-700 dark:text-slate-300 leading-relaxed shadow-xs">
-            <div class="font-bold text-sky-700 dark:text-sky-300 flex items-center gap-1.5 mb-1 text-xs">
-              <Trophy class="w-3.5 h-3.5 text-sky-500" />
-              <span>Steam 成就一键解锁</span>
-            </div>
-            <span>点击任意游戏的<strong class="text-sky-700 dark:text-sky-200">「一键解锁成就」</strong>，即可<strong class="text-sky-600 dark:text-sky-300">一键点亮 100% 全成就徽章</strong>或自由勾选指定成就解锁，Steam 客户端<strong>实时同步跳杯</strong>，亦可随时撤销重置！</span>
-          </div>
-          <div class="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-500/25 text-slate-700 dark:text-slate-300 leading-relaxed shadow-xs">
-            <div class="font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 mb-1 text-xs">
-              <Gamepad2 class="w-3.5 h-3.5 text-emerald-500" />
-              <span>风灵月影官方修改器</span>
-            </div>
-            <span>自动识别本地游戏并直连官方接口，<strong class="text-emerald-700 dark:text-emerald-300">一键高速下载并脱机拉起</strong>，锁血/无敌/无限金钱随心开启，独立进程安全运行，绝不破坏游戏核心文件。</span>
-          </div>
+        <div class="p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-500/25 text-slate-700 dark:text-slate-300 leading-relaxed shadow-xs flex items-center gap-2">
+          <Gamepad2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+          <span class="truncate"><strong class="text-emerald-700 dark:text-emerald-300 font-bold">风灵月影修改器：</strong>直连官方接口高速下载脱机拉起，安全不破坏文件。</span>
         </div>
       </div>
     </div>
 
     <!-- 快捷操作栏：刷新、搜索、卡片缩放与筛选 -->
-    <div class="flex items-center justify-between gap-3.5 mb-6 flex-wrap shrink-0">
-      <div class="flex items-center gap-3 flex-wrap">
+    <div class="flex items-center justify-between gap-3 mb-3 flex-wrap shrink-0">
+      <div class="flex items-center gap-2.5 flex-wrap">
         <button
           @click="handleRefreshLocalGames(true)"
           :disabled="isScanning"
-          class="px-4 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 transition flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+          class="px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
         >
           <RotateCw class="w-3.5 h-3.5" :class="isScanning ? 'animate-spin' : ''" />
           <span>{{ isScanning ? '扫描中...' : '刷新本地游戏' }}</span>
         </button>
 
         <!-- 筛选胶囊 -->
-        <div class="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-900/90 p-1 rounded-xl border border-slate-200 dark:border-white/10">
+        <div class="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-900/90 p-0.5 rounded-xl border border-slate-200 dark:border-white/10">
           <button
             @click="filterMode = 'all'"
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+            class="px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer"
             :class="filterMode === 'all' ? 'theme-btn-primary text-white font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'"
           >
             全部已安装 ({{ localGames.length }})
           </button>
           <button
             @click="filterMode = 'downloaded'"
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+            class="px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer"
             :class="filterMode === 'downloaded' ? 'theme-btn-primary text-white font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'"
           >
             已下修改器 ({{ downloadedCount }})

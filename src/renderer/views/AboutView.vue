@@ -1,15 +1,15 @@
 <template>
-  <div class="h-full flex flex-col p-5 xl:p-6 overflow-hidden space-y-5">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-hidden space-y-3.5">
     <!-- 顶部统一标准 Header -->
-    <div class="flex items-center justify-between gap-4 pb-4 mb-5 border-b border-white/10 flex-wrap shrink-0">
-      <div class="flex items-center gap-3.5">
-        <div class="w-11 h-11 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-white/10 shadow-sm shrink-0 flex items-center justify-center p-1">
+    <div class="flex items-center justify-between gap-3 pb-3 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-white/10 shadow-xs shrink-0 flex items-center justify-center p-1">
           <img :src="appLogo" alt="春风渡" class="w-full h-full object-contain" draggable="false" />
         </div>
         <div>
-          <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
             <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">关于春风渡</h1>
-            <span class="text-xs px-2.5 py-0.5 rounded-full theme-btn-primary text-slate-950 font-mono font-bold shadow-sm">
+            <span class="text-xs px-2.5 py-0.5 rounded-full theme-btn-primary text-slate-950 font-mono font-bold shadow-xs">
               v{{ appVersion }}
             </span>
           </div>
@@ -17,20 +17,20 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2.5 flex-wrap">
+      <div class="flex items-center gap-2 flex-wrap">
         <button
           @click="handleOpenSponsorLink"
-          class="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/30 transition flex items-center gap-2 text-xs font-bold cursor-pointer shadow-sm active:scale-95"
+          class="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/30 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-xs active:scale-95"
           title="赞助支持春风渡"
         >
-          <HeartHandshake class="w-4 h-4 text-rose-400" />
+          <HeartHandshake class="w-3.5 h-3.5 text-rose-400" />
           <span>支持我们</span>
-          <ExternalLink class="w-3.5 h-3.5 opacity-75" />
+          <ExternalLink class="w-3 h-3 opacity-75" />
         </button>
 
         <button
           @click="handleOpenFeedback"
-          class="px-3.5 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:border-sky-400/50 text-sky-300 hover:text-sky-100 border border-sky-500/25 transition flex items-center gap-2 text-xs font-bold cursor-pointer hover-lift"
+          class="px-3 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:border-sky-400/50 text-sky-300 hover:text-sky-100 border border-sky-500/25 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover-lift shadow-xs"
           title="加入官方 QQ 交流反馈群"
         >
           <MessageSquare class="w-3.5 h-3.5 text-sky-400" />
@@ -40,7 +40,7 @@
         <button
           @click="checkUpdates"
           :disabled="isCheckingUpdate"
-          class="px-3.5 py-2 btn-soft-action rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer"
+          class="px-3 py-1.5 btn-soft-action rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
         >
           <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isCheckingUpdate }" />
           <span>{{ isCheckingUpdate ? '正在检查...' : '检查更新' }}</span>
@@ -48,7 +48,7 @@
 
         <button
           @click="emit('open-disclaimer')"
-          class="px-3.5 py-2 theme-btn-primary rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
+          class="px-3 py-1.5 theme-btn-primary rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
         >
           <ShieldAlert class="w-3.5 h-3.5" />
           <span>免责声明</span>
@@ -57,7 +57,7 @@
     </div>
 
     <!-- 主体双栏内容区域 (左侧更新日志，右侧赞助榜单) -->
-    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-0 overflow-hidden">
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3.5 min-h-0 overflow-hidden">
       
       <!-- ==================== 左侧：更新日志 (5/12 列) ==================== -->
       <section class="lg:col-span-6 xl:col-span-6 flex flex-col theme-card rounded-3xl p-5 overflow-hidden shadow-lg border border-white/10">
