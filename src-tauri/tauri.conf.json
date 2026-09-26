@@ -34,6 +34,7 @@
     ],
     "resources": {
       "assets/tools/steamless/": "assets/tools/steamless/",
+      "assets/tools/openp2p/": "assets/tools/openp2p/",
       "assets/libs/WebView2Loader.dll": "WebView2Loader.dll"
     },
     "icon": [

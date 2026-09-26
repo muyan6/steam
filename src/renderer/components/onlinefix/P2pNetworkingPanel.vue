@@ -40,7 +40,7 @@
               <span>网络: <strong class="text-slate-700 dark:text-slate-300 font-medium">{{ realtimeState.natType }}</strong></span>
             </template>
             <span>·</span>
-            <span>引擎: <strong class="text-emerald-600 dark:text-emerald-400 font-mono font-medium">{{ status.version || 'v3.25.11' }}</strong></span>
+            <span>引擎: <strong class="text-emerald-600 dark:text-emerald-400 font-mono font-medium">{{ status.version || '检测中' }}</strong></span>
           </div>
         </div>
       </div>
@@ -76,6 +76,24 @@
           <span>快速上手</span>
         </button>
       </div>
+    </div>
+
+    <!-- 防火墙未放行提示：被系统防火墙拦截时打洞会静默失败，需给出可见提示与一键放行 -->
+    <div
+      v-if="firewallOk === false"
+      class="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-300/80 dark:border-amber-500/30 text-xs flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200"
+    >
+      <div class="flex items-center gap-2 min-w-0">
+        <AlertTriangle class="w-4 h-4 text-amber-500 shrink-0" />
+        <span>未检测到本程序的 Windows 防火墙入站放行规则，好友可能无法连上你的房间。</span>
+      </div>
+      <button
+        @click="handleAllowFirewall"
+        :disabled="firewallBusy"
+        class="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold transition cursor-pointer text-xs shrink-0 disabled:opacity-50"
+      >
+        {{ firewallBusy ? '正在放行...' : '一键放行' }}
+      </button>
     </div>
 
     <!-- 剪贴板快速导入悬浮提示 -->
@@ -588,9 +606,13 @@ import {
   p2pRemoveTunnel,
   p2pGenerateCode,
   p2pParseCode,
+  p2pCheckFirewall,
+  p2pAllowFirewall,
   openExternalUrl,
+  getJson,
   formatIpcError
 } from '../../api/tauriBridge';
+import { APP_CONFIG } from '../../../config/appConfig';
 import type {
   P2pStatusInfo,
   P2pGamePreset,
@@ -679,8 +701,26 @@ const DEFAULT_PRESETS: P2pGamePreset[] = [
   },
 ];
 
+// 预设列表优先使用服务端 /api/p2p/config 下发的权威清单（新增游戏无需客户端发版），
+// 网络不可达时回退到本地内置清单。
 const presetsList = ref<P2pGamePreset[]>(DEFAULT_PRESETS);
 const selectedPresetId = ref<string>('palworld');
+
+const loadServerPresets = async () => {
+  try {
+    const res = await getJson<any>(`${APP_CONFIG.API_BASE_URL}/api/p2p/config`, 6000);
+    const list = res?.presets;
+    if (Array.isArray(list) && list.length > 0) {
+      presetsList.value = list;
+      if (!presetsList.value.some((p) => p.id === selectedPresetId.value)) {
+        selectedPresetId.value = presetsList.value[0].id;
+      }
+      handlePresetChange();
+    }
+  } catch {
+    // 静默降级：保留内置预设
+  }
+};
 
 // 房主表单数据
 const hostPort = ref<number>(8211);
@@ -713,6 +753,31 @@ const isRefreshing = ref<boolean>(false);
 const isOperating = ref<boolean>(false);
 const showHelpModal = ref<boolean>(false);
 const detectedClipboardCode = ref<string>('');
+
+// Windows 防火墙放行状态：被拦截时打洞会静默失败，必须给出可见提示与一键放行入口
+const firewallOk = ref<boolean | null>(null);
+const firewallBusy = ref<boolean>(false);
+
+const refreshFirewallState = async () => {
+  try {
+    firewallOk.value = await p2pCheckFirewall();
+  } catch {
+    firewallOk.value = null;
+  }
+};
+
+const handleAllowFirewall = async () => {
+  firewallBusy.value = true;
+  try {
+    await p2pAllowFirewall();
+    await refreshFirewallState();
+    emit('toast', firewallOk.value ? '已添加防火墙入站放行规则' : '未能确认放行结果，请检查系统防火墙设置');
+  } catch (err: any) {
+    emit('toast', `防火墙放行失败: ${formatIpcError(err)}`);
+  } finally {
+    firewallBusy.value = false;
+  }
+};
 
 // 常用联机房间与隧道沉淀 (永久保存于 localStorage，下次一键免码重连)
 const SAVED_TUNNELS_KEY = 'cfd_saved_p2p_tunnels';
@@ -862,11 +927,16 @@ const handleGenerateShareCode = async () => {
     nodeId.value = await p2pGetNodeId();
   }
   const gameName = currentPreset.value?.name || '联机游戏';
+  // 远端端口 = 房主本地服务端口；本地端口 = 客机侧映射端口（来自预设）。
+  // 旧实现把两者都写成 hostPort，导致预设里的 localPort（帕鲁 8211→8212、
+  // 星露谷 24642→24641、泰拉瑞亚 7777→7776）被丢弃，而预设 note 又让玩家去连
+  // 127.0.0.1:<localPort> —— 客机按提示连必然失败。
+  const mappedLocalPort = currentPreset.value?.localPort || hostPort.value;
   try {
     const code = await p2pGenerateCode({
       uid: nodeId.value,
       remotePort: hostPort.value,
-      localPort: hostPort.value,
+      localPort: mappedLocalPort,
       protocol: hostProtocol.value,
       gameName,
     });
@@ -1063,6 +1133,8 @@ let statusTimer: any = null;
 onMounted(async () => {
   loadSavedTunnels();
   await fetchStatus();
+  await loadServerPresets();
+  void refreshFirewallState();
   await checkClipboardForCode();
   handlePresetChange();
 

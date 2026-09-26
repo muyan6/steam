@@ -350,6 +350,30 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
   return next();
 };
 
+// 引擎/内核类中转端点的设备校验：只验 deviceId 合法（做归属与限流维度），
+// **绝不消耗每日免费入库配额** —— 它们中转的是公开的开源引擎二进制，不是 DepotKey，
+// 没有理由占用「入库额度」。旧实现把 /openp2p/* 直接挂在 requireKeyAccess 之后：
+// 未激活用户一进工具箱就会静默预检一次引擎版本，配额按 params.tag / params.asset 计次，
+// 每换一个版本都算一个「新 depot」，几次之后连正常入库都被 403 挡住，用户完全无从理解。
+const requireDeviceId = (req: Request, res: Response, next: any) => {
+  const headerId = typeof req.headers['x-device-id'] === 'string' ? req.headers['x-device-id'] : '';
+  const deviceId = String(headerId || req.query.deviceId || '').trim();
+  if (!deviceId || deviceId.length > 128) {
+    return res.status(401).json({ success: false, message: '缺少或非法的 deviceId，请升级客户端后使用' });
+  }
+  return next();
+};
+
+// 免配额不等于免限流：这两个端点每次未命中都会回源 GitHub（下载还是 8MB+ 的流式转发），
+// 必须有自己的限流器，否则会变成对上游的放大器 / 免费 CDN。
+const engineProxyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '引擎中转请求过于频繁，请稍后再试' }
+});
+
 // ==================== 免配额的只读检视端点 ====================
 //
 // 为什么要单独开这两个端点，而不是让客户端继续用 /metadata/:appId：
@@ -470,8 +494,10 @@ router.get('/ost/latest', requireKeyAccess, getLatestOstRelease);
 router.get('/ost/download/:tag/:asset', requireKeyAccess, downloadOstAsset);
 
 // OpenP2P 联机引擎中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）
-router.get('/openp2p/latest', requireKeyAccess, getLatestOpenp2pRelease);
-router.get('/openp2p/download/:tag/:asset', requireKeyAccess, downloadOpenp2pAsset);
+// 与 OST 不同，这里刻意**不挂 requireKeyAccess**：引擎是公开的开源二进制，
+// 不应挤占用户的每日免费入库配额（详见 requireDeviceId 上方注释）。
+router.get('/openp2p/latest', engineProxyLimiter, requireDeviceId, getLatestOpenp2pRelease);
+router.get('/openp2p/download/:tag/:asset', engineProxyLimiter, requireDeviceId, downloadOpenp2pAsset);
 
 // 卡密激活/验签/迁移：公开接口但限流防爆破
 const activateLimiter = rateLimit({

@@ -1976,12 +1976,6 @@ export async function p2pGetRealtimeState(): Promise<P2pRealtimeState> {
   return await invoke<P2pRealtimeState>('p2p_get_realtime_state');
 }
 
-export async function checkOpenp2pSync(): Promise<any> {
-  if (!isTauriEnvironment()) return { message: '非客户端环境' };
-  return await invoke('check_openp2p_sync');
-}
-
-export async function syncOpenp2pLatest(): Promise<{ success: boolean; message: string }> {
-  if (!isTauriEnvironment()) return { success: false, message: '非客户端环境' };
-  return await invoke('sync_openp2p_latest');
-}
+// 说明：checkOpenp2pSync / syncOpenp2pLatest 只在 createTauriBridge() 返回的对象上暴露
+// （ToolboxView 通过 window.electronAPI.* 调用）。此处曾有一份同名的独立导出，
+// 全仓无任何引用，已删除以免日后误改成「改了一份、跑的是另一份」。

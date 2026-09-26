@@ -21,7 +21,7 @@
 
       <div class="flex items-center gap-2">
         <button
-          @click="handleStartDiagnostic"
+          @click="handleStartHealthCheck"
           :disabled="checkingHealth"
           class="px-3 py-1.5 btn-soft-action rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
           title="重新执行全项环境体检与诊断"

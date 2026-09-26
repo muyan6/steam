@@ -1841,7 +1841,7 @@ fn p2p_stop_all() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn p2p_connect_tunnel(payload: p2p::P2pTunnelPayload) -> Result<p2p::P2pAppConfig, String> {
+fn p2p_connect_tunnel(payload: p2p::P2pTunnelPayload) -> Result<p2p::P2pTunnelView, String> {
     p2p::connect_tunnel(payload)
 }
 
