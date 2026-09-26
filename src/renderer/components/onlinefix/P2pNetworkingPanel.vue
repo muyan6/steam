@@ -49,25 +49,26 @@
           v-if="!status.running"
           @click="handleStartDaemon"
           :disabled="isOperating"
-          class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
+          class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          title="点击可手动预热开启监听守护进程（生成联机码或客机加入时也会自动开启）"
         >
-          <Play class="w-3.5 h-3.5" />
-          <span>启动监听服务</span>
+          <Play class="w-3.5 h-3.5 text-emerald-500" />
+          <span>预热启动服务</span>
         </button>
 
         <button
           v-else
           @click="handleStopAll"
           :disabled="isOperating"
-          class="px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 border border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          class="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 border border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
         >
           <Power class="w-3.5 h-3.5" />
-          <span>关闭所有隧道</span>
+          <span>关闭所有服务</span>
         </button>
 
         <button
           @click="showHelpModal = true"
-          class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+          class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
         >
           <HelpCircle class="w-3.5 h-3.5 text-sky-500" />
           <span>快速上手</span>
@@ -171,7 +172,7 @@
             class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-98"
           >
             <Share2 class="w-4 h-4" />
-            <span>生成并复制联机码（发给好友）</span>
+            <span>生成并复制联机码（自动开启服务）</span>
           </button>
 
           <!-- 最新生成的联机码卡片 -->
@@ -421,12 +422,12 @@
 
           <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/60 dark:border-white/5 space-y-1">
             <h4 class="font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-              <span>2. 房主如何操作？（三步走）</span>
+              <span>2. 房主如何操作？（极简两步）</span>
             </h4>
             <p class="text-slate-500 dark:text-slate-400">
-              ① 启动监听服务（确保节点就绪）。<br>
-              ② 在左侧选择对应游戏预设（如《幻兽帕鲁 8211》），点击【生成并复制联机码】发给好友。<br>
-              ③ 启动本地游戏创建房间，等待好友直连即可。
+              ① 在左侧【我是房主】中选择要联机的游戏预设（如《幻兽帕鲁 8211》）。<br>
+              ② 点击【生成并复制联机码】（后台会自动保持监听就绪，并自动将联机码复制到剪贴板，微信/QQ发给好友即可）。<br>
+              ③ 启动本地游戏创建房间，等待好友直连加入即可畅玩！
             </p>
           </div>
 
@@ -443,8 +444,17 @@
           </div>
 
           <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/60 dark:border-white/5 space-y-1">
+            <h4 class="font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+              <span>4. 问：主机为什么要选游戏？是不是随便填什么都行？</span>
+            </h4>
+            <p class="text-slate-500 dark:text-slate-400">
+              P2P 穿透服务底层是一个通用的加密数据管道。只要房主节点在线，收到的任意端口流量都会自动转发至本机对应的游戏。房主选择游戏，本质是为了自动将端口（如帕鲁 8211、MC 25565）与协议打包进联机码，让客机一键填入并完成本地映射，免除双方手动询问与配置端口的麻烦！
+            </p>
+          </div>
+
+          <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/60 dark:border-white/5 space-y-1">
             <h4 class="font-bold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
-              <span>4. 更多进阶与问题排查</span>
+              <span>5. 更多进阶与问题排查</span>
             </h4>
             <p class="text-slate-500 dark:text-slate-400">
               遇到连不上、延迟高等网络疑难杂症，推荐点击下方按钮查阅 Guailoudou 编写的联机工具排查博客。
