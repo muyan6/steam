@@ -200,6 +200,68 @@
         </div>
       </div>
 
+      <!-- 卡片 2.6: 同步最新 OpenP2P 联机引擎 (GitHub release 在线同步) -->
+      <div class="rounded-2xl tool-card overflow-hidden shadow-sm flex flex-col justify-between duration-300">
+        <div class="h-24 tool-banner-f flex items-center justify-center relative overflow-hidden">
+          <div class="w-14 h-14 rounded-xl tool-banner-badge flex items-center justify-center text-white">
+            <Network class="w-7 h-7" />
+          </div>
+          <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-white/10 blur-xl"></div>
+        </div>
+
+        <div class="p-4 flex-1 flex flex-col justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-slate-100">同步最新 OpenP2P 引擎</h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">从 GitHub 官方 release 在线拉取最新 OpenP2P 穿透内核并部署，无需等待春风渡发版</p>
+
+            <div class="mt-3 space-y-1.5 text-xs">
+              <div class="flex items-center gap-2 text-emerald-400 font-medium">
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
+                <span class="text-slate-200">自动终止运行中的隧道服务（避免二进制被占用锁死）</span>
+              </div>
+              <div class="flex items-center gap-2 text-emerald-400 font-medium">
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
+                <span class="text-slate-200">官方直链 ➔ 加速镜像 多级下载并自动解除提权限制 (asInvoker)</span>
+              </div>
+              <div class="flex items-center gap-2 text-emerald-400 font-medium">
+                <Check class="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
+                <span class="text-slate-200">两阶段覆盖部署至独立数据目录并校验 PE 结构</span>
+              </div>
+              <div v-if="openp2pSyncInfo" class="pt-1 font-mono text-[11px] text-slate-400">
+                当前引擎：{{ openp2pSyncInfo.currentTag }}
+                <template v-if="openp2pSyncInfo.latestTag">
+                  ｜官方最新：{{ openp2pSyncInfo.latestTag }}
+                  <span v-if="openp2pSyncInfo.updateAvailable" class="text-amber-400 font-bold">（可更新）</span>
+                  <span v-else class="text-emerald-400 font-bold">（已是最新）</span>
+                </template>
+              </div>
+              <div v-else-if="openp2pCheckFailed" class="pt-1 text-[11px] text-slate-500">未能获取官方最新版本信息（网络受限时可稍后重试）</div>
+            </div>
+          </div>
+
+          <div class="mt-4 flex items-center gap-2">
+            <button
+              @click="handleCheckOpenp2pSync()"
+              :disabled="activeAction !== null"
+              class="flex-1 py-2 bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-semibold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              <RotateCw v-if="activeAction === 'openp2p_check'" class="w-3.5 h-3.5 animate-spin" />
+              <Search v-else class="w-3.5 h-3.5" />
+              <span>{{ activeAction === 'openp2p_check' ? '检测中...' : '检测版本' }}</span>
+            </button>
+            <button
+              @click="handleSyncOpenp2p"
+              :disabled="activeAction !== null"
+              class="flex-1 py-2 theme-btn-primary active:scale-[0.98] disabled:opacity-50 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5"
+            >
+              <RotateCw v-if="activeAction === 'openp2p_sync'" class="w-3.5 h-3.5 animate-spin" />
+              <CloudDownload v-else class="w-3.5 h-3.5" />
+              <span>{{ activeAction === 'openp2p_sync' ? '正在同步引擎中...' : '▶ 同步' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 卡片 3: 补齐Open内核SHA256 (主题强调色渐变) -->
       <div class="rounded-2xl tool-card overflow-hidden shadow-sm flex flex-col justify-between duration-300">
         <!-- 头部大图标横幅 -->
@@ -426,7 +488,8 @@ import {
   AlertCircle,
   CloudDownload,
   Search,
-  Globe
+  Globe,
+  Network
 } from 'lucide-vue-next';
 import { ToolboxStatusInfo } from '../../types';
 import { formatIpcError } from '../api/tauriBridge';
@@ -584,6 +647,68 @@ const handleSyncOst = async () => {
   }
 };
 
+// 2.6 OpenP2P 联机引擎在线同步
+const openp2pSyncInfo = ref<any>(null);
+const openp2pCheckFailed = ref(false);
+
+const handleCheckOpenp2pSync = async (silent: boolean = false) => {
+  if (!silent) activeAction.value = 'openp2p_check';
+  try {
+    const res = await window.electronAPI.checkOpenp2pSync();
+    if (res && res.latestTag) {
+      openp2pSyncInfo.value = res;
+      openp2pCheckFailed.value = false;
+      if (silent) return;
+      if (res.updateAvailable) {
+        emit('notify', `官方最新 OpenP2P 引擎为 ${res.latestTag}，当前为 ${res.currentTag}，可执行同步`, 'info');
+      } else {
+        emit('notify', `OpenP2P 引擎已是最新版本（${res.currentTag}）`, 'success');
+      }
+    } else {
+      openp2pCheckFailed.value = true;
+      if (!silent) emit('notify', res?.message || '未能获取 OpenP2P 官方最新版本信息', 'error');
+    }
+  } catch (err: any) {
+    openp2pCheckFailed.value = true;
+    if (!silent) emit('notify', `检测异常: ${formatIpcError(err)}`, 'error');
+  } finally {
+    if (!silent) activeAction.value = null;
+  }
+};
+
+const handleSyncOpenp2p = async () => {
+  activeAction.value = 'openp2p_sync';
+  emit('notify', '正在从 GitHub 拉取最新 OpenP2P 联机引擎（官方直链 ➔ 加速镜像）...', 'info');
+  try {
+    const res = await window.electronAPI.syncOpenp2pLatest();
+    resultModal.value = {
+      title: '同步 OpenP2P 联机引擎结果',
+      success: res.success,
+      message: res.message,
+      steps: res.success
+        ? [
+            '终止后台运行中的 OpenP2P 隧道服务避免文件占用',
+            '经镜像链下载 windows-amd64 压缩包',
+            '解压 openp2p.exe 并解除管理员提权要求 (asInvoker 优化)',
+            '两阶段原子覆盖部署并更新版本标记'
+          ]
+        : []
+    };
+    if (res.success) {
+      emit('notify', res.message, 'success');
+      await handleCheckOpenp2pSync();
+    } else {
+      emit('notify', `同步失败: ${res.message}`, 'error');
+    }
+  } catch (err: any) {
+    emit('notify', `同步异常: ${formatIpcError(err)}`, 'error');
+  } finally {
+    activeAction.value = null;
+    await fetchStatus();
+    emit('refresh-status');
+  }
+};
+
 // 3. 补齐 Open 内核 SHA256
 const handleFillSha256 = async () => {
   activeAction.value = 'fill_sha256';
@@ -672,5 +797,6 @@ onMounted(() => {
   fetchStatus();
   // 静默预检内核版本：仅更新卡片上的版本状态，不打扰用户（失败也不弹错误提示）
   handleCheckOstSync(true);
+  handleCheckOpenp2pSync(true);
 });
 </script>

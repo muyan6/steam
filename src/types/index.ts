@@ -507,6 +507,16 @@ export interface P2pStatusInfo {
   activeTunnels: P2pAppConfig[];
   binaryPath: string;
   message: string;
+  version?: string;
+}
+
+export interface Openp2pSyncInfo {
+  currentTag: string;
+  latestTag?: string;
+  publishedAt?: string;
+  updateAvailable: boolean;
+  running: boolean;
+  message?: string;
 }
 
 export interface ParsedShareCode {

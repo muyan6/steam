@@ -39,6 +39,8 @@
               <span>·</span>
               <span>网络: <strong class="text-slate-700 dark:text-slate-300 font-medium">{{ realtimeState.natType }}</strong></span>
             </template>
+            <span>·</span>
+            <span>引擎: <strong class="text-emerald-600 dark:text-emerald-400 font-mono font-medium">{{ status.version || 'v3.25.11' }}</strong></span>
           </div>
         </div>
       </div>

@@ -23,6 +23,7 @@ import {
 } from '../controllers/manifestController.js';
 import { manifestService } from '../services/manifestService.js';
 import { getLatestOstRelease, downloadOstAsset } from '../controllers/ostController.js';
+import { getLatestOpenp2pRelease, downloadOpenp2pAsset } from '../controllers/openp2pController.js';
 import { matchTrainer, downloadTrainerProxy } from '../controllers/trainerController.js';
 import { getGameAchievements, getSamDownloadInfo, downloadSamProxy } from '../controllers/achievementController.js';
 import {
@@ -467,6 +468,10 @@ router.get('/manifests/code/:gid', manifestCodeLimiter, getManifestCode);
 // OST 内核中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）
 router.get('/ost/latest', requireKeyAccess, getLatestOstRelease);
 router.get('/ost/download/:tag/:asset', requireKeyAccess, downloadOstAsset);
+
+// OpenP2P 联机引擎中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）
+router.get('/openp2p/latest', requireKeyAccess, getLatestOpenp2pRelease);
+router.get('/openp2p/download/:tag/:asset', requireKeyAccess, downloadOpenp2pAsset);
 
 // 卡密激活/验签/迁移：公开接口但限流防爆破
 const activateLimiter = rateLimit({

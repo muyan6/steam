@@ -1870,6 +1870,28 @@ fn p2p_allow_firewall() -> Result<bool, String> {
     p2p::allow_firewall_rule()
 }
 
+#[tauri::command]
+async fn check_openp2p_sync() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        let info = p2p::check_openp2p_sync();
+        serde_json::to_value(info).unwrap_or(json!({}))
+    })
+    .await
+    .unwrap_or(json!({ "message": "任务执行失败" }))
+}
+
+#[tauri::command]
+async fn sync_openp2p_latest() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || {
+        match p2p::sync_openp2p_latest() {
+            Ok(msg) => json!({ "success": true, "message": msg }),
+            Err(e) => json!({ "success": false, "message": e }),
+        }
+    })
+    .await
+    .unwrap_or_else(|e| json!({ "success": false, "message": format!("任务执行失败: {}", e) }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2009,7 +2031,9 @@ pub fn run() {
             p2p_generate_code,
             p2p_parse_code,
             p2p_check_firewall,
-            p2p_allow_firewall
+            p2p_allow_firewall,
+            check_openp2p_sync,
+            sync_openp2p_latest
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

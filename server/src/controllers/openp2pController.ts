@@ -1,0 +1,71 @@
+import { Request, Response } from 'express';
+import axios from 'axios';
+
+// OpenP2P 联机引擎中转：客户端网络可能无法访问 GitHub（检测与下载双双失败），
+// 服务器侧可达 GitHub，作为最终兜底回退。仅中转 openp2p 官方仓库的 release，
+// tag/asset 严格白名单校验防止路径注入。
+
+const OPENP2P_REPO = 'openp2p-cn/openp2p';
+const isValidIdentifier = (s: string) => /^[\w.\-]{1,128}$/.test(s);
+
+export const getLatestOpenp2pRelease = async (_req: Request, res: Response) => {
+  try {
+    const resp = await axios.get(`https://api.github.com/repos/${OPENP2P_REPO}/releases/latest`, {
+      timeout: 10000,
+      headers: { 'User-Agent': 'chunfengdu-server', Accept: 'application/vnd.github+json' }
+    });
+    const tag = resp.data?.tag_name;
+    if (!tag || typeof tag !== 'string' || !isValidIdentifier(tag)) {
+      return res.status(502).json({ success: false, message: '上游 GitHub 返回数据异常' });
+    }
+    const assets: any[] = Array.isArray(resp.data.assets) ? resp.data.assets : [];
+    // 优先选择 windows-amd64.zip
+    const picked =
+      assets.find((a) => typeof a?.name === 'string' && a.name.includes('windows-amd64.zip')) ||
+      assets.find((a) => typeof a?.name === 'string' && a.name.includes('windows-amd64')) ||
+      null;
+    const asset = picked?.name || null;
+    const digest =
+      typeof picked?.digest === 'string' && /^sha256:[0-9a-fA-F]{64}$/.test(picked.digest)
+        ? picked.digest.toLowerCase()
+        : null;
+    res.json({ success: true, tag, publishedAt: resp.data.published_at || null, asset, digest });
+  } catch (e: any) {
+    console.error('[Openp2pController] 中转查询 GitHub 失败:', e.message);
+    res.status(502).json({ success: false, message: '中转查询 GitHub 失败，请稍后重试' });
+  }
+};
+
+export const downloadOpenp2pAsset = async (req: Request, res: Response) => {
+  try {
+    const tag = String(req.params.tag || '');
+    const asset = String(req.params.asset || '');
+    if (!isValidIdentifier(tag) || !isValidIdentifier(asset)) {
+      return res.status(400).json({ success: false, message: '参数缺失或格式非法' });
+    }
+    const url = `https://github.com/${OPENP2P_REPO}/releases/download/${tag}/${asset}`;
+    const upstream = await axios.get(url, {
+      timeout: 120000,
+      responseType: 'stream',
+      maxRedirects: 5,
+      headers: { 'User-Agent': 'chunfengdu-server' }
+    });
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${asset}"`);
+    upstream.data.on('error', (err: any) => {
+      console.error('[Openp2pController] 上游下载流出错:', err?.message || err);
+      res.destroy();
+    });
+    res.on('close', () => {
+      upstream.data.destroy();
+    });
+    upstream.data.pipe(res);
+  } catch (e: any) {
+    console.error('[Openp2pController] 中转下载失败:', e.message);
+    if (!res.headersSent) {
+      res.status(502).json({ success: false, message: '中转下载失败，请稍后重试' });
+    } else {
+      res.destroy();
+    }
+  }
+};

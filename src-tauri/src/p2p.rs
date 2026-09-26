@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
@@ -79,6 +80,18 @@ pub struct P2pStatusInfo {
     pub active_tunnels: Vec<P2pAppConfig>,
     pub binary_path: String,
     pub message: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Openp2pSyncInfo {
+    pub current_tag: String,
+    pub latest_tag: Option<String>,
+    pub published_at: Option<String>,
+    pub update_available: bool,
+    pub running: bool,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -402,6 +415,7 @@ pub fn get_status() -> P2pStatusInfo {
         } else {
             "P2P 隧道服务未启动".to_string()
         },
+        version: read_deployed_openp2p_tag(),
     }
 }
 
@@ -630,4 +644,290 @@ pub fn allow_firewall_rule() -> Result<bool, String> {
         let err = String::from_utf8_lossy(&output.stderr);
         Err(format!("防火墙配置未成功: {}", err))
     }
+}
+
+// ==================== OpenP2P 联机引擎在线同步 ====================
+
+const OPENP2P_REPO: &str = "openp2p-cn/openp2p";
+
+/// 读取本地当前部署的 OpenP2P 版本号（优先从 p2p_version.txt 读取，否则尝试执行 -v）
+pub fn read_deployed_openp2p_tag() -> String {
+    let p2p_dir = get_p2p_dir();
+    let version_file = p2p_dir.join("p2p_version.txt");
+    if let Ok(v) = fs::read_to_string(&version_file) {
+        let trimmed = v.trim();
+        if !trimmed.is_empty() {
+            return if trimmed.starts_with('v') {
+                trimmed.to_string()
+            } else {
+                format!("v{}", trimmed)
+            };
+        }
+    }
+
+    // 若无 version.txt，尝试运行 openp2p.exe -v
+    if let Some(exe) = locate_openp2p_bin() {
+        if let Ok(out) = Command::new(&exe)
+            .arg("-v")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !text.is_empty() && text.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                let tag = format!("v{}", text);
+                let _ = fs::write(&version_file, &tag);
+                return tag;
+            }
+        }
+    }
+
+    "v3.25.11".to_string()
+}
+
+/// 检查 OpenP2P 联机引擎在线同步状态（当前版本 vs GitHub / 镜像最新 release）
+pub fn check_openp2p_sync() -> Openp2pSyncInfo {
+    let current_tag = read_deployed_openp2p_tag();
+    let running = is_p2p_running();
+
+    match fetch_latest_openp2p_release() {
+        Ok((latest_tag, published_at, _asset, _digest)) => Openp2pSyncInfo {
+            update_available: latest_tag != current_tag,
+            current_tag,
+            latest_tag: Some(latest_tag),
+            published_at,
+            running,
+            message: None,
+        },
+        Err(e) => Openp2pSyncInfo {
+            current_tag,
+            latest_tag: None,
+            published_at: None,
+            update_available: false,
+            running,
+            message: Some(e),
+        },
+    }
+}
+
+/// 查询 OpenP2P 官方最新 Release 信息（带 GitHub 直链、加速镜像与服务端兜底中转）
+fn fetch_latest_openp2p_release() -> Result<(String, Option<String>, String, Option<String>), String> {
+    let endpoints = [
+        format!("https://api.github.com/repos/{}/releases/latest", OPENP2P_REPO),
+        format!("https://gh-proxy.com/https://api.github.com/repos/{}/releases/latest", OPENP2P_REPO),
+    ];
+
+    for ep in &endpoints {
+        let resp_res = crate::manifests::block_on(
+            crate::manifests::http_client()
+                .get(ep)
+                .timeout(std::time::Duration::from_secs(8))
+                .header("User-Agent", "chunfengdu")
+                .header("Accept", "application/vnd.github+json")
+                .send(),
+        );
+
+        if let Ok(resp) = resp_res {
+            if resp.status().is_success() {
+                if let Ok(json) = crate::manifests::block_on(resp.json::<serde_json::Value>()) {
+                    if let Some(tag) = json.get("tag_name").and_then(|t| t.as_str()) {
+                        let published = json.get("published_at").and_then(|p| p.as_str()).map(|s| s.to_string());
+                        if let Some(assets) = json.get("assets").and_then(|a| a.as_array()) {
+                            let picked = assets.iter().find(|a| {
+                                a.get("name")
+                                    .and_then(|n| n.as_str())
+                                    .map_or(false, |name| name.contains("windows-amd64.zip") || name.contains("windows-amd64"))
+                            });
+                            if let Some(asset_obj) = picked {
+                                let asset_name = asset_obj.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                                let digest = asset_obj
+                                    .get("digest")
+                                    .and_then(|d| d.as_str())
+                                    .and_then(|d| d.strip_prefix("sha256:"))
+                                    .map(|s| s.trim().to_ascii_lowercase())
+                                    .filter(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()));
+                                return Ok((tag.to_string(), published, asset_name, digest));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 最终兜底：经春风渡服务器中转查询
+    let relay_url = format!("{}/api/openp2p/latest", crate::manifests::SERVER_API);
+    if let Ok(resp) = crate::manifests::block_on(
+        crate::manifests::http_client()
+            .get(&relay_url)
+            .timeout(std::time::Duration::from_secs(10))
+            .header("User-Agent", "chunfengdu")
+            .header("x-device-id", crate::device::get_device_id())
+            .send(),
+    ) {
+        if let Ok(json) = crate::manifests::block_on(resp.json::<serde_json::Value>()) {
+            if json.get("success").and_then(|v| v.as_bool()) == Some(true) {
+                if let (Some(tag), Some(asset)) = (
+                    json.get("tag").and_then(|t| t.as_str()),
+                    json.get("asset").and_then(|a| a.as_str()),
+                ) {
+                    if !tag.is_empty() && !asset.is_empty() {
+                        let published = json.get("publishedAt").and_then(|p| p.as_str()).map(|s| s.to_string());
+                        let digest = json
+                            .get("digest")
+                            .and_then(|d| d.as_str())
+                            .and_then(|d| d.strip_prefix("sha256:"))
+                            .map(|s| s.trim().to_ascii_lowercase())
+                            .filter(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()));
+                        return Ok((tag.to_string(), published, asset.to_string(), digest));
+                    }
+                }
+            }
+        }
+    }
+
+    Err("无法连接 GitHub 查询 OpenP2P 最新版本（请检查网络或稍后重试）".to_string())
+}
+
+/// 多镜像链下载 release zip（官方直链 ➔ ghfast.top ➔ gh-proxy.com ➔ 服务器中转）
+fn download_openp2p_release_zip(
+    tag: &str,
+    asset: &str,
+    expected_sha256: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    let target = format!("https://github.com/{}/releases/download/{}/{}", OPENP2P_REPO, tag, asset);
+    let mirrors = [
+        target.clone(),
+        format!("https://ghfast.top/{}", target),
+        format!("https://gh-proxy.com/{}", target),
+        format!("{}/api/openp2p/download/{}/{}", crate::manifests::SERVER_API, tag, asset),
+    ];
+
+    let mut last_err = String::from("未尝试任何镜像");
+    for url in &mirrors {
+        match crate::manifests::block_on(
+            crate::manifests::http_client()
+                .get(url)
+                .timeout(std::time::Duration::from_secs(120))
+                .header("User-Agent", "chunfengdu")
+                .send(),
+        ) {
+            Ok(resp) if resp.status().is_success() => {
+                match crate::manifests::read_body_limited_blocking(
+                    resp,
+                    crate::manifests::MAX_ASSET_DOWNLOAD_BYTES,
+                ) {
+                    Ok(bytes) if bytes.len() > 100 * 1024 => {
+                        if let Some(expected) = expected_sha256 {
+                            let actual = crate::manifests::sha256_hex(&bytes);
+                            if actual != expected {
+                                last_err = format!("{} 内容校验失败（SHA256 不匹配）", url);
+                                continue;
+                            }
+                        }
+                        return Ok(bytes);
+                    }
+                    Ok(_) => last_err = format!("{} 返回内容异常", url),
+                    Err(e) => last_err = format!("{} 下载失败: {}", url, e),
+                }
+            }
+            Ok(resp) => last_err = format!("{} 返回 HTTP {}", url, resp.status()),
+            Err(e) => last_err = format!("{} 连接失败: {}", url, e),
+        }
+    }
+    Err(format!("所有 OpenP2P 镜像均下载失败，最后错误：{}", last_err))
+}
+
+/// 从 release zip 中提取 openp2p.exe 并自动修补 UAC 权限
+fn extract_openp2p_from_zip(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes))
+        .map_err(|e| format!("OpenP2P 压缩包解析失败: {}", e))?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| format!("读取压缩包条目失败: {}", e))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let fname = entry.name().rsplit('/').next().unwrap_or("");
+        if fname.eq_ignore_ascii_case("openp2p.exe") {
+            let cap = crate::manifests::MAX_ASSET_DOWNLOAD_BYTES;
+            let mut buf = Vec::new();
+            std::io::Read::take(&mut entry, cap + 1)
+                .read_to_end(&mut buf)
+                .map_err(|e| format!("解压 openp2p.exe 失败: {}", e))?;
+            if !buf.starts_with(b"MZ") {
+                return Err("解压出的 openp2p.exe 不是合法的 Windows 可执行文件 (MZ)".to_string());
+            }
+
+            patch_manifest_to_as_invoker(&mut buf);
+
+            return Ok(buf);
+        }
+    }
+
+    Err("在压缩包中未找到 openp2p.exe 文件".to_string())
+}
+
+/// 自动将 PE 内嵌的 requestedExecutionLevel 从 requireAdministrator 修补为 asInvoker
+fn patch_manifest_to_as_invoker(bytes: &mut [u8]) {
+    let target = b"level=\"requireAdministrator\"";
+    let replacement = b"level=\"asInvoker\"           ";
+
+    if let Some(pos) = bytes.windows(target.len()).position(|window| window == target) {
+        bytes[pos..pos + replacement.len()].copy_from_slice(replacement);
+    }
+}
+
+/// 在线同步最新 OpenP2P 联机引擎
+pub fn sync_openp2p_latest() -> Result<String, String> {
+    let _ = stop_p2p();
+
+    let (tag, _published, asset, digest) = fetch_latest_openp2p_release()?;
+    let current_tag = read_deployed_openp2p_tag();
+    let p2p_dir = get_p2p_dir();
+    let appdata_bin = p2p_dir.join("openp2p.exe");
+
+    if tag == current_tag && appdata_bin.is_file() {
+        return Ok(format!("OpenP2P 联机引擎已是最新版本（{}），无需重复同步。", tag));
+    }
+
+    let zip_bytes = download_openp2p_release_zip(&tag, &asset, digest.as_deref())?;
+    let exe_bytes = extract_openp2p_from_zip(&zip_bytes)?;
+
+    let old_bin = p2p_dir.join("openp2p.exe.old");
+    let new_bin = p2p_dir.join("openp2p.exe.new");
+
+    fs::write(&new_bin, &exe_bytes).map_err(|e| format!("写入新 OpenP2P 暂存文件失败: {}", e))?;
+
+    if appdata_bin.exists() {
+        let _ = fs::remove_file(&old_bin);
+        if let Err(e) = fs::rename(&appdata_bin, &old_bin) {
+            let _ = fs::remove_file(&new_bin);
+            return Err(format!("备份原 openp2p.exe 失败: {}（可能仍被其他进程占用）", e));
+        }
+    }
+
+    if let Err(e) = fs::rename(&new_bin, &appdata_bin) {
+        if old_bin.exists() {
+            let _ = fs::rename(&old_bin, &appdata_bin);
+        }
+        return Err(format!("部署新 openp2p.exe 失败: {}，已还原旧版本", e));
+    }
+
+    let _ = fs::remove_file(&old_bin);
+
+    let version_file = p2p_dir.join("p2p_version.txt");
+    let _ = fs::write(&version_file, &tag);
+
+    // 同步开发环境自带的二进制（如果存在且可写）
+    let dev_asset_bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/tools/openp2p/openp2p.exe");
+    if let Some(parent) = dev_asset_bin.parent() {
+        if parent.exists() {
+            let _ = fs::write(&dev_asset_bin, &exe_bytes);
+        }
+    }
+
+    Ok(format!(
+        "已成功同步 OpenP2P 联机引擎 {} → {}（已自动解除 UAC 提权要求并完成安全部署）！",
+        current_tag, tag
+    ))
 }

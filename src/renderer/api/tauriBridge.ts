@@ -1391,6 +1391,10 @@ export const createTauriBridge = () => {
     checkOstSync: async (): Promise<any> => invoke('check_ost_sync'),
     syncOstLatest: async (): Promise<{ success: boolean; message: string }> =>
       invoke('sync_ost_latest'),
+    // OpenP2P 联机引擎在线同步：检测 GitHub 最新 release 并镜像下载部署
+    checkOpenp2pSync: async (): Promise<any> => invoke('check_openp2p_sync'),
+    syncOpenp2pLatest: async (): Promise<{ success: boolean; message: string }> =>
+      invoke('sync_openp2p_latest'),
     toolboxGetManifestInfo: async (): Promise<any> => {
       try {
         const status = await invoke<any>('get_toolbox_status');
@@ -1970,4 +1974,14 @@ export async function p2pGetRealtimeState(): Promise<P2pRealtimeState> {
     };
   }
   return await invoke<P2pRealtimeState>('p2p_get_realtime_state');
+}
+
+export async function checkOpenp2pSync(): Promise<any> {
+  if (!isTauriEnvironment()) return { message: '非客户端环境' };
+  return await invoke('check_openp2p_sync');
+}
+
+export async function syncOpenp2pLatest(): Promise<{ success: boolean; message: string }> {
+  if (!isTauriEnvironment()) return { success: false, message: '非客户端环境' };
+  return await invoke('sync_openp2p_latest');
 }
