@@ -83,8 +83,7 @@
         <span class="truncate">
           <strong class="text-sky-300 font-semibold">联机模式：</strong>
           <strong class="text-emerald-400 font-bold">方案一·Steam通道</strong>（免改直启P2P）；
-          <strong class="text-amber-400 font-bold">方案二·联机补丁</strong>（DLL补丁/大厅强鉴权）；
-          <strong class="text-sky-300 font-bold">异地联机组网</strong>（P2P隧道直连/局域网互通）。
+          <strong class="text-amber-400 font-bold">方案二·联机补丁</strong>（DLL补丁/大厅强鉴权）。
         </span>
       </div>
       <button
