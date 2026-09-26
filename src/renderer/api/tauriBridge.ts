@@ -1949,3 +1949,13 @@ export async function p2pAllowFirewall(): Promise<boolean> {
   if (!isTauriEnvironment()) return false;
   return await invoke<boolean>('p2p_allow_firewall');
 }
+
+export async function openExternalUrl(url: string): Promise<void> {
+  if (isTauriEnvironment()) {
+    try {
+      await invoke('open_url', { url });
+      return;
+    } catch {}
+  }
+  window.open(url, '_blank');
+}

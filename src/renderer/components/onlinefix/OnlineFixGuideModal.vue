@@ -27,11 +27,11 @@
                   联机方案与启动模式全指南
                 </h3>
                 <span class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  双轨联机架构
+                  全场景联机生态
                 </span>
               </div>
               <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                搞懂两大联机方案选型、三大启动方式差异与卡片徽章快速识别
+                搞懂游戏联机两大方案选型、三大启动手法差异与【异地联机组网 P2P】穿透直连
               </p>
             </div>
           </div>
@@ -134,6 +134,57 @@
                 <div class="mt-4 pt-3 border-t border-white/10 text-xs text-amber-600 dark:text-amber-400 font-mono font-medium flex items-center gap-1.5">
                   <Wrench class="w-3.5 h-3.5" />
                   <span>适用范围：琥珀/橙色徽章、方案一进不去大厅的游戏</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 模块 1.5：网络底座：异地联机组网 (P2P 穿透/局域网互通) -->
+          <div>
+            <div class="flex items-center gap-2.5 mb-3.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+              <h4 class="font-bold text-sm md:text-base text-slate-900 dark:text-slate-100 tracking-wide">
+                网络底座：异地联机组网 (P2P 穿透/局域网互通)
+              </h4>
+            </div>
+
+            <div class="rounded-2xl guide-hero-card p-5 relative overflow-hidden border border-sky-500/30 bg-sky-500/5">
+              <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <span class="text-xs px-3 py-1 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-300 font-bold border border-sky-500/30 flex items-center gap-1.5">
+                  <Network class="w-4 h-4" />
+                  <span>异地联机组网 · P2P 穿透直连</span>
+                </span>
+                <span class="text-[11px] px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-300 font-semibold border border-sky-500/25">
+                  自包含联机码 · 免公网 IP
+                </span>
+              </div>
+              <h5 class="text-slate-900 dark:text-slate-100 font-bold text-sm mb-2">
+                攻克非 Steam 专网、纯局域网广播与自建专用服异地跨网直连难题
+              </h5>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 mt-3.5 text-xs text-slate-600 dark:text-slate-300">
+                <div class="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
+                  <strong class="text-slate-900 dark:text-slate-100 font-bold flex items-center gap-1.5">
+                    <span>📌 适用场景</span>
+                  </strong>
+                  <p class="leading-relaxed text-[11px]">
+                    《幻兽帕鲁》自建专用服、《Minecraft 我的世界》、《泰拉瑞亚》、《饥荒》、《星露谷物语》、《七日杀》等 IP 直连或局域网对战游戏。
+                  </p>
+                </div>
+                <div class="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
+                  <strong class="text-slate-900 dark:text-slate-100 font-bold flex items-center gap-1.5">
+                    <span>⚡ 核心原理</span>
+                  </strong>
+                  <p class="leading-relaxed text-[11px]">
+                    基于 OpenP2P 协议进行 NAT1~4 穿透打洞，利用自带的公共信令网络实现点对点直连，免除自建中转服务器与账号注册门槛。
+                  </p>
+                </div>
+                <div class="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
+                  <strong class="text-slate-900 dark:text-slate-100 font-bold flex items-center gap-1.5">
+                    <span>🚀 极简用法</span>
+                  </strong>
+                  <p class="leading-relaxed text-[11px]">
+                    房主选好游戏一键生成 <code>CFD://</code> 联机码发给基友；客机复制后软件自动嗅探，一键建立直连隧道，游戏内填 <code>127.0.0.1:本地端口</code> 秒连。
+                  </p>
                 </div>
               </div>
             </div>

@@ -76,8 +76,8 @@
       </button>
     </div>
 
-    <!-- 联机方案提示横幅 + 可折叠功能说明 (紧凑精致) -->
-    <div class="mb-3 p-2.5 px-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-center justify-between gap-3 shrink-0">
+    <!-- 联机方案提示横幅 + 可折叠功能说明 (紧凑精致，仅在方案一与方案二显示) -->
+    <div v-if="activeMainTab !== 'p2p'" class="mb-3 p-2.5 px-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-center justify-between gap-3 shrink-0">
       <div class="flex items-center gap-2 min-w-0">
         <span class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 text-xs font-bold">💡</span>
         <span class="truncate">
