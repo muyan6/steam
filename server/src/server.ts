@@ -1170,7 +1170,7 @@ const ADMIN_HTML = `<!DOCTYPE html>
         <input type="hidden" id="noticeId" />
         <div class="form-group">
           <label>公告标题 (Title)</label>
-          <input type="text" id="noticeTitle" class="input-ctrl" placeholder="例如: 🎉 欢迎使用 SteamMaster 商业版！" />
+          <input type="text" id="noticeTitle" class="input-ctrl" placeholder="例如: 🎉 欢迎使用 春风渡 云端数据引擎！" />
         </div>
         <div class="form-row">
           <div class="form-group">

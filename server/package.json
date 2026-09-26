@@ -1,7 +1,7 @@
 {
   "name": "steammaster-server",
   "version": "2.8.1",
-  "description": "SteamMaster 商业化高性能云端后端服务",
+  "description": "SteamMaster 高性能云端数据引擎服务",
   "main": "dist/server.js",
   "type": "module",
   "scripts": {

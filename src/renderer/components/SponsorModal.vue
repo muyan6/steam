@@ -19,7 +19,7 @@
                 {{ licenseInfo.isActivated ? (licenseInfo.isLifetime ? '终身赞助者' : '赞助者') : '普通用户' }}
               </span>
             </h3>
-            <p class="text-[11px] text-slate-400">理性赞助 · 共同维护开源生态</p>
+            <p class="text-[11px] text-slate-400">理性赞助 · 共同维护云端数据生态</p>
           </div>
         </div>
         <button

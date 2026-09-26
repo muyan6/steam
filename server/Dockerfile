@@ -1,5 +1,5 @@
 # ==========================================
-# SteamMaster 商业版后端 Docker 镜像构建
+# SteamMaster 云端数据引擎后端 Docker 镜像构建
 # ==========================================
 FROM node:20-alpine AS builder
 

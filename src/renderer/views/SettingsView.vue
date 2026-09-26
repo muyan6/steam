@@ -398,7 +398,7 @@
             <div class="flex items-center justify-between">
               <div class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <Database class="w-3.5 h-3.5 text-sky-400" />
-                <span>商业版专属云端数据库</span>
+                <span>云端数据引擎</span>
               </div>
               <button
                 @click="loadDbStats"
@@ -480,7 +480,7 @@
           <span>安全提示与杀毒软件白名单说明</span>
         </div>
         <div class="text-slate-400 leading-relaxed space-y-1">
-          <p>• 本工具为商业级辅助软件，代码开源透明，仅用于合法技术评测与游戏联机管理。</p>
+          <p>• 本工具为高性能辅助软件，安全纯净透明，仅用于合法技术评测与游戏联机管理。</p>
           <p>• 由于涉及游戏本地配置优化及 DLL 接口模拟，部分安全软件可能会提示风险，建议将春风渡安装目录加入杀软信任区。</p>
           <p>• 请尊重并支持游戏开发商，合理体验后建议前往 Steam 官方平台购买支持正版。</p>
         </div>
@@ -858,7 +858,7 @@ const loadDbStats = async () => {
     if (stats) {
       dbStats.value = stats;
       if (stats.serverStatus === 'online') {
-        emit('notify', '已成功连接 春风渡 商业版云端数据引擎！', 'success');
+        emit('notify', '已成功连接 春风渡 云端数据引擎！', 'success');
       }
     }
   } catch {

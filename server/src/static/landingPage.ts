@@ -670,7 +670,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
         <div class="footer">
             <p>春风渡 (ChunFengDu Tools) &mdash; Built for Steam Players</p>
             <p style="margin-top: 8px;">
-                <a href="/admin">管理控制台登录</a> · <a href="https://github.com/muyan6/steam" target="_blank" rel="noopener noreferrer">GitHub 开源</a>
+                <a href="/admin">管理控制台登录</a> · <a href="https://github.com/muyan6/steam" target="_blank" rel="noopener noreferrer">GitHub 项目主页</a>
             </p>
         </div>
 

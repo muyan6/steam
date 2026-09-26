@@ -1,5 +1,5 @@
 /**
- * 春风渡 商业版应用核心配置
+ * 春风渡 应用核心配置
  */
 
 export const APP_CONFIG = {

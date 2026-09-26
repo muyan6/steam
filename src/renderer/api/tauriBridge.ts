@@ -437,7 +437,7 @@ export const DEFAULT_CHANGELOGS: VersionChangelogItem[] = [
   {
     version: '1.0.0',
     releaseDate: '2026-09-01',
-    title: '春风渡 商业版 v1.0.0 正式发布',
+    title: '春风渡 v1.0.0 正式发布',
     forceUpdate: false,
     changelog: [
       '🚀 首次发布 Steam 一键入库与多模式联机管理工具',
@@ -906,7 +906,7 @@ export const createTauriBridge = () => {
     setOnlineFixAccount: async (username: string, password: string): Promise<any> =>
       invoke('set_onlinefix_account', { username, password }),
 
-    // 商业版：公告通知与版本更新（plugin-http 走 Rust 通道，不受 CORS 限制）
+    // 云端数据引擎：公告通知与版本更新（plugin-http 走 Rust 通道，不受 CORS 限制）
     checkNotice: async (): Promise<any> => {
       const json = await getJson(`${API}/api/notice/latest`, 3000);
       return json?.data || null;

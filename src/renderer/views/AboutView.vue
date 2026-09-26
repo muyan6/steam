@@ -169,7 +169,7 @@
                 <span>爱发电赞助榜</span>
                 <span class="text-[11px] font-normal text-slate-400 font-mono">Sponsor Hall</span>
               </h2>
-              <p class="text-[11px] text-slate-400">感谢每一位支持春风渡开源生态的伙伴</p>
+              <p class="text-[11px] text-slate-400">感谢每一位支持春风渡生态的伙伴</p>
             </div>
           </div>
 
@@ -186,38 +186,41 @@
           </div>
         </div>
 
-        <!-- 统计面板大盘卡片 -->
+        <!-- 统计面板大盘卡片 (严谨网格高度对齐，统一顶底基线) -->
         <div class="p-3.5 rounded-2xl bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-sky-500/10 border border-white/10 mb-3.5 flex items-center justify-between shrink-0">
           <div class="flex items-center gap-4">
-            <div>
-              <div class="text-[11px] text-slate-400">累计赞助人次</div>
-              <div class="text-lg font-black text-rose-400 font-mono mt-0.5">
-                {{ sponsorsData.totalCount || 0 }} <span class="text-xs font-normal text-slate-400">位</span>
+            <div class="flex flex-col justify-between h-10">
+              <div class="text-[11px] text-slate-400 leading-none">累计赞助人次</div>
+              <div class="text-lg font-black text-rose-400 font-mono leading-none flex items-baseline gap-1">
+                <span>{{ sponsorsData.totalCount || 0 }}</span>
+                <span class="text-xs font-normal text-slate-400">位</span>
               </div>
             </div>
-            <div class="h-8 w-px bg-white/10"></div>
+
+            <div class="h-8 w-px bg-white/10 shrink-0"></div>
+
             <!-- 公开金额展示控制：默认隐藏总金额，保护收益隐私 -->
-            <div v-if="sponsorsData.showAmount">
-              <div class="text-[11px] text-slate-400">累计支持金额</div>
-              <div class="text-lg font-black text-amber-400 font-mono mt-0.5">
+            <div v-if="sponsorsData.showAmount" class="flex flex-col justify-between h-10">
+              <div class="text-[11px] text-slate-400 leading-none">累计支持金额</div>
+              <div class="text-lg font-black text-amber-400 font-mono leading-none">
                 ¥{{ (sponsorsData.totalAmount || 0).toFixed(2) }}
               </div>
             </div>
-            <div v-else>
-              <div class="text-[11px] text-slate-400">开源共建致谢</div>
-              <div class="text-xs font-bold text-amber-300/90 flex items-center gap-1.5 mt-1">
-                <Heart class="w-3.5 h-3.5 fill-rose-500 text-rose-400" />
-                <span>感恩同行 · 温暖常在</span>
+            <div v-else class="flex flex-col justify-between h-10">
+              <div class="text-[11px] text-slate-400 leading-none">共建致谢</div>
+              <div class="text-xs font-bold text-amber-300 flex items-center gap-1.5 leading-none">
+                <Heart class="w-3.5 h-3.5 fill-rose-500 text-rose-400 shrink-0" />
+                <span>致谢每一位支持者</span>
               </div>
             </div>
           </div>
 
-          <div class="text-right">
-            <div class="flex items-center justify-end gap-1.5 text-[10.5px] text-slate-300 font-medium">
+          <div class="text-right flex flex-col justify-between h-10">
+            <div class="flex items-center justify-end gap-1.5 text-[10.5px] text-slate-300 font-medium leading-none">
               <span class="w-2 h-2 rounded-full" :class="sponsorsData.source === 'afdian' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'"></span>
               <span>{{ sponsorsData.source === 'afdian' ? '爱发电官方实时同步' : '官方赞助榜' }}</span>
             </div>
-            <div class="text-[10px] font-mono text-slate-500 mt-0.5">
+            <div class="text-[10px] font-mono text-slate-500 leading-none">
               更新于: {{ formatUpdatedDate(sponsorsData.updatedAt) }}
             </div>
           </div>
@@ -317,7 +320,7 @@
           <div class="space-y-1.5 max-w-sm">
             <div class="text-sm font-bold text-slate-100">当前暂无赞助记录</div>
             <p class="text-xs text-slate-400 leading-relaxed">
-              开源与服务器维护不易，期待您的支持！赞助支持后，榜单将自动同步您的昵称与赞助寄语。
+              云端数据与服务器维护不易，期待您的支持！赞助支持后，榜单将自动同步您的昵称与赞助寄语。
             </p>
           </div>
           <button
