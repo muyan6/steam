@@ -1764,9 +1764,16 @@ fn set_window_background(app: AppHandle, hex: String) {
 
 // ==================== 修改器与成就管理命令 ====================
 
+// 说明：以下状态查询命令会拉起 tasklist 子进程 / 递归遍历目录 / 读日志。
+// Tauri 的**非 async** 命令在主线程（UI 线程）执行，而这些调用在前端是
+// "对每个本地游戏循环调用"或"每 3 秒轮询"，累计会卡住界面。
+// 统一改为 async + spawn_blocking，把阻塞工作挪到线程池。
+
 #[tauri::command]
-fn get_trainer_status(app_id: u32) -> Result<trainer::TrainerStatus, String> {
-    trainer::get_trainer_status(app_id)
+async fn get_trainer_status(app_id: u32) -> Result<trainer::TrainerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || trainer::get_trainer_status(app_id))
+        .await
+        .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)))
 }
 
 #[tauri::command]
@@ -1795,9 +1802,13 @@ fn delete_trainer(app_id: u32) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn get_sam_status(app: AppHandle) -> Result<achievements::SamStatus, String> {
+async fn get_sam_status(app: AppHandle) -> Result<achievements::SamStatus, String> {
     let resource_dir = app.path().resource_dir().ok();
-    achievements::get_sam_status_with_resource(resource_dir.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        achievements::get_sam_status_with_resource(resource_dir.as_deref())
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)))
 }
 
 #[tauri::command]
@@ -1806,9 +1817,13 @@ async fn download_sam(download_url: Option<String>) -> Result<achievements::SamS
 }
 
 #[tauri::command]
-fn launch_sam_for_game(app: AppHandle, app_id: u32) -> Result<bool, String> {
+async fn launch_sam_for_game(app: AppHandle, app_id: u32) -> Result<bool, String> {
     let resource_dir = app.path().resource_dir().ok();
-    achievements::launch_sam_for_game_with_resource(app_id, resource_dir.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        achievements::launch_sam_for_game_with_resource(app_id, resource_dir.as_deref())
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)))
 }
 
 #[tauri::command]
@@ -1826,34 +1841,60 @@ fn p2p_get_node_id() -> String {
     p2p::get_or_generate_node_id()
 }
 
+// P2P 状态查询与隧道操作同样会做进程枚举 / 文件读取 / 拉起子进程，
+// 且前端每 3 秒轮询，必须移出主线程。
 #[tauri::command]
-fn p2p_get_status() -> p2p::P2pStatusInfo {
-    p2p::get_status()
+async fn p2p_get_status() -> p2p::P2pStatusInfo {
+    tauri::async_runtime::spawn_blocking(p2p::get_status)
+        .await
+        .unwrap_or_else(|_| p2p::P2pStatusInfo {
+            running: false,
+            node_id: String::new(),
+            exe_found: false,
+            active_tunnels: Vec::new(),
+            binary_path: String::new(),
+            message: "状态查询任务执行失败".to_string(),
+            version: String::new(),
+        })
 }
 
 #[tauri::command]
-fn p2p_get_realtime_state() -> p2p::P2pRealtimeState {
-    p2p::get_realtime_state()
+async fn p2p_get_realtime_state() -> p2p::P2pRealtimeState {
+    tauri::async_runtime::spawn_blocking(p2p::get_realtime_state)
+        .await
+        .unwrap_or_else(|_| p2p::P2pRealtimeState {
+            stage: "idle".to_string(),
+            nat_type: "未检测".to_string(),
+            detail: "状态查询任务执行失败".to_string(),
+        })
 }
 
 #[tauri::command]
-fn p2p_start_daemon() -> Result<bool, String> {
-    p2p::start_p2p_daemon()
+async fn p2p_start_daemon() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(p2p::start_p2p_daemon)
+        .await
+        .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)))
 }
 
 #[tauri::command]
-fn p2p_stop_all() -> Result<bool, String> {
-    p2p::stop_p2p()
+async fn p2p_stop_all() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(p2p::stop_p2p)
+        .await
+        .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)))
 }
 
 #[tauri::command]
-fn p2p_connect_tunnel(payload: p2p::P2pTunnelPayload) -> Result<p2p::P2pTunnelView, String> {
-    p2p::connect_tunnel(payload)
+async fn p2p_connect_tunnel(payload: p2p::P2pTunnelPayload) -> Result<p2p::P2pTunnelView, String> {
+    tauri::async_runtime::spawn_blocking(move || p2p::connect_tunnel(payload))
+        .await
+        .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)))
 }
 
 #[tauri::command]
-fn p2p_remove_tunnel(local_port: u16) -> Result<bool, String> {
-    p2p::remove_tunnel(local_port)
+async fn p2p_remove_tunnel(local_port: u16) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || p2p::remove_tunnel(local_port))
+        .await
+        .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)))
 }
 
 #[tauri::command]

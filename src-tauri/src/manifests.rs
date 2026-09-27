@@ -2083,7 +2083,7 @@ use sha2::{Digest, Sha256};
 
 use crate::dict_parser::{parse_binary_dict, DictEntry, DICT_MAGIC, EMBEDDED_DICT};
 
-/// 云端字典同步 sidecar 文件名（位于 exe 同目录，版本更新后静默落盘）
+/// 云端字典同步 sidecar 文件名（存于用户数据目录，不随卸载清除、始终可写）
 pub const DICT_SIDECAR_FILE: &str = "game_dict.dat";
 
 struct LocalDbState {
@@ -2171,8 +2171,21 @@ fn locate_local_db_file(resource_dir: Option<&Path>) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
-/// 云端同步落盘的 sidecar 路径（exe 同目录 game_dict.dat）
+/// 用户数据目录下的 sidecar 路径（`%APPDATA%\com.chunfengdu.app\game_dict.dat`）。
+///
+/// 为什么不放 exe 同目录（旧实现）：exe 目录属于**安装目录**，而本项目的更新方式是
+/// "先卸载再安装"——卸载会整体清除安装目录，于是每次更新后云端字典 sidecar 都会丢失、
+/// 需重新下载数 MB；同理安装到 Program Files 等受保护目录时非管理员根本写不进去。
+/// 用户数据目录（Roaming）不随卸载清除，且始终可写。
 fn sidecar_dict_path() -> Option<PathBuf> {
+    let base = std::env::var("APPDATA").ok()?;
+    let dir = PathBuf::from(base).join("com.chunfengdu.app");
+    let _ = fs::create_dir_all(&dir);
+    Some(dir.join(DICT_SIDECAR_FILE))
+}
+
+/// 旧版 sidecar 位置（exe 同目录）：仅用于读取兼容，不再作为写入目标
+fn legacy_sidecar_dict_path() -> Option<PathBuf> {
     std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join(DICT_SIDECAR_FILE)))
@@ -2185,9 +2198,12 @@ struct DictLoad {
     source: &'static str,
 }
 
-/// 从 sidecar 二进制载入（云端同步更新后的版本）
+/// 从 sidecar 二进制载入（云端同步更新后的版本）。
+/// 优先用户数据目录；兼容读取旧版 exe 同目录的遗留 sidecar。
 fn load_sidecar_dict() -> Option<DictLoad> {
-    let path = sidecar_dict_path()?;
+    let path = sidecar_dict_path()
+        .filter(|p| p.exists())
+        .or_else(|| legacy_sidecar_dict_path().filter(|p| p.exists()))?;
     let bytes = fs::read(&path).ok()?;
     let games = parse_binary_dict(&bytes);
     if games.is_empty() {
@@ -2221,7 +2237,7 @@ fn load_legacy_json_dict(resource_dir: Option<&Path>) -> Option<DictLoad> {
 }
 
 /// 确保全量库已载入（懒加载：首次检索/首次同步时解析并缓存，约 18.3 万条）。
-/// 加载优先级：exe 同目录 sidecar（云端更新产物）→ 编译期内嵌字典 → 遗留 JSON
+/// 加载优先级：用户目录 sidecar（云端更新产物）→ 编译期内嵌字典 → 遗留 JSON
 fn ensure_local_db_loaded(resource_dir: Option<&Path>) {
     let mut state = local_db_state().lock().unwrap_or_else(|e| e.into_inner());
     if state.parsed {
@@ -2278,7 +2294,7 @@ pub struct DictionarySyncOutcome {
 /// 检查并同步云端游戏字典：
 /// 1. GET /api/games/library/version 比对 SHA256 版本；
 /// 2. 不一致则 GET /api/games/library/download（带 x-device-id）下载并校验；
-/// 3. 校验通过后原子写入 exe 同目录 sidecar，并重置本地缓存让下次检索热加载。
+/// 3. 校验通过后原子写入用户数据目录 sidecar，并重置本地缓存让下次检索热加载。
 /// 任何失败仅返回 Err（记录日志），绝不 panic、离线安全。
 pub fn check_and_sync_dictionary(resource_dir: Option<&Path>) -> Result<DictionarySyncOutcome, String> {
     // 确保基线字典已载入，否则无从比对版本
@@ -2360,7 +2376,7 @@ pub fn check_and_sync_dictionary(resource_dir: Option<&Path>) -> Result<Dictiona
 
     // 5. 原子写入 sidecar（.tmp + rename，避免半截文件被下次启动当作有效字典）
     let target = sidecar_dict_path()
-        .ok_or_else(|| "无法定位 exe 目录，无法写入字典 sidecar".to_string())?;
+        .ok_or_else(|| "无法定位用户数据目录（APPDATA），无法写入字典 sidecar".to_string())?;
     let tmp = target.with_extension("dat.tmp");
     fs::write(&tmp, bytes).map_err(|e| format!("写入字典临时文件失败: {}", e))?;
     if let Err(e) = fs::rename(&tmp, &target) {
