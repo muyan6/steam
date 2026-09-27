@@ -986,41 +986,47 @@ pub fn parse_share_code(code_str: &str) -> Result<ParsedShareCode, String> {
     Err("无法识别的联机码数据格式".to_string())
 }
 
-/// 检查 Windows 防火墙是否存在春风度 P2P 放行规则。
+/// 同名规则是否存在 —— 只看 netsh **退出码**，不解析输出文本。
 ///
-/// 判定依据是 netsh 的**退出码**，而不是解析输出文本：
 /// 实测 `netsh advfirewall firewall show rule name="<不存在>"` 输出
-/// `No rules match the specified criteria.` 且 exit=1，与规则是否存在无关 ——
+/// `No rules match the specified criteria.`（中文系统「没有与指定标准相匹配的规则。」）
+/// 且 exit=1；规则存在时 exit=0。与界面语言无关。
 /// 旧实现用 `stdout.contains("规则名称")` 判定，英文系统上表头是 `Rule Name`，
 /// 必然恒为 false（即便规则已存在也会一直提示「未放行」）。
-pub fn check_firewall_rule() -> bool {
-    let output = Command::new("netsh")
+#[cfg(windows)]
+fn firewall_rule_exists() -> bool {
+    Command::new("netsh")
         .args(&["advfirewall", "firewall", "show", "rule", "name=ChunFengDu P2P"])
         .creation_flags(CREATE_NO_WINDOW)
-        .output();
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
 
-    let exists = match output {
-        Ok(out) => out.status.success(),
-        Err(_) => false,
-    };
-    if !exists {
-        return false;
-    }
-
-    // 「规则存在」不等于「放行的是当前引擎」：引擎在线升级 / 安装目录迁移后，
-    // 同名规则可能还指向已失效的旧路径，此时入站流量依然被丢弃，
-    // 而只看规则名的旧实现会一路显示「已放行」。
-    // 解析不出 Program 字段时（异常输出）退回「存在即放行」，不制造假阴性。
+/// 检查 Windows 防火墙是否存在春风度 P2P 入站放行规则。
+///
+/// 「规则存在」不等于「放行的是当前引擎」：引擎在线升级 / 安装目录迁移后，
+/// 同名规则可能还指向已失效的旧路径，也可能被禁用或改成「阻止」——
+/// 这些情况下入站流量依然被丢弃，而只看规则名的旧实现会一路显示「已放行」。
+/// 解析不出具体路径与生效状态时（异常输出）退回「存在即放行」，不制造假阴性。
+pub fn check_firewall_rule() -> bool {
     #[cfg(windows)]
     {
+        if !firewall_rule_exists() {
+            return false;
+        }
+
         if let Some(bin) = locate_openp2p_bin() {
             if let Some(matches) = existing_rule_program(&bin.to_string_lossy()) {
                 return matches;
             }
         }
+
+        true
     }
 
-    true
+    #[cfg(not(windows))]
+    false
 }
 
 /// 规范化 Windows 路径用于比较（统一分隔符、大小写并剔除首尾引号）。
@@ -1029,10 +1035,69 @@ fn normalize_win_path(p: &str) -> String {
     p.trim().trim_matches('"').replace('/', "\\").to_lowercase()
 }
 
-/// 优先通过 Windows 注册表直接查询防火墙规则的程序路径（底层存储、跨语言、1ms极速）。
-/// Windows Defender 防火墙底层规则存储于 HKLM 且允许普通权限只读查询。
+/// 取规则值里 `key=value` 形式的字段值（去引号与首尾空白）。
+///
+/// 防火墙规则在注册表里是一条 `|` 分隔的字符串，形如：
+/// `v2.30|Action=Allow|Active=TRUE|Dir=In|App=C:\...\openp2p.exe|Name=ChunFengDu P2P|`
+/// 按 `|` 切分后整段比对键名，避免 `Name=ChunFengDu P2P` 与
+/// `Name=ChunFengDu P2P Test` 这类前缀相同的字段互相误命中。
 #[cfg(windows)]
-fn query_firewall_rule_program_registry(rule_name: &str) -> Option<String> {
+fn rule_value_field<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    text.split('|').find_map(|part| {
+        let (k, v) = part.trim().split_once('=')?;
+        if !k.eq_ignore_ascii_case(key) {
+            return None;
+        }
+        let v = v.trim().trim_matches('"');
+        if v.is_empty() {
+            None
+        } else {
+            Some(v)
+        }
+    })
+}
+
+/// 该规则值是否就是给定规则名的那一条。
+#[cfg(windows)]
+fn rule_value_is_named(text: &str, rule_name: &str) -> bool {
+    rule_value_field(text, "Name") == Some(rule_name)
+}
+
+/// 规则是否真的放行入站流量：`Action=Allow` + `Dir=In` + `Active=TRUE`。
+///
+/// 被禁用或被改成「阻止」的同名规则，哪怕路径正确也不放行任何流量。
+/// netsh 的中文输出里「已启用/操作」这些标签经 from_utf8_lossy 后已损毁，
+/// 只有注册表原文能可靠判定，所以这项校验放在这里。
+/// 字段缺失时视为满足：判定目标只是「能否断言规则未生效」，缺失不足以断言，
+/// 宁可漏报也不能把生效中的规则误报成未放行（那会让用户反复弹 UAC）。
+#[cfg(windows)]
+fn rule_value_is_effective(text: &str) -> bool {
+    let allowed = rule_value_field(text, "Action")
+        .map(|a| a.eq_ignore_ascii_case("Allow"))
+        .unwrap_or(true);
+    let inbound = rule_value_field(text, "Dir")
+        .map(|d| d.eq_ignore_ascii_case("In"))
+        .unwrap_or(true);
+    let active = rule_value_field(text, "Active")
+        .map(|a| a.eq_ignore_ascii_case("TRUE"))
+        .unwrap_or(true);
+    allowed && inbound && active
+}
+
+/// 直接读注册表判定同名规则是否放行当前引擎。
+///
+/// Windows Defender 防火墙的规则原文就存在 HKLM 下，普通权限即可只读查询
+/// （`BUILTIN\Users` 有 ReadKey），因此不必去解析 netsh 的本地化输出。
+/// 本机实测单次查询约 10~17ms（取决于规则条数，本机 1000+ 条），
+/// 只用在面板挂载与放行流程里，不在 3 秒状态轮询路径上。
+///
+/// - `Some(true)`：存在「入站 + 允许 + 已启用」的同名规则且指向该路径；
+/// - `Some(false)`：同名规则存在，但没有任何一条既指向该路径又确实生效
+///   （路径陈旧 / 被禁用 / 被改成阻止）；
+/// - `None`：注册表不可读，或同名规则里没有一条是程序规则
+///   （例如用户手工建的按端口规则）—— 无法据此断言，交由 netsh 兜底判定。
+#[cfg(windows)]
+fn query_firewall_rule_program_registry(rule_name: &str, bin_str: &str) -> Option<bool> {
     use winreg::enums::HKEY_LOCAL_MACHINE;
     use winreg::RegKey;
 
@@ -1041,29 +1106,88 @@ fn query_firewall_rule_program_registry(rule_name: &str) -> Option<String> {
         .open_subkey("SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules")
         .ok()?;
 
-    let target_name_pattern = format!("Name={}|", rule_name);
-    let target_name_pattern_quoted = format!("Name=\"{}\"|", rule_name);
+    let want = normalize_win_path(bin_str);
+    let mut seen_named_program_rule = false;
 
     for (_, val) in key.enum_values().filter_map(|v| v.ok()) {
         let text = val.to_string();
-        if text.contains(&target_name_pattern) || text.contains(&target_name_pattern_quoted) {
-            for part in text.split('|') {
-                if let Some(app_path) = part.strip_prefix("App=") {
-                    let cleaned = app_path.trim().trim_matches('"');
-                    if !cleaned.is_empty() {
-                        return Some(cleaned.to_string());
-                    }
-                }
+        if !rule_value_is_named(&text, rule_name) {
+            continue;
+        }
+
+        let Some(app) = rule_value_field(&text, "App") else {
+            // 同名但非程序规则：断言不了它是否放行本引擎，保持宽松，
+            // 免得「一键放行」把用户自己手工建的规则删掉。
+            continue;
+        };
+        seen_named_program_rule = true;
+
+        // 同名的多条规则里只要有一条既指向当前引擎又确实生效就算放行成功，
+        // 不能取第一条就下结论（枚举顺序不保证，陈旧规则可能排在前面）。
+        if rule_value_is_effective(&text) && normalize_win_path(app) == want {
+            return Some(true);
+        }
+    }
+
+    if seen_named_program_rule {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// 从 netsh verbose 输出的一行里提取程序路径。
+///
+/// netsh 走本地代码页输出（中文系统是 GBK），`程序:` 这类标签经 from_utf8_lossy
+/// 后必然损毁成替换字符，按标签匹配是死代码；而盘符与 `:\` 是 ASCII，跨语言稳定，
+/// 且 verbose 输出里只有「程序」这一行会出现 `X:\` 形态的路径。
+#[cfg(windows)]
+fn extract_program_path(line: &str) -> Option<String> {
+    let bytes = line.as_bytes();
+    for i in 0..bytes.len().saturating_sub(2) {
+        if bytes[i].is_ascii_alphabetic() && bytes[i + 1] == b':' && bytes[i + 2] == b'\\' {
+            let path = line[i..].trim().trim_matches('"').trim();
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// 从 netsh verbose 输出解析规则的程序路径并比对（纯函数，便于回归测试）。
+///
+/// 返回 `Some(false)` 的前提是「确实解析出了路径且与本机引擎不同」；
+/// 目标路径含非 ASCII 字符时（中文用户名 / 中文安装目录），路径本身也已被
+/// 本地代码页字节损毁，此时一律返回 `None` 交由调用方宽松处理 ——
+/// 宁可漏报，也不能把一条生效中的规则误报成「未放行」而让用户反复弹 UAC。
+#[cfg(windows)]
+fn parse_netsh_rule_program(text: &str, bin_str: &str) -> Option<bool> {
+    let want = normalize_win_path(bin_str);
+    if !want.is_ascii() {
+        return None;
+    }
+
+    let mut seen_program_rule = false;
+    for line in text.lines() {
+        if let Some(path) = extract_program_path(line) {
+            seen_program_rule = true;
+            // 精确比对：`...\openp2p.exe.bak` 这类前缀相同的旧路径不能被判成命中
+            // （旧实现用全文 contains，会误判）。
+            if normalize_win_path(&path) == want {
+                return Some(true);
             }
         }
     }
 
-    None
+    if seen_program_rule {
+        Some(false)
+    } else {
+        None
+    }
 }
 
-/// 兜底：通过 netsh 命令行输出解析规则程序路径。
-/// 兼顾中文 Windows（`程序:`）与英文 Windows（`Program:`）字段名，
-/// 并直接支持在全文本中比对规范化路径，避免 GBK/代码页解码损毁导致的误判。
+/// 兜底：读取 netsh verbose 输出交给 `parse_netsh_rule_program` 解析。
 #[cfg(windows)]
 fn query_firewall_rule_program_netsh(bin_str: &str) -> Option<bool> {
     let output = Command::new("netsh")
@@ -1083,61 +1207,30 @@ fn query_firewall_rule_program_netsh(bin_str: &str) -> Option<bool> {
         return None;
     }
 
-    let text = String::from_utf8_lossy(&output.stdout);
-    let want = normalize_win_path(bin_str);
-    let text_norm = normalize_win_path(&text);
-
-    // 1. 全文检索：若输出中明确包含规范化路径，直接判定成功
-    if text_norm.contains(&want) {
-        return Some(true);
-    }
-
-    // 2. 逐行识别：兼顾英文「Program:」与中文「程序:」或全角冒号
-    let mut seen_program = false;
-    for line in text.lines() {
-        let trimmed = line.trim();
-        let stripped = trimmed
-            .strip_prefix("Program:")
-            .or_else(|| trimmed.strip_prefix("程序:"))
-            .or_else(|| trimmed.strip_prefix("程序："));
-
-        if let Some(rest) = stripped {
-            seen_program = true;
-            if normalize_win_path(rest) == want {
-                return Some(true);
-            }
-        }
-    }
-
-    // 3. 区分「存在但路径不同」与「完全未解析出路径」
-    if seen_program || text_norm.contains("openp2p.exe") {
-        Some(false)
-    } else {
-        None
-    }
+    parse_netsh_rule_program(&String::from_utf8_lossy(&output.stdout), bin_str)
 }
 
-/// 读取现有规则的程序路径，判断是否指向给定二进制：
-/// - `Some(true)`：规则存在且明确指向当前引擎；
-/// - `Some(false)`：规则存在但明确指向其他失效/旧路径；
+/// 读取现有规则的放行指向：
+/// - `Some(true)`：规则存在且确实放行当前引擎；
+/// - `Some(false)`：规则存在，但没有一条既指向当前引擎又生效（路径陈旧 / 被禁用 / 改成阻止）；
 /// - `None`：规则不存在，或因环境原因无法确定具体路径（调用方应退回宽松判定）。
 #[cfg(windows)]
 fn existing_rule_program(bin_str: &str) -> Option<bool> {
-    if let Some(actual_app) = query_firewall_rule_program_registry("ChunFengDu P2P") {
-        let want = normalize_win_path(bin_str);
-        let actual = normalize_win_path(&actual_app);
-        return Some(actual == want);
+    if let Some(verdict) = query_firewall_rule_program_registry("ChunFengDu P2P", bin_str) {
+        return Some(verdict);
     }
 
     query_firewall_rule_program_netsh(bin_str)
 }
 
-/// 规则是否已存在且指向当前引擎 —— 让「一键放行」保持幂等。
+/// 规则是否已存在且放行当前引擎 —— 让「一键放行」保持幂等。
 #[cfg(windows)]
 fn firewall_rule_ok_for(bin_str: &str) -> bool {
     match existing_rule_program(bin_str) {
         Some(matches) => matches,
-        None => check_firewall_rule(),
+        // 无法判定路径时退回「存在即放行」。这里只跑一次 netsh 退出码门禁，
+        // 不再走 check_firewall_rule —— 那会重复一次已有的路径查询。
+        None => firewall_rule_exists(),
     }
 }
 
@@ -1269,14 +1362,15 @@ pub fn allow_firewall_rule() -> Result<bool, String> {
 
     #[cfg(windows)]
     {
-        // 0. 幂等短路：规则已存在且指向当前引擎时直接返回，
+        // 0. 幂等短路：规则已存在且确实放行当前引擎时直接返回，
         //    不重复弹 UAC、也不在管理员会话里反复 delete/add 触发安全软件告警。
         if firewall_rule_ok_for(&bin_str) {
             return Ok(true);
         }
 
         // 1. 已提权 / 本机策略允许时，直接以子进程执行（无弹窗、极速完成）。
-        //    注意必须先删同名旧规则：引擎在线升级后路径变了，只 add 会因规则重名失败。
+        //    注意必须先删同名旧规则：引擎在线升级后路径变了、规则被禁用或改成阻止时，
+        //    只 add 会因规则重名失败（或被禁用规则继续压着）。
         if netsh_replace_rule(&bin_str) && firewall_rule_ok_for(&bin_str) {
             return Ok(true);
         }
@@ -1285,13 +1379,15 @@ pub fn allow_firewall_rule() -> Result<bool, String> {
         allow_firewall_rule_elevated(&bin_str)?;
 
         // 3. UAC 明确成功后校验结果：
-        //    严格区分「路径匹配成功(Some(true))」、「确凿不匹配(Some(false))」与「环境无法提取路径(None)」，
-        //    当无法提取具体路径时只要规则存在即视为放行成功，严禁产生假阴性误报。
+        //    严格区分「确实放行(Some(true))」、「确凿未生效(Some(false))」与
+        //    「环境无法提取路径/生效状态(None)」——后者只要规则存在即视为放行成功，
+        //    严禁产生假阴性误报，否则用户会对着一条正确的规则反复弹 UAC。
         match existing_rule_program(&bin_str) {
             Some(true) => Ok(true),
-            Some(false) => {
-                Err("防火墙规则已存在，但指向的引擎路径与本机当前引擎不一致，请手动删除旧规则后重试".to_string())
-            }
+            Some(false) => Err(
+                "防火墙规则已存在但未生效（指向旧引擎路径，或被禁用/改为阻止），请手动删除该规则后重试"
+                    .to_string(),
+            ),
             None => {
                 if check_firewall_rule() {
                     Ok(true)
@@ -1749,4 +1845,119 @@ pub fn sync_openp2p_latest() -> Result<String, String> {
         "已成功同步 OpenP2P 联机引擎 {} → {}（已自动解除 UAC 提权要求并完成安全部署）！",
         current_tag, tag
     ))
+}
+
+#[cfg(all(test, windows))]
+mod firewall_rule_parse_tests {
+    use super::*;
+
+    const BIN: &str = r"C:\Users\lenovo\AppData\Roaming\com.chunfengdu.app\openp2p\openp2p.exe";
+
+    /// 还原中文 Windows 上 netsh 输出的真实形态：GBK 字节经 from_utf8_lossy 解码，
+    /// `程序:` 必然损毁成替换字符 —— 这正是「按标签匹配」永远落空的原因。
+    fn gbk_lossy(bytes: &[u8]) -> String {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+
+    /// 「程序:」的 GBK 字节
+    fn gbk_program_label() -> String {
+        gbk_lossy(&[0xB3, 0xCC, 0xD0, 0xF2, 0x3A])
+    }
+
+    fn registry_value(app: &str, action: &str, active: &str, dir: &str, name: &str) -> String {
+        format!(
+            "v2.30|Action={}|Active={}|Dir={}|App={}|Name={}|",
+            action, active, dir, app, name
+        )
+    }
+
+    #[test]
+    fn netsh_label_is_truly_unmatchable() {
+        // 守住前提：中文标签经 lossy 解码后不可能再被 strip_prefix("程序:") 命中
+        assert!(!gbk_program_label().starts_with("程序:"));
+        assert!(gbk_program_label().contains('\u{FFFD}'));
+    }
+
+    #[test]
+    fn netsh_zh_cn_output_with_ascii_path_is_a_match() {
+        let text = format!("\r\n{}  {}\r\n", gbk_program_label(), BIN);
+        assert_eq!(parse_netsh_rule_program(&text, BIN), Some(true));
+    }
+
+    #[test]
+    fn netsh_english_output_is_a_match() {
+        let text = format!("Program:      {}\r\n", BIN);
+        assert_eq!(parse_netsh_rule_program(&text, BIN), Some(true));
+    }
+
+    #[test]
+    fn netsh_stale_path_is_a_mismatch() {
+        let text = format!("{}  C:\\OldInstall\\tools\\openp2p\\openp2p.exe\r\n", gbk_program_label());
+        assert_eq!(parse_netsh_rule_program(&text, BIN), Some(false));
+    }
+
+    /// 回归：旧实现用全文 contains，`...openp2p.exe.bak` 这类前缀相同的路径会被判成命中
+    #[test]
+    fn netsh_longer_path_with_same_prefix_is_not_a_match() {
+        let text = format!("{}  {}.bak\r\n", gbk_program_label(), BIN);
+        assert_eq!(parse_netsh_rule_program(&text, BIN), Some(false));
+    }
+
+    /// 回归：中文用户名 / 中文目录下，路径本身也被代码页损毁。
+    /// 此时必须返回 None（宽松放行），绝不能返回 Some(false) 把正确规则误报成未放行。
+    #[test]
+    fn netsh_non_ascii_engine_path_is_unknown_not_mismatch() {
+        let cjk = r"C:\Users\张伟\AppData\Roaming\com.chunfengdu.app\openp2p\openp2p.exe";
+        let text = format!("{}  {}\r\n", gbk_program_label(), cjk);
+        assert_eq!(parse_netsh_rule_program(&text, cjk), None);
+    }
+
+    #[test]
+    fn netsh_without_any_path_is_unknown() {
+        let none_text = "没有与指定标准相匹配的规则。\r\n";
+        assert_eq!(parse_netsh_rule_program(none_text, BIN), None);
+        // 非程序规则（如按端口放行）也不该被认成路径
+        let port_rule = format!(
+            "{}  任何\r\n{}  任何\r\n{}  445\r\n",
+            gbk_program_label(),
+            gbk_lossy(&[0xB1, 0xBE, 0xB5, 0xD8, 0x3A]), // 「本地:」
+            gbk_lossy(&[0xD0, 0xAD, 0xD2, 0xE9, 0x3A]), // 「协议:」
+        );
+        assert_eq!(parse_netsh_rule_program(&port_rule, BIN), None);
+    }
+
+    #[test]
+    fn registry_value_fields_split_on_part_boundaries() {
+        let v = registry_value(BIN, "Allow", "TRUE", "In", "ChunFengDu P2P");
+        assert_eq!(rule_value_field(&v, "App"), Some(BIN));
+        assert_eq!(rule_value_field(&v, "Action"), Some("Allow"));
+        assert!(rule_value_is_named(&v, "ChunFengDu P2P"));
+
+        // 前缀相同的规则名不能被误命中（旧实现靠 "Name=<名>|" 拼接，边界正确但脆弱）
+        assert!(!rule_value_is_named(&v, "ChunFengDu"));
+        assert!(!rule_value_is_named(&v, "ChunFengDu P2P Test"));
+
+        // 带引号的 Name 形态同样要认
+        let quoted = format!("v2.30|Action=Allow|Name=\"{}\"|", "ChunFengDu P2P");
+        assert!(rule_value_is_named(&quoted, "ChunFengDu P2P"));
+    }
+
+    /// 回归：被禁用 / 改成阻止 / 方向为出站 的同名规则，即便路径正确也不放行入站流量
+    #[test]
+    fn disabled_blocking_or_outbound_rule_is_not_effective() {
+        assert!(!rule_value_is_effective(&registry_value(BIN, "Allow", "FALSE", "In", "ChunFengDu P2P")));
+        assert!(!rule_value_is_effective(&registry_value(BIN, "Block", "TRUE", "In", "ChunFengDu P2P")));
+        assert!(!rule_value_is_effective(&registry_value(BIN, "Allow", "TRUE", "Out", "ChunFengDu P2P")));
+        assert!(rule_value_is_effective(&registry_value(BIN, "Allow", "TRUE", "In", "ChunFengDu P2P")));
+        // 字段缺失不足以断言未生效：保持宽松，避免误报未放行
+        assert!(rule_value_is_effective("v2.30|App=C:\\p\\openp2p.exe|Name=ChunFengDu P2P|"));
+    }
+
+    #[test]
+    fn path_normalization_ignores_case_slashes_and_quotes() {
+        assert_eq!(
+            normalize_win_path("  \"C:/Users/Lenovo/OpenP2P.EXE\"  "),
+            r"c:\users\lenovo\openp2p.exe"
+        );
+    }
 }
