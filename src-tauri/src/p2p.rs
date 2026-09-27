@@ -213,18 +213,36 @@ pub fn locate_openp2p_bin() -> Option<PathBuf> {
 
     // 2. 数据目录尚无可用的引擎（首次运行 / 被清理）：从自带资源拷贝一份过去
     for src in candidate_sources {
-        if is_usable_binary(&src) {
-            if let Ok(bytes) = fs::read(&src) {
-                if write_binary_atomically(&appdata_bin, &bytes).is_ok() && is_usable_binary(&appdata_bin) {
-                    // 首次部署：顺手把老版本可能残留的 requireAdministrator 清单修成 asInvoker。
-                    // 只针对数据目录副本，绝不改写源码目录 / 安装目录里的原始资源。
-                    ensure_binary_as_invoker(&appdata_bin);
-                    return Some(appdata_bin);
-                }
-            }
-            // 拷贝失败（只读介质 / 权限不足）时退回直接使用源文件
-            return Some(src.canonicalize().unwrap_or(src));
+        if !is_usable_binary(&src) {
+            continue;
         }
+        let Ok(bytes) = fs::read(&src) else { continue };
+
+        // 目标可能是个"存在但不可用"的残file（半截文件 / 被占用），
+        // 先尽力清掉再写入，提升首次部署成功率。
+        if appdata_bin.exists() && !is_usable_binary(&appdata_bin) {
+            let _ = fs::remove_file(&appdata_bin);
+        }
+
+        if write_binary_atomically(&appdata_bin, &bytes).is_ok() && is_usable_binary(&appdata_bin) {
+            // 首次部署：顺手把老版本可能残留的 requireAdministrator 清单修成 asInvoker。
+            // 只针对数据目录副本，绝不改写源码目录 / 安装目录里的原始资源。
+            ensure_binary_as_invoker(&appdata_bin);
+            return Some(appdata_bin);
+        }
+
+        // 拷贝失败（目标被占用 / 权限不足）：**绝不退回"直接从源目录运行"**。
+        //
+        // 旧实现 `return Some(src.canonicalize()...)` 会把 openp2p 的 exe 路径指到
+        // 安装目录 / 源码目录。openp2p 会把 log/ 写在自己 exe 同目录，于是：
+        //   - 日志落到软件安装目录（用户困惑、且装机后 Program Files 只读会写失败）；
+        //   - 装机环境还会试图从 Program Files 内直接启动引擎，更易被权限/杀软拦截。
+        // 正确做法是让上层明确报错（提示关闭引擎后重试），日志始终留在用户数据目录。
+        crate::manifests::log_diag(&format!(
+            "部署 openp2p 引擎到用户数据目录失败（源: {}）。目标可能被正在运行的引擎占用。",
+            src.display()
+        ));
+        break;
     }
 
     None
@@ -691,7 +709,13 @@ pub fn shutdown_p2p_once() {
 pub fn start_p2p_daemon() -> Result<bool, String> {
     stop_p2p()?;
 
-    let exe_path = locate_openp2p_bin().ok_or_else(|| "未找到 openp2p.exe 组件，请检查 assets/tools 目录".to_string())?;
+    let exe_path = locate_openp2p_bin().ok_or_else(|| {
+        format!(
+            "无法部署 OpenP2P 引擎到用户数据目录（目标: {}）。若引擎正在运行，请先点击「关闭所有服务」后重试；\
+             若仍失败，请检查杀毒软件是否拦截了对该目录的写入。",
+            get_p2p_dir().join("openp2p.exe").display()
+        )
+    })?;
     let dir = get_p2p_dir();
 
     // 真正要拉起进程之前，才做一次清单修补（asInvoker）。
@@ -809,7 +833,8 @@ pub fn get_status() -> P2pStatusInfo {
 
 /// 读取日志文件末尾至多 `max_bytes` 字节并解码为字符串。
 ///
-/// 用于 3 秒级轮询的打洞状态解析：日志可达数百 MB，绝不能整份读入。
+/// 用于 3 秒级轮询的打洞状态解析：只读尾部即可，无需整份读入。
+/// （openp2p 按 MaxLogSize 轮转，单文件上限约 1MB，但仍以只读尾部为原则。）
 /// 从末尾往前读，从第一个换行后开始切分（丢弃可能被截断的首行残留）。
 /// 返回 `None` 表示文件不存在或读取失败。
 fn read_log_tail(path: &std::path::Path, max_bytes: u64) -> Option<String> {
@@ -856,7 +881,7 @@ pub fn get_realtime_state() -> P2pRealtimeState {
     }
 
     // 只读日志尾部：本函数每 3 秒被前端轮询一次（见 P2pNetworkingPanel 的 setInterval），
-    // 而 openp2p.log 无轮转、长时间运行可达数百 MB。整份 read_to_string 会让每次轮询
+    // 而 openp2p.log 按 MaxLogSize 轮转（单文件上限约 1MB）。整份 read_to_string 会让每次轮询
     // 都做大分配并卡住界面。这里 seek 到末尾前 64KB 再读，最坏情况下首个残缺行也够用
     // （只取最后 30 行做关键字匹配）。
     let content = match read_log_tail(&log_file, 64 * 1024) {
@@ -1133,7 +1158,7 @@ pub fn get_peers() -> Vec<P2pPeer> {
         return Vec::new();
     }
     let log_file = get_p2p_dir().join("log").join("openp2p.log");
-    // 只读尾部：日志无轮转，长时间运行可达数百 MB
+    // 只读尾部：openp2p 按 MaxLogSize 轮转（单文件约 1MB），只读尾部足够且更省
     let Some(text) = read_log_tail(&log_file, 256 * 1024) else {
         return Vec::new();
     };
