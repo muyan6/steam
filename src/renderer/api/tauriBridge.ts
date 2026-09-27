@@ -660,26 +660,40 @@ export const createTauriBridge = () => {
     windowMaximize: async (): Promise<boolean> => invoke('window_maximize'),
     windowClose: async (): Promise<void> => invoke('window_close'),
     isWindowMaximized: async (): Promise<boolean> => invoke('is_window_maximized'),
-    // UI 缩放：使用 Tauri 原生 WebView 缩放（Webview.setZoom），**不再**给 <html>
+    // UI 缩放：优先 Tauri 原生 WebView 缩放（Webview.setZoom），**不再**给 <html>
     // 设 CSS `zoom`。
     //
-    // 为什么必须换：Chromium/WebView2 对根元素 CSS zoom 的支持有缺陷，与页面里大量
-    // 使用的 backdrop-filter（毛玻璃侧栏/顶栏/卡片）叠加时会触发合成异常 ——
+    // 为什么必须换：Chromium/WebView2 对**根元素** CSS zoom 的支持有缺陷，与页面里
+    // 大量使用的 backdrop-filter（毛玻璃侧栏/顶栏/卡片）叠加会触发合成异常 ——
     // 表现为内容重影、错位、右边缘被裁（实测 105% 即复现，100% 正常）。
-    // Tauri 原生缩放作用在 WebView 层，不参与页面布局，规避该缺陷。
+    // 原生缩放作用在 WebView 层、不参与页面布局，从根上规避该缺陷。
+    //
+    // 注意：原生缩放需要 `core:webview:allow-set-webview-zoom` 权限，而权限是
+    // **编译进 Rust 端**的 —— 只热更新前端（vite dev）而不重新编译 Rust 时该调用
+    // 会失败。因此兜底路径也必须安全：把 zoom 施加到 #app（非根元素）并同步补偿
+    // 宽高，避免出现"缩放后右/下被裁"或根元素 zoom 的重影。
     setZoomFactor: async (factor: number): Promise<void> => {
       const zoom = Math.min(1.5, Math.max(0.8, factor));
+      localStorage.setItem('cfd_ui_zoom', String(zoom));
       try {
         const { getCurrentWebview } = await import('@tauri-apps/api/webview');
         await getCurrentWebview().setZoom(zoom);
-        localStorage.setItem('cfd_ui_zoom', String(zoom));
+        // 原生缩放生效时清掉可能残留的兜底样式，避免叠加
+        const app = document.getElementById('app');
+        if (app) {
+          app.style.zoom = '';
+          app.style.width = '';
+          app.style.height = '';
+        }
         return;
       } catch (e) {
-        // 原生缩放不可用时的兜底：仍用 CSS zoom（可能重影，但好过完全不缩放）
-        console.warn('原生缩放不可用，回退 CSS zoom:', e);
+        console.warn('原生 WebView 缩放不可用，回退到 #app 局部缩放:', e);
       }
-      document.documentElement.style.zoom = String(zoom);
-      localStorage.setItem('cfd_ui_zoom', String(zoom));
+      const el = document.getElementById('app') || document.body;
+      // 局部缩放 + 尺寸补偿：缩放后内容仍恰好铺满视口，不会被裁切
+      el.style.zoom = String(zoom);
+      el.style.width = `${100 / zoom}%`;
+      el.style.height = `${100 / zoom}%`;
     },
 
     // Steam 环境与进程

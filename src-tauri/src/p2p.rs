@@ -145,18 +145,18 @@ pub struct ParsedShareCode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct P2pPeer {
-    /// 对端 node id（openp2p 的 16 位 hex 节点标识）
+    /// 对端标识：openp2p 里是**人类可读名称**（如 `firefly8-IgjCkPKp`、`柠檬仔ckb的PC`）
     pub node_id: String,
     /// 入站(别人连我) / 出站(我连别人)
     pub direction: String,
-    /// 打洞方式：TCP4 / TCP6 / UDP4 / relay（中继）
+    /// 隧道类型：direct（直连打洞） / relay（中继）
     pub transport: String,
-    /// 该对端对应该本地端口的隧道（可多个）
+    /// 关联端口（openp2p 日志未提供时为空）
     pub ports: Vec<u16>,
     /// 最近一次活跃时间（日志时间戳原文）
     pub last_seen: String,
-    /// openp2p 为该对端分配的 appID（0 表示未识别）
-    pub app_id: u32,
+    /// openp2p 的 appID（int64，日志原文；未识别时为空串）
+    pub app_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -928,48 +928,38 @@ pub fn get_realtime_state() -> P2pRealtimeState {
     }
 }
 
-/// 解析 openp2p.log，提取"已连接的对端"列表（房主/客机共用）。
+/// 解析 openp2p.log，提取"当前已连接的对端"列表（房主/客机共用）。
 ///
-/// openp2p 未提供成员查询接口，但其日志会记录每次打洞/连接成功：
-///   `... TCP4 Punch ok, ...` / `TCP6 connection ok` / `UDP4 connection ok`
-///   / `retry app relay=xxxx`，以及带 `node=<16hex>`、`appID=<n>`、
-///   `dstPort=<n>`（或 `srcPort=`）的上下文行。
-/// 本函数只做"尽力而为"的解析：识别到即展示，识别不到就返回空，
-/// **绝不因格式变化而误报**。
+/// 格式依据**真实日志样本**（取自本机 openp2p 服务的 openp2p.log，已核对）：
+///   2026/09/12 09:05:20 INFO addApp 3359568779749662663 to firefly8-IgjCkPKp::0 end
+///   2026/09/12 11:47:13 INFO localhost-Nssw4D4a online, retryApp
+///   2026/09/12 11:45:28 INFO 510246482257444409 p2ptunnel close localhost-Nssw4D4a
+///   2026/09/12 11:44:20 INFO appid:3359... checkDirectTunnel detect peer firefly8-IgjCkPKp disconnect, reconnecting ...
+///   2026/09/12 11:43:25 WARN appid:1118... buildDirectTunnel localhost-f2JXbjPp requestPeerInfo error:peer offline
+///
+/// 要点：
+/// - 对端标识是**人类可读的名称**（如 `firefly8-IgjCkPKp`、`柠檬仔ckb的PC`、
+///   `Synology920+`、`hahabaodandeMac-mini.local`），不是 16 位 hex 节点号；可含
+///   中英文、数字、`-_.+`，但**不含空格**。
+/// - `appid:` 后是 int64 大数（不是小整数）。
+/// - `buildDirectTunnel ... error:peer offline` 这类是**失败**尝试，必须排除。
+/// - 维护"连接/断开"事件流：addApp/online 记为在线，p2ptunnel close / detect ...
+///   disconnect 记为离线；最终只输出仍在线者，绝不因格式变化而误报。
 fn parse_p2p_peers(text: &str) -> Vec<P2pPeer> {
-    use std::collections::BTreeMap;
+    use std::collections::HashMap;
 
-    // node_id -> peer；同一对端多次连接合并（端口并集、时间取最新、传输方式取最新）
-    let mut map: BTreeMap<String, P2pPeer> = BTreeMap::new();
-    let mut cur_node: Option<String> = None;
-    let mut cur_app: Option<u32> = None;
-    let mut cur_port: Option<u16> = None;
-    let mut cur_time = String::new();
+    #[derive(Default)]
+    struct Entry {
+        online: bool,
+        last_seen: String,
+        transport: String,
+        app_id: String,
+        outbound: bool,
+        ports: Vec<u16>,
+    }
+    let mut map: HashMap<String, Entry> = HashMap::new();
 
-    // 从一行里取 `key=值` 的数值（值到非数字/空白为止）
-    fn field_u64(line: &str, key: &str) -> Option<u64> {
-        let pos = line.find(key)?;
-        let rest = &line[pos + key.len()..];
-        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-        if digits.is_empty() { None } else { digits.parse().ok() }
-    }
-    // 从一行里取 `node=<hex>` / `node: <hex>` / `relay=<hex>` 形式的节点 id
-    fn field_node(line: &str) -> Option<String> {
-        for key in ["node=", "node: ", "relay="] {
-            if let Some(pos) = line.find(key) {
-                let rest = &line[pos + key.len()..];
-                let hex: String = rest
-                    .chars()
-                    .take_while(|c| c.is_ascii_hexdigit())
-                    .collect();
-                if hex.len() >= 8 {
-                    return Some(hex.to_lowercase());
-                }
-            }
-        }
-        None
-    }
-    // 取行首时间戳（"2026/09/27 19:32:18.123456"）
+    // 取行首时间戳（"2026/09/12 11:43:25.707317"）-> "2026/09/12 11:43:25"
     fn line_time(line: &str) -> String {
         let t = line.trim_start();
         if t.len() >= 19 && t.as_bytes().get(4) == Some(&b'/') && t.as_bytes().get(10) == Some(&b' ') {
@@ -978,84 +968,160 @@ fn parse_p2p_peers(text: &str) -> Vec<P2pPeer> {
             String::new()
         }
     }
-    // 识别该行是否是"连接/打洞成功"事件，返回传输方式
-    fn transport_of(line: &str) -> Option<&'static str> {
-        if line.contains("TCP4 Punch ok") { return Some("TCP4"); }
-        if line.contains("TCP6 Punch ok") { return Some("TCP6"); }
-        if line.contains("UDP4 Punch ok") { return Some("UDP4"); }
-        if line.contains("TCP4 connection ok") { return Some("TCP4"); }
-        if line.contains("TCP6 connection ok") { return Some("TCP6"); }
-        if line.contains("UDP4 connection ok") { return Some("UDP4"); }
-        if line.contains("relay=") { return Some("relay"); }
-        None
+    // 名称 token：从 start 起取到空白/冒号/逗号为止（不含空格，符合 openp2p 命名）
+    fn token_from(s: &str) -> String {
+        s.trim_start()
+            .chars()
+            .take_while(|c| !c.is_whitespace() && *c != ',' && *c != ':')
+            .collect()
+    }
+    // 过滤掉不像对端名的 token（避免把 ID/端口/路径当成人名）
+    fn looks_like_peer_name(t: &str) -> bool {
+        !t.is_empty()
+            && t.len() >= 2
+            && t != "retryApp"
+            && !t.chars().all(|c| c.is_ascii_digit())
+            && !t.contains("error")
+            && !t.contains(':')
+            && !t.contains('\\')
+            && !t.contains('/')
+            && !t.starts_with("appid")
+    }
+    // 从 `... <mark><name>` 形式取名称
+    fn after<'a>(line: &'a str, mark: &str) -> Option<String> {
+        let pos = line.find(mark)?;
+        let t = token_from(&line[pos + mark.len()..]);
+        if looks_like_peer_name(&t) { Some(t) } else { None }
+    }
+    // 取 `appid:<数字>` 原文（int64，不能当 u32 截断）
+    fn appid_of(line: &str) -> Option<String> {
+        let pos = line.find("appid:")?;
+        let d: String = line[pos + 6..].chars().take_while(|c| c.is_ascii_digit()).collect();
+        if d.is_empty() { None } else { Some(d) }
     }
 
     for line in text.lines() {
-        // 先更新上下文：node/app/port 常出现在连接事件行的前面几行。
-        // 关键：**不能**在遇到 node= 时清空 cur_port —— 打洞成功行本身也带 node=，
-        // 清空会把上一行刚设置的 dstPort 一起抹掉（端口丢失）。
-        if let Some(n) = field_node(line) {
-            cur_node = Some(n);
-            cur_time = line_time(line);
+        // 失败行一律跳过：绝不能把 "peer offline" 当成一次连接
+        if line.contains("error") || line.contains("offline") {
+            continue;
         }
-        // appID 变化才重置端口上下文（端口属于某个 app 的上下文）
-        if let Some(a) = field_u64(line, "appID=") {
-            if cur_app != Some(a as u32) {
-                cur_app = Some(a as u32);
-                cur_port = None;
-            }
-        }
-        if let Some(p) = field_u64(line, "dstPort=").or_else(|| field_u64(line, "srcPort=")) {
-            cur_port = Some((p.min(u16::MAX as u64)) as u16);
-        }
-
-        let Some(transport) = transport_of(line) else { continue };
-        // 事件行自带 node 时优先用行内 node（如 relay=<hex>），否则沿用上文 node
-        let node = match field_node(line) {
-            Some(n) => n,
-            None => match cur_node.clone() {
-                Some(n) => n,
-                None => continue,
-            },
-        };
-
-        // 方向判断：openp2p 明确记录"本机主动拨号"的只有 Dial/%s dial to/Dial %s:%d OK
-        // 与 send tcp punch 这类字样；命中即为 out（我连别人），否则视为 in（别人连我）。
-        // 说明：这是尽力而为的近似 —— 拿不准时归为 in（房主视角最常见的情形）。
-        let lower = line.to_lowercase();
-        let direction = if lower.contains("dial") || lower.contains("send tcp punch") {
-            "out".to_string()
+        let ts = line_time(line);
+        let appid = appid_of(line);
+        // 传输方式提示
+        let transport = if line.contains("Relay") || line.contains("relay") {
+            Some("relay")
+        } else if line.contains("Direct") || line.contains("direct") {
+            Some("direct")
         } else {
-            "in".to_string()
+            None
         };
-        let time = line_time(line);
-        let ts = if time.is_empty() { cur_time.clone() } else { time };
 
-        let entry = map.entry(node.clone()).or_insert_with(|| P2pPeer {
-            node_id: node.clone(),
-            direction: direction.clone(),
-            transport: transport.to_string(),
-            ports: Vec::new(),
-            last_seen: ts.clone(),
-            app_id: cur_app.unwrap_or(0),
-        });
-        if transport == "relay" {
-            entry.transport = "relay".to_string();
-        }
-        if let Some(p) = cur_port {
-            if p > 0 && !entry.ports.contains(&p) {
-                entry.ports.push(p);
+        // 事件 1：addApp <id> to <peer>::0 end  -> 存在指向该对端的隧道（在线）
+        if let Some(peer) = after(line, " to ") {
+            if line.contains("addApp") {
+                let e = map.entry(peer).or_default();
+                e.online = true;
+                e.last_seen = ts;
+                if let Some(a) = &appid { e.app_id = a.clone(); }
+                if let Some(t) = transport { e.transport = t.to_string(); }
+                continue;
             }
         }
-        if !ts.is_empty() {
-            entry.last_seen = ts;
+        // 事件 2：<peer> online, retryApp
+        if line.contains(" online,") {
+            if let Some(peer) = after(line, "INFO ") {
+                let e = map.entry(peer).or_default();
+                e.online = true;
+                if !ts.is_empty() { e.last_seen = ts; }
+                continue;
+            }
         }
-        if cur_app.unwrap_or(0) > 0 {
-            entry.app_id = cur_app.unwrap_or(0);
+        // 事件 3：<id> p2ptunnel close <peer>  -> 断开
+        if line.contains("p2ptunnel close") {
+            if let Some(peer) = after(line, "p2ptunnel close ") {
+                if let Some(e) = map.get_mut(&peer) {
+                    e.online = false;
+                    if !ts.is_empty() { e.last_seen = ts; }
+                }
+                continue;
+            }
+        }
+        // 事件 4：... detect peer <peer> disconnect  -> 断开
+        if line.contains("disconnect") {
+            if let Some(peer) = after(line, "detect peer ") {
+                if let Some(e) = map.get_mut(&peer) {
+                    e.online = false;
+                    if !ts.is_empty() { e.last_seen = ts; }
+                }
+                continue;
+            }
+        }
+        // 事件 5：本机主动发起隧道成功（buildDirectTunnel ok / start p2pTunnel to / addRelayTunnel to）
+        if line.contains("buildDirectTunnel ok") || line.contains("start p2pTunnel to") || line.contains("addRelayTunnel to") {
+            let peer = after(line, "buildDirectTunnel ok. ")
+                .or_else(|| after(line, "start p2pTunnel to"))
+                .or_else(|| after(line, "addRelayTunnel to"));
+            if let Some(peer) = peer {
+                let e = map.entry(peer).or_default();
+                e.online = true;
+                e.outbound = true;
+                if !ts.is_empty() { e.last_seen = ts; }
+                if let Some(t) = transport { e.transport = t.to_string(); }
+            }
+            continue;
+        }
+        // 事件 6（房主侧）：`appid:%d tcp accept on port %d start` / udp accept ...
+        // 这是**入站接入**事件，但 openp2p 未在其中记录对端身份，只有本地端口。
+        // 因此以「本地端口 N 有玩家接入」的形式展示匿名连接 —— 至少让房主知道有人连进来了。
+        if (line.contains("tcp accept on port") || line.contains("udp accept on port"))
+            && line.contains("start")
+        {
+            let proto = if line.contains("udp accept on port") { "udp" } else { "tcp" };
+            // 取 "on port " 之后的端口号
+            let port: Option<u16> = line
+                .find("on port ")
+                .map(|p| {
+                    line[p + 8..]
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect::<String>()
+                })
+                .and_then(|d| d.parse().ok());
+            if let Some(port) = port {
+                let key = format!("local:{}:{}", proto, port);
+                let e = map.entry(key).or_default();
+                e.online = true;
+                if !ts.is_empty() { e.last_seen = ts; }
+                if e.transport.is_empty() { e.transport = "direct".to_string(); }
+                if let Some(a) = &appid { e.app_id = a.clone(); }
+                if !e.ports.contains(&port) { e.ports.push(port); }
+            }
         }
     }
 
-    let mut out: Vec<P2pPeer> = map.into_values().collect();
+    let mut out: Vec<P2pPeer> = map
+        .into_iter()
+        .filter(|(_, e)| e.online)
+        .map(|(name, e)| {
+            // 匿名接入条目（local:proto:port）显示为可读文案
+            let node_id = if let Some(rest) = name.strip_prefix("local:") {
+                let mut it = rest.splitn(2, ':');
+                let proto = it.next().unwrap_or("tcp").to_uppercase();
+                let port = it.next().unwrap_or("");
+                format!("有玩家接入（{} :{}）", proto, port)
+            } else {
+                name
+            };
+            P2pPeer {
+                node_id,
+                direction: if e.outbound { "out".to_string() } else { "in".to_string() },
+                transport: if e.transport.is_empty() { "direct".to_string() } else { e.transport },
+                ports: e.ports,
+                last_seen: e.last_seen,
+                app_id: e.app_id,
+            }
+        })
+        .collect();
     // 最近活跃的排在前面
     out.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
     out
@@ -2088,29 +2154,55 @@ mod p2p_peer_parse_tests {
     use super::*;
 
     #[test]
-    fn parses_connected_peers_from_log() {
-        let log = "2026/09/27 20:00:01.100000 1234 INFO node=d31a9b37f939caef, serverHost=api.openp2p.cn\n\
-2026/09/27 20:00:05.200000 1234 INFO appID=1, dstPort=25565\n\
-2026/09/27 20:00:05.300000 1234 INFO TCP4 Punch ok, node=d31a9b37f939caef\n\
-2026/09/27 20:00:21.000000 1234 INFO retry app relay=ab5efca9169ed2f9\n\
-2026/09/27 20:01:00.000000 1234 INFO UDP4 connection ok, node=ab5efca9169ed2f9\n";
+    fn parses_online_peers_from_real_format() {
+        // 严格按本机真实 openp2p.log 的格式构造
+        let log = "\
+2026/09/12 09:05:20.843482 15224 INFO addApp 1118230660862154015 to localhost-f2JXbjPp::0 end\n\
+2026/09/12 11:47:13.938387 25276 INFO localhost-Nssw4D4a online, retryApp\n\
+2026/09/12 11:44:20.221607 25276 INFO appid:3359568779749662663 checkDirectTunnel detect peer firefly8-IgjCkPKp disconnect, reconnecting the 1 times...\n\
+2026/09/12 11:45:28.008771 25276 INFO 510246482257444409 p2ptunnel close localhost-Nssw4D4a \n";
         let peers = parse_p2p_peers(log);
-        assert_eq!(peers.len(), 2, "应识别出 2 个对端，实际 {:?}", peers);
-        // 端口必须归属到触发连接的对端（修复前会因 node= 行清空端口而丢失）
-        let tcp = peers.iter().find(|p| p.node_id == "d31a9b37f939caef").expect("TCP4 对端");
-        assert_eq!(tcp.transport, "TCP4");
-        assert!(tcp.ports.contains(&25565), "端口应归属该对端: {:?}", tcp.ports);
-        assert_eq!(tcp.app_id, 1);
-        // relay= 里的 node 应归到自己名下，不能挂到上一个对端
-        assert!(peers.iter().any(|p| p.node_id == "ab5efca9169ed2f9" && p.transport == "relay"));
+        // addApp 的 localhost-f2JXbjPp 与 online 的 localhost-Nssw4D4a 在线；
+        // firefly8-IgjCkPKp 已 disconnect（从不在线）、localhost-Nssw4D4a 已 close
+        let ids: Vec<&str> = peers.iter().map(|p| p.node_id.as_str()).collect();
+        assert!(ids.contains(&"localhost-f2JXbjPp"), "addApp 的对端应在线: {:?}", ids);
+        assert!(!ids.contains(&"localhost-Nssw4D4a"), "已 p2ptunnel close 的对端不应在线: {:?}", ids);
+        assert!(!ids.contains(&"firefly8-IgjCkPKp"), "disconnect 的对端不应在线: {:?}", ids);
+        // 中文/特殊字符名称与 appid 原样保留
+        let f = peers.iter().find(|p| p.node_id == "localhost-f2JXbjPp").unwrap();
+        assert_eq!(f.app_id, "1118230660862154015");
     }
 
     #[test]
-    fn no_connection_events_yields_empty() {
-        // 只有启动/登录、没有任何打洞或连接事件时不得误报对端
-        let log = "2026/09/27 20:00:01 INFO openp2p start. version: 3.25.11\n\
-2026/09/27 20:00:02 INFO login ok. user=x, node=deadbeefdeadbeef\n";
+    fn failure_only_log_yields_empty() {
+        // 只有失败尝试（peer offline）时不得误报在线对端
+        let log = "\
+2026/09/12 11:43:25.707317 25276 WARN appid:1118230660862154015 buildDirectTunnel localhost-f2JXbjPp requestPeerInfo error:peer offline\n\
+2026/09/12 11:43:49.955012 25276 WARN appid:3359568779749662663 buildRelayTunnel firefly8-IgjCkPKp init error:peer offline\n";
         assert!(parse_p2p_peers(log).is_empty());
+    }
+
+    #[test]
+    fn host_side_accept_event_makes_peer_visible() {
+        // 房主侧：openp2p 只记录"在某端口有接入"，不含对端身份
+        let log = "2026/09/27 21:00:00.1 1 INFO appid:123 tcp accept on port 8211 start
+";
+        let peers = parse_p2p_peers(log);
+        assert_eq!(peers.len(), 1, "房主应能看到有接入");
+        assert_eq!(peers[0].ports, vec![8211]);
+        assert_eq!(peers[0].direction, "in");
+        assert!(peers[0].node_id.contains("8211"), "匿名接入应显示端口: {}", peers[0].node_id);
+    }
+
+    #[test]
+    fn handles_cjk_and_special_peer_names() {
+        let log = "\
+2026/09/11 20:47:36.840733 20472 INFO addApp 123 to 柠檬仔ckb的PC::0 end\n\
+2026/09/19 03:07:54.170371 8312 INFO addApp 456 to Synology920+::0 end\n";
+        let peers = parse_p2p_peers(log);
+        let ids: Vec<&str> = peers.iter().map(|p| p.node_id.as_str()).collect();
+        assert!(ids.contains(&"柠檬仔ckb的PC"), "中文名应保留: {:?}", ids);
+        assert!(ids.contains(&"Synology920+"), "特殊字符名应保留: {:?}", ids);
     }
 }
 

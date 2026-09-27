@@ -396,7 +396,7 @@
             </span>
           </div>
           <div class="flex items-center gap-2 shrink-0 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-            <span>{{ peer.transport === 'relay' ? '中继' : peer.transport }}</span>
+            <span>{{ peer.transport === 'relay' ? '中继' : '直连' }}</span>
             <span v-if="peer.ports.length">:{{ peer.ports.join('/') }}</span>
             <span v-if="peer.lastSeen" class="hidden sm:inline">{{ peer.lastSeen.slice(5, 16) }}</span>
           </div>

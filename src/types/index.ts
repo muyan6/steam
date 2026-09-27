@@ -535,14 +535,16 @@ export interface P2pRealtimeState {
 
 /** 已连接的对端（由 openp2p 日志解析，仅供展示"谁连进来了"） */
 export interface P2pPeer {
+  /** 对端名称（如 firefly8-IgjCkPKp、柠檬仔ckb的PC） */
   nodeId: string;
   /** 'in' = 别人连我；'out' = 我连别人 */
   direction: 'in' | 'out';
-  /** TCP4 / TCP6 / UDP4 / relay */
+  /** 'direct' 直连打洞 / 'relay' 中继 */
   transport: string;
   ports: number[];
   lastSeen: string;
-  appId: number;
+  /** openp2p appID（int64，字符串承载） */
+  appId: string;
 }
 
 export interface SavedP2pTunnel {
