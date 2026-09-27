@@ -678,7 +678,6 @@ export const createTauriBridge = () => {
     }> => invoke('startup_self_heal'),
     setSteamPath: async (path: string): Promise<SteamEnvironmentInfo> => invoke('set_steam_path', { path }),
     restartSteam: async (extraArgs: string[] = []): Promise<boolean> => invoke('restart_steam', { extraArgs }),
-    launchOnlineFixSteam: async (): Promise<boolean> => invoke('restart_steam', { extraArgs: ['-onlinefix'] }),
 
     // 对话框与系统操作
     selectDirectory: async (): Promise<string | null> => invoke('select_directory'),
@@ -812,7 +811,6 @@ export const createTauriBridge = () => {
     },
 
     // 联机中心（Rust 端完整实现）
-    checkGameDir: async (dirPath: string): Promise<any> => invoke('check_game_dir', { dirPath }),
     checkSpacewarInstalled: async (): Promise<any> => invoke('is_spacewar_installed'),
     installSpacewar: async (): Promise<boolean> => {
       await invoke('open_url', { url: 'steam://install/480' });
@@ -856,13 +854,7 @@ export const createTauriBridge = () => {
     repairGameSteamless: async (gamePath: string, gameName?: string): Promise<any> =>
       invoke('repair_game_steamless', { gamePath, gameName: gameName || null }),
     getSteamlessStatus: async (): Promise<any> => invoke('get_steamless_status'),
-    applySpacewarFix: async (dirPath: string, appId: number): Promise<any> =>
-      invoke('apply_spacewar_fix', { dirPath, realAppId: appId }),
-    applyGoldbergFix: async (dirPath: string, appId: number, playerName: string): Promise<any> =>
-      invoke('apply_goldberg_fix', { dirPath, appId, playerName }),
     restoreGame: async (dirPath: string): Promise<any> => invoke('restore_game', { dirPath }),
-    searchOnlineFixPatch: async (appId: number, gameName?: string): Promise<any> =>
-      invoke('search_onlinefix_patch', { appId, gameName: gameName || null }),
     installOnlineFixFromWeb: async (gamePath: string, appId: number, gameName?: string): Promise<any> => {
       // 1. Rust 搜索并下载补丁包到临时目录
       const prep = await invoke<any>('onlinefix_prepare', { gamePath, appId, gameName: gameName || null });
@@ -908,8 +900,6 @@ export const createTauriBridge = () => {
         downloadUrl: prep.downloadUrl
       };
     },
-    setOnlineFixAccount: async (username: string, password: string): Promise<any> =>
-      invoke('set_onlinefix_account', { username, password }),
 
     // 云端数据引擎：公告通知与版本更新（plugin-http 走 Rust 通道，不受 CORS 限制）
     checkNotice: async (): Promise<any> => {
@@ -1080,10 +1070,6 @@ export const createTauriBridge = () => {
       const json = await getJson(`${API}/api/sources`, 3000);
       return json?.data?.sources || [];
     },
-    syncSources: async (): Promise<any> => ({
-      success: false,
-      message: '数据源同步由服务端每日定时自动执行；如需手动同步请在管理后台操作。'
-    }),
 
     // 设备码与赞助码系统（支持离线保留与双重持久化兜底）
     getDeviceId: async (): Promise<string> => invoke('get_device_id'),
@@ -1425,9 +1411,6 @@ export const createTauriBridge = () => {
     },
     openTrainerDir: async (appId: number): Promise<boolean> => {
       return invoke('open_trainer_dir', { appId });
-    },
-    deleteTrainer: async (appId: number): Promise<boolean> => {
-      return invoke('delete_trainer', { appId });
     },
 
     getGameAchievements: async (appId: number, lang = 'schinese'): Promise<GameAchievementsData | null> => {

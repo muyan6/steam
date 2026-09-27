@@ -77,7 +77,21 @@ export function getPrimarySmallCapsule(appId: number): string {
   return getSteamCdnImageUrl(appId, 'capsule_184x69.jpg', 0);
 }
 
+// 封面解析缓存带上限：搜索/库页会遍历大量 appId，Map 若不设上限会随浏览持续增长。
+// 与 tauriBridge 的直接封面缓存（DIRECT_CACHE_MAX）保持一致的 LRU 语义：
+// 命中即刷新插入序，超限按插入序淘汰最旧。
 const realHeaderCache = new Map<number, string>();
+const REAL_HEADER_CACHE_MAX = 500;
+
+function cacheRealHeader(appId: number, url: string): void {
+  realHeaderCache.delete(appId);
+  realHeaderCache.set(appId, url);
+  while (realHeaderCache.size > REAL_HEADER_CACHE_MAX) {
+    const oldest = realHeaderCache.keys().next().value;
+    if (oldest === undefined) break;
+    realHeaderCache.delete(oldest);
+  }
+}
 
 /**
  * 动态解析 Steam 新版带 Content-Hash 的封面图
@@ -106,7 +120,7 @@ export async function resolveRealGameHeader(appId: number): Promise<string | nul
         common?.small_capsule?.english;
       if (relPath && typeof relPath === 'string') {
         const url = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appId}/${relPath}`;
-        realHeaderCache.set(appId, url);
+        cacheRealHeader(appId, url);
         return url;
       }
     }
@@ -122,7 +136,7 @@ export async function resolveRealGameHeader(appId: number): Promise<string | nul
       const json = await res.json();
       const header = json?.[String(appId)]?.data?.header_image;
       if (header && typeof header === 'string') {
-        realHeaderCache.set(appId, header);
+        cacheRealHeader(appId, header);
         return header;
       }
     }
