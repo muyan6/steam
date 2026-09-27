@@ -13,9 +13,9 @@ export interface SignedLicensePayload {
   issuedAt: number;
 }
 
-const DEFAULT_PRIVATE_KEY_PEM = `-----BEGIN PRIVATE KEY-----
-MC4CAQAwBQYDK2VwBCIEIPMnembY+F7yq+HpTfNcUCF7VpcjTdN9gHV87FK5//Ez
------END PRIVATE KEY-----`;
+// 注意：这里**不再**内置任何默认私钥常量。旧版内置的密钥与客户端固化公钥配对，
+// 等于把签发能力随源码一起公开（任何拿到源码的人都能离线伪造终身授权）。
+// 私钥只能来自部署方：磁盘上的 license_ed25519_private.pem 或 LICENSE_PRIVATE_KEY 环境变量。
 
 export class LicenseSignService {
   private privateKeyPem: string = '';
@@ -32,6 +32,7 @@ export class LicenseSignService {
     const pubRawFile = path.join(CONFIG.DATA_DIR, 'license_ed25519_public.hex');
 
     try {
+      // 1) 已部署实例：优先使用磁盘上的既有密钥对（保持既有签发/验签结果不变）
       if (fs.existsSync(keyFile) && fs.existsSync(pubFile)) {
         this.privateKeyPem = fs.readFileSync(keyFile, 'utf-8');
         this.publicKeyPem = fs.readFileSync(pubFile, 'utf-8');
@@ -46,14 +47,26 @@ export class LicenseSignService {
         return;
       }
 
-      // 默认使用与客户端公钥对齐的权威密钥（可通过环境变量 LICENSE_PRIVATE_KEY 覆盖）
-      const initialPrivate = (process.env.LICENSE_PRIVATE_KEY || DEFAULT_PRIVATE_KEY_PEM).trim();
-      const pubKeyObj = crypto.createPublicKey(initialPrivate);
+      // 2) 全新实例：只接受环境变量提供的私钥。
+      //
+      // **绝不内置任何默认私钥**。旧实现内置了一把与客户端固化公钥配对的私钥作为兜底，
+      // 这意味着任何拿到源码的人都能离线签发 isLifetime=true 的授权并让客户端验签通过
+      // —— 等于把整个卡密体系公开。私钥必须是部署方独有的秘密。
+      const envKey = String(process.env.LICENSE_PRIVATE_KEY || '').trim();
+      if (!envKey) {
+        throw new Error(
+          '缺少 LICENSE_PRIVATE_KEY：未找到已部署的密钥文件，且未提供环境变量私钥。' +
+            '请设置 LICENSE_PRIVATE_KEY 为 Ed25519 私钥 PEM（或用安装脚本生成一对新密钥）。' +
+            '出于安全考虑，服务端不再内置任何默认私钥。'
+        );
+      }
+
+      const pubKeyObj = crypto.createPublicKey(envKey);
       const publicKeyPem = pubKeyObj.export({ type: 'spki', format: 'pem' }) as string;
       const der = pubKeyObj.export({ type: 'spki', format: 'der' });
       const pubRawHex = der.subarray(-32).toString('hex');
 
-      this.privateKeyPem = initialPrivate;
+      this.privateKeyPem = envKey;
       this.publicKeyPem = publicKeyPem;
       this.publicKeyRawHex = pubRawHex;
 
@@ -70,7 +83,10 @@ export class LicenseSignService {
 
       console.log(`[LicenseSignService] 签名密钥初始化成功，公钥指纹: ${this.publicKeyRawHex}`);
     } catch (e: any) {
+      // fail-closed：密钥不可用必须让服务启动失败，而不是带着空私钥继续跑
+      // （否则所有签发都会抛错，或更糟——回退到某个默认密钥）
       console.error('[LicenseSignService] 初始化签名密钥对失败:', e.message);
+      throw e;
     }
   }
 
@@ -96,7 +112,8 @@ export class LicenseSignService {
   public sign(payload: SignedLicensePayload): { signature: string; issuedAt: number } {
     const canonical = this.buildCanonicalString(payload);
     if (!this.privateKeyPem) {
-      this.initKeys();
+      // 不再回退到任何内置密钥：无可用私钥必须显式失败
+      throw new Error('签名私钥不可用，无法签发授权（请检查 LICENSE_PRIVATE_KEY / 密钥文件）');
     }
     const signature = crypto.sign(null, Buffer.from(canonical, 'utf-8'), this.privateKeyPem);
     return {
