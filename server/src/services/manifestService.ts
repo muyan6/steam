@@ -22,6 +22,13 @@ const MAX_MANIFEST_BYTES = 512 * 1024 * 1024;
 /// 恶意/异常上游可让单次沉淀在内存里缓冲 16 × 512MB。这里与注释对齐。
 const MAX_SINGLE_MANIFEST_BYTES = 16 * 1024 * 1024;
 
+/// depotGidIndex 容量上限：该索引由公开的 code/report 接口写入，必须封顶防内存耗尽。
+/// 单 depot 保留的 gid 数亦设上限（同一 depot 的历史 gid 数量本就有界）。
+const MAX_DEPOT_GID_KEYS = 20000;
+const MAX_GIDS_PER_DEPOT = 200;
+/// .lua 解压文本总量上限：防止高压缩比条目把拼接字符串撑爆堆
+const MAX_LUA_TEXT_BYTES = 32 * 1024 * 1024;
+
 /**
  * 并发竞速下载：首个通过 accept 校验的响应胜出，并在返回前 abort 其余请求。
  *
@@ -877,15 +884,24 @@ export class ManifestService {
         if (entry.isDirectory) continue;
         const name = path.basename(entry.entryName);
         if (name.endsWith('.lua')) {
-          // .lua 条目此前**完全没有体积校验**：条目数上限 2000 拦不住单个条目的
-          // 高压缩比膨胀 —— 50MB 的上游 zip 里一个 .lua 即可解压出数十 GB 文本，
-          // readAsText 的字符串拼接会直接把 Node 堆打爆。
+          // 声明式 size 位于中央目录、可被伪造为 0，不能作为唯一防线。
+          // 先按声明值快速跳过明显超限者，再对**实际解压出的文本**做长度校验，
+          // 并对多条目累计总量封顶，防止高压缩比条目把堆撑爆。
           const luaSize = Number(entry.header?.size ?? 0);
           if (luaSize > MAX_ZIP_ENTRY_BYTES) {
             console.warn(`[ManifestService] ZIP 内 .lua 条目过大已跳过 (${luaSize} 字节): ${name}`);
             continue;
           }
-          luaContent += zip.readAsText(entry) + '\n';
+          const text = zip.readAsText(entry);
+          if (Buffer.byteLength(text, 'utf-8') > MAX_ZIP_ENTRY_BYTES) {
+            console.warn(`[ManifestService] ZIP 内 .lua 条目实际解压过大已丢弃: ${name}`);
+            continue;
+          }
+          if (Buffer.byteLength(luaContent, 'utf-8') + Buffer.byteLength(text, 'utf-8') > MAX_LUA_TEXT_BYTES) {
+            console.warn(`[ManifestService] ZIP 内 .lua 文本累计超限，停止累积: ${name}`);
+            break;
+          }
+          luaContent += text + '\n';
         } else {
           const match = name.match(/^(\d+)_(\d+)\.manifest$/i);
           if (match) {
@@ -1083,13 +1099,22 @@ export class ManifestService {
       let lua = '';
       for (const e of entries) {
         if (!e.isDirectory && e.entryName.endsWith('.lua')) {
-          // 同上：.lua 条目必须做体积校验，否则单个高压缩比条目即可撑爆内存
+          // 声明式 size 可伪造，必须再校验实际解压文本长度并累计封顶
           const luaSize = Number(e.header?.size ?? 0);
           if (luaSize > MAX_ZIP_ENTRY_BYTES) {
             console.warn(`[ManifestService] ZIP 内 .lua 条目过大已跳过 (${luaSize} 字节): ${e.entryName}`);
             continue;
           }
-          lua += zip.readAsText(e) + '\n';
+          const text = zip.readAsText(e);
+          if (Buffer.byteLength(text, 'utf-8') > MAX_ZIP_ENTRY_BYTES) {
+            console.warn(`[ManifestService] ZIP 内 .lua 条目实际解压过大已丢弃: ${e.entryName}`);
+            continue;
+          }
+          if (Buffer.byteLength(lua, 'utf-8') + Buffer.byteLength(text, 'utf-8') > MAX_LUA_TEXT_BYTES) {
+            console.warn(`[ManifestService] ZIP 内 .lua 文本累计超限，停止累积: ${e.entryName}`);
+            break;
+          }
+          lua += text + '\n';
         }
       }
       if (!lua) return null;
@@ -1107,6 +1132,10 @@ export class ManifestService {
   // 在途沉淀去重：同一 (depotId, manifestId) 并发只回源一次，
   // 防止多个请求（含 metadata 热路径）同时为该分包起多轮上游下载
   private manifestInFlight = new Map<string, Promise<string | null>>();
+  // 最近一次 ensureManifestCached 的结果性质：true=期间发生过上游网络/超时错误
+  // （属"暂时不可用"，调用方应回 503 让客户端重试），false=确属"上游没有该清单"
+  // （可回 404）。用于把二者区分开，避免客户端把瞬时故障当成"永久没有"而不再重试。
+  private lastEnsureTransient = false;
   // 本地清单缓存目录文件数上限：GID 变化会生成新文件、旧文件不会自动消失，
   // 不加约束会无限增长；超过上限时按 mtime 淘汰最旧
   private readonly MANIFEST_DIR_MAX_FILES = 20000;
@@ -1139,6 +1168,7 @@ export class ManifestService {
     if (!/^\d+$/.test(String(depotId)) || !/^\d+$/.test(String(manifestId))) {
       return null;
     }
+    this.lastEnsureTransient = false;
     const dedupKey = `${depotId}_${manifestId}`;
     const running = this.manifestInFlight.get(dedupKey);
     if (running) return running;
@@ -1226,7 +1256,10 @@ export class ManifestService {
             console.log(`[ManifestService] 成功从 SteamML R2 沉淀清单到本地: ${depotId}_${manifestId}.manifest`);
             return recheck;
           }
-        } catch {}
+        } catch (e) {
+          // 抛异常属网络/解析故障（暂时不可用），标记以便上层回 503 让客户端重试
+          this.lastEnsureTransient = true;
+        }
       }
       return null;
     };
@@ -1240,7 +1273,9 @@ export class ManifestService {
             console.log(`[ManifestService] 成功从 Remlua CloudFront 沉淀清单到本地: ${depotId}_${manifestId}.manifest`);
             return recheck;
           }
-        } catch {}
+        } catch (e) {
+          this.lastEnsureTransient = true;
+        }
       }
       return null;
     };
@@ -1250,6 +1285,14 @@ export class ManifestService {
       steamMlTask(),
       remluaTask()
     ]);
+    // 任一分支被 reject（竞速全失败/网络异常）即视为暂时不可用
+    if (
+      hubResult.status === 'rejected' ||
+      smlResult.status === 'rejected' ||
+      remluaResult.status === 'rejected'
+    ) {
+      this.lastEnsureTransient = true;
+    }
     if (hubResult.status === 'fulfilled' && hubResult.value) {
       return hubResult.value;
     }
@@ -1269,10 +1312,17 @@ export class ManifestService {
           console.log(`[ManifestService] 成功从 ManifestHub.uk 沉淀清单到本地: ${depotId}_${manifestId}.manifest`);
           return recheck2;
         }
-      } catch {}
+      } catch (e) {
+        this.lastEnsureTransient = true;
+      }
     }
 
     return null;
+  }
+
+  /** 最近一次 ensureManifestCached 是否遭遇上游暂时性故障（供控制器区分 404/503） */
+  public wasLastEnsureTransient(): boolean {
+    return this.lastEnsureTransient;
   }
 
   /**
@@ -1692,12 +1742,19 @@ export class ManifestService {
   /** 记录 depot 与 gid 的归属关系（供主动补码枚举，不影响取码路径） */
   private indexDepotGid(depotId: string, gid: string): void {
     if (!depotId || !/^\d+$/.test(depotId)) return;
+    // 容量上限：本索引由**公开**的 /manifests/code/report 直接写入，攻击者可用
+    // 海量唯一 (depot,gid) 令其无界增长（内存耗尽），并使依赖它的反向枚举扫描变慢。
+    // 超限后直接忽略新增（索引只服务"反查"这一最佳努力场景，缺失不影响主流程）。
+    if (!this.depotGidIndex.has(depotId) && this.depotGidIndex.size >= MAX_DEPOT_GID_KEYS) {
+      return;
+    }
     let set = this.depotGidIndex.get(depotId);
     if (!set) {
       set = new Set<string>();
       this.depotGidIndex.set(depotId, set);
     }
     if (!set.has(gid)) {
+      if (set.size >= MAX_GIDS_PER_DEPOT) return;
       set.add(gid);
       this.markCodeStoreDirty();
     }

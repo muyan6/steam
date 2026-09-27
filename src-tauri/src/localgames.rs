@@ -426,21 +426,29 @@ pub fn check_game_directory(dir_path: &Path) -> (bool, String, Option<u32>) {
     (false, "none".to_string(), None)
 }
 
-fn backup_api_dlls(dir_path: &Path) {
+/// 备份原版 `steam_api*.dll`。返回 Err 表示备份未成功，调用方必须中止后续覆盖 ——
+/// 静默吞掉备份失败会导致原版 DLL 被补丁覆盖后永久无法还原。
+fn backup_api_dlls(dir_path: &Path) -> Result<(), String> {
     for (main, bak) in [("steam_api64.dll", "steam_api64_o.dll"), ("steam_api.dll", "steam_api_o.dll")] {
         let src = dir_path.join(main);
         let dst = dir_path.join(bak);
         if src.exists() && !dst.exists() {
-            let _ = fs::copy(&src, &dst);
+            fs::copy(&src, &dst).map_err(|e| {
+                format!(
+                    "备份原版 {} 失败（{}）。已中止以免原文件被覆盖后无法还原，请关闭占用该文件的程序后重试",
+                    main, e
+                )
+            })?;
         }
     }
+    Ok(())
 }
 
 pub fn apply_spacewar_fix(dir_path: &Path, real_app_id: u32) -> Result<String, String> {
     if !dir_path.exists() {
         return Err("游戏目录不存在".to_string());
     }
-    backup_api_dlls(dir_path);
+    backup_api_dlls(dir_path)?;
     let ini = format!(
         "[Main]\nRealAppId={}\nFakeAppId=480\nLanguage=schinese\nOverlay=1\n\n[Steam]\nFakeSteamId=1\n",
         real_app_id
@@ -465,7 +473,7 @@ pub fn apply_goldberg_fix(dir_path: &Path, app_id: u32, player_name: &str) -> Re
         .collect();
     let safe_name = if safe_name.is_empty() { "春风渡玩家".to_string() } else { safe_name };
 
-    backup_api_dlls(dir_path);
+    backup_api_dlls(dir_path)?;
     let settings = dir_path.join("steam_settings");
     fs::create_dir_all(&settings).map_err(|e| format!("创建 steam_settings 失败: {}", e))?;
     fs::write(settings.join("steam_appid.txt"), app_id.to_string()).map_err(|e| e.to_string())?;
@@ -486,12 +494,22 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
     if !dir_path.exists() {
         return Err("游戏目录不存在".to_string());
     }
-    for (bak, main) in [("steam_api64_o.dll", "steam_api64.dll"), ("steam_api_o.dll", "steam_api.dll")] {
-        let bak_p = dir_path.join(bak);
-        if bak_p.exists() {
-            let _ = fs::copy(&bak_p, dir_path.join(main));
-            let _ = fs::remove_file(&bak_p);
+    // 记录未能还原的项。**copy 失败时绝不删除备份**：原版 DLL 只有备份这一份，
+    // 覆盖失败还删备份等于把游戏彻底弄坏（旧实现正是如此，且仍报"已完全恢复"）。
+    let mut failed: Vec<String> = Vec::new();
+
+    let restore_pair = |bak: &Path, main: &Path, failed: &mut Vec<String>| {
+        if bak.exists() {
+            match fs::copy(bak, main) {
+                Ok(_) => {
+                    let _ = fs::remove_file(bak);
+                }
+                Err(e) => failed.push(format!("{}（{}）", bak.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), e)),
+            }
         }
+    };
+    for (bak, main) in [("steam_api64_o.dll", "steam_api64.dll"), ("steam_api_o.dll", "steam_api.dll")] {
+        restore_pair(&dir_path.join(bak), &dir_path.join(main), &mut failed);
     }
     for f in ["OnlineFix.ini", "OnlineFix64.dll", "OnlineFix.url", "Launch_Online_Fix.bat"] {
         let _ = fs::remove_file(dir_path.join(f));
@@ -507,8 +525,12 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
     // Spacewar 启动前备份的 steam_appid.txt.cfd_bak 还原并清理，避免残留
     let appid_bak = dir_path.join("steam_appid.txt.cfd_bak");
     if appid_bak.exists() {
-        let _ = fs::copy(&appid_bak, &appid_file);
-        let _ = fs::remove_file(&appid_bak);
+        match fs::copy(&appid_bak, &appid_file) {
+            Ok(_) => {
+                let _ = fs::remove_file(&appid_bak);
+            }
+            Err(e) => failed.push(format!("steam_appid.txt.cfd_bak（{}）", e)),
+        }
     }
     // steam_settings：**只**在带有本工具写入的归属标记时才整体删除，
     // 保留用户自建的 Goldberg 配置。
@@ -521,37 +543,50 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
         let _ = fs::remove_dir_all(&settings_dir);
     }
 
-    // 递归搜索还原（深度 3）
-    fn walk_restore(dir: &Path, depth: usize) {
-        if depth > 3 {
-            return;
-        }
-        let Ok(entries) = fs::read_dir(dir) else { return };
-        for entry in entries.filter_map(|e| e.ok()) {
-            let p = entry.path();
-            if p.is_dir() {
-                walk_restore(&p, depth + 1);
-            } else {
-                let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                match name.as_str() {
-                    "steam_api64_o.dll" => {
-                        let _ = fs::copy(&p, dir.join("steam_api64.dll"));
+    walk_restore(dir_path, 0, &mut failed);
+
+    if failed.is_empty() {
+        Ok("已完全恢复游戏原版状态与 DLL 文件！".to_string())
+    } else {
+        Err(format!(
+            "部分文件未能还原（多因文件被占用），原备份已保留，请关闭游戏与杀毒软件后重试：{}",
+            failed.join("; ")
+        ))
+    }
+}
+
+/// 递归搜索还原（深度 3）。`failed` 收集 copy 失败的项，备份一律保留。
+fn walk_restore(dir: &Path, depth: usize, failed: &mut Vec<String>) {
+    if depth > 3 {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let p = entry.path();
+        if p.is_dir() {
+            walk_restore(&p, depth + 1, failed);
+        } else {
+            let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            match name.as_str() {
+                "steam_api64_o.dll" => match fs::copy(&p, dir.join("steam_api64.dll")) {
+                    Ok(_) => {
                         let _ = fs::remove_file(&p);
                     }
-                    "steam_api_o.dll" => {
-                        let _ = fs::copy(&p, dir.join("steam_api.dll"));
+                    Err(e) => failed.push(format!("{}（{}）", name, e)),
+                },
+                "steam_api_o.dll" => match fs::copy(&p, dir.join("steam_api.dll")) {
+                    Ok(_) => {
                         let _ = fs::remove_file(&p);
                     }
-                    "OnlineFix.ini" | "OnlineFix64.dll" | "OnlineFix.url" => {
-                        let _ = fs::remove_file(&p);
-                    }
-                    _ => {}
+                    Err(e) => failed.push(format!("{}（{}）", name, e)),
+                },
+                "OnlineFix.ini" | "OnlineFix64.dll" | "OnlineFix.url" => {
+                    let _ = fs::remove_file(&p);
                 }
+                _ => {}
             }
         }
     }
-    walk_restore(dir_path, 0);
-    Ok("已完全恢复游戏原版状态与 DLL 文件！".to_string())
 }
 
 pub fn is_spacewar_installed(steam_path: &Path) -> (bool, Option<String>) {
@@ -1017,6 +1052,16 @@ pub fn launch_game_online(
     }
 
     let mut target = primary_exe.clone().map(PathBuf::from);
+    // 前端传入的 primary_exe 必须落在游戏目录内：否则形如
+    // primaryExe="C:\Windows\System32\...\任意.exe" 可借本命令拉起任意本地程序。
+    // 归一化后做前缀包含判断；不在目录内则忽略该值，回退到目录内自动探测。
+    if let Some(t) = target.as_ref() {
+        let norm_gp = crate::onlinefix::canonicalize_normalized(&gp);
+        let norm_t = crate::onlinefix::canonicalize_normalized(t);
+        if !crate::onlinefix::starts_with_ci(&norm_t, &norm_gp) {
+            target = None;
+        }
+    }
     if target.as_ref().map(|t| !t.exists()).unwrap_or(true) {
         let exes = find_executable_files(&gp, 2);
         target = exes.first().map(PathBuf::from);

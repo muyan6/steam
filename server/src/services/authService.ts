@@ -31,6 +31,27 @@ export class AuthService {
     return crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex');
   }
 
+  /**
+   * 异步版 PBKDF2。登录路径**必须**用它而非同步 `hashPassword`：210000 次迭代的
+   * 同步哈希会独占事件循环数百毫秒，任何人不带正确密码连打登录接口即可让全站停摆
+   * （DoS）。改为 libuv 线程池中的异步实现后不再阻塞事件循环。
+   */
+  private hashPasswordAsync(
+    password: string,
+    salt: string,
+    iterations: number = AuthService.PBKDF2_ITERATIONS
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      crypto.pbkdf2(password, salt, iterations, 64, 'sha512', (err, derived) => {
+        if (err) reject(err);
+        else resolve(derived.toString('hex'));
+      });
+    });
+  }
+
+  /** 失败计数表的容量上限：防止轮换源 IP 使其无界增长、拖慢全表清理扫描 */
+  private static readonly MAX_LOGIN_ATTEMPT_KEYS = 5000;
+
   /** 凭据存储迭代次数：历史记录无字段视为旧版 10000 */
   private storedIterations(creds: AdminCredentials): number {
     return creds.pbkdf2Iterations && creds.pbkdf2Iterations > 0
@@ -197,10 +218,12 @@ export class AuthService {
         return null; // 过期或非法
       }
 
-      // tokenVersion 吊销：修改密码后旧 token 一律失效
+      // tokenVersion 吊销：修改密码后旧 token 一律失效。
+      // 必须用严格相等而非 `<` —— 凭据文件回滚/被替换后 tokenVersion 会变小，
+      // 用 `<` 会让已吊销的旧 token 重新生效。
       const creds = this.getCredentials();
       const currentVersion = (payload as any).tv ?? 1;
-      if (currentVersion < (creds.tokenVersion ?? 1)) {
+      if (currentVersion !== (creds.tokenVersion ?? 1)) {
         return null;
       }
 
@@ -222,12 +245,12 @@ export class AuthService {
     return clean;
   }
 
-  public login(
+  public async login(
     username: string,
     pass: string,
     ip: string = '127.0.0.1',
     userAgent: string = ''
-  ): { success: boolean; message: string; token?: string; user?: AdminUser } {
+  ): Promise<{ success: boolean; message: string; token?: string; user?: AdminUser }> {
     const now = Date.now();
     const cleanUser = (username || '').trim();
     const cleanPass = (pass || '').trim();
@@ -240,6 +263,17 @@ export class AuthService {
       if (val.lockedUntil !== 0 && val.lockedUntil <= now) {
         this.loginAttempts.delete(key);
       } else if (val.lockedUntil === 0 && windowExpired) {
+        this.loginAttempts.delete(key);
+      }
+    }
+    // 容量上限：攻击者轮换源 IP 可让该表无界增长，并使上方全表清理扫描越来越慢。
+    // 超过上限时优先淘汰"未锁定且最早"的记录（锁定中的条目保留以继续生效）。
+    if (this.loginAttempts.size > AuthService.MAX_LOGIN_ATTEMPT_KEYS) {
+      const unlocked = [...this.loginAttempts.entries()]
+        .filter(([, v]) => v.lockedUntil === 0)
+        .sort((a, b) => a[1].lastAttemptAt - b[1].lastAttemptAt);
+      for (const [key] of unlocked) {
+        if (this.loginAttempts.size <= AuthService.MAX_LOGIN_ATTEMPT_KEYS) break;
         this.loginAttempts.delete(key);
       }
     }
@@ -260,18 +294,25 @@ export class AuthService {
       };
     }
 
-    // 安全策略：只接受 PBKDF2 哈希匹配，不存在默认密码/主密钥等任何回退通道
+    // 安全策略：只接受 PBKDF2 哈希匹配，不存在默认密码/主密钥等任何回退通道。
+    // **先比用户名再算哈希**：用户名不匹配时立刻返回同样的通用错误，
+    // 不做 210000 次 PBKDF2 —— 否则任何字符串（无论对错）都能触发一次昂贵哈希，
+    // 未认证的登录接口就成了免费的 CPU 放大器。用户名本身不是机密（仅一个管理员账号），
+    // 因此这里不额外做等时假哈希。
     const creds = this.getCredentials();
     const iterations = this.storedIterations(creds);
-    const computedHash = this.hashPassword(cleanPass, creds.salt, iterations);
+    const isUserValid = cleanUser.toLowerCase() === creds.username.toLowerCase();
+    if (!isUserValid) {
+      this.noteFailedAttempt(lockKey, now, cleanUser, ip, userAgent);
+      return { success: false, message: '账号或密码错误' };
+    }
+    const computedHash = await this.hashPasswordAsync(cleanPass, creds.salt, iterations);
     const hashBuf = Buffer.from(computedHash);
     const storedBuf = Buffer.from(creds.passwordHash);
     const isPassValid =
       hashBuf.length === storedBuf.length && crypto.timingSafeEqual(hashBuf, storedBuf);
-    const isUserValid =
-      cleanUser.toLowerCase() === creds.username.toLowerCase();
 
-    if (isUserValid && isPassValid) {
+    if (isPassValid) {
       this.loginAttempts.delete(lockKey);
 
       const loginAt = new Date().toISOString();
@@ -326,30 +367,43 @@ export class AuthService {
       };
     }
 
-    // 记录失败尝试
+    // 密码错误：记入失败计数并按需锁定
+    const lockMsg = this.noteFailedAttempt(lockKey, now, cleanUser, ip, userAgent);
+    return {
+      success: false,
+      message: `账号或密码错误${lockMsg}`
+    };
+  }
+
+  /**
+   * 记录一次登录失败并更新该 IP 的锁定状态，返回需要附加到错误文案的锁定提示。
+   * 失败计数与锁定逻辑集中在此，供"用户名不符"与"密码错误"两条路径共用。
+   */
+  private noteFailedAttempt(
+    lockKey: string,
+    now: number,
+    cleanUser: string,
+    ip: string,
+    userAgent: string
+  ): string {
+    const attempt = this.loginAttempts.get(lockKey);
     const currentCount = (attempt ? attempt.count : 0) + 1;
     let lockedUntil = 0;
     let lockMsg = '';
-
     if (currentCount >= CONFIG.MAX_LOGIN_ATTEMPTS) {
       lockedUntil = now + CONFIG.LOCKOUT_TIME_MS;
       lockMsg = ' (连续错误已达上限，IP 将被锁定 15 分钟)';
     }
-
     this.loginAttempts.set(lockKey, { count: currentCount, lockedUntil, lastAttemptAt: now });
     this.recordAuditLog({
       action: 'LOGIN_FAILED',
       operator: cleanUser,
       ip,
       userAgent,
-      details: `密码错误 (尝试次数: ${currentCount}/${CONFIG.MAX_LOGIN_ATTEMPTS})${lockMsg}`,
+      details: `登录失败 (尝试次数: ${currentCount}/${CONFIG.MAX_LOGIN_ATTEMPTS})${lockMsg}`,
       success: false
     });
-
-    return {
-      success: false,
-      message: `账号或密码错误${lockMsg}`
-    };
+    return lockMsg;
   }
 
   public changePassword(

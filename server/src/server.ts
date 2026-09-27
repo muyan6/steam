@@ -52,6 +52,16 @@ app.use((req, _res, next) => {
 
 // 基础中间件
 app.disable('x-powered-by');
+// 安全响应头（不引入 helmet 依赖，手工设置等价的最小集合）。
+// 关键点：/admin 含"一键删除卡密/设备"等破坏性操作，且凭据来自 localStorage，
+// 必须禁止被第三方页面用 iframe 嵌套（点击劫持），并统一 nosniff 防 MIME 嗅探。
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+  next();
+});
 const corsOrigin = CONFIG.CORS_ORIGIN === '' ? false : CONFIG.CORS_ORIGIN;
 if (corsOrigin) {
   app.use(cors({ origin: corsOrigin as any }));

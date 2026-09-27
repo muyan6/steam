@@ -393,11 +393,23 @@ fn read_current_config() -> P2pFullConfig {
     }
 }
 
+/// config.json 读改写的互斥锁：connect/remove 隧道都是"读配置→改→写回"，
+/// 并发调用会交错丢条目。锁保护整段读改写，配合 save_config 的原子写即可。
+static CONFIG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn save_config(cfg: &P2pFullConfig) -> Result<(), String> {
     let dir = get_p2p_dir();
     let config_file = dir.join("config.json");
     let json_str = serde_json::to_string_pretty(cfg).map_err(|e| format!("配置序列化失败: {}", e))?;
-    fs::write(&config_file, json_str).map_err(|e| format!("写入配置文件失败: {}", e))
+    // 原子写：写临时文件再 rename。直接 fs::write 若在中途崩溃/被杀软打断，
+    // 会留下截断的 JSON —— 而 read_current_config 解析失败会静默回退到空配置，
+    // 用户保存的全部隧道就凭空消失了。
+    let tmp = dir.join("config.json.tmp");
+    fs::write(&tmp, &json_str).map_err(|e| format!("写入配置文件失败: {}", e))?;
+    fs::rename(&tmp, &config_file).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("提交配置文件失败: {}", e)
+    })
 }
 
 #[cfg(windows)]
@@ -692,6 +704,8 @@ pub fn start_p2p_daemon() -> Result<bool, String> {
 
 /// 建立对端隧道（客机连接房主）
 pub fn connect_tunnel(payload: P2pTunnelPayload) -> Result<P2pTunnelView, String> {
+    // 锁住整段"读配置→改→写回"：并发 connect/remove 交错会导致隧道条目丢失
+    let _guard = CONFIG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut cfg = read_current_config();
     let clean_peer = payload.peer_uid.trim().to_lowercase();
     if clean_peer.is_empty() {
@@ -736,6 +750,7 @@ pub fn connect_tunnel(payload: P2pTunnelPayload) -> Result<P2pTunnelView, String
 
 /// 断开指定的隧道
 pub fn remove_tunnel(local_port: u16) -> Result<bool, String> {
+    let _guard = CONFIG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut cfg = read_current_config();
     let len_before = cfg.apps.len();
     cfg.apps.retain(|a| a.src_port != local_port);
@@ -775,6 +790,31 @@ pub fn get_status() -> P2pStatusInfo {
     }
 }
 
+/// 读取日志文件末尾至多 `max_bytes` 字节并解码为字符串。
+///
+/// 用于 3 秒级轮询的打洞状态解析：日志可达数百 MB，绝不能整份读入。
+/// 从末尾往前读，从第一个换行后开始切分（丢弃可能被截断的首行残留）。
+/// 返回 `None` 表示文件不存在或读取失败。
+fn read_log_tail(path: &std::path::Path, max_bytes: u64) -> Option<String> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(max_bytes);
+    if start > 0 {
+        file.seek(SeekFrom::Start(start)).ok()?;
+    }
+    let mut buf = Vec::with_capacity((len - start).min(max_bytes) as usize);
+    file.read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    // 非从头读取时，首个换行之前很可能是被截断的半行，丢掉它
+    if start > 0 {
+        if let Some(pos) = text.find('\n') {
+            return Some(text[pos + 1..].to_string());
+        }
+    }
+    Some(text)
+}
+
 /// 获取当前实时连接与打洞状态（分析 openp2p 日志）
 pub fn get_realtime_state() -> P2pRealtimeState {
     let running = is_p2p_running();
@@ -798,9 +838,13 @@ pub fn get_realtime_state() -> P2pRealtimeState {
         };
     }
 
-    let content = match fs::read_to_string(&log_file) {
-        Ok(c) => c,
-        Err(_) => {
+    // 只读日志尾部：本函数每 3 秒被前端轮询一次（见 P2pNetworkingPanel 的 setInterval），
+    // 而 openp2p.log 无轮转、长时间运行可达数百 MB。整份 read_to_string 会让每次轮询
+    // 都做大分配并卡住界面。这里 seek 到末尾前 64KB 再读，最坏情况下首个残缺行也够用
+    // （只取最后 30 行做关键字匹配）。
+    let content = match read_log_tail(&log_file, 64 * 1024) {
+        Some(c) => c,
+        None => {
             return P2pRealtimeState {
                 stage: "starting".to_string(),
                 nat_type: "检测中".to_string(),
@@ -1791,8 +1835,29 @@ fn patch_manifest_to_as_invoker(bytes: &mut [u8]) {
 
 /// 在线同步最新 OpenP2P 联机引擎
 pub fn sync_openp2p_latest() -> Result<String, String> {
+    // 记录同步前隧道是否在跑：升级必须停引擎（否则 exe 被占用无法改名），
+    // 但同步结束后必须**恢复原运行状态**，否则用户正在联机时点一下"同步"
+    // 就会把隧道静默杀死、对端掉线，界面还显示"未启动"。
+    let was_running = is_p2p_running();
     let _ = stop_p2p();
 
+    let result = sync_openp2p_latest_inner();
+
+    // 无论成功失败，只要同步前在运行就尝试恢复（失败也只提示一句，不掩盖主结果）
+    if was_running {
+        if let Err(e) = start_p2p_daemon() {
+            let suffix = format!("（注意：同步后自动重启引擎失败，请手动重新连接：{}）", e);
+            return Ok(match result {
+                Ok(msg) => format!("{}{}", msg, suffix),
+                Err(err) => format!("{} {}", err, suffix),
+            });
+        }
+    }
+
+    result
+}
+
+fn sync_openp2p_latest_inner() -> Result<String, String> {
     let (tag, _published, asset, digest) = fetch_latest_openp2p_release()?;
     let current_tag = read_deployed_openp2p_tag();
     let p2p_dir = get_p2p_dir();

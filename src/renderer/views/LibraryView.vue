@@ -268,24 +268,26 @@
           <!-- 操作按钮条 (统一规范化对齐排布，2字简练杜绝截断) -->
           <div class="pt-3 border-t border-white/10 space-y-2">
             <!-- 第 1 行：主要运行动作 (下载、运行、检测DLC，均分 1/3) -->
+            <!-- steam:// 必须经 openExternalUrl 交给系统：WebView2 不会处理裸 href 的
+                 steam: 协议，直接写 href 点击无反应。 -->
             <div class="grid grid-cols-3 gap-2">
-              <a
-                :href="`steam://install/${game.appId}`"
+              <button
+                @click="openSteamProtocol(`steam://install/${game.appId}`)"
                 title="在 Steam 客户端直接触发下载"
-                class="h-8 px-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-sm active:scale-98"
+                class="h-8 px-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-sm active:scale-98 cursor-pointer"
               >
                 <Download class="w-3.5 h-3.5" />
                 <span>下载</span>
-              </a>
+              </button>
 
-              <a
-                :href="`steam://rungameid/${game.appId}`"
+              <button
+                @click="openSteamProtocol(`steam://rungameid/${game.appId}`)"
                 title="在 Steam 客户端启动游戏"
-                class="h-8 px-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-98"
+                class="h-8 px-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 active:scale-98 cursor-pointer"
               >
                 <Play class="w-3.5 h-3.5 fill-current" />
                 <span>运行</span>
-              </a>
+              </button>
 
               <!-- 检测 DLC 增量更新 -->
               <button
@@ -476,6 +478,16 @@ const onToggleGameStatus = async (appId: number, targetDisabled: boolean) => {
     },
     (msg, type) => emit('notify', msg, type || 'info')
   );
+};
+
+// 用系统默认程序打开 steam:// 协议：WebView2 不会把该协议交给操作系统，
+// 必须经 Rust 的 open_url 落地，否则"下载/运行"按钮点击无反应。
+const openSteamProtocol = async (url: string) => {
+  try {
+    await window.electronAPI.openExternalUrl(url);
+  } catch (e: any) {
+    emit('notify', `无法唤起 Steam，请确认已安装 Steam 客户端（${formatIpcError(e)}）`, 'error');
+  }
 };
 
 const loadLibrary = async () => {

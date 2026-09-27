@@ -57,13 +57,19 @@ function requireSecret(name: string): string {
  * 解析 TRUST_PROXY 环境变量，供 app.set('trust proxy', ...) 使用。
  * 未配置时为 false（直连部署，按 socket 地址取 IP）；
  * 反向代理部署必须配置，否则限流按反代 IP 计数（全站共享额度）且审计 IP 失真。
- * 支持值：true / 1（信任一级）、纯数字（信任 N 级）、loopback 或具体 IP/CIDR。
+ * 支持值：1 或 true（信任一级代理，等价于数字 1）、纯数字（信任 N 级）、
+ * loopback 或具体 IP/CIDR。
+ *
+ * 注意：**绝不能**返回布尔 true —— 那表示"信任任意层代理"，任何客户端都能用
+ * 伪造的 X-Forwarded-For 拿到全新的限流桶与配额额度，登录爆破与免费配额防刷同时失效。
+ * 启动提示里建议的 TRUST_PROXY=1 必须映射为数字 1（只信任一级），而非 true。
  */
 function resolveTrustProxy(): boolean | number | string {
   const raw = process.env.TRUST_PROXY;
   if (!raw || !raw.trim()) return false;
-  const v = raw.trim();
-  if (v === 'true' || v === '1') return true;
+  const v = raw.trim().toLowerCase();
+  // 'true' 与 '1' 都按最常见的单级反代处理；要信任多级请显式写数字 2/3/...
+  if (v === 'true' || v === '1') return 1;
   if (/^\d+$/.test(v)) return parseInt(v, 10);
   return v;
 }

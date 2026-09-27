@@ -1,5 +1,9 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
+import { pipeWithByteCap } from '../utils/streamCap.js';
+
+/// OST 内核中转体积上限：Release 包约 28MB，512MB 是充裕上限
+const MAX_OST_PROXY_BYTES = 512 * 1024 * 1024;
 
 // OST 内核中转：客户端网络可能完全无法访问 GitHub（检测与下载双双失败），
 // 服务器侧可达 GitHub，作为最终兜底回退。仅中转固定仓库的 release，
@@ -54,16 +58,8 @@ export const downloadOstAsset = async (req: Request, res: Response) => {
     });
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${asset}"`);
-    // 上游流错误与客户端中途断开都必须显式销毁，防止套接字/上游连接泄漏
-    upstream.data.on('error', (err: any) => {
-      console.error('[OstController] 上游下载流出错:', err?.message || err);
-      res.destroy();
-    });
-    res.on('close', () => {
-      // 客户端中止下载时取消上游流，避免后台继续白耗带宽
-      upstream.data.destroy();
-    });
-    upstream.data.pipe(res);
+    // 带体积上限的流式转发，避免上游异常时本服务变成无界代理
+    pipeWithByteCap(upstream.data, res, MAX_OST_PROXY_BYTES);
   } catch (e: any) {
     console.error('[OstController] 中转下载失败:', e.message);
     if (!res.headersSent) {

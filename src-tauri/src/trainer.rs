@@ -13,6 +13,34 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// 下载体积上限：与清单/资源下载保持同一量级，防止恶意/异常上游用超大响应打爆内存。
+/// 修改器正常体积为几 MB~几十 MB，256MB 有充足余量。
+const MAX_TRAINER_DOWNLOAD_BYTES: u64 = 256 * 1024 * 1024;
+
+/// 把前端传来的文件名净化成单层安全文件名：
+/// 只取最后一段路径分量、剔除 `..`、过滤 Windows 非法字符，非法时回退默认名。
+fn sanitize_file_name(name: &str) -> String {
+    // 取最后一个路径分量（同时处理 / 与 \），丢弃盘符/目录部分
+    let base = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(name)
+        .trim();
+    let cleaned: String = base
+        .chars()
+        .filter(|c| {
+            !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+                && !c.is_control()
+        })
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').trim();
+    if cleaned.is_empty() || cleaned == ".." {
+        "Trainer".to_string()
+    } else {
+        cleaned.chars().take(120).collect()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrainerStatus {
@@ -266,8 +294,11 @@ pub async fn download_trainer(
         return Err(format!("下载修改器失败，HTTP 状态码: {}", resp.status()));
     }
 
-    let bytes = resp.bytes().await
-        .map_err(|e| format!("接收修改器数据流失败: {}", e))?;
+    // 流式限量读取：download_url 来自前端且无域名白名单，绝不能用 resp.bytes()
+    // 无限缓冲 —— 恶意上游返回数十 GB 会直接 OOM。超过上限即中止并报错。
+    let bytes = crate::manifests::read_body_limited(resp, MAX_TRAINER_DOWNLOAD_BYTES)
+        .await
+        .map_err(|e| format!("接收修改器数据流失败或超出体积上限: {}", e))?;
 
     if bytes.len() < 100 {
         return Err("下载内容异常，文件体积过小".to_string());
@@ -322,15 +353,16 @@ pub async fn download_trainer(
             return Err("修改器压缩包内未找到可执行文件 (.exe)".to_string());
         }
     } else if is_exe {
-        // 直接为 Exe 可执行程序
-        let safe_name = filename
-            .unwrap_or_else(|| format!("Trainer_{}.exe", app_id));
-        let out_name = if safe_name.ends_with(".exe") {
+        // 直接为 Exe 可执行程序。
+        // 文件名来自前端（`${game.name} Trainer.exe`），必须净化：`Path::join` 在参数为
+        // 绝对路径时会**替换整个路径**，`..` 也未过滤 —— 否则可写到任意目录（如启动项）。
+        let safe_name = sanitize_file_name(&filename.unwrap_or_else(|| format!("Trainer_{}.exe", app_id)));
+        let out_name = if safe_name.to_ascii_lowercase().ends_with(".exe") {
             safe_name
         } else {
             format!("{}.exe", safe_name)
         };
-        let out_path = dir.join(out_name);
+        let out_path = dir.join(&out_name);
         fs::write(&out_path, &bytes)
             .map_err(|e| format!("写入修改器文件失败: {}", e))?;
     } else {

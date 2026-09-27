@@ -170,8 +170,18 @@ export class SyncService {
           });
 
           if (resp.data && typeof resp.data === 'object' && !Array.isArray(resp.data)) {
-            data = resp.data;
-            break;
+            // 拒绝把上游的"错误信封"当成有效密钥库：GitHub 限流/404 会返回
+            // {"message":"Not Found"} 这类对象，它会被 cleanKeys 全过滤成空、
+            // 却仍让 recordSyncSuccess 报"同步成功"。要求至少含一条疑似密钥字段。
+            const obj = resp.data as Record<string, unknown>;
+            const looksLikeKeys = Object.values(obj).some(
+              (v) => typeof v === 'string' && v.length >= 32 && /^[0-9a-fA-F]+$/.test(v)
+            );
+            if (looksLikeKeys) {
+              data = resp.data;
+              break;
+            }
+            console.warn(`[SyncService] 备用镜像 ${url} 返回内容不是有效密钥库（疑似错误信封），继续尝试下一个源`);
           }
         } catch (e: any) {
           console.warn(`[SyncService] 备用镜像 ${url} 同步失败: ${e.message}`);

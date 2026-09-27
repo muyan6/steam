@@ -1,17 +1,20 @@
 import { Request, Response } from 'express';
 import { authService } from '../services/authService.js';
 
-export const login = (req: Request, res: Response) => {
+export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
-    const ip = req.socket.remoteAddress || '127.0.0.1';
+    // 审计/锁定统一用 req.ip（受 TRUST_PROXY 控制），与限流器口径一致；
+    // 直接用 socket 地址在反向代理部署下会全是 127.0.0.1，审计失真、锁定形同虚设。
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
     const userAgent = req.headers['user-agent'] || '';
 
     if (!username || !password) {
       return res.status(400).json({ success: false, message: '请输入管理员账号与密码' });
     }
 
-    const result = authService.login(username.trim(), password, ip, userAgent);
+    // login 内部用异步 PBKDF2，必须 await；同步哈希会阻塞事件循环造成 DoS
+    const result = await authService.login(username.trim(), password, ip, userAgent);
     if (!result.success) {
       return res.status(401).json(result);
     }

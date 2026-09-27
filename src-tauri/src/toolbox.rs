@@ -312,7 +312,16 @@ pub async fn fix_cloud_redirect(steam_path: &Path) -> ToolboxActionResult {
     };
     let cli_path = tools_dir.join("CloudRedirectCLI.exe");
 
-    let mut download_ok = cli_path.exists() && fs::metadata(&cli_path).map(|m| m.len() > 10000).unwrap_or(false);
+    // 校验既有的 CloudRedirectCLI 确为 Windows PE 可执行文件：仅凭"体积 > 10KB"
+    // 会把镜像返回的 HTML 错误页误当成 CLI 并直接执行。MZ 魔数是最低限度的真实性校验。
+    let looks_like_pe = |p: &std::path::Path| -> bool {
+        match fs::read(p) {
+            Ok(b) => b.len() > 10000 && b.starts_with(b"MZ"),
+            Err(_) => false,
+        }
+    };
+
+    let mut download_ok = cli_path.exists() && looks_like_pe(&cli_path);
     if !download_ok {
         let download_urls = [
             "https://ghfast.top/https://github.com/Selectively11/CloudRedirect/releases/latest/download/CloudRedirectCLI.exe",
@@ -324,7 +333,8 @@ pub async fn fix_cloud_redirect(steam_path: &Path) -> ToolboxActionResult {
                 if resp.status().is_success() {
                     // 体积上限 50MB，防止超大响应/错误页耗尽内存
                     if let Ok(bytes) = crate::manifests::read_body_limited(resp, crate::manifests::MAX_ASSET_DOWNLOAD_BYTES).await {
-                        if bytes.len() > 10000 {
+                        // 必须确为 PE 可执行文件（MZ 头）才落盘执行，杜绝把错误页/劫持内容当 CLI
+                        if bytes.len() > 10000 && bytes.starts_with(b"MZ") {
                             if fs::write(&cli_path, &bytes).is_ok() {
                                 download_ok = true;
                                 break;

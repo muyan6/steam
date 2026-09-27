@@ -1105,20 +1105,35 @@ let licenseTimer: ReturnType<typeof setInterval> | null = null;
 let versionCheckTimer: ReturnType<typeof setInterval> | null = null;
 let startupHealTimer: ReturnType<typeof setTimeout> | null = null;
 
+// 窗口最小化/切到后台时跳过轮询：这些定时器常驻，最小化时继续打 IPC/网络纯属浪费
+// （且会周期性唤醒进程）。恢复可见后立即补跑一次，避免状态长时间停留在旧值。
+const pollIfVisible = (fn: () => void) => {
+  if (typeof document !== 'undefined' && document.hidden) return;
+  fn();
+};
+const onVisibilityChange = () => {
+  if (typeof document !== 'undefined' && !document.hidden) {
+    pollIfVisible(fetchSteamInfo);
+    pollIfVisible(() => void loadLicenseInfo(false));
+    pollIfVisible(checkNoticeAndVersion);
+  }
+};
+
 onMounted(() => {
   initApp();
   applyUiScale();
   syncMaximizedState();
   window.addEventListener('resize', applyUiScale);
   window.addEventListener('resize', syncMaximizedState);
+  document.addEventListener('visibilitychange', onVisibilityChange);
   // 启动环境自愈：延后 2.5s 在后台执行，绝不阻塞首屏渲染与启动速度；
   // 检测本身只做存在性检查 + 小文件/文件头读取，开销极低
   startupHealTimer = setTimeout(runStartupSelfHeal, 2500);
   // 15s 轮询一次 Steam 环境信息即可，5s 过于频繁（纯状态展示无实时性要求）
-  steamInfoTimer = setInterval(fetchSteamInfo, 15000);
-  licenseTimer = setInterval(() => loadLicenseInfo(false), 30000);
+  steamInfoTimer = setInterval(() => pollIfVisible(fetchSteamInfo), 15000);
+  licenseTimer = setInterval(() => pollIfVisible(() => void loadLicenseInfo(false)), 30000);
   // 3 分钟轻量静默轮询云端公告与新版本更新，确保长时间开启的客户端能实时接收发布与推送
-  versionCheckTimer = setInterval(checkNoticeAndVersion, 3 * 60 * 1000);
+  versionCheckTimer = setInterval(() => pollIfVisible(checkNoticeAndVersion), 3 * 60 * 1000);
   // 每日一次的 OST 内核更新静默检测：有新版才轻提示，检测失败不打扰
   const OST_CHECK_KEY = 'ost_last_sync_check';
   const lastCheck = Number(localStorage.getItem(OST_CHECK_KEY) || 0);
@@ -1141,6 +1156,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', applyUiScale);
   window.removeEventListener('resize', syncMaximizedState);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
   if (steamInfoTimer) { clearInterval(steamInfoTimer); steamInfoTimer = null; }
   if (licenseTimer) { clearInterval(licenseTimer); licenseTimer = null; }
   if (versionCheckTimer) { clearInterval(versionCheckTimer); versionCheckTimer = null; }

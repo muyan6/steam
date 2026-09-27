@@ -111,6 +111,9 @@ pub fn find_sam_game_in_dir(dir: &Path) -> Option<PathBuf> {
 
 const EMBEDDED_SAM_ZIP: &[u8] = include_bytes!("../resources/sam/SAM.zip");
 
+/// SAM 下载体积上限：SAM 包仅约几 MB，256MB 是充裕上限，防止异常上游打爆内存
+const MAX_SAM_DOWNLOAD_BYTES: u64 = 256 * 1024 * 1024;
+
 /// SAM 可用的最小文件集：主程序 + 原生 API DLL。
 /// 缺任何一项都属于「解压不完整」，绝不能对外报「已就绪」。
 const SAM_REQUIRED_FILES: [&str; 2] = ["SAM.Game.exe", "SAM.API.dll"];
@@ -269,9 +272,10 @@ pub async fn download_sam(download_url: Option<String>) -> Result<SamStatus, Str
     for u in &urls {
         match client.get(u).header("User-Agent", "chunfengdu-client").send().await {
             Ok(resp) if resp.status().is_success() => {
-                if let Ok(b) = resp.bytes().await {
+                // 限量读取，避免异常/恶意上游用超大响应打爆内存
+                if let Ok(b) = crate::manifests::read_body_limited(resp, MAX_SAM_DOWNLOAD_BYTES).await {
                     if b.len() >= 1000 {
-                        bytes = b.to_vec();
+                        bytes = b;
                         break;
                     }
                 }
@@ -563,6 +567,10 @@ pub async fn fetch_game_achievements(app_id: u32, lang: Option<String>) -> Resul
 
     // 1. Steam Community 官方社区页面抓取（包含中文标题、描述、图标与达成率）
     let community_url = format!("https://steamcommunity.com/stats/{}/achievements/?l={}", app_id, lang_str);
+    // 记录是否至少有一次请求真正拿到了成功响应：用于区分"该游戏确实没有成就"
+    // 与"网络全挂/被墙"。旧实现两条链路都失败也返回 Ok(count:0)，前端会把断网渲染成
+    // "0 个成就"，用户无从判断是游戏无成就还是网络问题。
+    let mut any_source_ok = false;
     if let Ok(resp) = client.get(&community_url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
@@ -570,6 +578,7 @@ pub async fn fetch_game_achievements(app_id: u32, lang: Option<String>) -> Resul
         .send().await
     {
         if resp.status().is_success() {
+            any_source_ok = true;
             if let Ok(html) = resp.text().await {
                 if html.contains("achieveRow") {
                     let mut items = Vec::new();
@@ -612,6 +621,7 @@ pub async fn fetch_game_achievements(app_id: u32, lang: Option<String>) -> Resul
     let stats_url = format!("https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002/?gameid={}", app_id);
     if let Ok(resp) = client.get(&stats_url).send().await {
         if resp.status().is_success() {
+            any_source_ok = true;
             if let Ok(json) = resp.json::<serde_json::Value>().await {
                 if let Some(list) = json.pointer("/achievementpercentages/achievements").and_then(|v| v.as_array()) {
                     let mut items = Vec::new();
@@ -641,6 +651,11 @@ pub async fn fetch_game_achievements(app_id: u32, lang: Option<String>) -> Resul
                 }
             }
         }
+    }
+
+    // 两条链路都未拿到成功响应：这是网络/封锁问题，不是"无成就"，必须显式报错
+    if !any_source_ok {
+        return Err("无法连接 Steam 成就服务（网络受限或被拦截），请稍后重试或检查网络代理".to_string());
     }
 
     Ok(GameAchievementsData {

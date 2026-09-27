@@ -75,6 +75,24 @@ export class ToolboxService {
   constructor() {
     this.logFilePath = path.join(CONFIG.DATA_DIR, 'toolbox_repair_logs.json');
     this.ensureDataFiles();
+    // 退出前同步落盘：修复日志为 3 秒防抖写，而 flushLogs 是异步的 ——
+    // 进程若在 await 完成前退出就会丢失这批日志，故退出走同步写。
+    const flushOnExit = () => this.flushLogsNow();
+    process.once('beforeExit', flushOnExit);
+    process.once('SIGINT', () => { flushOnExit(); process.exit(0); });
+    process.once('SIGTERM', () => { flushOnExit(); process.exit(0); });
+  }
+
+  /** 立即同步落盘修复日志（供退出钩子使用） */
+  public flushLogsNow(): void {
+    if (!this.logsDirty) return;
+    this.logsDirty = false;
+    try {
+      writeJsonAtomic(this.logFilePath, this.logsBuffer.slice());
+    } catch (e: any) {
+      this.logsDirty = true;
+      console.warn('[ToolboxService] 退出前写入修复日志失败:', e?.message || e);
+    }
   }
 
   private ensureDataFiles() {

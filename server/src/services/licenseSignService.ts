@@ -57,9 +57,16 @@ export class LicenseSignService {
       this.publicKeyPem = publicKeyPem;
       this.publicKeyRawHex = pubRawHex;
 
-      fs.writeFileSync(keyFile, this.privateKeyPem, 'utf-8');
+      fs.writeFileSync(keyFile, this.privateKeyPem, { encoding: 'utf-8', mode: 0o600 });
       fs.writeFileSync(pubFile, this.publicKeyPem, 'utf-8');
       fs.writeFileSync(pubRawFile, this.publicKeyRawHex, 'utf-8');
+      // 显式收紧私钥文件权限：writeFileSync 的 mode 只在新建时生效，
+      // 若文件已存在（默认 umask 0644）需再 chmod 一次，避免私钥对其他用户可读。
+      try {
+        fs.chmodSync(keyFile, 0o600);
+      } catch (e: any) {
+        console.warn('[LicenseSignService] 未能收紧私钥文件权限（非致命，请检查部署权限）:', e?.message);
+      }
 
       console.log(`[LicenseSignService] 签名密钥初始化成功，公钥指纹: ${this.publicKeyRawHex}`);
     } catch (e: any) {

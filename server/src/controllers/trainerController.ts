@@ -1,5 +1,9 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
+import { pipeWithByteCap } from '../utils/streamCap.js';
+
+/// 修改器代理下载体积上限：修改器包通常几 MB~几十 MB，512MB 是充裕上限
+const MAX_TRAINER_PROXY_BYTES = 512 * 1024 * 1024;
 
 interface CheatItem {
   raw: string;
@@ -272,16 +276,9 @@ export const downloadTrainerProxy = async (req: Request, res: Response) => {
     const contentLength = upstream.headers['content-length'];
     if (contentLength) res.setHeader('Content-Length', String(contentLength));
 
-    upstream.data.on('error', (e: any) => {
-      console.error('[TrainerController] 上游传输中断:', e?.message || e);
-      res.destroy();
-    });
-
-    res.on('close', () => {
-      upstream.data.destroy();
-    });
-
-    upstream.data.pipe(res);
+    // 统一流式转发并设体积上限：上游 302 到别处或返回超大内容时，
+    // 无上限的管道会把本服务变成无界代理（磁盘/带宽耗尽）
+    pipeWithByteCap(upstream.data, res, MAX_TRAINER_PROXY_BYTES);
   } catch (err: any) {
     console.error('[TrainerController] 代理下载修改器失败:', err?.message || err);
     if (!res.headersSent) {

@@ -50,6 +50,11 @@ export const downloadManifestFile = async (req: Request, res: Response) => {
     }
 
     if (!filePath || !fs.existsSync(filePath)) {
+      // 区分「上游暂时不可用」（回 503，客户端应重试）与「上游确实没有该清单」（404）。
+      // 旧实现一律 404，会让客户端把瞬时网络故障当成"永久不存在"而不再重试。
+      if (manifestService.wasLastEnsureTransient()) {
+        return res.status(503).json({ success: false, message: '清单上游暂时不可用，请稍后重试' });
+      }
       return res.status(404).json({ success: false, message: '未找到该清单文件缓存且回源拉取失败' });
     }
 

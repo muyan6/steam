@@ -629,8 +629,7 @@ fn temp_download_dir() -> PathBuf {
 /// 去掉 Windows canonicalize 产生的 `\\?\` verbatim 前缀。
 /// Path::starts_with 按组件比较，Verbatim 前缀与 Disk 前缀不相等，
 /// 不归一化会导致「目标存在时所有解压条目被误判越界」。
-fn canonicalize_normalized(p: &Path) -> PathBuf {
-    match p.canonicalize() {
+pub(crate) fn canonicalize_normalized(p: &Path) -> PathBuf {    match p.canonicalize() {
         Ok(c) => {
             let s = c.as_os_str().to_string_lossy();
             if let Some(unc) = s.strip_prefix(r"\\?\UNC\") {
@@ -649,7 +648,7 @@ fn canonicalize_normalized(p: &Path) -> PathBuf {
 /// Path::starts_with 对大小写敏感：目标文件尚未落盘时 canonicalize 失败
 /// 回退原始路径，与归一化后的真实大小写路径比较一旦盘符/目录大小写
 /// 不一致就会全部误判越界（表现为「补丁解压成功但 0 个文件写入」）。
-fn starts_with_ci(p: &Path, base: &Path) -> bool {
+pub(crate) fn starts_with_ci(p: &Path, base: &Path) -> bool {
     let pc: Vec<String> = p
         .components()
         .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
@@ -676,6 +675,56 @@ pub fn is_temp_archive(path: &str) -> bool {
         return false;
     }
     p.starts_with(temp_download_dir())
+}
+
+/// 判定一个目录是否"看起来是游戏安装目录"，用于挡住前端传入任意绝对路径
+/// （如系统目录、启动项）造成的任意文件写入/覆盖。
+///
+/// 既要包含游戏特征文件（steam_api 系列 / steam_appid.txt / OnlineFix.ini / 任意 .exe），
+/// 又要排除明显的系统敏感目录。这是纵深防御：正常流程路径来自目录选择器，
+/// 此处再校验一次以免路径被篡改或误传。
+pub fn is_plausible_game_dir(dir: &Path) -> bool {
+    if !dir.is_dir() {
+        return false;
+    }
+    let win = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+    if let Ok(canon) = dir.canonicalize() {
+        let lower = canon.to_string_lossy().to_lowercase();
+        // 拒绝系统目录与盘符根，避免把补丁写进 C:\Windows、System32、Program Files 根等
+        let blocked = [
+            win.to_lowercase(),
+            "c:\\windows".to_string(),
+            "c:\\program files".to_string(),
+            "c:\\program files (x86)".to_string(),
+        ];
+        if blocked.iter().any(|b| lower == *b) {
+            return false;
+        }
+        // 盘符根（如 C:\）只有一个组件
+        if canon.components().count() <= 1 {
+            return false;
+        }
+    }
+    let has_marker = dir.join("steam_api64.dll").exists()
+        || dir.join("steam_api.dll").exists()
+        || dir.join("steam_appid.txt").exists()
+        || dir.join("OnlineFix.ini").exists();
+    if has_marker {
+        return true;
+    }
+    // 退化判定：含任意 .exe 也视为游戏目录（部分游戏不使用标准 steam_api 命名）
+    if let Ok(rd) = fs::read_dir(dir) {
+        for e in rd.filter_map(|x| x.ok()) {
+            if e.path()
+                .extension()
+                .map(|x| x.eq_ignore_ascii_case("exe"))
+                .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -818,15 +867,22 @@ pub fn prepare_patch(
         })));
     }
 
-    // 备份原版 DLL（延迟到下载校验成功之后：检索/下载失败时不在游戏目录留下"假备份"）
-    let backup_dlls = |gp: &Path| {
+    // 备份原版 DLL（延迟到下载校验成功之后：检索/下载失败时不在游戏目录留下"假备份"）。
+    // 返回 Err 表示备份未成功，调用方必须中止后续覆盖。
+    let backup_dlls = |gp: &Path| -> Result<(), String> {
         for (main, bak) in [("steam_api64.dll", "steam_api64_o.dll"), ("steam_api.dll", "steam_api_o.dll")] {
             let src = gp.join(main);
             let dst = gp.join(bak);
             if src.exists() && !dst.exists() {
-                let _ = fs::copy(&src, &dst);
+                fs::copy(&src, &dst).map_err(|e| {
+                    format!(
+                        "备份原版 {} 失败（{}）。已中止补丁部署以免原文件被覆盖后无法还原，请关闭占用该文件的程序后重试",
+                        main, e
+                    )
+                })?;
             }
         }
+        Ok(())
     };
 
     // 逐个尝试候选下载源：单一源随时可能被墙/限流/失效
@@ -860,7 +916,10 @@ pub fn prepare_patch(
         )));
     };
 
-    backup_dlls(&PathBuf::from(game_path));
+    // 备份原版 DLL。**备份失败必须中止**：随后 deploy_patch_entries 会覆盖
+    // steam_api*.dll，若备份没落盘，覆盖后原版 DLL 就永久丢失、还原也无从还原。
+    // 原实现用 `let _ = fs::copy(...)` 静默吞掉失败，是"游戏坏掉且无法还原"的根因。
+    backup_dlls(&PathBuf::from(game_path)).map_err(fail)?;
 
     Ok(PreparedArchive {
         archive_path: temp_path.to_string_lossy().to_string(),
@@ -886,6 +945,23 @@ pub fn deploy_patch_entries(
     use base64::engine::general_purpose::STANDARD as B64;
 
     let gp = PathBuf::from(game_path);
+    // 纵深入侵防御：game_path 来自前端，必须确认为"像游戏目录"的路径，
+    // 否则可被用来往系统目录/启动项写任意文件。空批次（仅清理归档）不写文件，放行。
+    if !entries.is_empty() && !is_plausible_game_dir(&gp) {
+        if let Some(archive) = archive_path {
+            if is_temp_archive(archive) {
+                let _ = fs::remove_file(archive);
+            }
+        }
+        return OnlineFixPatchResult {
+            success: false,
+            message: format!("目标目录不是有效的游戏安装目录，已拒绝写入: {}", game_path),
+            file_name: None,
+            extracted_count: None,
+            article_url: None,
+            download_url: None,
+        };
+    }
     let resolved_game = canonicalize_normalized(&gp);
 
     let mut count = 0usize;
@@ -955,6 +1031,11 @@ pub fn deploy_patch_entries(
 
 /// 解压 zip 归档到目标目录（ZipCrypto/AES 密码自动尝试，越界防护）
 pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, String> {
+    // 纵深防御：dest_dir 来自前端，必须像游戏目录，防止往系统目录/启动项解压
+    let dest_guard = PathBuf::from(dest_dir);
+    if !is_plausible_game_dir(&dest_guard) {
+        return Err(format!("目标目录不是有效的游戏安装目录，已拒绝解压: {}", dest_dir));
+    }
     let file = fs::File::open(archive_path).map_err(|e| format!("打开归档失败: {}", e))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("解析归档失败: {}", e))?;
 

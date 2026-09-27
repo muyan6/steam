@@ -73,6 +73,13 @@ struct RemoteSource {
     /// 是否携带设备标识（自有服务端中转需要）
     needs_device_auth: bool,
     timeout_secs: u64,
+    /// 响应体是「全包 zip」时，用 (depot_id, manifest_gid) 精确取出目标清单条目。
+    ///
+    /// 为 `None` 表示 URL 本身就指向单个清单文件，直接采用响应字节。
+    /// **绝不能**对全包 zip 取"第一个条目"：一个 app 的 zip 内含几十个 depot 的清单，
+    /// 取第一个就是把别的分包清单写成目标文件名（字节合法、下载层无从察觉，
+    /// Steam 侧解密/校验必然失败）。
+    zip_lookup: Option<(String, String)>,
 }
 
 /// 竞速任务输出：命中时返回 (源名称, 有效清单实体)
@@ -95,7 +102,12 @@ async fn fetch_source(src: RemoteSource) -> SourceResult {
     if bytes.is_empty() {
         return None;
     }
-    let payload = extract_manifest_payload(&bytes);
+    let payload = match &src.zip_lookup {
+        // 全包 zip：按 (depot, gid) 精确匹配目标条目，取不到即放弃该源（交其它源竞速）
+        Some((depot, gid)) => extract_manifest_from_zip(&bytes, depot, gid).unwrap_or_default(),
+        // URL 即单清单文件：直接采用响应字节
+        None => extract_manifest_payload(&bytes),
+    };
     if payload.is_empty() || !is_valid_manifest_payload(&payload) {
         return None;
     }
@@ -789,11 +801,14 @@ pub fn extract_lua_from_zip(zip_bytes: &[u8]) -> Option<String> {
     None
 }
 
-/// 从 ZIP 归档中查找并提取目标分包的二进制清单实体
+/// 从 ZIP 归档中查找并提取目标分包的二进制清单实体。
+///
+/// **只做 `{depot}_{gid}.manifest` 精确匹配**：不带"同 depot 任意 gid"的模糊回退 ——
+/// 同一 depot 的不同 gid 是不同构建版本，模糊命中会把旧版本清单当成目标版本写入
+/// depotcache，Steam 解密/下载必然出错。取不到就返回 None，交由其它源竞速或失败。
 pub fn extract_manifest_from_zip(zip_bytes: &[u8], depot_id: &str, manifest_gid: &str) -> Option<Vec<u8>> {
     let target_name = format!("{}_{}.manifest", depot_id, manifest_gid);
     if let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)) {
-        // 先精确匹配完整文件名
         for i in 0..archive.len() {
             if let Ok(mut entry) = archive.by_index(i) {
                 if !entry.is_dir() {
@@ -802,29 +817,6 @@ pub fn extract_manifest_from_zip(zip_bytes: &[u8], depot_id: &str, manifest_gid:
                         .and_then(|n| n.to_str())
                         .unwrap_or("");
                     if file_name.eq_ignore_ascii_case(&target_name) {
-                        let mut buf = Vec::new();
-                        if std::io::Read::take(&mut entry, MAX_ASSET_DOWNLOAD_BYTES + 1)
-                            .read_to_end(&mut buf)
-                            .is_ok()
-                            && buf.len() as u64 <= MAX_ASSET_DOWNLOAD_BYTES
-                            && is_valid_manifest_payload(&buf)
-                        {
-                            return Some(buf);
-                        }
-                    }
-                }
-            }
-        }
-        // 若无精确匹配，尝试以 depot_id 开头的 .manifest 模糊匹配
-        let prefix = format!("{}_", depot_id);
-        for i in 0..archive.len() {
-            if let Ok(mut entry) = archive.by_index(i) {
-                if !entry.is_dir() {
-                    let file_name = std::path::Path::new(entry.name())
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
-                    if file_name.starts_with(&prefix) && file_name.ends_with(".manifest") {
                         let mut buf = Vec::new();
                         if std::io::Read::take(&mut entry, MAX_ASSET_DOWNLOAD_BYTES + 1)
                             .read_to_end(&mut buf)
@@ -1286,10 +1278,14 @@ async fn download_single_manifest(
         if let Ok(bytes) = fs::read(&target) {
             if is_valid_manifest_payload(&bytes) {
                 return Ok("已存在".to_string());
-            } else {
-                log_diag(&format!("清理 depotcache 中已损坏的非清单实体文件: {:?}", target));
-                let _ = fs::remove_file(&target);
             }
+            // 启发式判定"无效"不足以成为删除理由：`is_valid_manifest_payload` 是宽松猜测，
+            // 误判时会把用户 depotcache 里有效的清单静默删掉。这里只记录、不删除，
+            // 真正残缺的垃圾由工具箱的显式清理入口处理（那里会先校验再删）。
+            log_diag(&format!(
+                "depotcache 中已存在的清单未通过有效性启发式校验，保留原文件待工具箱复检: {:?}",
+                target
+            ));
         }
     }
 
@@ -1323,6 +1319,7 @@ async fn download_single_manifest(
                     ),
                     needs_device_auth: false,
                     timeout_secs: PTYSTORE_PROBE_TIMEOUT_SECS,
+                    zip_lookup: None,
                 })));
             }
         }
@@ -1341,6 +1338,7 @@ async fn download_single_manifest(
             ),
             needs_device_auth: false,
             timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+            zip_lookup: Some((depot_id.to_string(), manifest_gid.to_string())),
         })));
     }
 
@@ -1354,6 +1352,7 @@ async fn download_single_manifest(
             url: format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", target),
             needs_device_auth: false,
             timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+            zip_lookup: Some((depot_id.to_string(), manifest_gid.to_string())),
         })));
     }
 
@@ -1371,6 +1370,7 @@ async fn download_single_manifest(
                 ),
                 needs_device_auth: false,
                 timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+                zip_lookup: None,
             })));
         }
     }
@@ -1386,6 +1386,7 @@ async fn download_single_manifest(
             ),
             needs_device_auth: false,
             timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+            zip_lookup: None,
         })));
     }
 
@@ -1427,6 +1428,8 @@ async fn download_single_manifest(
                 ),
                 needs_device_auth: true,
                 timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+                // 自有云端中转直出单个清单文件（已在服务端校验过），无需 zip 定位
+                zip_lookup: None,
             })
             .await;
             if let Some((label, payload)) = relay {

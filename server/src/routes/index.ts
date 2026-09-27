@@ -146,7 +146,10 @@ const onlineRulesSyncLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: '联机规则同步过于频繁，请稍后再试' }
 });
-router.post('/online-rules/sync-charts', onlineRulesSyncLimiter, syncOnlineRulesFromCharts);
+// 联机规则抓取同步：会触发对外部 Charts 的抓取，属管理操作，必须鉴权。
+// 该路由注册在下方 requireAdmin 挂载点之前，故必须显式带 requireAdmin，
+// 否则匿名调用者可反复触发外部抓取（限流之外本不该开放）。
+router.post('/online-rules/sync-charts', onlineRulesSyncLimiter, requireAdmin, syncOnlineRulesFromCharts);
 
 // 客户端设备心跳与活跃度上报 (公开接口，限流防刷)
 const heartbeatLimiter = rateLimit({
@@ -218,6 +221,8 @@ const sponsorSyncLimiter = rateLimit({
   message: { success: false, message: '爱发电同步请求过于频繁，请稍后再试' }
 });
 router.get('/sponsors', getPublicSponsors);
+// 爱发电同步：桌面端「同步赞助榜单」按钮会直接调用，故保持公开（客户端无管理凭据），
+// 仅靠 sponsorSyncLimiter 限流防滥用。管理台的等价入口 /admin/sponsors/sync 已受 requireAdmin 保护。
 router.post('/sponsors/sync', sponsorSyncLimiter, syncAfdianSponsors);
 
 // 应用内跳转链接 (教程/FAQ，由服务端数据文件配置，未配置为空串)
@@ -490,8 +495,11 @@ router.post('/manifests/code/report', manifestReportLimiter, reportManifestCodes
 router.get('/manifests/code/:gid', manifestCodeLimiter, getManifestCode);
 
 // OST 内核中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）
-router.get('/ost/latest', requireKeyAccess, getLatestOstRelease);
-router.get('/ost/download/:tag/:asset', requireKeyAccess, downloadOstAsset);
+// 与 /openp2p/* 同理**不挂 requireKeyAccess**：OST 是与 openp2p 同类的公开开源内核二进制，
+// 不应挤占用户的每日免费入库配额（否则未激活用户一进工具箱预检内核版本就静默扣额度，
+// 几次后连正常入库都被 403 挡住，详见 requireDeviceId 上方注释）。
+router.get('/ost/latest', engineProxyLimiter, requireDeviceId, getLatestOstRelease);
+router.get('/ost/download/:tag/:asset', engineProxyLimiter, requireDeviceId, downloadOstAsset);
 
 // OpenP2P 联机引擎中转：客户端 GitHub 完全不可达时的最终兜底（查询最新版本 / 流式转发 release 包）
 // 与 OST 不同，这里刻意**不挂 requireKeyAccess**：引擎是公开的开源二进制，

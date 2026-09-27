@@ -208,14 +208,17 @@
               </button>
 
               <template v-else>
-                <a
-                  :href="`steam://install/${game.appId}`"
+                <!-- 必须走 openExternalUrl 交给系统处理：WebView2 不会把裸 href="steam://"
+                     交给操作系统（opener 插件只拦截 http/https/mailto/tel，steam: 被排除），
+                     直接写 href 会导致点击后毫无反应。 -->
+                <button
+                  @click="openSteamProtocol(`steam://install/${game.appId}`)"
                   title="在 Steam 中启动直接下载"
                   class="flex-1 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download class="w-4 h-4" />
                   <span>Steam 下载</span>
-                </a>
+                </button>
 
                 <button
                   @click="removeGame(game.appId)"
@@ -642,8 +645,10 @@ const loadUnlockedList = async () => {
   try {
     const ids = await window.electronAPI.getUnlockedGames();
     unlockedAppIds.value = ids;
-  } catch {
-    unlockedAppIds.value = [];
+  } catch (e: any) {
+    // 不能把一次瞬时失败当成"库为空"：那会让所有卡片丢掉"已在库中"徽章、
+    // 按钮退回「一键入库」，用户可能重复入库并再扣一次免费配额。保留原值并提示。
+    emit('notify', `读取已入库列表失败，暂保留上次结果（${formatIpcError(e)}）`, 'warning');
   }
 };
 
@@ -725,6 +730,16 @@ const unlockGame = async (game: SteamGame) => {
     emit('unlock-result', { message: `入库异常: ${formatIpcError(e)}`, level: 'error' });
   } finally {
     unlockingId.value = null;
+  }
+};
+
+// 用系统默认程序打开 steam:// 协议：WebView2 不会自行把该协议交给操作系统，
+// 必须经 Rust 的 open_url（白名单含 steam://）落地，否则点击无反应。
+const openSteamProtocol = async (url: string) => {
+  try {
+    await window.electronAPI.openExternalUrl(url);
+  } catch (e: any) {
+    emit('notify', `无法唤起 Steam，请确认已安装 Steam 客户端（${formatIpcError(e)}）`, 'error');
   }
 };
 

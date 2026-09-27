@@ -1018,8 +1018,15 @@ const parseCode = async (str: string) => {
   }
 };
 
+// 分享码解析防抖：@input 每次按键都调一次 Rust IPC 纯属浪费，输入过程中
+// 中间态还可能覆盖最终态。300ms 防抖后只解析最终文本。
+let parseCodeTimer: ReturnType<typeof setTimeout> | null = null;
 const handleCodeInput = () => {
-  void parseCode(joinInputCode.value);
+  if (parseCodeTimer) clearTimeout(parseCodeTimer);
+  parseCodeTimer = setTimeout(() => {
+    parseCodeTimer = null;
+    void parseCode(joinInputCode.value);
+  }, 300);
 };
 
 const handlePasteFromClipboard = async () => {
@@ -1193,13 +1200,21 @@ onMounted(async () => {
   await checkClipboardForCode();
   handlePresetChange();
 
-  // 定时轮询隧道运行状态与打洞实时日志 (每 3 秒刷新一次实时打洞状态)
-  statusTimer = setInterval(fetchStatus, 3000);
+  // 定时轮询隧道运行状态与打洞实时日志 (每 3 秒刷新一次实时打洞状态)。
+  // 窗口隐藏时跳过，避免最小化后仍每 3 秒打 3 次 IPC 并唤醒进程。
+  statusTimer = setInterval(() => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    void fetchStatus();
+  }, 3000);
 });
 
 onUnmounted(() => {
   if (statusTimer) {
     clearInterval(statusTimer);
+  }
+  if (parseCodeTimer) {
+    clearTimeout(parseCodeTimer);
+    parseCodeTimer = null;
   }
 });
 </script>

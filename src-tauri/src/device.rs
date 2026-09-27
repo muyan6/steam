@@ -9,17 +9,21 @@ use winreg::RegKey;
 ///
 /// 必须逐字节复刻旧版算法：老用户的授权卡在服务端绑定的是该 ID，
 /// 任何偏差都会导致已激活设备被判定为未激活。
-/// 验证设备码格式是否符合 CFD-XXXX-XXXX-XXXX-XXXX
+/// 验证设备码格式是否为 CFD-XXXX-XXXX-XXXX-XXXX（`CFD-` 前缀 + 4 段各 4 位 hex，共 23 字符）。
+///
+/// 注意：这里**不能**用固定长度 19 去卡 —— `compute_device_id` 产出的是 4 段 hex，
+/// 合法值恒为 23 字符。历史上曾写成 19，导致本函数恒为 false：持久化设备码永远
+/// 读不回来、`license_cache` 自愈也被拒，设备码每次启动都重算（换网卡即丢授权）。
 pub fn is_valid_device_id(id: &str) -> bool {
     let trimmed = id.trim();
-    if trimmed.len() != 19 || !trimmed.starts_with("CFD-") {
+    let Some(rest) = trimmed.strip_prefix("CFD-") else {
         return false;
-    }
-    let parts: Vec<&str> = trimmed.split('-').collect();
-    if parts.len() != 5 || parts[0] != "CFD" {
-        return false;
-    }
-    parts[1..].iter().all(|seg| seg.len() == 4 && seg.chars().all(|c| c.is_ascii_hexdigit()))
+    };
+    let segs: Vec<&str> = rest.split('-').collect();
+    segs.len() == 4
+        && segs
+            .iter()
+            .all(|seg| seg.len() == 4 && seg.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 fn read_persisted_file() -> Option<String> {
@@ -281,7 +285,11 @@ mod tests {
     fn device_id_format() {
         let id = get_device_id();
         assert!(id.starts_with("CFD-"), "got {}", id);
-        assert_eq!(id.len(), 19);
+        // CFD-XXXX-XXXX-XXXX-XXXX = 23 字符；校验器必须接受自身产出的格式
+        assert_eq!(id.len(), 23, "got {}", id);
+        assert!(is_valid_device_id(&id), "is_valid_device_id 拒绝了自身产出的设备码: {}", id);
+        assert!(!is_valid_device_id("CFD-1234-5678-9ABC"), "长度不足应被拒绝");
+        assert!(!is_valid_device_id("CFD-1234-5678-9ABC-0XYZ"), "非 hex 应被拒绝");
         println!("本机设备码: {}", id);
     }
 }

@@ -1,5 +1,9 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
+import { pipeWithByteCap } from '../utils/streamCap.js';
+
+/// SAM 中转体积上限：SAM 包约几 MB，512MB 是充裕上限
+const MAX_SAM_PROXY_BYTES = 512 * 1024 * 1024;
 
 export interface AchievementItem {
   name?: string;
@@ -224,16 +228,8 @@ export const downloadSamProxy = async (_req: Request, res: Response) => {
     const assetFileName = url.split('/').pop() || 'SteamAchievementManager.zip';
     res.setHeader('Content-Disposition', `attachment; filename="${assetFileName}"`);
 
-    upstream.data.on('error', (err: any) => {
-      console.error('[AchievementController] SAM 下载流出错:', err?.message || err);
-      res.destroy();
-    });
-
-    res.on('close', () => {
-      upstream.data.destroy();
-    });
-
-    upstream.data.pipe(res);
+    // 带体积上限的流式转发，避免上游异常时本服务变成无界代理
+    pipeWithByteCap(upstream.data, res, MAX_SAM_PROXY_BYTES);
   } catch (e: any) {
     console.error('[AchievementController] 中转下载 SAM 失败:', e.message);
     if (!res.headersSent) {

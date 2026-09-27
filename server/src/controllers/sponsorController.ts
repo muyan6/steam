@@ -29,8 +29,9 @@ export async function syncAfdianSponsors(_req: Request, res: Response) {
     const result = await sponsorService.syncFromAfdian();
     res.json(result);
   } catch (e: any) {
+    // 内部错误细节只进服务端日志，不回显给客户端（避免泄露上游 URL/HTTP 状态等）
     console.error('[SponsorController] 同步爱发电异常:', e);
-    res.status(500).json({ success: false, message: '同步爱发电异常: ' + e.message });
+    res.status(500).json({ success: false, message: '同步爱发电失败，请稍后重试' });
   }
 }
 

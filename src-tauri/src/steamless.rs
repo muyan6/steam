@@ -151,7 +151,8 @@ fn unpack_single(
         .current_dir(dir)
         .creation_flags(0x08000000) // CREATE_NO_WINDOW：GUI 发布版下避免闪现控制台黑框
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        // 捕获 stderr：否则"真的没壳"与"CLI 报错/文件被占用"无从区分，全部落到同一句提示
+        .stderr(std::process::Stdio::piped())
         .spawn();
 
     let mut child = match child {
@@ -188,10 +189,25 @@ fn unpack_single(
         }
     }
 
+    // 读取 CLI 的 stderr 片段用于诊断（Steamless 输出很小，不会撑满管道）
+    let stderr_snippet = {
+        use std::io::Read;
+        let mut s = String::new();
+        if let Some(mut e) = child.stderr.take() {
+            let _ = e.read_to_string(&mut s);
+        }
+        let t = s.trim();
+        if t.is_empty() {
+            String::new()
+        } else {
+            format!("；CLI 输出: {}", t.chars().take(200).collect::<String>())
+        }
+    };
+
     // 超时被强杀时输出可能是残缺文件，绝不能用它覆盖原 exe
     if aborted {
         let _ = fs::remove_file(&unpacked);
-        return (false, format!("Steamless CLI 处理 {} 超时或异常终止，已放弃本次解密", file_label), "error", false);
+        return (false, format!("Steamless CLI 处理 {} 超时或异常终止，已放弃本次解密{}", file_label, stderr_snippet), "error", false);
     }
 
     if unpacked.exists() && fs::metadata(&unpacked).map(|m| m.len() > 0).unwrap_or(false) {
@@ -217,13 +233,24 @@ fn unpack_single(
             let _ = fs::remove_file(&unpacked);
             return (true, format!("成功通过 Steamless CLI 解密并替换 ({})", file_label), "unpacked", backup_created);
         }
-        // 替换失败时清理残留的解密输出，避免占用磁盘且干扰下次判断
+        // 替换失败：解压其实成功了，是"写回原文件"失败（多为文件被占用/无权限）。
+        // 不能报成"未加壳"，否则用户以为游戏无需脱壳、实则是失败被掩盖。
+        // 同时清理本次刚创建的备份，避免留下一个无对应还原动作的孤儿 .bak。
         let _ = fs::remove_file(&unpacked);
+        if backup_created {
+            let _ = fs::remove_file(&backup);
+        }
+        return (
+            false,
+            format!("Steamless 已生成解密输出但写回 {} 失败（文件可能被占用或无权限），原文件未改动", file_label),
+            "error",
+            false,
+        );
     }
 
     (
         false,
-        format!("Steamless CLI 处理 {} 未产生解密输出（该文件可能未加壳或不被支持）", file_label),
+        format!("Steamless CLI 处理 {} 未产生解密输出（该文件可能未加壳或不被支持）{}", file_label, stderr_snippet),
         "error",
         false,
     )
@@ -239,6 +266,21 @@ pub fn repair_game_with_resource(game_dir: &str, game_name: Option<&str>, resour
         return SteamlessRepairResult {
             success: false,
             message: format!("游戏目录不存在: {}", game_dir),
+            total_found: 0,
+            repaired_count: 0,
+            backup_count: 0,
+            skipped_count: 0,
+            details: vec![],
+        };
+    }
+
+    // 纵深防御：本函数会递归 3 层扫描目录并**改写**其中的 exe（即使会留 .bak），
+    // 而 game_dir 来自前端。必须拒绝系统目录/盘符根这类明显不是游戏目录的目标，
+    // 避免被用来批量改写系统可执行文件。
+    if !crate::onlinefix::is_plausible_game_dir(&dir) {
+        return SteamlessRepairResult {
+            success: false,
+            message: format!("目标目录不是有效的游戏安装目录，已拒绝脱壳扫描: {}", game_dir),
             total_found: 0,
             repaired_count: 0,
             backup_count: 0,
