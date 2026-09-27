@@ -92,13 +92,14 @@
           @click="handleAllowFirewall"
           :disabled="firewallBusy"
           class="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold transition cursor-pointer text-xs shrink-0 disabled:opacity-50 flex items-center gap-1 shadow-2xs"
-          title="点击发起 Windows 管理员授权 (UAC)，放行后即时生效，无需重启客户端"
+          :title="appElevated ? '当前已是管理员权限，点击直接写入防火墙规则' : '点击发起 Windows 管理员授权 (UAC)，放行后即时生效，无需重启客户端'"
         >
           <ShieldAlert v-if="!firewallBusy" class="w-3.5 h-3.5" />
           <RotateCw v-else class="w-3.5 h-3.5 animate-spin" />
-          <span>{{ firewallBusy ? '正在授权放行...' : '一键放行' }}</span>
+          <span>{{ firewallBusy ? (appElevated ? '正在放行...' : '正在授权放行...') : '一键放行' }}</span>
         </button>
         <button
+          v-if="!appElevated"
           @click="handleRestartAdmin"
           class="px-2.5 py-1 rounded-lg bg-slate-200/80 hover:bg-slate-300 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-300 font-medium transition cursor-pointer text-xs shrink-0 flex items-center gap-1"
           title="以管理员身份重新启动本软件"
@@ -106,6 +107,14 @@
           <ShieldCheck class="w-3.5 h-3.5 text-sky-500" />
           <span>以管理员重启</span>
         </button>
+        <span
+          v-else
+          class="px-2 py-1 rounded-lg bg-emerald-100/70 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-xs shrink-0 flex items-center gap-1"
+          title="当前客户端已以管理员身份运行"
+        >
+          <ShieldCheck class="w-3.5 h-3.5" />
+          <span>已提权</span>
+        </span>
       </div>
     </div>
 
@@ -623,6 +632,7 @@ import {
   p2pParseCode,
   p2pCheckFirewall,
   p2pAllowFirewall,
+  isAppElevated,
   restartAsAdmin,
   openExternalUrl,
   getJson,
@@ -773,10 +783,14 @@ const detectedClipboardCode = ref<string>('');
 // Windows 防火墙放行状态：被拦截时打洞会静默失败，必须给出可见提示与一键放行入口
 const firewallOk = ref<boolean | null>(null);
 const firewallBusy = ref<boolean>(false);
+// 当前进程是否已提权。已提权时「一键放行」不需要弹 UAC，按钮文案与提示都该不同。
+const appElevated = ref<boolean>(false);
 
 const refreshFirewallState = async () => {
   try {
-    firewallOk.value = await p2pCheckFirewall();
+    const [ok, elevated] = await Promise.all([p2pCheckFirewall(), isAppElevated()]);
+    firewallOk.value = ok;
+    appElevated.value = elevated;
   } catch {
     firewallOk.value = null;
   }
@@ -794,9 +808,15 @@ const handleAllowFirewall = async () => {
     }
   } catch (err: any) {
     const errorMsg = formatIpcError(err);
-    emit('toast', `防火墙放行失败: ${errorMsg}`);
+    // UAC 被用户取消 / 被系统拒绝不是故障，给一句能照做的提示，不要甩错误码
+    if (/已取消|UAC|cancel/i.test(errorMsg)) {
+      emit('toast', '已取消管理员授权，防火墙未改动。可点击右侧「以管理员重启」后再试。');
+    } else {
+      emit('toast', `防火墙放行失败: ${errorMsg}`);
+    }
   } finally {
     firewallBusy.value = false;
+    void refreshFirewallState();
   }
 };
 

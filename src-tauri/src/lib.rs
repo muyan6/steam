@@ -1866,14 +1866,20 @@ fn p2p_parse_code(code_str: String) -> Result<p2p::ParsedShareCode, String> {
     p2p::parse_share_code(&code_str)
 }
 
+// 防火墙检查 / 放行都会 spawn netsh 子进程，放行还要等 UAC 提权进程结束（最长 15s）。
+// 两者都必须放 spawn_blocking，否则会阻塞 Tokio 工作线程并冻结界面。
 #[tauri::command]
-fn p2p_check_firewall() -> bool {
-    p2p::check_firewall_rule()
+async fn p2p_check_firewall() -> bool {
+    tauri::async_runtime::spawn_blocking(p2p::check_firewall_rule)
+        .await
+        .unwrap_or(false)
 }
 
 #[tauri::command]
-fn p2p_allow_firewall() -> Result<bool, String> {
-    p2p::allow_firewall_rule()
+async fn p2p_allow_firewall() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(p2p::allow_firewall_rule)
+        .await
+        .unwrap_or_else(|e| Err(format!("防火墙放行任务异常终止: {}", e)))
 }
 
 #[tauri::command]
@@ -1881,9 +1887,12 @@ fn is_app_elevated() -> bool {
     p2p::is_elevated()
 }
 
+// restart_as_admin 要等 2s 确认提权新实例存活，同样不能占着主线程。
 #[tauri::command]
-fn restart_as_admin() -> Result<(), String> {
-    p2p::restart_as_admin()
+async fn restart_as_admin() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(p2p::restart_as_admin)
+        .await
+        .unwrap_or_else(|e| Err(format!("提权重启任务异常终止: {}", e)))
 }
 
 #[tauri::command]

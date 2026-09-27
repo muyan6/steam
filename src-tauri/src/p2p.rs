@@ -999,17 +999,146 @@ pub fn check_firewall_rule() -> bool {
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 
-    match output {
+    let exists = match output {
         Ok(out) => out.status.success(),
         Err(_) => false,
+    };
+    if !exists {
+        return false;
     }
+
+    // 「规则存在」不等于「放行的是当前引擎」：引擎在线升级 / 安装目录迁移后，
+    // 同名规则可能还指向已失效的旧路径，此时入站流量依然被丢弃，
+    // 而只看规则名的旧实现会一路显示「已放行」。
+    // 解析不出 Program 字段时（异常输出）退回「存在即放行」，不制造假阴性。
+    #[cfg(windows)]
+    {
+        if let Some(bin) = locate_openp2p_bin() {
+            if let Some(matches) = existing_rule_program(&bin.to_string_lossy()) {
+                return matches;
+            }
+        }
+    }
+
+    true
+}
+
+/// 规范化 Windows 路径用于比较（统一分隔符与大小写）。
+#[cfg(windows)]
+fn normalize_win_path(p: &str) -> String {
+    p.trim().replace('/', "\\").to_lowercase()
+}
+
+/// 读取现有规则的 `Program:` 字段，判断是否指向给定二进制。
+///
+/// - `Some(true)`：规则存在且 program 完全匹配；
+/// - `Some(false)`：规则存在但指向别的路径（引擎在线升级 / 安装目录迁移后就是这样）；
+/// - `None`：规则不存在，或输出无法解析。
+///
+/// 只按规则名判断是不够的：同名旧规则指向已不存在的旧路径时，
+/// `check_firewall_rule()` 依然返回 true，UI 显示「已放行」而入站流量实际被丢弃。
+/// `Program:` 字段名在中文与英文系统上一致（实测中文 Windows 亦为 `Program:`），
+/// 所以解析该行不依赖界面语言。
+#[cfg(windows)]
+fn existing_rule_program(bin_str: &str) -> Option<bool> {
+    let output = Command::new("netsh")
+        .args(&[
+            "advfirewall",
+            "firewall",
+            "show",
+            "rule",
+            "name=ChunFengDu P2P",
+            "verbose",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let want = normalize_win_path(bin_str);
+    let mut seen_program = false;
+
+    for line in text.lines() {
+        if let Some(rest) = line.trim().strip_prefix("Program:") {
+            // netsh 输出走本地代码页（中文系统是 GBK），路径含中文用户名时
+            // from_utf8_lossy 必然损坏字节，比较结果不可信。
+            // 此时返回 None，让调用方退回「规则存在即视为放行」——
+            // 宁可漏报也不能把「已放行」误报成「未放行」，否则用户会反复弹 UAC。
+            if !line.is_ascii() {
+                return None;
+            }
+            seen_program = true;
+            if normalize_win_path(rest) == want {
+                return Some(true);
+            }
+        }
+    }
+
+    if seen_program {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// 规则是否已存在且指向当前引擎 —— 让「一键放行」保持幂等。
+#[cfg(windows)]
+fn firewall_rule_ok_for(bin_str: &str) -> bool {
+    matches!(existing_rule_program(bin_str), Some(true))
+}
+
+/// 直接以参数数组跑一次 netsh（不经 shell），避免 Windows 命令行引号解析歧义。
+/// 返回是否退出码为 0。
+#[cfg(windows)]
+fn run_netsh(args: &[&str]) -> bool {
+    Command::new("netsh")
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// 先删同名旧规则、再按给定引擎路径重新添加（当前进程权限决定能否成功）。
+#[cfg(windows)]
+fn netsh_replace_rule(bin_str: &str) -> bool {
+    let _ = run_netsh(&["advfirewall", "firewall", "delete", "rule", "name=ChunFengDu P2P"]);
+    run_netsh(&[
+        "advfirewall",
+        "firewall",
+        "add",
+        "rule",
+        "name=ChunFengDu P2P",
+        "dir=in",
+        "action=allow",
+        &format!("program={}", bin_str),
+        "enable=yes",
+    ])
+}
+
+/// 一次提权里要跑的命令行：先删同名旧规则，再按当前引擎路径重新添加。
+///
+/// 同名规则若已存在但 Program 指向旧路径，只 add 会失败（规则重名），
+/// 因此必须先 delete；而一次提权只能弹一次 UAC，两条 netsh 必须挂在同一条命令行里。
+#[cfg(windows)]
+fn elevated_cmdline(bin_str: &str) -> String {
+    format!(
+        "netsh advfirewall firewall delete rule name=\"ChunFengDu P2P\" >nul 2>&1 & netsh advfirewall firewall add rule name=\"ChunFengDu P2P\" dir=in action=allow program=\"{}\" enable=yes",
+        bin_str
+    )
 }
 
 #[cfg(windows)]
 fn fallback_powershell_allow(bin_str: &str) -> Result<(), String> {
+    // 整条 cmd 命令行塞进 PowerShell 单引号字符串：只需转义单引号，
+    // 参数里的双引号、`>`、`&` 都是字面量，不会被 PowerShell 抢先解释。
     let script = format!(
-        "Start-Process netsh -ArgumentList 'advfirewall firewall add rule name=\"ChunFengDu P2P\" dir=in action=allow program=\"{}\" enable=yes' -Verb RunAs -Wait -WindowStyle Hidden",
-        bin_str.replace('\'', "''")
+        "Start-Process cmd -ArgumentList '/c {}' -Verb RunAs -Wait -WindowStyle Hidden",
+        elevated_cmdline(bin_str).replace('\'', "''")
     );
     let output = Command::new("powershell")
         .args(["-NoProfile", "-Command", &script])
@@ -1035,11 +1164,10 @@ fn allow_firewall_rule_elevated(bin_str: &str) -> Result<(), String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
     let verb: Vec<u16> = OsStr::new("runas").encode_wide().chain(std::iter::once(0)).collect();
-    let file: Vec<u16> = OsStr::new("netsh.exe").encode_wide().chain(std::iter::once(0)).collect();
-    let params_str = format!(
-        "advfirewall firewall add rule name=\"ChunFengDu P2P\" dir=in action=allow program=\"{}\" enable=yes",
-        bin_str
-    );
+    // 走 cmd.exe /c 而不是直接调 netsh.exe：同名规则若已存在但指向旧路径，
+    // 必须先 delete 再 add 才能纠正 Program 字段，而一次提权只能弹一次 UAC。
+    let file: Vec<u16> = OsStr::new("cmd.exe").encode_wide().chain(std::iter::once(0)).collect();
+    let params_str = format!("/c {}", elevated_cmdline(bin_str));
     let params: Vec<u16> = OsStr::new(&params_str).encode_wide().chain(std::iter::once(0)).collect();
 
     let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
@@ -1082,38 +1210,36 @@ fn allow_firewall_rule_elevated(bin_str: &str) -> Result<(), String> {
 }
 
 /// 自动向 Windows 防火墙添加入站规则放行 openp2p
+///
+/// 这条命令会**阻塞等待 UAC 提权子进程结束**（最长 15s），
+/// 调用方必须放在阻塞线程里（Tauri 侧用 spawn_blocking），否则 UAC 弹窗期间界面会冻住。
 pub fn allow_firewall_rule() -> Result<bool, String> {
     let bin = locate_openp2p_bin().ok_or_else(|| "未找到 openp2p 可执行文件".to_string())?;
     let bin_str = bin.to_string_lossy();
 
-    // 1. 如果当前进程已经是管理员权限，直接以子进程执行（无须弹窗，极速完成）
-    let output = Command::new("netsh")
-        .args(&[
-            "advfirewall",
-            "firewall",
-            "add",
-            "rule",
-            "name=ChunFengDu P2P",
-            "dir=in",
-            "action=allow",
-            &format!("program={}", bin_str),
-            "enable=yes",
-        ])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-
-    if let Ok(out) = output {
-        if out.status.success() {
-            return Ok(true);
-        }
-    }
-
-    // 2. 当前为普通权限时，必须通过 Windows 原生 UAC 请求提升管理员权限执行
     #[cfg(windows)]
     {
+        // 0. 幂等短路：规则已存在且指向当前引擎时直接返回，
+        //    不重复弹 UAC、也不在管理员会话里反复 delete/add 触发安全软件告警。
+        if firewall_rule_ok_for(&bin_str) {
+            return Ok(true);
+        }
+
+        // 1. 已提权 / 本机策略允许时，直接以子进程执行（无弹窗、极速完成）。
+        //    注意必须先删同名旧规则：引擎在线升级后路径变了，只 add 会因规则重名失败。
+        if netsh_replace_rule(&bin_str) && firewall_rule_ok_for(&bin_str) {
+            return Ok(true);
+        }
+
+        // 2. 普通权限时走 Windows 原生 UAC 提权执行
         allow_firewall_rule_elevated(&bin_str)?;
-        if check_firewall_rule() {
+
+        // 3. UAC 明确成功后才校验结果。校验必须带 Program 比对：
+        //    只看规则名会把「指向旧引擎路径」的陈旧规则误判为已放行。
+        if firewall_rule_ok_for(&bin_str) {
             Ok(true)
+        } else if check_firewall_rule() {
+            Err("防火墙规则存在，但指向的引擎路径与本机当前引擎不一致，请删除该规则后重试".to_string())
         } else {
             Err("未能确认防火墙入站放行结果，请检查系统安全软件或手动配置".to_string())
         }
@@ -1164,8 +1290,11 @@ pub fn restart_as_admin() -> Result<(), String> {
     {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::Foundation::{ERROR_CANCELLED, GetLastError, FALSE};
-        use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW};
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, GetLastError, ERROR_CANCELLED, FALSE, STILL_ACTIVE, WAIT_TIMEOUT,
+        };
+        use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+        use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
         use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOW;
 
         let exe_path = std::env::current_exe().map_err(|e| format!("获取程序路径失败: {}", e))?;
@@ -1178,6 +1307,7 @@ pub fn restart_as_admin() -> Result<(), String> {
 
         let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
         info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        info.fMask = SEE_MASK_NOCLOSEPROCESS;
         info.lpVerb = verb.as_ptr();
         info.lpFile = exe_wide.as_ptr();
         if !args.is_empty() {
@@ -1194,10 +1324,31 @@ pub fn restart_as_admin() -> Result<(), String> {
             return Err(format!("以管理员权限重启失败 (错误代码: {})", err));
         }
 
-        // 清理 P2P 子进程
+        // 关键：必须确认新实例真的活着再退出自己。
+        // 旧实现弹完 UAC 立刻 exit(0)，若新进程因为缺资源 / 被安全软件拦截而秒退，
+        // 用户会看到「软件自己关了且没再打开」，且本轮 P2P 服务已被 shutdown 掉，
+        // 等于用一次误操作换来彻底不可用。
+        if !info.hProcess.is_null() {
+            // 等待 2s：进程仍存活说明已经越过启动初期（UAC 已通过、未立即崩溃）
+            let wait = unsafe { WaitForSingleObject(info.hProcess, 2000) };
+            let mut exit_code: u32 = 0;
+            let alive = wait == WAIT_TIMEOUT
+                && unsafe { GetExitCodeProcess(info.hProcess, &mut exit_code) } != 0
+                && exit_code == STILL_ACTIVE as u32;
+            unsafe { CloseHandle(info.hProcess) };
+
+            if !alive {
+                return Err(
+                    "已授权，但以管理员身份启动的新实例未能保持运行（可能被安全软件拦截）。当前窗口将继续运行。"
+                        .to_string(),
+                );
+            }
+        }
+
+        // 清理本进程持有的 P2P 子进程，避免与提权新实例抢同一个 openp2p
         shutdown_p2p_once();
 
-        // 提权新实例启动成功后，退出当前进程
+        // 新实例已确认存活，退出当前进程
         std::process::exit(0);
     }
 
