@@ -1,5 +1,5 @@
 <template>
-  <div class="h-full flex flex-col p-4 xl:p-5 overflow-y-auto">
+  <div class="h-full flex flex-col p-4 xl:p-5 overflow-hidden">
     <!-- 顶部统一标准 Header -->
     <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 shrink-0">
       <div class="flex items-center gap-3">
@@ -40,7 +40,7 @@
     </div>
 
     <!-- 方案选择 Tab 栏 -->
-    <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-white/10 shadow-inner mb-3 self-start">
+    <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-white/10 shadow-inner mb-3 self-start shrink-0">
       <button
         @click="activeMainTab = 'launch'"
         class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
@@ -99,10 +99,12 @@
     <!-- 联机中心核心指南弹窗 (全主题自适应高质感图文解析) -->
     <OnlineFixGuideModal v-model="showGuide" />
 
-    <!-- ============================================== -->
-    <!-- TAB 1: 联机启动模式 (主模式) -->
-    <!-- ============================================== -->
-    <div v-if="activeMainTab === 'launch'" class="space-y-3.5 flex-1 flex flex-col min-h-0">
+    <!-- 独立滚动内容区域 (保持顶部 Header、Tab栏与提示横幅永久冻结) -->
+    <div class="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
+      <!-- ============================================== -->
+      <!-- TAB 1: 联机启动模式 (主模式) -->
+      <!-- ============================================== -->
+      <div v-if="activeMainTab === 'launch'" class="space-y-3.5 flex flex-col min-h-0">
       <!-- 快捷操作栏 -->
       <div class="flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div class="flex items-center gap-2.5 flex-wrap">
@@ -549,7 +551,7 @@
     <!-- ============================================== -->
     <!-- TAB 2: 联机补丁模式 (Online-Fix.me 自动下载解压安装) -->
     <!-- ============================================== -->
-    <div v-else-if="activeMainTab === 'patch'" class="space-y-6 flex-1 flex flex-col min-h-0 pb-10">
+    <div v-else-if="activeMainTab === 'patch'" class="space-y-6 flex flex-col min-h-0 pb-10">
       <!-- 快捷操作与搜索栏 -->
       <div class="flex items-center justify-between gap-3.5 flex-wrap shrink-0">
         <div class="flex items-center gap-3 flex-wrap">
@@ -943,6 +945,7 @@
       v-else-if="activeMainTab === 'p2p'"
       @toast="(msg) => emit('notify', msg, 'info')"
     />
+  </div>
 
     <!-- ============================================== -->
     <!-- 弹窗 3: Spacewar 未安装提示弹窗 -->
