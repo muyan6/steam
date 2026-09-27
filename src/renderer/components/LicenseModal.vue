@@ -228,7 +228,6 @@
               <Share2 class="w-3.5 h-3.5 text-rose-400" />
               <span>我的邀请码</span>
             </span>
-            <span class="text-[10px] text-slate-400 font-mono">设备码后 12 位 · 无需另行生成</span>
           </div>
           <div class="flex items-center gap-2">
             <div class="flex-1 bg-slate-900/90 px-3.5 py-2.5 rounded-xl border border-white/10 font-mono text-sm text-rose-300 font-black select-all tracking-[0.2em] text-center">
