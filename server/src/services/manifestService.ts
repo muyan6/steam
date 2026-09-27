@@ -29,6 +29,32 @@ const MAX_GIDS_PER_DEPOT = 200;
 /// .lua 解压文本总量上限：防止高压缩比条目把拼接字符串撑爆堆
 const MAX_LUA_TEXT_BYTES = 32 * 1024 * 1024;
 
+/// 简单的计数信号量：release 时把名额直接转交给等待者，避免"自减后再自增"的
+/// 中间窗口让新调用者超发。用于给并发上游请求设闸门。
+class Semaphore {
+  private active = 0;
+  private waiters: Array<() => void> = [];
+  constructor(private readonly max: number) {}
+
+  public acquire(): Promise<void> {
+    if (this.active < this.max) {
+      this.active++;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => this.waiters.push(resolve));
+  }
+
+  public release(): void {
+    const next = this.waiters.shift();
+    if (next) {
+      // 名额转交给等待者：不自减，等待者也不再自增
+      next();
+      return;
+    }
+    this.active = Math.max(0, this.active - 1);
+  }
+}
+
 /**
  * 并发竞速下载：首个通过 accept 校验的响应胜出，并在返回前 abort 其余请求。
  *
@@ -214,11 +240,20 @@ export class ManifestService {
     }
 
     // 3. 多源并发竞速兜底：SteamML (Cloudflare R2) + Remlua (AWS CloudFront) + ManifestHub3 高速镜像并行检索 (全量与免费游戏)
-    const [steamResult, remluaResult, hubResult] = await Promise.allSettled([
-      this.fetchFromSteamML(appId, candidateDepotIds),
-      this.fetchFromRemlua(appId, candidateDepotIds),
-      this.fetchFromManifestHub(appId, candidateDepotIds)
-    ]);
+    //    用列表闸门限流：这三路各自还会展开多镜像竞速，全局最多同时 2 个列表检索。
+    await this.acquireListSlot();
+    let steamResult: PromiseSettledResult<DepotManifestInfo[]>;
+    let remluaResult: PromiseSettledResult<DepotManifestInfo[]>;
+    let hubResult: PromiseSettledResult<DepotManifestInfo[]>;
+    try {
+      [steamResult, remluaResult, hubResult] = await Promise.allSettled([
+        this.fetchFromSteamML(appId, candidateDepotIds),
+        this.fetchFromRemlua(appId, candidateDepotIds),
+        this.fetchFromManifestHub(appId, candidateDepotIds)
+      ]);
+    } finally {
+      this.releaseListSlot();
+    }
 
     if (steamResult.status === 'rejected') {
       upstreamErrors.push({ source: 'steamml', error: steamResult.reason?.message || String(steamResult.reason) });
@@ -1146,22 +1181,32 @@ export class ManifestService {
   // 而每次 ensureManifestCachedInner 内部又展开最多 16 个竞速 URL。
   // 不设闸门时，一个 100 分包的游戏可瞬间拉起上百路上游请求。
   private readonly MAX_CONCURRENT_FETCHES = 4;
-  private activeFetches = 0;
-  private fetchWaiters: Array<() => void> = [];
+  // 清单列表检索（/manifests/:appId）的独立闸门：该路径每个请求会并发打
+  // P-ToyStore + SteamML + Remlua + ManifestHub(4 镜像) 等十余路上游，
+  // 且原先**完全不受**上面那道闸门约束 —— N 个并发请求就是 N×16 路上游。
+  // 用独立计数避免与"单个清单下载"互相饿死。
+  private readonly MAX_CONCURRENT_LIST_FETCHES = 2;
 
-  private async acquireFetchSlot(): Promise<void> {
-    if (this.activeFetches < this.MAX_CONCURRENT_FETCHES) {
-      this.activeFetches++;
-      return;
-    }
-    await new Promise<void>((resolve) => this.fetchWaiters.push(resolve));
-    this.activeFetches++;
+  // 通用信号量：名额在 release 时**直接转交**等待者，而不是"先自减再让等待者加"。
+  // 旧实现先 `active--` 再 `next()`，而等待者要等微任务续跑才自增，
+  // 这中间的窗口会让新调用者看到 active<max 而超发（并发上限被击穿）。
+  private readonly manifestSlots = new Semaphore(this.MAX_CONCURRENT_FETCHES);
+  private readonly listSlots = new Semaphore(this.MAX_CONCURRENT_LIST_FETCHES);
+
+  private acquireFetchSlot(): Promise<void> {
+    return this.manifestSlots.acquire();
   }
 
   private releaseFetchSlot(): void {
-    this.activeFetches = Math.max(0, this.activeFetches - 1);
-    const next = this.fetchWaiters.shift();
-    if (next) next();
+    this.manifestSlots.release();
+  }
+
+  private acquireListSlot(): Promise<void> {
+    return this.listSlots.acquire();
+  }
+
+  private releaseListSlot(): void {
+    this.listSlots.release();
   }
 
   public async ensureManifestCached(depotId: string, manifestId: string, appId?: number): Promise<string | null> {
@@ -1409,6 +1454,23 @@ export class ManifestService {
   }
 
   /**
+   * 清单是否存在于本地缓存（**仅查内存索引，不做任何文件读取**）。
+   *
+   * 供 `/metadata` 的 manifestInfo 这类纯状态判定使用：那里每个 depot 都要判定，
+   * 而 getLocalManifestFilePath 会为每个 depot 做 open/read/fstat/close 四次同步
+   * 系统调用，一个 100 分包的游戏每次元数据请求就要数百次同步 IO。
+   * 状态指示只关心"有没有"，索引由 readdir 构建、保存时增量维护，足够准确。
+   */
+  public hasLocalManifest(depotId: string, manifestId: string, appId?: number | string): boolean {
+    const index = this.getManifestIndex();
+    const fileName = `${depotId}_${manifestId}.manifest`;
+    if (index.flat.has(fileName)) return true;
+    if (appId && index.appDir.get(String(appId))?.has(fileName)) return true;
+    if (index.appDir.get(String(depotId))?.has(fileName)) return true;
+    return false;
+  }
+
+  /**
    * 获取本地指定清单文件路径
    * 支持以下检索优先级：
    * 1. 扁平存放: manifests/<depotId>_<manifestId>.manifest
@@ -1421,7 +1483,6 @@ export class ManifestService {
   public getLocalManifestFilePath(depotId: string, manifestId: string, appId?: number | string): string | null {
     const index = this.getManifestIndex();
     const fileName = `${depotId}_${manifestId}.manifest`;
-
     // 1. 扁平根目录（精确）
     const flat = index.flat.get(fileName);
     if (flat) {

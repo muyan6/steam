@@ -377,7 +377,8 @@ function computeManifestInfo(
   for (const d of depots) {
     if (d.manifestGid && /^\d+$/.test(d.manifestGid) && d.manifestGid !== '0') {
       hasGidCount++;
-      if (manifestService.getLocalManifestFilePath(d.depotId, d.manifestGid, appId)) {
+      // 仅查内存索引，不做每 depot 的文件读取（热路径，命中缓存时每请求都要算）
+      if (manifestService.hasLocalManifest(d.depotId, d.manifestGid, appId)) {
         readyManifestCount++;
       }
     }
