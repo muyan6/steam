@@ -70,7 +70,9 @@ fn window_maximize(window: Window) -> bool {
 
 #[tauri::command]
 fn window_close(window: Window) {
-    let _ = p2p::stop_p2p();
+    // 这里**不**做 P2P 清理：关窗后紧跟 WindowEvent::Destroyed，两处都清就是白跑两遍。
+    // 而且目前没有系统托盘，「关窗」等于退出；万一以后加了「最小化到托盘」，
+    // 在这里杀隧道会直接把用户正在用的联机掐断。清理统一交给 Destroyed / app_quit。
     let _ = window.close();
 }
 
@@ -81,7 +83,9 @@ fn is_window_maximized(window: Window) -> bool {
 
 #[tauri::command]
 fn app_quit(app_handle: AppHandle) {
-    let _ = p2p::stop_p2p();
+    // shutdown_p2p_once：整个进程只清理一次，且用的是 ToolHelp 进程快照（约 11ms），
+    // 不再 spawn PowerShell（约 446ms）。
+    p2p::shutdown_p2p_once();
     app_handle.exit(0);
 }
 
@@ -1946,7 +1950,7 @@ pub fn run() {
         })
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                let _ = p2p::stop_p2p();
+                p2p::shutdown_p2p_once();
             }
         })
         .invoke_handler(tauri::generate_handler![

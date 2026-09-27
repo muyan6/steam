@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,12 @@ const DEFAULT_SERVER_HOST: &str = "api.openp2p.cn";
 const DEFAULT_SERVER_PORT: u32 = 27183;
 
 static ACTIVE_P2P_CHILD: Mutex<Option<Child>> = Mutex::new(None);
+
+/// 退出路径的清理只做一次。
+///
+/// `window_close` / `app_quit` / `WindowEvent::Destroyed` 可能连续触发
+/// （点关闭按钮会先走 window_close，再触发 Destroyed），没有这道闸就会跑两遍。
+static P2P_SHUTDOWN_DONE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -177,20 +184,27 @@ pub fn locate_openp2p_bin() -> Option<PathBuf> {
     //    它要么是首次运行从安装包拷贝来的，要么是用户在「工具箱 → 同步最新 OpenP2P 引擎」
     //    在线升级得到的。绝不能因为「安装包里的二进制体积不同」就把它覆盖回去 ——
     //    那会把用户刚同步到的新引擎静默降级（旧实现正是按体积差异无条件覆写）。
+    //
+    //    注意：**不要**在这个函数里做任何二进制修补。locate_openp2p_bin() 被
+    //    get_status() 调用，而 P2P 面板每 3 秒轮询一次状态 —— 把「读 8.7MB + 全量扫描
+    //    + 可能回写」放在这里，等于每 3 秒做一次无用功（引擎运行中还会因文件被锁而
+    //    反复重试写 exe）。修补只放在「真的要把文件落盘/拉起」的路径上。
     if is_usable_binary(&appdata_bin) {
-        ensure_binary_as_invoker(&appdata_bin);
         return Some(appdata_bin);
     }
 
     // 2. 数据目录尚无可用的引擎（首次运行 / 被清理）：从自带资源拷贝一份过去
     for src in candidate_sources {
         if is_usable_binary(&src) {
-            if fs::copy(&src, &appdata_bin).is_ok() && is_usable_binary(&appdata_bin) {
-                ensure_binary_as_invoker(&appdata_bin);
-                return Some(appdata_bin);
+            if let Ok(bytes) = fs::read(&src) {
+                if write_binary_atomically(&appdata_bin, &bytes).is_ok() && is_usable_binary(&appdata_bin) {
+                    // 首次部署：顺手把老版本可能残留的 requireAdministrator 清单修成 asInvoker。
+                    // 只针对数据目录副本，绝不改写源码目录 / 安装目录里的原始资源。
+                    ensure_binary_as_invoker(&appdata_bin);
+                    return Some(appdata_bin);
+                }
             }
             // 拷贝失败（只读介质 / 权限不足）时退回直接使用源文件
-            ensure_binary_as_invoker(&src);
             return Some(src.canonicalize().unwrap_or(src));
         }
     }
@@ -198,14 +212,61 @@ pub fn locate_openp2p_bin() -> Option<PathBuf> {
     None
 }
 
-/// 确保二进制文件清单为 asInvoker 权限（自动修复老版本残留的 requireAdministrator 提权要求）
+/// 原子写入二进制：先写同目录临时文件再 rename 覆盖。
+///
+/// 直接 `fs::write` 是「截断再写」，8.7MB 的 exe 若中途失败会留下半截文件
+/// （虽然 is_usable_binary 的 1MB 下限能在下次自愈，但没必要冒这个风险）。
+fn write_binary_atomically(dest: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = dest.with_extension("exe.new");
+    fs::write(&tmp, bytes)?;
+    if dest.exists() {
+        let _ = fs::remove_file(dest);
+    }
+    match fs::rename(&tmp, dest) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+/// 已确认过 asInvoker 清单的二进制路径（避免重复读盘扫描）
+static MANIFEST_CHECKED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// 确保二进制文件清单为 asInvoker 权限。
+///
+/// 修复老版本春风渡残留的 requireAdministrator 提权要求（会让非管理员启动时报
+/// os error 740）。只在**即将拷贝/启动该文件**时调用一次：
+///   - 该路径已检查过 → 直接返回（关键：不要在状态轮询路径上重复读 8.7MB）；
+///   - 只对用户数据目录 / 安装目录的副本做修补，**绝不写 git 跟踪的源码目录**。
 fn ensure_binary_as_invoker(path: &PathBuf) {
+    let key = path.to_string_lossy().to_lowercase();
+
+    // 源码目录（开发机上的 assets/tools/openp2p）只读不写：那是 git 跟踪文件，
+    // 静默改写会在开发者本机改脏工作区，并被下一次 git add -A 带进提交。
+    let is_source_tree = key.contains("assets") && key.contains("tools") && key.contains("openp2p");
+    let is_appdata_copy = key.contains("com.chunfengdu.app");
+
+    if let Ok(guard) = MANIFEST_CHECKED.lock() {
+        if guard.iter().any(|k| *k == key) {
+            return;
+        }
+    }
+
     if let Ok(mut bytes) = fs::read(path) {
         let target = b"level=\"requireAdministrator\"";
         if bytes.windows(target.len()).any(|w| w == target) {
             patch_manifest_to_as_invoker(&mut bytes);
-            let _ = fs::write(path, &bytes);
+            if is_appdata_copy && !is_source_tree {
+                // 原子替换，避免 8.7MB exe 写到一半失败留下半截文件
+                let _ = write_binary_atomically(path, &bytes);
+            }
         }
+    }
+
+    if let Ok(mut guard) = MANIFEST_CHECKED.lock() {
+        guard.push(key);
     }
 }
 
@@ -338,60 +399,183 @@ fn save_config(cfg: &P2pFullConfig) -> Result<(), String> {
     fs::write(&config_file, json_str).map_err(|e| format!("写入配置文件失败: {}", e))
 }
 
-pub fn is_p2p_running() -> bool {
-    let mut guard = ACTIVE_P2P_CHILD.lock().unwrap();
-    if let Some(child) = guard.as_mut() {
-        match child.try_wait() {
-            Ok(None) => return true,
-            _ => {
-                *guard = None;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// 枚举系统中所有 openp2p.exe 进程，返回 (pid, 父 pid, 可执行文件全路径)。
+///
+/// 用 ToolHelp 快照而不是 `Get-CimInstance` / `tasklist`：后者每次调用都要 spawn
+/// 一个进程（本机实测 PowerShell 约 446ms、taskkill 约 192ms），而本函数既服务于
+/// 「是否在运行」的 3 秒轮询，也服务于窗口关闭路径 —— 这两处都不该付那个代价。
+#[cfg(windows)]
+fn list_openp2p_processes() -> Vec<(u32, u32, String)> {
+    use std::mem::zeroed;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let mut out: Vec<(u32, u32, String)> = Vec::new();
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE || snapshot.is_null() {
+            return out;
+        }
+
+        let mut entry: PROCESSENTRY32W = zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        if Process32FirstW(snapshot, &mut entry) != 0 {
+            loop {
+                let name_len = entry
+                    .szExeFile
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let name = String::from_utf16_lossy(&entry.szExeFile[..name_len]);
+                if name.eq_ignore_ascii_case("openp2p.exe") {
+                    let pid = entry.th32ProcessID;
+                    let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+                    if !handle.is_null() {
+                        let mut buf = [0u16; 1024];
+                        let mut size = buf.len() as u32;
+                        let ok = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut size);
+                        CloseHandle(handle);
+                        if ok != 0 {
+                            out.push((
+                                pid,
+                                entry.th32ParentProcessID,
+                                String::from_utf16_lossy(&buf[..size as usize]),
+                            ));
+                        }
+                    }
+                }
+                if Process32NextW(snapshot, &mut entry) == 0 {
+                    break;
+                }
             }
         }
-    }
 
-    // 辅助检查系统进程是否有我们目录拉起的 openp2p
-    false
+        CloseHandle(snapshot);
+    }
+    out
+}
+
+#[cfg(not(windows))]
+fn list_openp2p_processes() -> Vec<(u32, u32, String)> {
+    Vec::new()
+}
+
+/// 本应用数据目录下 openp2p.exe 的路径比对形式（小写；含规范化后的去 `\\?\` 形式）
+#[cfg(windows)]
+fn own_binary_path_keys() -> Vec<String> {
+    let raw = get_p2p_dir().join("openp2p.exe");
+    let mut keys = vec![raw.to_string_lossy().to_lowercase()];
+    if let Ok(canon) = fs::canonicalize(&raw) {
+        let c = canon.to_string_lossy().to_lowercase();
+        keys.push(c.trim_start_matches("\\\\?\\").to_string());
+        keys.push(c);
+    }
+    keys
+}
+
+/// 本应用数据目录下正在运行的 openp2p 进程 pid。
+///
+/// 绝不按镜像名通杀（`taskkill /IM openp2p.exe`）：那会把用户自己、或
+/// Guailoudou / OPL 等第三方联机工具拉起的同名进程一起杀掉，切断别人正在用的隧道。
+/// 这里按可执行文件全路径精确匹配，只认我们自己部署的那一份。
+#[cfg(windows)]
+fn own_openp2p_pids() -> Vec<u32> {
+    let keys = own_binary_path_keys();
+    list_openp2p_processes()
+        .into_iter()
+        .filter(|(_, _, path)| {
+            let p = path.to_lowercase();
+            keys.iter().any(|k| *k == p)
+        })
+        .map(|(pid, _, _)| pid)
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn own_openp2p_pids() -> Vec<u32> {
+    Vec::new()
 }
 
 #[cfg(windows)]
-use std::os::windows::process::CommandExt;
+fn terminate_pid(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+    unsafe {
+        let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let ok = TerminateProcess(handle, 1);
+        CloseHandle(handle);
+        ok != 0
+    }
+}
+
+#[cfg(not(windows))]
+fn terminate_pid(_pid: u32) -> bool {
+    false
+}
 
 /// 结束整个进程树。
 ///
 /// openp2p 以 `-d` 启动时会再 fork 一个 `-nv` worker（实测 daemon 与 worker 是两个进程），
 /// 只 kill 直接子进程会留下孤儿 worker 继续占用 1919 / 27183 端口，导致下次启动 bind 失败。
-#[cfg(windows)]
 fn kill_process_tree(pid: u32) {
-    let _ = Command::new("taskkill")
-        .args(&["/F", "/T", "/PID", &pid.to_string()])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
+    fn collect_descendants(procs: &[(u32, u32, String)], parent: u32, out: &mut Vec<u32>) {
+        for (p, pp, _) in procs {
+            if *pp == parent {
+                collect_descendants(procs, *p, out);
+                out.push(*p);
+            }
+        }
+    }
+
+    let procs = list_openp2p_processes();
+    let mut order: Vec<u32> = Vec::new();
+    collect_descendants(&procs, pid, &mut order);
+    for child in order {
+        let _ = terminate_pid(child);
+    }
+    let _ = terminate_pid(pid);
 }
 
-#[cfg(not(windows))]
-fn kill_process_tree(_pid: u32) {}
-
-/// 仅清理「本应用数据目录下」的 openp2p 实例（崩溃/强退后的残留）。
-///
-/// 绝不使用 `taskkill /IM openp2p.exe`：那会把用户自己、或 Guailoudou / OPL 等
-/// 第三方联机工具拉起的同名进程一起杀掉，直接切断别人正在使用的隧道。
-/// 这里按可执行文件全路径精确匹配，只动我们自己部署的那一份。
-#[cfg(windows)]
+/// 仅清理「本应用数据目录下」因崩溃/强退残留的 openp2p 实例
 fn kill_own_openp2p_instances() {
-    let target = get_p2p_dir().join("openp2p.exe");
-    let target_lit = target.to_string_lossy().replace('\'', "''").to_lowercase();
-    let script = format!(
-        "Get-CimInstance Win32_Process -Filter \"Name='openp2p.exe'\" | Where-Object {{ $_.ExecutablePath -and $_.ExecutablePath.ToLower() -eq '{}' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}",
-        target_lit
-    );
-    let _ = Command::new("powershell")
-        .args(&["-NoProfile", "-NonInteractive", "-Command", &script])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
+    for pid in own_openp2p_pids() {
+        let _ = terminate_pid(pid);
+    }
 }
 
-#[cfg(not(windows))]
-fn kill_own_openp2p_instances() {}
+/// P2P 隧道服务是否在运行。
+///
+/// 先看本进程持有的子进程句柄；句柄不可用（应用崩溃/被任务管理器强杀后重开）时
+/// **按进程核实** —— 我们目录下的 openp2p 仍在跑就说明隧道其实还活着。
+/// 旧实现只看内存句柄，于是残留进程仍在转发时 UI 却报「服务待命中」，
+/// 把「已连接」全部显示成「待命」。
+pub fn is_p2p_running() -> bool {
+    {
+        let mut guard = ACTIVE_P2P_CHILD.lock().unwrap();
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(None) => return true,
+                _ => {
+                    *guard = None;
+                }
+            }
+        }
+    }
+
+    !own_openp2p_pids().is_empty()
+}
 
 /// 优雅停止所有由本客户端启动的 openp2p 实例
 pub fn stop_p2p() -> Result<bool, String> {
@@ -405,10 +589,26 @@ pub fn stop_p2p() -> Result<bool, String> {
         }
     }
 
-    // 兜底：清理本应用目录下因崩溃/强退残留的实例（含 taskkill 未及杀掉的 worker）
+    // 兜底：清理本应用目录下因崩溃/强退残留的实例
     kill_own_openp2p_instances();
 
     Ok(true)
+}
+
+/// 应用退出路径的清理：整个进程只执行一次。
+///
+/// `window_close` / `app_quit` / `WindowEvent::Destroyed` 可能连续触发
+/// （点关闭按钮会先走 window_close，再触发 Destroyed），没有这道闸就会跑两遍。
+///
+/// 这里刻意**不**加「本会话是否用过 P2P」的前置判断：应用被任务管理器强杀后
+/// 重新打开、且用户不再进联机页时，上一轮残留的 openp2p 仍需在退出时清掉。
+/// 代价是一次 ToolHelp 进程快照（本机实测约 11ms），远低于原先 spawn PowerShell
+/// 的 446ms，无需为它牺牲正确性。
+pub fn shutdown_p2p_once() {
+    if P2P_SHUTDOWN_DONE.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let _ = stop_p2p();
 }
 
 /// 启动 openp2p 守护模式（房主或待命监听状态）
@@ -417,6 +617,11 @@ pub fn start_p2p_daemon() -> Result<bool, String> {
 
     let exe_path = locate_openp2p_bin().ok_or_else(|| "未找到 openp2p.exe 组件，请检查 assets/tools 目录".to_string())?;
     let dir = get_p2p_dir();
+
+    // 真正要拉起进程之前，才做一次清单修补（asInvoker）。
+    // 此时 stop_p2p() 已跑完，二进制不会被占用，可安全回写；
+    // MANIFEST_CHECKED 保证同一进程内每个路径最多只读盘扫描一次。
+    ensure_binary_as_invoker(&exe_path);
 
     // 确保配置文件存在
     let _ = read_current_config();
@@ -654,14 +859,14 @@ pub fn parse_share_code(code_str: &str) -> Result<ParsedShareCode, String> {
         }
     }
 
-    let b64_part = if let Some(stripped) = trimmed.strip_prefix("CFD://") {
-        stripped
-    } else if let Some(stripped) = trimmed.strip_prefix("cfd://") {
-        stripped
-    } else if let Some(stripped) = trimmed.strip_prefix("OPL://") {
-        stripped
-    } else if let Some(stripped) = trimmed.strip_prefix("opl://") {
-        stripped
+    // 前缀按大小写不敏感剥离：只枚举 CFD/cfd/OPL/opl 四种写法时，
+    // 用户手打或某些输入法产生的 "Cfd://" / "Opl://" 会掉进「当裸 Base64 解码」分支，
+    // 报出与真实原因无关的「Base64 格式无效」。
+    let lower = trimmed.to_ascii_lowercase();
+    let b64_part = if lower.starts_with("cfd://") {
+        &trimmed["cfd://".len()..]
+    } else if lower.starts_with("opl://") {
+        &trimmed["opl://".len()..]
     } else {
         trimmed
     };

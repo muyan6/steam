@@ -41,6 +41,11 @@ windows-sys = { version = "0.59", features = [
     "Win32_NetworkManagement_Ndis",
     "Win32_Networking_WinSock",
     "Win32_System_SystemInformation",
+    # P2P：按可执行文件全路径枚举 / 结束本应用目录下的 openp2p 进程。
+    # 用 ToolHelp 替代「每次起一个 PowerShell」——实测 spawn PowerShell 约 446ms，
+    # 而退出路径与状态轮询都不该付这个代价。
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Threading",
 ] }
 notify = "6.1.1"
 
