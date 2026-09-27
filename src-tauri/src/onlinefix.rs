@@ -710,54 +710,102 @@ pub fn is_temp_archive(path: &str) -> bool {
     p.starts_with(temp_download_dir())
 }
 
-/// 判定一个目录是否"看起来是游戏安装目录"，用于挡住前端传入任意绝对路径
-/// （如系统目录、启动项）造成的任意文件写入/覆盖。
-///
-/// 既要包含游戏特征文件（steam_api 系列 / steam_appid.txt / OnlineFix.ini / 任意 .exe），
-/// 又要排除明显的系统敏感目录。这是纵深防御：正常流程路径来自目录选择器，
-/// 此处再校验一次以免路径被篡改或误传。
-pub fn is_plausible_game_dir(dir: &Path) -> bool {
+/// 帮助函数：目录内（含子目录，深度 `depth`）是否存在 Steam 游戏特征文件。
+/// 覆盖 Unity（`*_Data/Plugins/x86_64/steam_api64.dll`）与嵌套安装布局，
+/// 以及 `steam_appid.txt` / `OnlineFix.ini` / 任意 `.exe`。
+fn contains_game_marker(dir: &Path, depth: usize) -> bool {
     if !dir.is_dir() {
         return false;
     }
-    let win = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
-    if let Ok(canon) = dir.canonicalize() {
-        let lower = canon.to_string_lossy().to_lowercase();
-        // 拒绝系统目录与盘符根，避免把补丁写进 C:\Windows、System32、Program Files 根等
-        let blocked = [
-            win.to_lowercase(),
-            "c:\\windows".to_string(),
-            "c:\\program files".to_string(),
-            "c:\\program files (x86)".to_string(),
-        ];
-        if blocked.iter().any(|b| lower == *b) {
-            return false;
-        }
-        // 盘符根（如 C:\）只有一个组件
-        if canon.components().count() <= 1 {
-            return false;
-        }
-    }
-    let has_marker = dir.join("steam_api64.dll").exists()
-        || dir.join("steam_api.dll").exists()
-        || dir.join("steam_appid.txt").exists()
-        || dir.join("OnlineFix.ini").exists();
-    if has_marker {
-        return true;
-    }
-    // 退化判定：含任意 .exe 也视为游戏目录（部分游戏不使用标准 steam_api 命名）
     if let Ok(rd) = fs::read_dir(dir) {
+        let mut subdirs: Vec<PathBuf> = Vec::new();
         for e in rd.filter_map(|x| x.ok()) {
-            if e.path()
-                .extension()
-                .map(|x| x.eq_ignore_ascii_case("exe"))
-                .unwrap_or(false)
+            let p = e.path();
+            if p.is_dir() {
+                // 不深入插件/数据大目录之外的无关目录，深度有限即可
+                subdirs.push(p);
+                continue;
+            }
+            let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if name == "steam_api64.dll"
+                || name == "steam_api.dll"
+                || name == "steam_appid.txt"
+                || name == "onlinefix.ini"
+                || name.ends_with(".exe")
             {
                 return true;
             }
         }
+        if depth > 0 {
+            for sub in subdirs {
+                if contains_game_marker(&sub, depth - 1) {
+                    return true;
+                }
+            }
+        }
     }
     false
+}
+
+/// 判定一个目录是否"看起来是游戏安装目录"，用于挡住前端传入任意绝对路径
+/// （如系统目录、启动项）造成的任意文件写入/覆盖。
+///
+/// 设计要点：**它只是一道"别写到系统目录"的护栏，不是"布局必须多浅"的断言。**
+/// 因此判定必须宽松到能容纳真实的复杂安装结构：
+///   - Steam 库：路径位于 `<任意>\steamapps\common\<游戏>\` 下 → 直接放行；
+///   - Unity 游戏：`steam_api64.dll` 常在 `*_Data/Plugins/x86_64/`（不在根目录），
+///     游戏 exe 也可能在**子目录**里（如 《How to Fish》 的
+///     `installdir\How to Fish\How to Fish.exe`）—— 根目录看不到任何 exe；
+///   - 因此改为**递归探测（深度 3）**，而不是只看根目录一层。
+///
+/// 早期实现只查根目录一层，会让这类游戏被误判为"非游戏目录"而拒绝部署补丁（回归）。
+pub fn is_plausible_game_dir(dir: &Path) -> bool {
+    if !dir.is_dir() {
+        return false;
+    }
+    // **必须是绝对路径**：否则 `path.join(entry)` 会产出相对路径，文件被写到
+    // 进程当前工作目录（即软件安装目录 / 源码目录），而不是游戏目录。
+    // 这正是"补丁文件出现在软件目录"的成因（gamePath 为空/相对时）。
+    if !dir.is_absolute() {
+        return false;
+    }
+    // 必须用 canonicalize_normalized：裸 canonicalize 会带上 `\\?\` verbatim 前缀，
+    // 与下面硬编码的 "c:\\windows" 等字面量恒不相等 → 系统目录黑名单会完全失效。
+    let canon = canonicalize_normalized(dir);
+    let lower = canon.to_string_lossy().to_lowercase();
+
+    // 1) 明确拒绝系统敏感目录（这才是本护栏的真正目的）
+    let win = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+    let sys = win.to_lowercase();
+    // 系统根、System32/SysWOW64/驱动/字体等关键子目录
+    for bad in [
+        sys.clone(),
+        format!("{}\\system32", sys),
+        format!("{}\\syswow64", sys),
+        format!("{}\\winsxs", sys),
+        format!("{}\\fonts", sys),
+        "c:\\program files".to_string(),
+        "c:\\program files (x86)".to_string(),
+    ] {
+        if lower == bad {
+            return false;
+        }
+    }
+    // 盘符根（如 C:\）没有父目录 → 拒绝。
+    // 注意不能用 components().count() <= 1：Windows 上 `C:\` 会被解析为
+    // [Prefix, RootDir] 两个组件，count==1 永不成立、该检查会失效。
+    if canon.parent().is_none() {
+        return false;
+    }
+
+    // 2) Steam 库直通：位于 steamapps/common/<游戏> 下即认可
+    let norm = lower.replace('/', "\\");
+    if norm.contains("\\steamapps\\common\\") {
+        return true;
+    }
+
+    // 3) 通用特征探测：根目录 + 子目录（深度 3），适配 Unity/嵌套布局
+    contains_game_marker(&canon, 3)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1215,4 +1263,62 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
 
 pub fn server_api() -> &'static str {
     SERVER_API
+}
+
+#[cfg(test)]
+mod game_dir_guard_tests {
+    use super::*;
+
+    /// 回归：根目录没有 exe、steam_api 在子目录的 Unity/嵌套布局必须被放行。
+    /// 早期实现只查根目录一层，导致《How to Fish》这类游戏被误判为"非游戏目录"而拒绝部署补丁。
+    #[test]
+    fn nested_unity_layout_is_accepted() {
+        let root = std::env::temp_dir().join("cfd_gdir_test_nested");
+        let _ = fs::remove_dir_all(&root);
+        // 模拟 installdir/Game/Game.exe + installdir/Game_Data/Plugins/x86_64/steam_api64.dll
+        let inner = root.join("Game");
+        fs::create_dir_all(inner.join("Game_Data").join("Plugins").join("x86_64")).unwrap();
+        fs::write(inner.join("Game.exe"), b"MZ").unwrap();
+        fs::write(
+            inner.join("Game_Data").join("Plugins").join("x86_64").join("steam_api64.dll"),
+            b"MZ",
+        )
+        .unwrap();
+        // 根目录本身没有任何 exe / 标记文件
+        assert!(is_plausible_game_dir(&root), "嵌套 Unity 布局应被接受");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 系统敏感目录必须始终被拒绝（防止把补丁写进系统目录）。
+    #[test]
+    fn system_dirs_are_rejected() {
+        let win = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+        assert!(!is_plausible_game_dir(Path::new(&win)), "Windows 根必须拒绝");
+        assert!(!is_plausible_game_dir(Path::new(&format!("{}\\System32", win))), "System32 必须拒绝");
+        assert!(!is_plausible_game_dir(Path::new(r"C:\")), "盘符根必须拒绝");
+        assert!(!is_plausible_game_dir(Path::new(r"C:\Program Files")), "Program Files 根必须拒绝");
+    }
+
+    /// 回归：空路径 / 相对路径必须拒绝 —— 否则 path.join 会把补丁写到进程 cwd
+    /// （软件安装目录 / 源码目录），这正是"补丁文件出现在软件目录"的成因。
+    #[test]
+    fn relative_or_empty_path_is_rejected() {
+        assert!(!is_plausible_game_dir(Path::new("")), "空路径必须拒绝");
+        assert!(!is_plausible_game_dir(Path::new(".")), "相对路径必须拒绝");
+        assert!(!is_plausible_game_dir(Path::new("How to Fish")), "相对路径必须拒绝");
+    }
+
+    /// Steam 库直通：位于 steamapps/common 下即认可。
+    #[test]
+    fn steam_library_path_is_accepted() {
+        let root = std::env::temp_dir()
+            .join("cfd_gdir_test_steam")
+            .join("steamapps")
+            .join("common")
+            .join("Some Game");
+        let _ = fs::remove_dir_all(root.parent().unwrap().parent().unwrap().parent().unwrap());
+        fs::create_dir_all(&root).unwrap();
+        assert!(is_plausible_game_dir(&root), "steamapps/common 下的目录应被接受");
+        let _ = fs::remove_dir_all(root.parent().unwrap().parent().unwrap().parent().unwrap());
+    }
 }

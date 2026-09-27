@@ -1378,11 +1378,18 @@ const confirmExecuteRepair = async () => {
 
 // 联机补丁模式：从 online-fix.me 自动检索下载并解压安装补丁
 const handleInstallOnlineFixWebPatch = async (game: LocalInstalledGame) => {
+  // 前置校验：安装目录必须已探测到（绝对路径）。缺失时直接给出可操作提示，
+  // 绝不把空/相对路径下发 —— 那会让补丁被写到软件自身的工作目录里。
+  const dir = (game.fullInstallPath || '').trim();
+  if (!dir) {
+    emit('notify', `未能确定《${game.name}》的安装目录，请先在「已入库规则管理」中确认 Steam 库路径后重试。`, 'error');
+    return;
+  }
   addPending(pendingInstalls, game.appId);
   try {
     emit('notify', `正在 online-fix.me 检索《${game.name}》(AppID: ${game.appId}) 联机补丁...`, 'info');
     const res = await window.electronAPI.installOnlineFixFromWeb(
-      game.fullInstallPath,
+      dir,
       game.appId,
       game.name
     );

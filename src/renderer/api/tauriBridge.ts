@@ -896,6 +896,10 @@ export const createTauriBridge = () => {
       const isRar = fileName.toLowerCase().endsWith('.rar');
 
       let extractedCount = 0;
+      // 捕获 Rust 端返回的**具体**失败原因，避免被下方通用兜底文案掩盖：
+      // 例如"目标目录不是有效的游戏安装目录，已拒绝写入"这类拦截原因，
+      // 若只按 extractedCount==0 生成通用提示，用户与排障者都看不到真实原因。
+      let deployReason = '';
       if (isRar) {
         // 2a. RAR：读取原始字节 → 渲染进程 unrar.wasm 懒解压 → 攒批回传由 Rust 部署
         //     （单批 IPC 载荷约 4MB；条目边解边释放，不整包驻留内存）
@@ -907,7 +911,10 @@ export const createTauriBridge = () => {
             entries: batch.map((e) => ({ name: e.name, dataB64: e.dataB64 })),
             archivePath: null
           });
-          deployed += res.extractedCount ?? 0;
+          const n = res.extractedCount ?? 0;
+          deployed += n;
+          // 记录首个"有内容却一个都没写进去"的原因（即真正的拦截原因）
+          if (n === 0 && !deployReason && res?.message) deployReason = String(res.message);
         });
         // 传空批次触发 Rust 侧清理临时归档（deploy 末尾按 archivePath 删除）
         await invoke('onlinefix_deploy', { gamePath, entries: [], archivePath });
@@ -922,7 +929,8 @@ export const createTauriBridge = () => {
         success: extractedCount > 0,
         message: extractedCount > 0
           ? `成功从 online-fix.me 下载并安装联机补丁 (${fileName})，共解压部署 ${extractedCount} 个文件！`
-          : '补丁已下载但未能部署任何文件（归档可能为空、密码不匹配或全部条目被拒绝）',
+          // 优先透出 Rust 端的真实原因；确实拿不到时才回落到通用文案
+          : (deployReason || '补丁已下载但未能部署任何文件（归档可能为空、密码不匹配或全部条目被拒绝）'),
         fileName,
         extractedCount,
         articleUrl: prep.articleUrl,
