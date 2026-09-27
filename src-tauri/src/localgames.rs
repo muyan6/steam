@@ -545,6 +545,11 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
 
     walk_restore(dir_path, 0, &mut failed);
 
+    // 还原部署补丁时按文件备份的原版内容（含被补丁覆盖的 exe/配置/依赖 DLL）。
+    // 这是"一键还原"能真正恢复原版的关键：仅还原 steam_api*.dll 不足以修复
+    // 被补丁覆盖过的其它文件。放在最后执行，确保它覆盖掉 walk_restore 的还原结果。
+    crate::onlinefix::restore_patch_backups(dir_path, &mut failed);
+
     if failed.is_empty() {
         Ok("已完全恢复游戏原版状态与 DLL 文件！".to_string())
     } else {

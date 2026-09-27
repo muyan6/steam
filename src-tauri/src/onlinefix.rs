@@ -1027,6 +1027,12 @@ pub fn deploy_patch_entries(
         if let Some(parent) = dest_resolved.parent() {
             let _ = fs::create_dir_all(parent);
         }
+        // 覆盖前先备份原文件；备份失败则放弃该条，避免原文件被覆盖后无从还原
+        if let Err(e) = backup_before_overwrite(&resolved_game, &dest_resolved) {
+            println!("[OnlineFix] 跳过（备份原文件失败）: {} - {}", entry.name, e);
+            rejected += 1;
+            continue;
+        }
         if fs::write(&dest_resolved, &data).is_ok() {
             count += 1;
         } else {
@@ -1059,6 +1065,67 @@ pub fn deploy_patch_entries(
         extracted_count: Some(count),
         article_url: None,
         download_url: None,
+    }
+}
+
+/// 补丁覆盖文件的原版备份目录（位于游戏目录内，保持相对目录结构）。
+///
+/// 为什么需要：联机补丁会覆盖游戏目录内的**任意文件**（含 exe、配置、依赖 DLL），
+/// 而"一键还原"原先只还原 `steam_api*.dll`。补丁覆盖了别的文件后无法恢复，
+/// 游戏就永久损坏。部署前把每个被覆盖的原文件备份到此目录，还原时统一还原。
+pub(crate) const PATCH_BACKUP_DIR: &str = ".cfd_patch_backup";
+
+/// 覆盖写入前备份原文件（保持相对目录结构）。已备份过的不重复覆盖。
+///
+/// 返回 Err 表示备份失败——调用方必须**放弃本次覆盖**，否则原文件被覆盖后无从还原。
+fn backup_before_overwrite(game_root: &Path, target: &Path) -> Result<(), String> {
+    if !target.exists() {
+        return Ok(()); // 目标原本不存在：无需备份，还原时直接删除即可
+    }
+    let rel = target
+        .strip_prefix(game_root)
+        .map_err(|_| "目标不在游戏目录内".to_string())?;
+    let bak = game_root.join(PATCH_BACKUP_DIR).join(rel);
+    if bak.exists() {
+        return Ok(()); // 已有首次备份，不被后续覆盖改写
+    }
+    if let Some(parent) = bak.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建补丁备份目录失败: {}", e))?;
+    }
+    fs::copy(target, &bak).map_err(|e| format!("备份原文件失败: {}", e))?;
+    Ok(())
+}
+
+/// 还原：把部署时备份的原文件全部还原，并清理备份目录。
+/// `failed` 收集还原失败的项（备份一律保留，绝不因 copy 失败而删除）。
+pub(crate) fn restore_patch_backups(dir_path: &Path, failed: &mut Vec<String>) {
+    let backup_root = dir_path.join(PATCH_BACKUP_DIR);
+    if !backup_root.exists() {
+        return;
+    }
+    // 备份内的相对路径 -> 游戏目录内的原始位置
+    fn walk(dir_path: &Path, backup_root: &Path, cur: &Path, failed: &mut Vec<String>) {
+        let Ok(entries) = fs::read_dir(cur) else { return };
+        for entry in entries.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            if p.is_dir() {
+                walk(dir_path, backup_root, &p, failed);
+            } else {
+                let Ok(rel) = p.strip_prefix(backup_root) else { continue };
+                let target = dir_path.join(rel);
+                if let Some(parent) = target.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                if let Err(e) = fs::copy(&p, &target) {
+                    failed.push(format!("{}（{}）", rel.to_string_lossy(), e));
+                }
+            }
+        }
+    }
+    walk(dir_path, &backup_root, &backup_root, failed);
+    // 全部还原成功才清理备份目录；有失败则保留备份供重试
+    if failed.is_empty() {
+        let _ = fs::remove_dir_all(&backup_root);
     }
 }
 
@@ -1122,6 +1189,13 @@ pub fn extract_zip_archive(archive_path: &str, dest_dir: &str) -> Result<usize, 
                     "归档解压量超出安全限制（单文件上限 50MB / 总量上限 200MB），已中止：条目 {}",
                     safe_name.display()
                 ));
+            }
+            // 覆盖前先备份原文件；失败则跳过该条（原文件保留未改动）。
+            // 归一化 out_path 后再比对，避免 dest 与 dest_resolved 大小写/前缀形态差异导致 strip_prefix 失败
+            let out_norm = canonicalize_normalized(&out_path);
+            if let Err(e) = backup_before_overwrite(&dest_resolved, &out_norm) {
+                println!("[OnlineFix] 跳过（备份原文件失败）: {} - {}", safe_name.display(), e);
+                continue;
             }
             if fs::write(&out_path, &buf).is_ok() {
                 count += 1;

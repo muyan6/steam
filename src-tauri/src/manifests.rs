@@ -38,6 +38,14 @@ pub fn http_client_builder() -> reqwest::ClientBuilder {
 /// 这些内容来自第三方镜像，必须防止超大响应或 zip 炸弹耗尽内存/磁盘。
 pub const MAX_ASSET_DOWNLOAD_BYTES: u64 = 50 * 1024 * 1024;
 
+/// 清单专属体积上限（256MB）。
+///
+/// 为什么清单要单独放宽：Steam 分包清单（.manifest）随 depot 文件数增长，
+/// 大型游戏的核心分包实测可达数百 MB，用 50MB 统一上限会把合法大清单**永久拒收**，
+/// 该分包永远下不下来（偏小游戏无感，大游戏核心分包必现）。
+/// 引擎/补丁/内核/字典等仍是 50MB，不因清单放宽而降低它们的防护。
+pub const MAX_MANIFEST_DOWNLOAD_BYTES: u64 = 256 * 1024 * 1024;
+
 /// 游戏字典体积极小（当前约 4MB），但作为检索基线允许适度余量
 pub const MAX_DICT_DOWNLOAD_BYTES: u64 = 50 * 1024 * 1024;
 
@@ -98,7 +106,8 @@ async fn fetch_source(src: RemoteSource) -> SourceResult {
     if !resp.status().is_success() {
         return None;
     }
-    let bytes = read_body_limited(resp, MAX_ASSET_DOWNLOAD_BYTES).await.ok()?;
+    // 清单源专用放宽上限：大游戏分包清单可超 50MB
+    let bytes = read_body_limited(resp, MAX_MANIFEST_DOWNLOAD_BYTES).await.ok()?;
     if bytes.is_empty() {
         return None;
     }
@@ -151,7 +160,7 @@ async fn fetch_manifesthub_uk_manifest(
         if !dl_resp.status().is_success() {
             continue;
         }
-        let Ok(bytes) = read_body_limited(dl_resp, MAX_ASSET_DOWNLOAD_BYTES).await else {
+        let Ok(bytes) = read_body_limited(dl_resp, MAX_MANIFEST_DOWNLOAD_BYTES).await else {
             continue;
         };
         if let Some(payload) = extract_manifest_from_zip(&bytes, &depot_id, &manifest_gid) {
@@ -812,10 +821,10 @@ pub fn extract_manifest_from_zip(zip_bytes: &[u8], depot_id: &str, manifest_gid:
                         .unwrap_or("");
                     if file_name.eq_ignore_ascii_case(&target_name) {
                         let mut buf = Vec::new();
-                        if std::io::Read::take(&mut entry, MAX_ASSET_DOWNLOAD_BYTES + 1)
+                        if std::io::Read::take(&mut entry, MAX_MANIFEST_DOWNLOAD_BYTES + 1)
                             .read_to_end(&mut buf)
                             .is_ok()
-                            && buf.len() as u64 <= MAX_ASSET_DOWNLOAD_BYTES
+                            && buf.len() as u64 <= MAX_MANIFEST_DOWNLOAD_BYTES
                             && is_valid_manifest_payload(&buf)
                         {
                             return Some(buf);
@@ -836,7 +845,8 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
     let sml_url = format!("https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip", app_id);
     if let Ok(resp) = block_on(http_client().get(&sml_url).timeout(Duration::from_secs(4)).send()) {
         if resp.status().is_success() {
-            if let Ok(bytes) = read_body_limited_blocking(resp, MAX_ASSET_DOWNLOAD_BYTES) {
+            // 该 zip 内含全部清单，可达数百 MB，用清单专用上限
+            if let Ok(bytes) = read_body_limited_blocking(resp, MAX_MANIFEST_DOWNLOAD_BYTES) {
                 if let Some(text) = extract_lua_from_zip(&bytes) {
                     lua_content = Some(text);
                 }
@@ -848,7 +858,8 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
         let remlua_url = format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", app_id);
         if let Ok(resp) = block_on(http_client().get(&remlua_url).timeout(Duration::from_secs(4)).send()) {
             if resp.status().is_success() {
-                if let Ok(bytes) = read_body_limited_blocking(resp, MAX_ASSET_DOWNLOAD_BYTES) {
+                // 同上：含全部清单的整包 zip，用清单专用上限
+                if let Ok(bytes) = read_body_limited_blocking(resp, MAX_MANIFEST_DOWNLOAD_BYTES) {
                     if let Some(text) = extract_lua_from_zip(&bytes) {
                         lua_content = Some(text);
                     }
@@ -921,7 +932,7 @@ pub fn fetch_metadata_from_backup_sources(app_id: u32) -> Result<AppMetadata, St
                                         .send(),
                                 ) {
                                     if dl_resp.status().is_success() {
-                                        if let Ok(bytes) = read_body_limited_blocking(dl_resp, MAX_ASSET_DOWNLOAD_BYTES) {
+                                        if let Ok(bytes) = read_body_limited_blocking(dl_resp, MAX_MANIFEST_DOWNLOAD_BYTES) {
                                             if let Some(text) = extract_lua_from_zip(&bytes) {
                                                 lua_content = Some(text);
                                                 break;
@@ -1515,11 +1526,11 @@ fn extract_manifest_payload(data: &[u8]) -> Vec<u8> {
             if let Ok(mut entry) = archive.by_index(i) {
                 if !entry.is_dir() {
                     let mut buf = Vec::new();
-                    if std::io::Read::take(&mut entry, MAX_ASSET_DOWNLOAD_BYTES + 1)
+                    if std::io::Read::take(&mut entry, MAX_MANIFEST_DOWNLOAD_BYTES + 1)
                         .read_to_end(&mut buf)
                         .is_ok()
                         && !buf.is_empty()
-                        && buf.len() as u64 <= MAX_ASSET_DOWNLOAD_BYTES
+                        && buf.len() as u64 <= MAX_MANIFEST_DOWNLOAD_BYTES
                     {
                         return buf;
                     }
