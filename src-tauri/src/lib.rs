@@ -1859,6 +1859,13 @@ async fn p2p_get_status() -> p2p::P2pStatusInfo {
 }
 
 #[tauri::command]
+async fn p2p_get_peers() -> Vec<p2p::P2pPeer> {
+    tauri::async_runtime::spawn_blocking(p2p::get_peers)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
 async fn p2p_get_realtime_state() -> p2p::P2pRealtimeState {
     tauri::async_runtime::spawn_blocking(p2p::get_realtime_state)
         .await
@@ -2095,6 +2102,7 @@ pub fn run() {
             p2p_get_node_id,
             p2p_get_status,
             p2p_get_realtime_state,
+            p2p_get_peers,
             p2p_start_daemon,
             p2p_stop_all,
             p2p_connect_tunnel,

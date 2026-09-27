@@ -18,7 +18,8 @@ import type {
   P2pAppConfig,
   P2pTunnelPayload,
   ParsedShareCode,
-  P2pRealtimeState
+  P2pRealtimeState,
+  P2pPeer
 } from '../../types';
 import { POPULAR_GAMES_DATABASE as GAMES_DATABASE } from '../data/gamesData';
 import { createExtractorFromData } from 'node-unrar-js';
@@ -659,10 +660,24 @@ export const createTauriBridge = () => {
     windowMaximize: async (): Promise<boolean> => invoke('window_maximize'),
     windowClose: async (): Promise<void> => invoke('window_close'),
     isWindowMaximized: async (): Promise<boolean> => invoke('is_window_maximized'),
-    // UI 缩放：WebView2 支持 CSS zoom，直接作用于根元素并持久化，
-    // 替代 Electron 版遗留的空实现（此前缩放设置完全无效）
-    setZoomFactor: (factor: number): void => {
+    // UI 缩放：使用 Tauri 原生 WebView 缩放（Webview.setZoom），**不再**给 <html>
+    // 设 CSS `zoom`。
+    //
+    // 为什么必须换：Chromium/WebView2 对根元素 CSS zoom 的支持有缺陷，与页面里大量
+    // 使用的 backdrop-filter（毛玻璃侧栏/顶栏/卡片）叠加时会触发合成异常 ——
+    // 表现为内容重影、错位、右边缘被裁（实测 105% 即复现，100% 正常）。
+    // Tauri 原生缩放作用在 WebView 层，不参与页面布局，规避该缺陷。
+    setZoomFactor: async (factor: number): Promise<void> => {
       const zoom = Math.min(1.5, Math.max(0.8, factor));
+      try {
+        const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+        await getCurrentWebview().setZoom(zoom);
+        localStorage.setItem('cfd_ui_zoom', String(zoom));
+        return;
+      } catch (e) {
+        // 原生缩放不可用时的兜底：仍用 CSS zoom（可能重影，但好过完全不缩放）
+        console.warn('原生缩放不可用，回退 CSS zoom:', e);
+      }
       document.documentElement.style.zoom = String(zoom);
       localStorage.setItem('cfd_ui_zoom', String(zoom));
     },
@@ -1980,6 +1995,16 @@ export async function p2pGetRealtimeState(): Promise<P2pRealtimeState> {
     };
   }
   return await invoke<P2pRealtimeState>('p2p_get_realtime_state');
+}
+
+/** 已连接的对端列表（房主查看"谁连进来了"） */
+export async function p2pGetPeers(): Promise<P2pPeer[]> {
+  if (!isTauriEnvironment()) return [];
+  try {
+    return await invoke<P2pPeer[]>('p2p_get_peers');
+  } catch {
+    return [];
+  }
 }
 
 // 说明：checkOpenp2pSync / syncOpenp2pLatest 只在 createTauriBridge() 返回的对象上暴露

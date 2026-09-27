@@ -533,6 +533,18 @@ export interface P2pRealtimeState {
   detail: string;
 }
 
+/** 已连接的对端（由 openp2p 日志解析，仅供展示"谁连进来了"） */
+export interface P2pPeer {
+  nodeId: string;
+  /** 'in' = 别人连我；'out' = 我连别人 */
+  direction: 'in' | 'out';
+  /** TCP4 / TCP6 / UDP4 / relay */
+  transport: string;
+  ports: number[];
+  lastSeen: string;
+  appId: number;
+}
+
 export interface SavedP2pTunnel {
   id: string; // `${peerUid}_${remotePort}`
   gameName: string;

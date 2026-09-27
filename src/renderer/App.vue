@@ -700,7 +700,8 @@ const applyUiScale = () => {
   if (zoom === computedZoomValue.value) return;
   computedZoomValue.value = zoom;
   if (window.electronAPI && typeof window.electronAPI.setZoomFactor === 'function') {
-    window.electronAPI.setZoomFactor(zoom);
+    // setZoomFactor 现为异步（走 Tauri 原生 WebView 缩放），忽略返回即可
+    void window.electronAPI.setZoomFactor(zoom);
   }
 };
 

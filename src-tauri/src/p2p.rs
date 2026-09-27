@@ -144,6 +144,23 @@ pub struct ParsedShareCode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct P2pPeer {
+    /// 对端 node id（openp2p 的 16 位 hex 节点标识）
+    pub node_id: String,
+    /// 入站(别人连我) / 出站(我连别人)
+    pub direction: String,
+    /// 打洞方式：TCP4 / TCP6 / UDP4 / relay（中继）
+    pub transport: String,
+    /// 该对端对应该本地端口的隧道（可多个）
+    pub ports: Vec<u16>,
+    /// 最近一次活跃时间（日志时间戳原文）
+    pub last_seen: String,
+    /// openp2p 为该对端分配的 appID（0 表示未识别）
+    pub app_id: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct P2pRealtimeState {
     pub stage: String, // 'idle' | 'starting' | 'punching' | 'direct' | 'relay' | 'error'
     pub nat_type: String,
@@ -911,9 +928,154 @@ pub fn get_realtime_state() -> P2pRealtimeState {
     }
 }
 
+/// 解析 openp2p.log，提取"已连接的对端"列表（房主/客机共用）。
+///
+/// openp2p 未提供成员查询接口，但其日志会记录每次打洞/连接成功：
+///   `... TCP4 Punch ok, ...` / `TCP6 connection ok` / `UDP4 connection ok`
+///   / `retry app relay=xxxx`，以及带 `node=<16hex>`、`appID=<n>`、
+///   `dstPort=<n>`（或 `srcPort=`）的上下文行。
+/// 本函数只做"尽力而为"的解析：识别到即展示，识别不到就返回空，
+/// **绝不因格式变化而误报**。
+fn parse_p2p_peers(text: &str) -> Vec<P2pPeer> {
+    use std::collections::BTreeMap;
+
+    // node_id -> peer；同一对端多次连接合并（端口并集、时间取最新、传输方式取最新）
+    let mut map: BTreeMap<String, P2pPeer> = BTreeMap::new();
+    let mut cur_node: Option<String> = None;
+    let mut cur_app: Option<u32> = None;
+    let mut cur_port: Option<u16> = None;
+    let mut cur_time = String::new();
+
+    // 从一行里取 `key=值` 的数值（值到非数字/空白为止）
+    fn field_u64(line: &str, key: &str) -> Option<u64> {
+        let pos = line.find(key)?;
+        let rest = &line[pos + key.len()..];
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() { None } else { digits.parse().ok() }
+    }
+    // 从一行里取 `node=<hex>` / `node: <hex>` / `relay=<hex>` 形式的节点 id
+    fn field_node(line: &str) -> Option<String> {
+        for key in ["node=", "node: ", "relay="] {
+            if let Some(pos) = line.find(key) {
+                let rest = &line[pos + key.len()..];
+                let hex: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_hexdigit())
+                    .collect();
+                if hex.len() >= 8 {
+                    return Some(hex.to_lowercase());
+                }
+            }
+        }
+        None
+    }
+    // 取行首时间戳（"2026/09/27 19:32:18.123456"）
+    fn line_time(line: &str) -> String {
+        let t = line.trim_start();
+        if t.len() >= 19 && t.as_bytes().get(4) == Some(&b'/') && t.as_bytes().get(10) == Some(&b' ') {
+            t[..19].to_string()
+        } else {
+            String::new()
+        }
+    }
+    // 识别该行是否是"连接/打洞成功"事件，返回传输方式
+    fn transport_of(line: &str) -> Option<&'static str> {
+        if line.contains("TCP4 Punch ok") { return Some("TCP4"); }
+        if line.contains("TCP6 Punch ok") { return Some("TCP6"); }
+        if line.contains("UDP4 Punch ok") { return Some("UDP4"); }
+        if line.contains("TCP4 connection ok") { return Some("TCP4"); }
+        if line.contains("TCP6 connection ok") { return Some("TCP6"); }
+        if line.contains("UDP4 connection ok") { return Some("UDP4"); }
+        if line.contains("relay=") { return Some("relay"); }
+        None
+    }
+
+    for line in text.lines() {
+        // 先更新上下文：node/app/port 常出现在连接事件行的前面几行。
+        // 关键：**不能**在遇到 node= 时清空 cur_port —— 打洞成功行本身也带 node=，
+        // 清空会把上一行刚设置的 dstPort 一起抹掉（端口丢失）。
+        if let Some(n) = field_node(line) {
+            cur_node = Some(n);
+            cur_time = line_time(line);
+        }
+        // appID 变化才重置端口上下文（端口属于某个 app 的上下文）
+        if let Some(a) = field_u64(line, "appID=") {
+            if cur_app != Some(a as u32) {
+                cur_app = Some(a as u32);
+                cur_port = None;
+            }
+        }
+        if let Some(p) = field_u64(line, "dstPort=").or_else(|| field_u64(line, "srcPort=")) {
+            cur_port = Some((p.min(u16::MAX as u64)) as u16);
+        }
+
+        let Some(transport) = transport_of(line) else { continue };
+        // 事件行自带 node 时优先用行内 node（如 relay=<hex>），否则沿用上文 node
+        let node = match field_node(line) {
+            Some(n) => n,
+            None => match cur_node.clone() {
+                Some(n) => n,
+                None => continue,
+            },
+        };
+
+        // 方向判断：openp2p 明确记录"本机主动拨号"的只有 Dial/%s dial to/Dial %s:%d OK
+        // 与 send tcp punch 这类字样；命中即为 out（我连别人），否则视为 in（别人连我）。
+        // 说明：这是尽力而为的近似 —— 拿不准时归为 in（房主视角最常见的情形）。
+        let lower = line.to_lowercase();
+        let direction = if lower.contains("dial") || lower.contains("send tcp punch") {
+            "out".to_string()
+        } else {
+            "in".to_string()
+        };
+        let time = line_time(line);
+        let ts = if time.is_empty() { cur_time.clone() } else { time };
+
+        let entry = map.entry(node.clone()).or_insert_with(|| P2pPeer {
+            node_id: node.clone(),
+            direction: direction.clone(),
+            transport: transport.to_string(),
+            ports: Vec::new(),
+            last_seen: ts.clone(),
+            app_id: cur_app.unwrap_or(0),
+        });
+        if transport == "relay" {
+            entry.transport = "relay".to_string();
+        }
+        if let Some(p) = cur_port {
+            if p > 0 && !entry.ports.contains(&p) {
+                entry.ports.push(p);
+            }
+        }
+        if !ts.is_empty() {
+            entry.last_seen = ts;
+        }
+        if cur_app.unwrap_or(0) > 0 {
+            entry.app_id = cur_app.unwrap_or(0);
+        }
+    }
+
+    let mut out: Vec<P2pPeer> = map.into_values().collect();
+    // 最近活跃的排在前面
+    out.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+    out
+}
+
+/// 获取当前已连接的对端列表（房主用于查看"谁连进来了"）
+pub fn get_peers() -> Vec<P2pPeer> {
+    if !is_p2p_running() {
+        return Vec::new();
+    }
+    let log_file = get_p2p_dir().join("log").join("openp2p.log");
+    // 只读尾部：日志无轮转，长时间运行可达数百 MB
+    let Some(text) = read_log_tail(&log_file, 256 * 1024) else {
+        return Vec::new();
+    };
+    parse_p2p_peers(&text)
+}
+
 /// 生成分享联机码 (CFD://Base64)
-pub fn generate_share_code(
-    uid: &str,
+pub fn generate_share_code(    uid: &str,
     remote_port: u16,
     local_port: u16,
     protocol: &str,
@@ -1919,6 +2081,37 @@ fn sync_openp2p_latest_inner() -> Result<String, String> {
         "已成功同步 OpenP2P 联机引擎 {} → {}（已自动解除 UAC 提权要求并完成安全部署）！",
         current_tag, tag
     ))
+}
+
+#[cfg(test)]
+mod p2p_peer_parse_tests {
+    use super::*;
+
+    #[test]
+    fn parses_connected_peers_from_log() {
+        let log = "2026/09/27 20:00:01.100000 1234 INFO node=d31a9b37f939caef, serverHost=api.openp2p.cn\n\
+2026/09/27 20:00:05.200000 1234 INFO appID=1, dstPort=25565\n\
+2026/09/27 20:00:05.300000 1234 INFO TCP4 Punch ok, node=d31a9b37f939caef\n\
+2026/09/27 20:00:21.000000 1234 INFO retry app relay=ab5efca9169ed2f9\n\
+2026/09/27 20:01:00.000000 1234 INFO UDP4 connection ok, node=ab5efca9169ed2f9\n";
+        let peers = parse_p2p_peers(log);
+        assert_eq!(peers.len(), 2, "应识别出 2 个对端，实际 {:?}", peers);
+        // 端口必须归属到触发连接的对端（修复前会因 node= 行清空端口而丢失）
+        let tcp = peers.iter().find(|p| p.node_id == "d31a9b37f939caef").expect("TCP4 对端");
+        assert_eq!(tcp.transport, "TCP4");
+        assert!(tcp.ports.contains(&25565), "端口应归属该对端: {:?}", tcp.ports);
+        assert_eq!(tcp.app_id, 1);
+        // relay= 里的 node 应归到自己名下，不能挂到上一个对端
+        assert!(peers.iter().any(|p| p.node_id == "ab5efca9169ed2f9" && p.transport == "relay"));
+    }
+
+    #[test]
+    fn no_connection_events_yields_empty() {
+        // 只有启动/登录、没有任何打洞或连接事件时不得误报对端
+        let log = "2026/09/27 20:00:01 INFO openp2p start. version: 3.25.11\n\
+2026/09/27 20:00:02 INFO login ok. user=x, node=deadbeefdeadbeef\n";
+        assert!(parse_p2p_peers(log).is_empty());
+    }
 }
 
 #[cfg(all(test, windows))]

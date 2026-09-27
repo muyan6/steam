@@ -361,6 +361,49 @@
       </div>
     </div>
 
+    <!-- 已连接对端看板（房主查看"谁连进来了"；数据来自 openp2p 日志解析） -->
+    <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/90 dark:border-white/10 shadow-sm space-y-3">
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2.5">
+        <div class="flex items-center gap-2">
+          <Users class="w-4 h-4 text-sky-500" />
+          <h3 class="text-xs font-bold text-slate-900 dark:text-slate-100">已连接对端 (Connected Peers)</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono font-bold">
+            {{ peers.length }}
+          </span>
+        </div>
+        <span class="text-[10px] text-slate-400">仅展示已成功打洞/中继的对端</span>
+      </div>
+
+      <div v-if="peers.length === 0" class="py-6 text-center text-xs text-slate-400 leading-relaxed">
+        暂无对端连接。把生成好的联机码发给好友，好友加入后会自动出现在这里。
+      </div>
+      <div v-else class="space-y-2">
+        <div
+          v-for="peer in peers"
+          :key="peer.nodeId"
+          class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-white/5"
+        >
+          <div class="min-w-0 flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+            <span class="font-mono text-xs text-slate-700 dark:text-slate-200 truncate">{{ peer.nodeId }}</span>
+            <span
+              class="text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0"
+              :class="peer.direction === 'in'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-sky-500/10 text-sky-600 dark:text-sky-400'"
+            >
+              {{ peer.direction === 'in' ? '接入' : '连出' }}
+            </span>
+          </div>
+          <div class="flex items-center gap-2 shrink-0 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+            <span>{{ peer.transport === 'relay' ? '中继' : peer.transport }}</span>
+            <span v-if="peer.ports.length">:{{ peer.ports.join('/') }}</span>
+            <span v-if="peer.lastSeen" class="hidden sm:inline">{{ peer.lastSeen.slice(5, 16) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 常用联机房间与隧道看板 (纯净白底高质感卡片) -->
     <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/90 dark:border-white/10 shadow-sm space-y-3">
       <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2.5">
@@ -618,12 +661,14 @@ import {
   Layers,
   Trash2,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Users
 } from 'lucide-vue-next';
 import {
   p2pGetNodeId,
   p2pGetStatus,
   p2pGetRealtimeState,
+  p2pGetPeers,
   p2pStartDaemon,
   p2pStopAll,
   p2pConnectTunnel,
@@ -644,6 +689,7 @@ import type {
   P2pGamePreset,
   ParsedShareCode,
   P2pRealtimeState,
+  P2pPeer,
   SavedP2pTunnel
 } from '../../../types';
 
@@ -774,6 +820,9 @@ const realtimeState = ref<P2pRealtimeState>({
   natType: '未检测',
   detail: '服务待命中',
 });
+
+// 已连接对端（房主查看"谁连进来了"）：由 Rust 解析 openp2p 日志得到
+const peers = ref<P2pPeer[]>([]);
 
 const isRefreshing = ref<boolean>(false);
 const isOperating = ref<boolean>(false);
@@ -910,6 +959,8 @@ const fetchStatus = async () => {
     nodeId.value = await p2pGetNodeId();
     status.value = await p2pGetStatus();
     realtimeState.value = await p2pGetRealtimeState();
+    // 已连接对端：与状态同频刷新（3 秒），让房主能实时看到谁连进来了
+    peers.value = await p2pGetPeers();
 
     // 自动将活跃隧道同步记录至常用列表（仅在服务运行时同步，并使用友好预设名与去重）
     if (status.value.running && status.value.activeTunnels && status.value.activeTunnels.length > 0) {
