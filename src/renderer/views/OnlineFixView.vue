@@ -1,19 +1,19 @@
 <template>
-  <div class="h-full flex flex-col p-4 xl:p-5 overflow-hidden">
+  <div class="h-full flex flex-col p-3.5 xl:p-4 overflow-hidden">
     <!-- 顶部统一标准 Header -->
-    <div class="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10 shrink-0">
-      <div class="flex items-center gap-3">
-        <div class="w-11 h-11 rounded-2xl bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/25 dark:border-rose-500/30 flex items-center justify-center shadow-xs shrink-0 text-rose-500 dark:text-rose-400">
-          <Rocket class="w-5 h-5" />
+    <div class="flex items-center justify-between gap-3 pb-2.5 mb-2.5 border-b border-white/10 shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/25 dark:border-rose-500/30 flex items-center justify-center shadow-xs shrink-0 text-rose-500 dark:text-rose-400">
+          <Rocket class="w-4 h-4" />
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <h1 class="text-lg font-black tracking-wide text-slate-100 leading-none">联机中心</h1>
+            <h1 class="text-base font-black tracking-wide text-slate-100 leading-none">联机中心</h1>
             <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-500/10 theme-text-accent font-mono font-bold border border-sky-500/20">
               双模式联机引擎
             </span>
           </div>
-          <p class="text-xs text-slate-400 mt-1.5 leading-none">
+          <p class="text-xs text-slate-400 mt-1 leading-none">
             支持 Spacewar 官方通道联机、Goldberg 局域网虚拟专网与 OnlineFix 原生联机修复
           </p>
         </div>
@@ -40,7 +40,7 @@
     </div>
 
     <!-- 方案选择 Tab 栏 -->
-    <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-white/10 shadow-inner mb-3 self-start shrink-0">
+    <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-white/10 shadow-inner mb-2.5 self-start shrink-0">
       <button
         @click="activeMainTab = 'launch'"
         class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
@@ -77,7 +77,7 @@
     </div>
 
     <!-- 联机方案提示横幅 + 可折叠功能说明 (紧凑精致，仅在方案一与方案二显示) -->
-    <div v-if="activeMainTab !== 'p2p'" class="mb-3 p-2.5 px-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-center justify-between gap-3 shrink-0">
+    <div v-if="activeMainTab !== 'p2p'" class="mb-2.5 p-2.5 px-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-200/90 flex items-center justify-between gap-3 shrink-0">
       <div class="flex items-center gap-2 min-w-0">
         <span class="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 text-xs font-bold">💡</span>
         <span class="truncate">
@@ -100,7 +100,7 @@
     <OnlineFixGuideModal v-model="showGuide" />
 
     <!-- 独立滚动内容区域 (保持顶部 Header、Tab栏与提示横幅永久冻结) -->
-    <div class="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
+    <div class="flex-1 min-h-0 overflow-y-auto pr-1 pb-6 custom-scrollbar">
       <!-- ============================================== -->
       <!-- TAB 1: 联机启动模式 (主模式) -->
       <!-- ============================================== -->

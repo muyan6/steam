@@ -1,20 +1,20 @@
 <template>
-  <div class="space-y-4 flex-1 flex flex-col min-h-0 text-slate-800 dark:text-slate-200">
+  <div class="space-y-3.5 flex-1 flex flex-col min-h-0 text-slate-800 dark:text-slate-200">
     <!-- 顶部状态栏：通透纯白与暗色自适应卡片 -->
-    <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-      <div class="flex items-center gap-3.5 flex-wrap">
-        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-          <Network class="w-5 h-5" />
+    <div class="bg-white dark:bg-slate-900 p-3 px-4 rounded-xl border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+          <Network class="w-4 h-4" />
         </div>
         <div>
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">本机 UID：</span>
-            <span class="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 rounded-lg select-all tracking-wider">
+            <span class="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-lg select-all tracking-wider">
               {{ nodeId || '生成中...' }}
             </span>
             <button
               @click="copyText(nodeId, '本机 UID 已复制')"
-              class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 text-xs font-medium transition cursor-pointer flex items-center gap-1 active:scale-95 border border-slate-200/60 dark:border-transparent"
+              class="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 text-xs font-medium transition cursor-pointer flex items-center gap-1 active:scale-95 border border-slate-200/60 dark:border-transparent"
               title="复制本机 UID"
             >
               <Copy class="w-3.5 h-3.5" />
@@ -28,7 +28,7 @@
               <RotateCw class="w-3.5 h-3.5" :class="isRefreshing ? 'animate-spin' : ''" />
             </button>
           </div>
-          <div class="flex items-center gap-3 mt-1.5 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+          <div class="flex items-center gap-2.5 mt-1 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
             <span class="flex items-center gap-1.5 font-medium">
               <span class="w-2 h-2 rounded-full" :class="status.running ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse' : 'bg-slate-400'"></span>
               <span>{{ status.running ? 'P2P 隧道服务正在运行中' : '服务待命中' }}</span>
@@ -146,11 +146,11 @@
     </div>
 
     <!-- 核心操作双卡片（洁白纯净背景，标准卡片边框与阴影） -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
       <!-- 卡片 1：我是房主 -->
-      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col justify-between space-y-4">
-        <div class="space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col space-y-3">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2">
             <div class="flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
               <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">我是房主 · 创建房间</h2>
@@ -159,13 +159,13 @@
           </div>
 
           <!-- 游戏选择与端口 -->
-          <div class="space-y-3">
+          <div class="space-y-2.5">
             <div>
-              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">选择要联机的游戏</label>
+              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">选择要联机的游戏</label>
               <select
                 v-model="selectedPresetId"
                 @change="handlePresetChange"
-                class="w-full bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500 transition cursor-pointer shadow-2xs"
+                class="w-full bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500 transition cursor-pointer shadow-2xs"
               >
                 <option v-for="item in presetsList" :key="item.id" :value="item.id">
                   {{ item.name }} ({{ item.protocol.toUpperCase() }}: {{ item.remotePort }})
@@ -174,24 +174,24 @@
             </div>
 
             <!-- 端口与协议 -->
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-2 gap-2.5">
               <div>
-                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">房主服务端口</label>
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">房主服务端口</label>
                 <input
                   v-model.number="hostPort"
                   type="number"
                   min="1"
                   max="65535"
-                  class="w-full bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500 transition shadow-2xs"
+                  class="w-full bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500 transition shadow-2xs"
                   placeholder="如 8211"
                 />
               </div>
 
               <div>
-                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">通信协议</label>
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">通信协议</label>
                 <select
                   v-model="hostProtocol"
-                  class="w-full bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500 transition cursor-pointer shadow-2xs"
+                  class="w-full bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500 transition cursor-pointer shadow-2xs"
                 >
                   <option value="udp">UDP 协议 (推荐绝大多数游戏)</option>
                   <option value="tcp">TCP 协议 (Minecraft / 部分自建)</option>
@@ -200,42 +200,42 @@
             </div>
 
             <!-- 游戏专属指南贴士 -->
-            <div v-if="currentPreset?.note" class="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed flex items-start gap-2">
-              <span class="mt-0.5 shrink-0 text-emerald-500">💡</span>
+            <div v-if="currentPreset?.note" class="p-2 rounded-lg bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed flex items-start gap-1.5">
+              <span class="shrink-0 text-emerald-500">💡</span>
               <span>{{ currentPreset.note }}</span>
             </div>
           </div>
         </div>
 
         <!-- 房主动作区 -->
-        <div class="pt-2 border-t border-slate-100 dark:border-white/10 space-y-2.5">
+        <div class="pt-2 border-t border-slate-100 dark:border-white/10 space-y-2">
           <button
             @click="handleGenerateShareCode"
-            class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-98"
+            class="w-full py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-98"
           >
             <Share2 class="w-4 h-4" />
             <span>生成并复制联机码（自动开启服务）</span>
           </button>
 
-          <!-- 最新生成的联机码卡片 -->
-          <div v-if="latestGeneratedCode" class="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 text-xs space-y-2">
+          <!-- 最新生成的联机码卡片 (精致单行卡片，高辨识度且不撑爆视口) -->
+          <div v-if="latestGeneratedCode" class="p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 text-xs space-y-1.5 animate-in fade-in">
             <div class="flex items-center justify-between text-emerald-800 dark:text-emerald-300 font-semibold">
               <span class="flex items-center gap-1.5">
-                <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500" />
-                <span>联机码已生成并复制到剪贴板</span>
+                <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span class="text-xs">已生成并复制到剪贴板</span>
               </span>
               <button
                 @click="copyText(latestGeneratedCode, '联机码已复制到剪贴板')"
-                class="px-2.5 py-1 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold cursor-pointer transition shadow-2xs"
+                class="px-2 py-0.5 rounded-md bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold cursor-pointer transition shadow-2xs"
               >
                 重新复制
               </button>
             </div>
-            <div class="font-mono text-[11px] text-emerald-900/80 dark:text-emerald-300/80 break-all select-all bg-white/70 dark:bg-slate-950/70 p-2 rounded-lg border border-emerald-200 dark:border-emerald-500/20">
-              {{ latestGeneratedCode }}
+            <div class="flex items-center gap-2 bg-white/90 dark:bg-slate-950/80 p-1.5 px-2.5 rounded-lg border border-emerald-200 dark:border-emerald-500/20 font-mono text-[11px] text-emerald-900 dark:text-emerald-300">
+              <span class="truncate select-all flex-1" :title="latestGeneratedCode">{{ latestGeneratedCode }}</span>
             </div>
-            <p class="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
-              好友粘贴此码即可直连。现在可以启动本地游戏创建房间等待好友加入了！
+            <p class="text-[10px] text-emerald-700/80 dark:text-emerald-400/80">
+              好友粘贴此码即可直连。现在可在本地启动游戏开房！
             </p>
           </div>
           <div v-else class="text-center py-1 text-[11px] text-slate-400 dark:text-slate-500">
@@ -245,9 +245,9 @@
       </div>
 
       <!-- 卡片 2：我是客机 -->
-      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col justify-between space-y-4">
-        <div class="space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-3">
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col space-y-3">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2">
             <div class="flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
               <h2 class="text-sm font-bold text-slate-900 dark:text-slate-100">我是客机 · 粘贴加入</h2>
@@ -256,9 +256,9 @@
           </div>
 
           <!-- 联机码输入与识别 -->
-          <div class="space-y-3">
+          <div class="space-y-2.5">
             <div>
-              <div class="flex items-center justify-between mb-1.5">
+              <div class="flex items-center justify-between mb-1">
                 <label class="text-xs font-medium text-slate-600 dark:text-slate-400">粘贴好友发来的联机码</label>
                 <button
                   @click="handlePasteFromClipboard"
@@ -278,13 +278,13 @@
             </div>
 
             <!-- 解析预览信息 -->
-            <div v-if="parsedJoinCode" class="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/25 text-xs space-y-2.5 shadow-2xs">
+            <div v-if="parsedJoinCode" class="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/25 text-xs space-y-2 shadow-2xs">
               <div class="flex items-center justify-between text-sky-800 dark:text-sky-300 font-semibold">
                 <span class="flex items-center gap-1.5">
                   <Gamepad2 class="w-4 h-4" />
                   <span>目标游戏: {{ parsedJoinCode.gameName }}</span>
                 </span>
-                <span class="font-mono uppercase text-[11px] bg-sky-500/20 px-2 py-0.5 rounded text-sky-700 dark:text-sky-300 font-bold">
+                <span class="font-mono uppercase text-[10px] bg-sky-500/20 px-1.5 py-0.2 rounded text-sky-700 dark:text-sky-300 font-bold">
                   {{ parsedJoinCode.protocol }}
                 </span>
               </div>
@@ -294,30 +294,30 @@
               </div>
 
               <!-- 本地映射端口调节 -->
-              <div class="pt-2 border-t border-sky-500/20 flex items-center justify-between gap-3">
+              <div class="pt-1.5 border-t border-sky-500/20 flex items-center justify-between gap-3">
                 <span class="text-[11px] text-slate-600 dark:text-slate-400">本地映射端口：</span>
                 <input
                   v-model.number="parsedJoinCode.localPort"
                   type="number"
                   min="1"
                   max="65535"
-                  class="w-24 bg-white dark:bg-slate-950/90 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1 text-xs font-mono text-sky-700 dark:text-sky-300 focus:outline-none focus:border-sky-500 shadow-2xs"
+                  class="w-24 bg-white dark:bg-slate-950/90 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-0.5 text-xs font-mono text-sky-700 dark:text-sky-300 focus:outline-none focus:border-sky-500 shadow-2xs"
                 />
               </div>
             </div>
 
-            <div v-else-if="joinInputCode.trim()" class="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300">
+            <div v-else-if="joinInputCode.trim()" class="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300">
               ⚠️ 未能识别联机码格式，请确保复制了完整的 CFD:// 或 OPL:// 开头代码。
             </div>
           </div>
         </div>
 
         <!-- 客机动作区与实时打洞状态看板 -->
-        <div class="pt-2 border-t border-slate-100 dark:border-white/10 space-y-2.5">
+        <div class="pt-2 border-t border-slate-100 dark:border-white/10 space-y-2">
           <button
             @click="handleConnectTunnel"
             :disabled="!parsedJoinCode || isOperating"
-            class="w-full py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-98 disabled:opacity-40 disabled:pointer-events-none"
+            class="w-full py-2 rounded-xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-98 disabled:opacity-40 disabled:pointer-events-none"
           >
             <Link class="w-4 h-4" />
             <span>{{ isOperating ? '正在打洞建立隧道...' : '一键建立 P2P 隧道直连' }}</span>
