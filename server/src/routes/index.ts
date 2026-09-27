@@ -168,8 +168,10 @@ router.post('/telemetry/heartbeat', heartbeatLimiter, (req: Request, res: Respon
   }
   const clean = (v: unknown, max: number): string | undefined =>
     typeof v === 'string' && v.length > 0 ? v.slice(0, max) : undefined;
-  const ip = req.socket.remoteAddress || '127.0.0.1';
-  // 激活状态以服务端卡密库为准，不信任客户端自报（防伪造统计）
+  const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+  // 激活状态与卡密均以服务端卡密库为准，不采信客户端自报字段：
+  // isActivated 已服务端推导，若 licenseCode 仍原样落库，攻击者可用公开心跳把
+  // 管理端"绑定卡密"列伪造成任意值（直到管理员浏览列表才被纠正）。
   const verified = licenseService.verify(deviceId);
   const record = deviceService.recordHeartbeat({
     deviceId,
@@ -177,8 +179,9 @@ router.post('/telemetry/heartbeat', heartbeatLimiter, (req: Request, res: Respon
     clientVersion: clean(clientVersion, 32),
     // 兼容旧客户端的 os 字段
     osVersion: clean(osVersion, 64) ?? clean(os, 64),
-    licenseCode: clean(licenseCode, 64),
-    licenseType: clean(licenseType, 32) ?? (verified.isActivated ? verified.type : undefined),
+    // 只有服务端确认已激活时才写入卡密；未激活一律留空，杜绝客户端伪造绑定
+    licenseCode: verified.isActivated ? verified.code : undefined,
+    licenseType: verified.isActivated ? verified.type : undefined,
     isActivated: verified.isActivated,
     unlockedCount: typeof unlockedCount === 'number' ? unlockedCount : undefined,
     steamPath: clean(steamPath, 260)
@@ -490,7 +493,9 @@ const manifestReportLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: '上报过于频繁，请稍后再试' }
 });
-router.post('/manifests/code/report', manifestReportLimiter, reportManifestCodes);
+// 取码结果上报：要求已注册设备（clientDeviceId），避免匿名者灌入伪造 code
+// 污染全体客户端的码库（错误 code 会让所有人下载失败）。客户端已随请求带 x-device-id。
+router.post('/manifests/code/report', manifestReportLimiter, requireDeviceId, reportManifestCodes);
 
 router.get('/manifests/code/:gid', manifestCodeLimiter, getManifestCode);
 
@@ -661,7 +666,7 @@ router.delete('/admin/devices/:deviceId', (req, res) => {
   authService.recordAuditLog({
     action: 'DEVICE_DELETE',
     operator,
-    ip: req.socket.remoteAddress || '127.0.0.1',
+    ip: req.ip || req.socket.remoteAddress || '127.0.0.1',
     details: `删除设备档案: ${deviceId}（不影响其授权绑定）`,
     success: true
   });
@@ -676,7 +681,7 @@ router.post('/admin/devices/cleanup', (req, res) => {
   authService.recordAuditLog({
     action: 'DEVICE_CLEANUP',
     operator,
-    ip: req.socket.remoteAddress || '127.0.0.1',
+    ip: req.ip || req.socket.remoteAddress || '127.0.0.1',
     details: `批量清理 ${inactiveDays} 天未活跃设备档案: ${removed} 台`,
     success: true
   });

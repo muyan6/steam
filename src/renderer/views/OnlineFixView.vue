@@ -1511,7 +1511,12 @@ const fetchSpacewarStatus = async (notifyUser = false) => {
         }
       }
     }
-  } catch {}
+  } catch (e: any) {
+    // 不能静默：手动点"刷新检测"失败必须给出反馈，否则徽章停在旧值、用户不明所以
+    if (notifyUser) {
+      emit('notify', `Spacewar 状态检测失败: ${formatIpcError(e)}`, 'error');
+    }
+  }
 };
 
 const handleTriggerSpacewarInstall = async () => {

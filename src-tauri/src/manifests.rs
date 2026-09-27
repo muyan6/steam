@@ -344,13 +344,10 @@ pub fn check_manifest_status(steam_path: &Path, app_id: u32, dlcs: &[u32]) -> Ap
             if !name.ends_with(".manifest") {
                 continue;
             }
-            if let Ok(bytes) = fs::read(&path) {
-                if !is_valid_manifest_payload(&bytes) {
-                    // 只读状态查询绝不删除文件：该启发式存在误判可能，
-                    // 删除会静默毁掉有效清单。此处仅跳过不计入匹配。
-                    continue;
-                }
-            } else {
+            // 只读头部做有效性判定：清单可达数百 MB，状态查询整份读会明显卡顿
+            if !manifest_file_looks_valid(&path) {
+                // 只读状态查询绝不删除文件：该启发式存在误判可能，
+                // 删除会静默毁掉有效清单。此处仅跳过不计入匹配。
                 continue;
             }
             if let Some(d_id) = name.strip_suffix(".manifest").and_then(|s| s.split('_').next()) {
@@ -428,12 +425,9 @@ pub fn batch_manifest_status(steam_path: &Path, app_ids: &[u32]) -> BTreeMap<u32
             if !name.ends_with(".manifest") {
                 continue;
             }
-            if let Ok(bytes) = fs::read(&path) {
-                if !is_valid_manifest_payload(&bytes) {
-                    // 同上：批量状态查询为只读路径，绝不删除用户 depotcache 文件
-                    continue;
-                }
-            } else {
+            // 同上：只读头部即可，批量状态查询不应整份读入每个清单
+            if !manifest_file_looks_valid(&path) {
+                // 只读路径，绝不删除用户 depotcache 文件
                 continue;
             }
             if let Some(d_id) = name.strip_suffix(".manifest").and_then(|s| s.split('_').next()) {
@@ -1453,6 +1447,33 @@ async fn download_single_manifest(
     ))
 }
 
+/// 只读取清单文件头部 128 字节（`is_valid_manifest_payload` 实际只用到前 128 字节）。
+///
+/// 清单可达数百 MB，状态查询/清理等热路径整份 `fs::read` 会造成明显卡顿与大分配。
+/// 返回 None 表示文件不可读或不足 32 字节（必然判为无效）。
+fn read_manifest_head(path: &std::path::Path) -> Option<Vec<u8>> {
+    use std::io::Read as _;
+    let mut f = fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; 128];
+    let mut filled = 0usize;
+    while filled < buf.len() {
+        match f.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(k) => filled += k,
+            Err(_) => return None,
+        }
+    }
+    buf.truncate(filled);
+    Some(buf)
+}
+
+/// 头部字节是否构成有效清单（同上，供只读状态判断复用）。
+fn manifest_file_looks_valid(path: &std::path::Path) -> bool {
+    read_manifest_head(path)
+        .map(|head| is_valid_manifest_payload(&head))
+        .unwrap_or(false)
+}
+
 pub fn is_valid_manifest_payload(bytes: &[u8]) -> bool {
     if bytes.len() < 32 {
         return false;
@@ -1518,11 +1539,13 @@ fn clean_old_manifests(depot_cache: &Path, depot_id: &str, current_gid: &str) {
             if name.starts_with(&format!("{}_", depot_id)) && name.ends_with(".manifest") && name != current {
                 // 仅清理确认为损坏的清单，绝不删除同一 depot 下的其他有效 GID：
                 // 不同游戏/应用可能共享同一 depot 且各自固定不同 GID，
-                // 一揽子删除会让对方后续下载因清单缺失而失败
-                if let Ok(bytes) = fs::read(f.path()) {
-                    if !is_valid_manifest_payload(&bytes) {
-                        let _ = fs::remove_file(f.path());
-                    }
+                // 一揽子删除会让对方后续下载因清单缺失而失败。
+                // 只读头部判定即可，无需整份读入。
+                if read_manifest_head(&f.path())
+                    .map(|h| !is_valid_manifest_payload(&h))
+                    .unwrap_or(false)
+                {
+                    let _ = fs::remove_file(f.path());
                 }
             }
         }
@@ -2016,12 +2039,16 @@ fn report_codes_to_relay(pairs: &[(u32, String)], codes: &BTreeMap<String, Strin
         return;
     }
     let n = items.len();
+    // 设备标识在发起线程前取一次：get_device_id 内部有 OnceLock，但放在线程外更直观
+    let device_id = crate::device::get_device_id();
     std::thread::spawn(move || {
         let client = http_client().clone();
         let url = format!("{}/api/manifests/code/report", SERVER_API);
         let ok = block_on(async move {
             client
                 .post(&url)
+                // 服务端要求已注册设备：防止匿名灌入伪造 code 污染全体客户端码库
+                .header("x-device-id", device_id)
                 .header("User-Agent", "ChunFengDu/1.0")
                 .json(&json!({ "codes": items }))
                 .timeout(Duration::from_secs(10))

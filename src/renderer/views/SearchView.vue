@@ -487,6 +487,8 @@ let searchRequestId = 0;
 // 注意：每次请求只传入其他页累积的集合（不含当前页），否则回访已看过的页会被整体过滤成空。
 let searchSessionKey = '';
 const sessionSeenIds = new Set<number>();
+// 每页各自贡献过的 id：请求某页时从去重集合中剔除该页自身的 id，避免回访旧页被过滤成空
+const sessionSeenByPage = new Map<number, Set<number>>();
 
 // 自动换源顺序：从当前源起，按 searchSources 声明顺序环形展开。
 //
@@ -537,12 +539,17 @@ const handleSearch = async (page = 1) => {
       if (sessionKey !== searchSessionKey) {
         searchSessionKey = sessionKey;
         sessionSeenIds.clear();
+        sessionSeenByPage.clear();
       }
 
-      // 当前页的结果不能参与本次去重，否则回退到已看过的页会被全部剔除（页面为空）。
-      // 关键：不直接把 sessionSeenIds 交给桥接层就地过滤，而是传入请求时刻的快照，
-      // 返回后再并入，这样「回访旧页」不会被自己上一次的 id 过滤掉。
+      // 跨页去重必须**排除目标页自身**此前贡献过的 id，否则回访已看过的页时，
+      // 该页的 id 全在 sessionSeenIds 里，会被桥接层整体过滤成空 →
+      // 被误判为"该源无结果" → 触发自动换源 / 列表变空。
+      // 因此记录"每页贡献的 id 集合"，请求该页时先把它从去重集合里剔除。
+      const pageOwn = sessionSeenByPage.get(page);
       const seenBefore = new Set(sessionSeenIds);
+      if (pageOwn) for (const id of pageOwn) seenBefore.delete(id);
+      const passed = new Set(seenBefore); // 交给桥接层前的快照，用于识别桥接层新增了哪些
 
       res = await window.electronAPI.searchGames({
         query: searchQuery.value,
@@ -554,9 +561,15 @@ const handleSearch = async (page = 1) => {
 
       if (requestId !== searchRequestId) return; // 已有更新的请求，丢弃过期结果
 
-      // 桥接层会就地扩充传入的 seenBefore（含被 pageSize 截断的条目），
-      // 把它并回会话集合即可保持原有的跨页去重累积语义
-      for (const id of seenBefore) sessionSeenIds.add(id);
+      // 桥接层会就地扩充传入的 seenBefore（含被 pageSize 截断的条目）。
+      // 相对 passed 新增的那些即"本页本轮贡献的 id"，记到该页名下；
+      // 全部并回 sessionSeenIds 以保持跨页去重累积语义。
+      const contributed = new Set<number>(pageOwn ?? []);
+      for (const id of seenBefore) {
+        sessionSeenIds.add(id);
+        if (!passed.has(id)) contributed.add(id);
+      }
+      if (contributed.size > 0) sessionSeenByPage.set(page, contributed);
 
       if (firstRes === null) firstRes = res;
 

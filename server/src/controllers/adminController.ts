@@ -10,7 +10,7 @@ import { ServerStats } from '../types/index.js';
 
 // 客户端 IP 只取 socket 真实地址；X-Forwarded-For 可被任意伪造，仅当部署在可信反代之后才可用
 const getClientIp = (req: Request): string => {
-  return req.socket.remoteAddress || '127.0.0.1';
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
 };
 
 /**

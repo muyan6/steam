@@ -931,6 +931,16 @@ pub fn generate_share_code(
     format!("CFD://{}", b64)
 }
 
+/// 从 JSON 值取端口号并做 1-65535 范围校验。
+/// 越界返回 None（调用方据此报错），绝不静默截断成另一个合法端口。
+fn port_from_json(v: Option<&serde_json::Value>) -> Option<u16> {
+    let n = v?.as_u64()?;
+    if n == 0 || n > u16::MAX as u64 {
+        return None;
+    }
+    Some(n as u16)
+}
+
 /// 解析分享联机码（向下兼容 CFD:// 与 OPL:// 格式，以及直接的 uid:port:protocol 分隔符格式）
 pub fn parse_share_code(code_str: &str) -> Result<ParsedShareCode, String> {
     let trimmed = code_str.trim();
@@ -979,15 +989,14 @@ pub fn parse_share_code(code_str: &str) -> Result<ParsedShareCode, String> {
     // 优先尝试 JSON 格式
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
         let uid = v.get("uid").and_then(|u| u.as_str()).unwrap_or("").to_string();
-        let remote_port = v.get("remotePort")
-            .or_else(|| v.get("Sport"))
-            .or_else(|| v.get("port"))
-            .and_then(|p| p.as_u64())
-            .unwrap_or(0) as u16;
-        let local_port = v.get("localPort")
-            .or_else(|| v.get("Cport"))
-            .and_then(|p| p.as_u64())
-            .unwrap_or(remote_port as u64) as u16;
+        // 端口必须走 range 校验的转换：`as u16` 会把 70000 静默截断成 4464，
+        // 生成一条指向错误端口的隧道而不是报错。越界/为 0 一律视为无效码。
+        let remote_port = port_from_json(
+            v.get("remotePort").or_else(|| v.get("Sport")).or_else(|| v.get("port")),
+        )
+        .ok_or_else(|| "联机码中的端口号非法（需为 1-65535）".to_string())?;
+        let local_port = port_from_json(v.get("localPort").or_else(|| v.get("Cport")))
+            .unwrap_or(remote_port);
         let protocol = v.get("protocol")
             .or_else(|| v.get("type"))
             .and_then(|p| p.as_str())

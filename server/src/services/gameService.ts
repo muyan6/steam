@@ -165,7 +165,12 @@ export class GameService {
    */
   public async fetchRealSteamHeader(appId: number): Promise<string | null> {
     if (this.imageCache.has(appId)) {
-      return this.imageCache.get(appId)!;
+      // 命中即刷新插入序（delete+set）：Map 对已存在键 set 不改插入序，
+      // 不刷新会让"经常命中的热键"被"很久没用过的冷键"先淘汰。
+      const hit = this.imageCache.get(appId)!;
+      this.imageCache.delete(appId);
+      this.imageCache.set(appId, hit);
+      return hit;
     }
     // 负缓存：5 分钟内拉取过的失败 AppID 直接返回 null，不反复打 Steam API
     const negTs = this.negativeHeaderCache.get(appId);
@@ -282,6 +287,9 @@ export class GameService {
     const cacheKey = query.trim().toLowerCase();
     const cached = this.onlineSearchCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < (cached.ttl || GameService.ONLINE_SEARCH_TTL_MS)) {
+      // 命中刷新插入序，避免热查询被冷条目先淘汰（Map 的 set 不改已有键的顺序）
+      this.onlineSearchCache.delete(cacheKey);
+      this.onlineSearchCache.set(cacheKey, cached);
       return cached.items;
     }
     try {

@@ -6,7 +6,7 @@ export const login = async (req: Request, res: Response) => {
     const { username, password } = req.body;
     // 审计/锁定统一用 req.ip（受 TRUST_PROXY 控制），与限流器口径一致；
     // 直接用 socket 地址在反向代理部署下会全是 127.0.0.1，审计失真、锁定形同虚设。
-    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const ip = req.ip || req.ip || req.socket.remoteAddress || '127.0.0.1';
     const userAgent = req.headers['user-agent'] || '';
 
     if (!username || !password) {
@@ -47,7 +47,7 @@ export const changePassword = (req: Request, res: Response) => {
   try {
     const { currentPassword, newUsername, newPassword } = req.body;
     const operator = (req as any).adminUser?.username || 'admin';
-    const ip = req.socket.remoteAddress || '127.0.0.1';
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
     const userAgent = req.headers['user-agent'] || '';
 
     if (!currentPassword || !newPassword) {
@@ -76,13 +76,16 @@ export const changePassword = (req: Request, res: Response) => {
 
 export const logout = (req: Request, res: Response) => {
   const operator = (req as any).adminUser?.username || 'admin';
-  const ip = req.socket.remoteAddress || '127.0.0.1';
+  const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+  // 真正吊销：递增 tokenVersion，使该 token（及本会话全部 token）立即失效。
+  // 原实现只记审计，token 仍可用到 7 天过期，拷贝出去的凭据在"已退出"后依然有效。
+  authService.revokeAllTokens();
   authService.recordAuditLog({
     action: 'LOGOUT',
     operator,
     ip,
     userAgent: req.headers['user-agent'] || '',
-    details: '管理员注销登录',
+    details: '管理员注销登录（已吊销全部令牌）',
     success: true
   });
   res.json({ success: true, message: '已安全退出登录' });

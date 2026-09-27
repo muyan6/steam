@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
-use crate::steam::is_steam_running;
+use crate::steam::{is_steam_running, is_steam_running_fresh};
 
 // 内嵌 OST 核心二进制库（构建时打包进 EXE，零外部依赖）
 const OST_DLL: &[u8] = include_bytes!("../assets/opensteam/OpenSteamTool.dll");
@@ -47,8 +47,9 @@ pub struct ClearRulesResult {
 }
 
 pub fn deploy_core_binaries(steam_path: &Path) -> Result<(), String> {
-    // Steam 运行中时核心 DLL 会被进程锁定，覆写必然失败；提前给出可行动的错误信息
-    if is_steam_running() {
+    // Steam 运行中时核心 DLL 会被进程锁定，覆写必然失败；提前给出可行动的错误信息。
+    // 用**实时**探测：8 秒缓存会在"刚启动 Steam"的窗口内误判为未运行而覆盖被占用的 DLL。
+    if is_steam_running_fresh() {
         return Err("Steam 客户端正在运行，核心 DLL 被进程锁定无法写入。请先退出 Steam（可在工具箱中一键结束进程）后重试。".to_string());
     }
 
@@ -557,6 +558,21 @@ pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
 }
 
 
+/// 原子写入文本文件（临时文件 + rename）。
+/// Lua 规则是 Steam 直接加载的文件，写到一半崩溃/磁盘满会留下截断脚本，
+/// 导致部分规则生效、部分丢失；rename 在 Windows 上是原子的覆盖语义。
+fn write_text_atomically(path: &Path, content: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("lua.tmp");
+    fs::write(&tmp, content)?;
+    match fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
 pub fn ensure_lua_dir(steam_path: &Path) -> Result<PathBuf, String> {
     let lua_dir = steam_path.join("config").join("lua");
     if !lua_dir.exists() {
@@ -950,14 +966,15 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
     let lua_dir = ensure_lua_dir(steam_path)?;
     let lua_file = lua_dir.join(format!("{}.lua", payload.app_id));
     let content = generate_lua_script(&merged, &codes);
-    fs::write(&lua_file, &content).map_err(|e| format!("写入 Lua 规则失败: {}", e))?;
+    // 原子写：避免截断的规则文件被 Steam 加载
+    write_text_atomically(&lua_file, &content).map_err(|e| format!("写入 Lua 规则失败: {}", e))?;
 
     // 双轨兼容：镜像到 st_scripts/（旧模式目录）
     let legacy_dir = steam_path.join("st_scripts");
     if !legacy_dir.exists() {
         let _ = fs::create_dir_all(&legacy_dir);
     }
-    let _ = fs::write(legacy_dir.join(format!("{}.lua", payload.app_id)), &content);
+    let _ = write_text_atomically(&legacy_dir.join(format!("{}.lua", payload.app_id)), &content);
 
     // GreenLuma (AppList) 双轨同步
     sync_greenluma_app_list(steam_path);
@@ -1621,11 +1638,20 @@ pub fn check_ost_sync_status(steam_path: &Path) -> OstSyncInfo {
 /// 回滚一次失败的内核切换：把已移走的 .old 备份逐个还原回原文件名，
 /// 并清理尚未提交的 .new 暂存文件。尽力而为，失败只记录不抛出。
 fn rollback_ost_swap(
-    committed: &[(PathBuf, PathBuf)],
+    committed: &[(Option<PathBuf>, PathBuf)],
     staged: &[(&'static str, PathBuf, PathBuf)],
 ) {
     for (old_path, target) in committed {
-        let _ = std::fs::rename(old_path, target);
+        match old_path {
+            // 原先有旧文件：还原回去
+            Some(p) => {
+                let _ = std::fs::rename(p, target);
+            }
+            // 原先不存在：删除本次新落位的文件，避免留下半套内核
+            None => {
+                let _ = std::fs::remove_file(target);
+            }
+        }
     }
     for (_, new_path, _) in staged {
         let _ = std::fs::remove_file(new_path);
@@ -1635,7 +1661,8 @@ fn rollback_ost_swap(
 /// 在线同步最新内核：下载 release zip、校验三件套、覆盖部署到 Steam 目录并记录版本。
 /// 须在 spawn_blocking 调用；Steam 运行中时 DLL 被锁定，必须先退出
 pub fn sync_ost_latest(steam_path: &Path) -> Result<String, String> {
-    if is_steam_running() {
+    // 实时探测：8 秒缓存可能仍认为 Steam 未运行，导致替换被锁定的核心 DLL
+    if is_steam_running_fresh() {
         return Err("Steam 客户端正在运行，核心 DLL 被锁定无法替换。请先退出 Steam（可在工具箱一键结束进程）后重试。".to_string());
     }
 
@@ -1672,7 +1699,9 @@ pub fn sync_ost_latest(steam_path: &Path) -> Result<String, String> {
         staged.push((*name, new_path, old_path));
     }
 
-    let mut committed: Vec<(PathBuf, PathBuf)> = Vec::new(); // (old, target)
+    // 记录本次已替换的目标及其备份。`old_path` 为 None 表示该目标原先不存在
+    // （首次部署）—— 回滚时必须**删除**新落位的文件，否则会留下"新旧混合"状态。
+    let mut committed: Vec<(Option<PathBuf>, PathBuf)> = Vec::new(); // (old?, target)
     for (name, new_path, old_path) in &staged {
         let target = steam_path.join(name);
         let had_old = target.exists();
@@ -1689,14 +1718,14 @@ pub fn sync_ost_latest(steam_path: &Path) -> Result<String, String> {
             rollback_ost_swap(&committed, &staged);
             return Err(format!("替换 {} 失败: {}，已回滚到原版本", name, e));
         }
-        if had_old {
-            committed.push((old_path.clone(), target.clone()));
-        }
+        committed.push((if had_old { Some(old_path.clone()) } else { None }, target.clone()));
     }
 
     // 提交成功：清理备份与可能残留的暂存文件
     for (old_path, _) in &committed {
-        let _ = std::fs::remove_file(old_path);
+        if let Some(p) = old_path {
+            let _ = std::fs::remove_file(p);
+        }
     }
     for (_, new_path, _) in &staged {
         let _ = std::fs::remove_file(new_path);

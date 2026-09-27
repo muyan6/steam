@@ -151,10 +151,16 @@ export class AuthService {
   public recordAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {
     try {
       const logs = this.loadAuditLogs();
+      // 入口截断：operator/userAgent/details 直接来自请求（body 上限 1MB），
+      // 不截断会让单次失败登录写入 ~1MB，再被 3 秒防抖同步全量重写——
+      // 磁盘膨胀 + 事件循环阻塞。审计只需可读摘要，各字段封顶即可。
       const entry: AuditLog = {
         id: `audit_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
         timestamp: new Date().toISOString(),
-        ...log
+        ...log,
+        operator: String(log.operator ?? '').slice(0, 128),
+        userAgent: String(log.userAgent ?? '').slice(0, 256),
+        details: String(log.details ?? '').slice(0, 512)
       };
       logs.unshift(entry);
       // 保留最新的 200 条审计记录
@@ -470,6 +476,25 @@ export class AuthService {
       message: '管理员账号及密码修改成功，所有旧登录会话已失效，请使用新凭证重新登录',
       token: newToken
     };
+  }
+
+  /**
+   * 注销时吊销当前（及全部）会话令牌：递增 tokenVersion，使已签发的 JWT 立即失效。
+   *
+   * 原实现只写了一条审计日志，token 仍可继续使用到 7 天过期 —— 拷贝出去的 token
+   * 在"已退出登录"后依然有效。单管理员场景下吊销全部会话是可接受的语义。
+   */
+  public revokeAllTokens(): void {
+    try {
+      const creds = this.getCredentials();
+      this.saveCredentials({
+        ...creds,
+        tokenVersion: (creds.tokenVersion ?? 1) + 1,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (e) {
+      console.error('[AuthService] 注销时吊销令牌失败（不影响本次退出）:', e);
+    }
   }
 
   public getProfile(): AdminUser {

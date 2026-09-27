@@ -6,7 +6,7 @@ import { licenseService } from '../services/licenseService.js';
 import { freeQuotaService } from '../services/freeQuotaService.js';
 
 const getClientIp = (req: Request): string => {
-  return req.socket.remoteAddress || '127.0.0.1';
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
 };
 
 /**

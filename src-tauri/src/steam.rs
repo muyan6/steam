@@ -137,21 +137,39 @@ pub fn is_steam_running() -> bool {
             }
         }
     }
+    probe_steam_running(true)
+}
 
+/// 强制实时探测（绕过 8 秒缓存）。用于**破坏性写入路径**（部署/替换核心 DLL）：
+/// 复用可能陈旧的缓存会在"用户刚启动 Steam"的窗口内判定为未运行，
+/// 从而覆盖被占用的 DLL。开销仅一次 tasklist（0.1~0.3s），这些路径都能承受。
+pub fn is_steam_running_fresh() -> bool {
+    probe_steam_running(false)
+}
+
+fn probe_steam_running(cache_result: bool) -> bool {
     // CREATE_NO_WINDOW：GUI 发布版（windows_subsystem）下不加会闪现控制台黑框
     let output = Command::new("tasklist")
         .args(["/FI", "IMAGENAME eq steam.exe", "/NH"])
         .creation_flags(0x08000000)
         .output();
 
-    let val = if let Ok(out) = output {
-        let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
-        text.contains("steam.exe")
-    } else {
-        false
+    let val = match output {
+        Ok(out) => {
+            let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+            text.contains("steam.exe")
+        }
+        Err(_) => {
+            // 探测失败 ≠ "Steam 未运行"。旧实现返回 false 属 fail-open：
+            // kill_steam / deploy_core_binaries / sync_ost_latest 都会据此认定未运行
+            // 并执行写/删。这里保守地当作"在运行"，且**不写缓存**，让下次重新探测。
+            return true;
+        }
     };
-    if let Ok(mut guard) = RUNNING_CACHE.lock() {
-        *guard = Some((std::time::Instant::now(), val));
+    if cache_result {
+        if let Ok(mut guard) = RUNNING_CACHE.lock() {
+            *guard = Some((std::time::Instant::now(), val));
+        }
     }
     val
 }

@@ -838,9 +838,13 @@ export const getGameMetadata = async (req: Request, res: Response) => {
         if (!isValidKey(d.depotKey) && hub3Data.depotKeys.has(d.depotId)) {
           d.depotKey = hub3Data.depotKeys.get(d.depotId);
         }
-        // 优先使用社区具备实体文件的清单 GID
-        if (hub3Data.manifestGids.has(d.depotId)) {
-          d.manifestGid = hub3Data.manifestGids.get(d.depotId);
+        // 仅当当前没有权威 GID 时才用社区 GID 兜底。
+        // 此前是无条件覆盖，与本文件"SteamCMD 权威、社区 Hub3 GID 可能陈旧"的规则
+        // 相矛盾，也绕过了 pickNewerGid —— 会把当前 SteamCMD 的 public 新 GID
+        // 替换成社区旧 GID，把清单钉在过期版本上。
+        const hubGid = hub3Data.manifestGids.get(d.depotId);
+        if (hubGid && (!d.manifestGid || d.manifestGid === '0')) {
+          d.manifestGid = hubGid;
         }
       }
       // 本地数据完全没有的分包一并补入

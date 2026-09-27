@@ -5,7 +5,7 @@ import { licenseService } from '../services/licenseService.js';
 import { deviceService } from '../services/deviceService.js';
 import { authService } from '../services/authService.js';
 
-const getClientIp = (req: Request): string => req.socket.remoteAddress || '127.0.0.1';
+const getClientIp = (req: Request): string => req.ip || req.socket.remoteAddress || '127.0.0.1';
 
 // ==================== 1. 公开客户端接口 ====================
 

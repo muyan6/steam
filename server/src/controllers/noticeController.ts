@@ -4,7 +4,7 @@ import { authService } from '../services/authService.js';
 
 // 审计 IP 只取 socket 真实地址（X-Forwarded-For 可任意伪造）
 const getClientIp = (req: Request): string => {
-  return req.socket.remoteAddress || '127.0.0.1';
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
 };
 
 const getParamStr = (val: any): string => {

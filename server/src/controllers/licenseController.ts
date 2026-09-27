@@ -2,6 +2,19 @@ import { Request, Response } from 'express';
 import { licenseService, LicenseType } from '../services/licenseService.js';
 import { deviceService } from '../services/deviceService.js';
 
+/// 卡密码长度上限：真实卡密远短于此，封顶可防超长 body 撑大 license_keys.json
+const MAX_CODE_LEN = 64;
+
+/**
+ * 校验并规整管理员接口的卡密入参。返回 null 表示非法（调用方回 400）。
+ */
+function parseCode(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const code = raw.trim();
+  if (!code || code.length > MAX_CODE_LEN) return null;
+  return code;
+}
+
 // ==================== 1. 公开客户端接口 ====================
 
 /**
@@ -231,7 +244,8 @@ export async function generateLicensesAdmin(req: Request, res: Response) {
       type: type as LicenseType,
       count: Number(count) || 1,
       prefix: cleanPrefix || undefined,
-      remark: remark ? String(remark).trim() : undefined,
+      // 备注封顶 128 字符：body 上限 1MB，不封顶会让单张卡密携带近 1MB 备注入库
+      remark: remark ? String(remark).trim().slice(0, 128) : undefined,
       createdBy: user.username
     });
 
@@ -262,9 +276,9 @@ export async function generateLicensesAdmin(req: Request, res: Response) {
  */
 export async function unbindLicenseAdmin(req: Request, res: Response) {
   try {
-    const { code } = req.body;
+    const code = parseCode(req.body?.code);
     if (!code) {
-      return res.status(400).json({ success: false, message: '请提供要解绑的激活码' });
+      return res.status(400).json({ success: false, message: '请提供要解绑的激活码（长度需 ≤ 64）' });
     }
 
     const result = licenseService.unbind(code);
@@ -274,6 +288,10 @@ export async function unbindLicenseAdmin(req: Request, res: Response) {
       } catch (err) {
         console.warn('[LicenseController] 解绑同步设备状态失败:', err);
       }
+    }
+    // 卡密不存在属"未找到"，回 404 而非 200+success:false，便于客户端与监控正确区分
+    if (!result.success) {
+      return res.status(404).json(result);
     }
     return res.json(result);
   } catch (e) {
@@ -287,12 +305,15 @@ export async function unbindLicenseAdmin(req: Request, res: Response) {
  */
 export async function toggleLicenseAdmin(req: Request, res: Response) {
   try {
-    const { code, disabled } = req.body;
+    const code = parseCode(req.body?.code);
     if (!code) {
-      return res.status(400).json({ success: false, message: '请提供要操作的激活码' });
+      return res.status(400).json({ success: false, message: '请提供要操作的激活码（长度需 ≤ 64）' });
     }
 
-    const result = licenseService.toggleStatus(code, Boolean(disabled));
+    const result = licenseService.toggleStatus(code, Boolean(req.body?.disabled));
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
     return res.json(result);
   } catch (e) {
     console.error('[LicenseController] 接口异常:', e);
@@ -307,11 +328,14 @@ export async function deleteLicenseAdmin(req: Request, res: Response) {
   try {
     const { code } = req.params;
     const sCode = Array.isArray(code) ? code[0] : String(code || '');
-    if (!sCode) {
-      return res.status(400).json({ success: false, message: '请提供要删除的激活码' });
+    if (!sCode || sCode.length > MAX_CODE_LEN) {
+      return res.status(400).json({ success: false, message: '请提供要删除的激活码（长度需 ≤ 64）' });
     }
 
     const result = licenseService.deleteKey(sCode);
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
     return res.json(result);
   } catch (e) {
     console.error('[LicenseController] 接口异常:', e);
@@ -324,12 +348,18 @@ export async function deleteLicenseAdmin(req: Request, res: Response) {
  */
 export async function extendLicenseAdmin(req: Request, res: Response) {
   try {
-    const { code, additionalDays } = req.body;
+    const code = parseCode(req.body?.code);
     if (!code) {
-      return res.status(400).json({ success: false, message: '请提供要延期的激活码' });
+      return res.status(400).json({ success: false, message: '请提供要延期的激活码（长度需 ≤ 64）' });
     }
+    // 延期天数夹取：负数会反向扣减、超大值会造成整数问题
+    const rawDays = Number(req.body?.additionalDays);
+    const days = Number.isFinite(rawDays) ? Math.min(3650, Math.max(1, Math.trunc(rawDays))) : 30;
 
-    const result = licenseService.extendDays(code, Number(additionalDays) || 30);
+    const result = licenseService.extendDays(code, days);
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
     return res.json(result);
   } catch (e) {
     console.error('[LicenseController] 接口异常:', e);

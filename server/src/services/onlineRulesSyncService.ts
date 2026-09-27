@@ -120,6 +120,12 @@ export class OnlineRulesSyncService {
       clearTimeout(this.initialTimer);
       this.initialTimer = null;
     }
+    // 必须先清掉旧的周期 interval：重复调用（热重载/重复初始化/测试）会叠加出
+    // 多个 24h 定时器，导致同一时刻并发多次上游抓取与写盘
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
     this.initialTimer = setTimeout(() => {
       this.initialTimer = null;
       this.syncFromSteamCharts().catch(e => {

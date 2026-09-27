@@ -3,7 +3,7 @@ import { sponsorService } from '../services/sponsorService.js';
 import { authService } from '../services/authService.js';
 
 const getClientIp = (req: Request): string => {
-  return req.socket.remoteAddress || '127.0.0.1';
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
 };
 
 // ==================== 客户端公开端点 ====================

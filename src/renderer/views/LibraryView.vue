@@ -490,9 +490,14 @@ const openSteamProtocol = async (url: string) => {
   }
 };
 
+// 并发守卫：onMounted、lua-files-changed 事件与各操作按钮都会触发 loadLibrary，
+// 慢的旧请求若晚于新请求返回，会用陈旧列表覆盖新状态。只允许最新一次请求落地。
+let loadRequestId = 0;
 const loadLibrary = async () => {
+  const reqId = ++loadRequestId;
   try {
     const details = await window.electronAPI.getUnlockedDetails();
+    if (reqId !== loadRequestId) return; // 已有更新的调用，丢弃本次结果
     unlockedGames.value = details || [];
     // 重建清单状态表，清掉已出库游戏的残留条目
     Object.keys(manifestStatuses).forEach((k) => delete manifestStatuses[Number(k)]);

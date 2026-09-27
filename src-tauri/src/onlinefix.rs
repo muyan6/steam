@@ -629,18 +629,51 @@ fn temp_download_dir() -> PathBuf {
 /// 去掉 Windows canonicalize 产生的 `\\?\` verbatim 前缀。
 /// Path::starts_with 按组件比较，Verbatim 前缀与 Disk 前缀不相等，
 /// 不归一化会导致「目标存在时所有解压条目被误判越界」。
-pub(crate) fn canonicalize_normalized(p: &Path) -> PathBuf {    match p.canonicalize() {
-        Ok(c) => {
-            let s = c.as_os_str().to_string_lossy();
-            if let Some(unc) = s.strip_prefix(r"\\?\UNC\") {
-                PathBuf::from(format!(r"\\{}", unc))
-            } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
-                PathBuf::from(stripped.to_string())
-            } else {
-                c
+///
+/// 目标**尚未存在**时（待写入的解压条目），`canonicalize` 会失败：
+/// 此时若直接返回原始路径，遇到游戏目录经由 junction/符号链接（或 8.3 短名）到达时，
+/// 原始路径与已归一化的游戏目录前缀不一致，所有条目都会被误判越界
+/// （表现为"补丁部署失败 0 个文件写入"）。因此改为逐级向上找到最近的**已存在祖先**、
+/// 归一化它，再把剩余相对分量接回去。
+pub(crate) fn canonicalize_normalized(p: &Path) -> PathBuf {
+    fn strip_verbatim(c: PathBuf) -> PathBuf {
+        let s = c.as_os_str().to_string_lossy();
+        if let Some(unc) = s.strip_prefix(r"\\?\UNC\") {
+            PathBuf::from(format!(r"\\{}", unc))
+        } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            PathBuf::from(stripped.to_string())
+        } else {
+            c
+        }
+    }
+
+    if let Ok(c) = p.canonicalize() {
+        return strip_verbatim(c);
+    }
+
+    // 目标不存在：向上找最近的已存在祖先并归一化，其余分量原样接回
+    let mut suffix: Vec<std::ffi::OsString> = Vec::new();
+    let mut cur = p.to_path_buf();
+    loop {
+        match cur.canonicalize() {
+            Ok(base) => {
+                let mut resolved = strip_verbatim(base);
+                for comp in suffix.iter().rev() {
+                    resolved.push(comp);
+                }
+                return resolved;
+            }
+            Err(_) => {
+                match (cur.parent(), cur.file_name()) {
+                    (Some(parent), Some(name)) => {
+                        suffix.push(name.to_os_string());
+                        cur = parent.to_path_buf();
+                    }
+                    // 已到根仍无法归一化：退回原始路径（保持旧行为，不 panic）
+                    _ => return p.to_path_buf(),
+                }
             }
         }
-        Err(_) => p.to_path_buf(),
     }
 }
 

@@ -1807,7 +1807,16 @@ export class ManifestService {
       const depotId = String(e?.depotId ?? '').trim();
       const gid = String(e?.gid ?? '').trim();
       const code = String(e?.code ?? '').trim();
-      if (!/^\d+$/.test(depotId) || !/^\d+$/.test(gid) || !/^\d+$/.test(code) || code === '0') {
+      // 长度夹取：code 是清单码（数值），加上限可防超长数值撑大码库与下游响应
+      if (
+        !/^\d+$/.test(depotId) ||
+        depotId.length > 20 ||
+        !/^\d+$/.test(gid) ||
+        gid.length > 20 ||
+        !/^\d+$/.test(code) ||
+        code === '0' ||
+        code.length > 20
+      ) {
         rejected++;
         continue;
       }
