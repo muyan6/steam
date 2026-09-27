@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
@@ -530,18 +531,27 @@ fn terminate_pid(_pid: u32) -> bool {
 /// openp2p 以 `-d` 启动时会再 fork 一个 `-nv` worker（实测 daemon 与 worker 是两个进程），
 /// 只 kill 直接子进程会留下孤儿 worker 继续占用 1919 / 27183 端口，导致下次启动 bind 失败。
 fn kill_process_tree(pid: u32) {
-    fn collect_descendants(procs: &[(u32, u32, String)], parent: u32, out: &mut Vec<u32>) {
-        for (p, pp, _) in procs {
-            if *pp == parent {
-                collect_descendants(procs, *p, out);
-                out.push(*p);
+    // 迭代 + 入栈即标记 visited，替代原先的递归。
+    //
+    // 递归实现在进程表成环时会无限自调用直至栈溢出（整个应用崩溃）。
+    // 注意：常见的「递归后 out.push、再判 !out.contains(p)」写法**挡不住环** ——
+    // out 是后序写入，环上的节点在下降过程中还没进 out，contains 永远为假。
+    // 必须像这里一样在「入栈时」就标记已访问。
+    let procs = list_openp2p_processes();
+    let mut visited: HashSet<u32> = HashSet::new();
+    let mut stack: Vec<u32> = vec![pid];
+    let mut order: Vec<u32> = Vec::new();
+    visited.insert(pid);
+
+    while let Some(parent) = stack.pop() {
+        for (p, pp, _) in &procs {
+            if *pp == parent && visited.insert(*p) {
+                stack.push(*p);
+                order.push(*p);
             }
         }
     }
 
-    let procs = list_openp2p_processes();
-    let mut order: Vec<u32> = Vec::new();
-    collect_descendants(&procs, pid, &mut order);
     for child in order {
         let _ = terminate_pid(child);
     }
@@ -561,6 +571,39 @@ fn kill_own_openp2p_instances() {
 /// **按进程核实** —— 我们目录下的 openp2p 仍在跑就说明隧道其实还活着。
 /// 旧实现只看内存句柄，于是残留进程仍在转发时 UI 却报「服务待命中」，
 /// 把「已连接」全部显示成「待命」。
+/// `is_p2p_running()` 兜底路径（进程枚举）的短缓存。
+///
+/// P2P 面板每 3 秒会连续调用 `p2p_get_status` + `p2p_get_realtime_state`，
+/// 两者在服务未运行时都会走到「枚举进程」这条兜底路径。本机实测（345 进程）
+/// 一次 ToolHelp 全表快照约 14ms —— 两次就是 28ms / 3s 的主线程占用。
+/// 1.5s TTL 让同一轮询周期内的两次调用共享一次快照，且远小于轮询间隔，
+/// 不会掩盖真实状态变化；start/stop 会显式失效，点击按钮后状态立即准确。
+static RUNNING_PROBE_CACHE: Mutex<Option<(std::time::Instant, bool)>> = Mutex::new(None);
+const RUNNING_PROBE_TTL: std::time::Duration = std::time::Duration::from_millis(1500);
+
+fn invalidate_running_probe_cache() {
+    if let Ok(mut guard) = RUNNING_PROBE_CACHE.lock() {
+        *guard = None;
+    }
+}
+
+/// 按进程表核实「本应用目录下的 openp2p 是否在运行」（带短缓存）
+fn probe_own_openp2p_running() -> bool {
+    if let Ok(guard) = RUNNING_PROBE_CACHE.lock() {
+        if let Some((at, val)) = guard.as_ref() {
+            if at.elapsed() < RUNNING_PROBE_TTL {
+                return *val;
+            }
+        }
+    }
+
+    let val = !own_openp2p_pids().is_empty();
+    if let Ok(mut guard) = RUNNING_PROBE_CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), val));
+    }
+    val
+}
+
 pub fn is_p2p_running() -> bool {
     {
         let mut guard = ACTIVE_P2P_CHILD.lock().unwrap();
@@ -574,7 +617,7 @@ pub fn is_p2p_running() -> bool {
         }
     }
 
-    !own_openp2p_pids().is_empty()
+    probe_own_openp2p_running()
 }
 
 /// 优雅停止所有由本客户端启动的 openp2p 实例
@@ -591,6 +634,10 @@ pub fn stop_p2p() -> Result<bool, String> {
 
     // 兜底：清理本应用目录下因崩溃/强退残留的实例
     kill_own_openp2p_instances();
+
+    // 刚杀完进程，缓存的「是否在运行」立刻失效，
+    // 否则用户点「关闭所有服务」后 UI 最多还会显示 1.5s 的「运行中」。
+    invalidate_running_probe_cache();
 
     Ok(true)
 }
@@ -635,6 +682,10 @@ pub fn start_p2p_daemon() -> Result<bool, String> {
 
     let mut guard = ACTIVE_P2P_CHILD.lock().unwrap();
     *guard = Some(child);
+
+    // 句柄已持有，is_p2p_running() 会直接返回 true；这里仍清一次缓存，
+    // 避免句柄随后被回收（进程退出）时立刻读到启动前的旧值。
+    invalidate_running_probe_cache();
 
     Ok(true)
 }
