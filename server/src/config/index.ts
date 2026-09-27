@@ -103,6 +103,9 @@ export const CONFIG = {
   // 仅用于首次初始化凭据文件；未配置 ADMIN_PASS 时生成随机密码（不再内置 admin123 弱口令）
   DEFAULT_ADMIN_PASS: resolveAdminPass(),
   JWT_SECRET: requireSecret('JWT_SECRET'),
+  // 邀请码派生密钥（HMAC(secret, deviceId)）：未配置时回落 JWT_SECRET。
+  // 注意：一旦更换，此前展示/发出的邀请码会失效（旧码仍可按旧算法兼容绑定）。
+  INVITE_SECRET: (process.env.INVITE_SECRET || '').trim(),
   TOKEN_EXPIRES_SECONDS: 7 * 24 * 3600, // 7天有效
   MAX_LOGIN_ATTEMPTS: 5,
   LOCKOUT_TIME_MS: 15 * 60 * 1000, // 输错5次锁定15分钟

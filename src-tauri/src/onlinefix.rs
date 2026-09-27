@@ -68,7 +68,7 @@ const ACCOUNT_ENC_PREFIX: &str = "DPAPI:";
 /// Windows DPAPI 加密（当前用户作用域，仅本机本用户可解），
 /// 避免联机账号密码明文落盘。flags=0：不跨机器、不提示 UI
 #[cfg(windows)]
-fn dpapi_protect(plain: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn dpapi_protect(plain: &[u8]) -> Result<Vec<u8>, String> {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
     unsafe {
@@ -100,7 +100,7 @@ fn dpapi_protect(plain: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(windows)]
-fn dpapi_unprotect(blob: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn dpapi_unprotect(blob: &[u8]) -> Result<Vec<u8>, String> {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
     unsafe {

@@ -464,8 +464,7 @@ const loadDeviceId = async () => {
     const id = await window.electronAPI.getDeviceId();
     if (id) {
       deviceId.value = id;
-      // 邀请码由设备码本地派生（与服务端算法一致），无需额外请求即可展示
-      myInviteCode.value = window.electronAPI.deriveInviteCode(id);
+      // 邀请码已改为服务端 HMAC 派生，客户端不再本地计算；由 loadInviteStatus 拉取后填充
     }
   } catch (e: any) {
     console.warn('获取设备码异常:', formatIpcError(e));

@@ -26,13 +26,59 @@ pub fn is_valid_device_id(id: &str) -> bool {
             .all(|seg| seg.len() == 4 && seg.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
+/// 设备码持久化密文前缀：`DPAPI:<std_base64(CryptProtectData(deviceId))>`。
+///
+/// 为什么要加密而不能明文持久化：明文设备码（`device_id.txt` / 注册表 / 授权缓存里的
+/// deviceId）可以被**原样复制到另一台电脑**。设备码是密钥接口的唯一凭据，一旦可复制，
+/// 攻击者把某台已激活机器的设备码文件拷到新机器，新机就会"变成"那台设备，
+/// 从而免授权使用其卡密（离线验签也会通过，因为签名就是针对该 deviceId 的）。
+/// DPAPI 绑定当前机器+当前用户：密文换个机器/换个用户就解密失败 → 回退硬件重算 → 拒绝冒用。
+const DEVICE_ENC_PREFIX: &str = "DPAPI:";
+
+fn encode_device_id_for_storage(id: &str) -> String {
+    #[cfg(windows)]
+    {
+        if let Ok(blob) = crate::onlinefix::dpapi_protect(id.as_bytes()) {
+            use base64::Engine;
+            return format!(
+                "{}{}",
+                DEVICE_ENC_PREFIX,
+                base64::engine::general_purpose::STANDARD.encode(blob)
+            );
+        }
+    }
+    id.to_string()
+}
+
+/// 解析持久化的设备码。
+///
+/// **明文一律不信任**：`device_id.txt` / 注册表里的明文设备码可以被任意复制，
+/// 接受它等于把设备码变成可克隆的凭据（A4 克隆缺陷）。只有能通过 DPAPI 解密的
+/// 密文才作为身份来源；解不开就当作没有持久化记录，回退硬件重算。
+fn decode_device_id_from_storage(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let b64 = raw.strip_prefix(DEVICE_ENC_PREFIX)?;
+    #[cfg(windows)]
+    {
+        use base64::Engine;
+        let blob = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+        let plain = crate::onlinefix::dpapi_unprotect(&blob).ok()?;
+        String::from_utf8(plain).ok()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = b64;
+        None
+    }
+}
+
 fn read_persisted_file() -> Option<String> {
     let appdata = std::env::var("APPDATA").ok()?;
     let path = std::path::PathBuf::from(appdata).join("com.chunfengdu.app").join("device_id.txt");
     let content = std::fs::read_to_string(path).ok()?;
-    let trimmed = content.trim().to_uppercase();
-    if is_valid_device_id(&trimmed) {
-        Some(trimmed)
+    let decoded = decode_device_id_from_storage(&content)?.trim().to_uppercase();
+    if is_valid_device_id(&decoded) {
+        Some(decoded)
     } else {
         None
     }
@@ -43,17 +89,17 @@ fn write_persisted_file(id: &str) {
         let dir = std::path::PathBuf::from(appdata).join("com.chunfengdu.app");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("device_id.txt");
-        let _ = std::fs::write(path, id.trim().to_uppercase());
+        let _ = std::fs::write(path, encode_device_id_for_storage(&id.trim().to_uppercase()));
     }
 }
 
 fn read_persisted_registry() -> Option<String> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let sub = hkcu.open_subkey("Software\\ChunFengDu").ok()?;
-    let id: String = sub.get_value("DeviceId").ok()?;
-    let trimmed = id.trim().to_uppercase();
-    if is_valid_device_id(&trimmed) {
-        Some(trimmed)
+    let stored: String = sub.get_value("DeviceId").ok()?;
+    let decoded = decode_device_id_from_storage(&stored)?.trim().to_uppercase();
+    if is_valid_device_id(&decoded) {
+        Some(decoded)
     } else {
         None
     }
@@ -62,31 +108,19 @@ fn read_persisted_registry() -> Option<String> {
 fn write_persisted_registry(id: &str) {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok((sub, _)) = hkcu.create_subkey("Software\\ChunFengDu") {
-        let _ = sub.set_value("DeviceId", &id.trim().to_uppercase());
+        let _ = sub.set_value("DeviceId", &encode_device_id_for_storage(&id.trim().to_uppercase()));
     }
 }
 
-/// 尝试从本地已有的 license_cache.json 中找回之前已成功激活的有效设备码
-fn recover_from_license_cache() -> Option<String> {
-    let appdata = std::env::var("APPDATA").ok()?;
-    let path = std::path::PathBuf::from(appdata).join("com.chunfengdu.app").join("license_cache.json");
-    let content = std::fs::read_to_string(path).ok()?;
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-        if let Some(dev_id) = json.get("deviceId").and_then(|v| v.as_str()) {
-            let clean = dev_id.trim().to_uppercase();
-            if is_valid_device_id(&clean) {
-                return Some(clean);
-            }
-        }
-    }
-    None
-}
-
-/// 获取本机唯一设备码（终生固化锁定 + 历史自愈 + CFD 算法）
+/// 获取本机唯一设备码（终生固化锁定 + CFD 算法）
 ///
-/// 1. 优先读取已持久化的设备码（文件与注册表双副本）
-/// 2. 自动从既有激活缓存自愈已激活的设备码，杜绝因网卡变动/加速器启停导致设备码漂移丢授权
-/// 3. 若均无则通过硬件特征动态计算，并立即双重持久化锁定
+/// 1. 优先读取已持久化的设备码（文件与注册表双副本，均须通过 DPAPI 解密）
+/// 2. 若均无则通过硬件特征动态计算，并立即双重持久化锁定
+///
+/// 注意：**不再**从 `license_cache.json` 自愈设备码。那份缓存是明文 JSON、可被
+/// 原样复制，而其中的 deviceId 恰好是授权签名覆盖的字段 —— 接受它等于允许
+/// "拷贝一份缓存文件即可在任意新机器上克隆授权"（A4）。持久化改用 DPAPI 绑定后，
+/// 正常用户的设备码漂移（换网卡等）依然由步骤 1 兜住，无需该自愈通道。
 pub fn get_device_id() -> String {
     static DEVICE_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     DEVICE_ID.get_or_init(resolve_and_lock_device_id).clone()
@@ -105,17 +139,10 @@ fn resolve_and_lock_device_id() -> String {
         return id;
     }
 
-    // 3. 历史激活自愈（防止升级后因网络环境不同导致已激活卡密失效）
-    if let Some(id) = recover_from_license_cache() {
-        write_persisted_file(&id);
-        write_persisted_registry(&id);
-        return id;
-    }
-
-    // 4. 计算初始设备码
+    // 3. 计算初始设备码
     let id = compute_device_id();
 
-    // 5. 立即双重持久化，终身锁定
+    // 4. 立即双重持久化，终身锁定
     write_persisted_file(&id);
     write_persisted_registry(&id);
     id
@@ -291,5 +318,31 @@ mod tests {
         assert!(!is_valid_device_id("CFD-1234-5678-9ABC"), "长度不足应被拒绝");
         assert!(!is_valid_device_id("CFD-1234-5678-9ABC-0XYZ"), "非 hex 应被拒绝");
         println!("本机设备码: {}", id);
+    }
+
+    /// 防克隆回归：明文设备码一律不信任，只有 DPAPI 密文才被接受。
+    ///
+    /// 若这里回归（明文被接受），则把另一台已激活机器的 device_id.txt / 注册表
+    /// 拷到新机器即可"变成"那台设备，冒用其卡密（A4）。
+    #[test]
+    fn plaintext_device_id_is_rejected() {
+        let dev = "CFD-36DB-2FA8-26AB-4AA2";
+        // 明文字符串与裸 base64 都不是合法存储形态
+        assert_eq!(decode_device_id_from_storage(dev), None, "明文设备码必须被拒绝");
+        assert_eq!(decode_device_id_from_storage(""), None);
+        assert_eq!(decode_device_id_from_storage("DPAPI:"), None, "空前缀内容必须被拒绝");
+        assert_eq!(decode_device_id_from_storage("DPAPI:bm90LWEtYmxvYg=="), None, "非法密文必须被拒绝");
+    }
+
+    /// 本机闭环：写入持久化后必须能原样读回（DPAPI 加密-解密往返）。
+    #[test]
+    fn persisted_file_roundtrip_is_machine_bound() {
+        #[cfg(windows)]
+        {
+            let dev = compute_device_id();
+            let stored = encode_device_id_for_storage(&dev);
+            assert!(stored.starts_with(DEVICE_ENC_PREFIX), "持久化应为 DPAPI 密文: {}", &stored[..stored.len().min(16)]);
+            assert_eq!(decode_device_id_from_storage(&stored).as_deref(), Some(dev.as_str()));
+        }
     }
 }

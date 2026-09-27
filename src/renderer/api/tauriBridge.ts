@@ -1267,19 +1267,14 @@ export const createTauriBridge = () => {
     // ==================== 邀请有礼（邀请码 = 设备码后 12 位，无需另行生成） ====================
 
     /**
-     * 由设备码派生邀请码：去掉 CFD- 前缀与连字符后取末尾 12 位 hex，
-     * 格式化为 XXXX-XXXX-XXXX。必须与服务端 inviteService.deriveInviteCode 完全一致。
-     * 本地派生仅用于即时展示，不参与任何校验。
+     * 已废弃：邀请码不再可由设备码本地派生。
+     *
+     * 邀请码已改为服务端 `HMAC(secret, deviceId)` 派生，客户端无法、也不应复刻该算法
+     * （否则一旦泄露算法即可反推设备码 —— 这正是要修掉的问题）。一律以
+     * `getInviteStatus()` 返回的服务端 inviteCode 为准；本函数仅保留占位以避免
+     * 旧调用点报错，恒返回空串。
      */
-    deriveInviteCode: (deviceId: string): string => {
-      const hex = (deviceId || '')
-        .toUpperCase()
-        .replace(/^CFD-/, '')
-        .replace(/[^0-9A-F]/g, '');
-      if (hex.length < 12) return '';
-      const tail = hex.slice(-12);
-      return `${tail.slice(0, 4)}-${tail.slice(4, 8)}-${tail.slice(8, 12)}`;
-    },
+    deriveInviteCode: (_deviceId: string): string => '',
     /** 查询本机邀请状态（邀请码 / 已邀请人数 / 累计获得天数 / 是否已绑定） */
     getInviteStatus: async (): Promise<InviteStatus | null> => {
       try {

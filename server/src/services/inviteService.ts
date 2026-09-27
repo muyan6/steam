@@ -71,19 +71,61 @@ export function deviceIdToHex(deviceId: string): string {
 }
 
 /**
- * 由设备码派生邀请码（展示格式 XXXX-XXXX-XXXX）。
- * 与客户端 tauriBridge.deriveInviteCode 必须保持完全一致的算法。
+ * 邀请码派生密钥：优先取环境变量，缺失时回落到与进程/部署绑定的稳定密钥。
+ *
+ * 为什么要与设备码**解耦**：旧实现直接取设备码后 12 位 hex 当邀请码。设备码同时是
+ * 密钥接口的唯一凭据，而 `/invite/status` 会按传入的 deviceId 回显其邀请码 ——
+ * 于是邀请码（本就要公开发给好友）暴露了设备码的后 12/16 位，只剩 4 位 hex 可枚举，
+ * 拿到邀请码即可在 2^16 内爆破出完整设备码、冒用他人授权。
+ * 改为 HMAC(secret, deviceId) 后，邀请码与设备码无任何可逆关系，泄露邀请码不再泄露设备码。
  */
-export function deriveInviteCode(deviceId: string): string {
-  const hex = deviceIdToHex(deviceId);
-  if (hex.length < INVITE_TAIL_HEX) return '';
-  const tail = hex.slice(-INVITE_TAIL_HEX);
-  return `${tail.slice(0, 4)}-${tail.slice(4, 8)}-${tail.slice(8, 12)}`;
+function inviteSecret(): string {
+  const fromCfg = String(CONFIG.INVITE_SECRET || '').trim();
+  if (fromCfg) return fromCfg;
+  const fromEnv = String(process.env.INVITE_SECRET || '').trim();
+  if (fromEnv) return fromEnv;
+  const jwt = String(process.env.JWT_SECRET || '').trim();
+  if (jwt) return `invite:${jwt}`;
+  // 两者都缺失时用固定域分隔串（此时 JWT_SECRET 也会在启动时被 config 强制校验拦截）
+  return 'chunfengdu-invite-fixed-domain-secret';
 }
 
 /**
- * 归一化用户输入的邀请码：允许带连字符、小写，甚至直接粘贴完整设备码，
+ * 由设备码派生邀请码（展示格式 XXXX-XXXX-XXXX）。
+ *
+ * **客户端不再本地计算邀请码**，一律以服务端 `/invite/status` 返回值为准，
+ * 因此这里可以安全地改用 HMAC（客户端无需复刻算法）。
+ */
+export function deriveInviteCode(deviceId: string): string {
+  const id = String(deviceId || '').trim();
+  if (!isValidDeviceIdShape(id)) return '';
+  const digest = crypto
+    .createHmac('sha256', inviteSecret())
+    .update(id.toUpperCase())
+    .digest('hex')
+    .toUpperCase();
+  const tail = digest.slice(0, INVITE_TAIL_HEX);
+  return `${tail.slice(0, 4)}-${tail.slice(4, 8)}-${tail.slice(8, 12)}`;
+}
+
+/** 设备码形态校验（CFD-XXXX-XXXX-XXXX-XXXX），用于派生前过滤非法输入 */
+function isValidDeviceIdShape(id: string): boolean {
+  const m = /^CFD-([0-9A-Fa-f]{4})-([0-9A-Fa-f]{4})-([0-9A-Fa-f]{4})-([0-9A-Fa-f]{4})$/.exec(id.trim());
+  return !!m;
+}
+
+/** 旧版邀请码键（设备码后 12 位 hex）：仅用于兼容已发出的旧邀请码与自邀请自检 */
+function deriveInviteCodeLegacyKey(deviceId: string): string {
+  const hex = deviceIdToHex(deviceId);
+  return hex.length < INVITE_TAIL_HEX ? '' : hex.slice(-INVITE_TAIL_HEX);
+}
+
+/**
+ * 归一化用户输入的邀请码：允许带连字符、小写，
  * 一律取其中后 12 位 hex 作为匹配键。
+ *
+ * 注意：**不再**接受「直接粘贴完整设备码」—— 旧实现那样做等于把设备码也当作邀请码，
+ * 反而加剧了设备码泄露面；HMAC 派生后邀请码与设备码无对应关系，也只认 12 位 hex。
  */
 export function normalizeInviteCodeInput(code: string): string {
   const hex = String(code || '')
@@ -171,12 +213,12 @@ export class InviteService {
       for (const d of deviceService.getAllDeviceIds()) ids.add(d);
     } catch {}
 
+    // 用与展示一致的 HMAC 派生值做匹配（不再取设备码尾部 hex）
     let matched: string | null = null;
     const collisions: string[] = [];
     for (const id of ids) {
-      const hex = deviceIdToHex(id);
-      if (hex.length < INVITE_TAIL_HEX) continue;
-      if (hex.slice(-INVITE_TAIL_HEX) !== normCode) continue;
+      const code = deriveInviteCode(id).replace(/-/g, '');
+      if (code !== normCode) continue;
       if (!matched) matched = id;
       else if (matched.toLowerCase() !== id.toLowerCase()) collisions.push(id);
     }
@@ -187,6 +229,28 @@ export class InviteService {
       );
     }
     return matched;
+  }
+
+  /**
+   * 兼容旧邀请码：老版本邀请码 = 设备码后 12 位 hex。已发出的邀请码不能失效，
+   * 因此在 HMAC 匹配失败时，再按旧算法反查一次。仅用于**绑定**（接受输入），
+   * 展示一律用新的 HMAC 码，避免继续暴露设备码。
+   */
+  private resolveInviterLegacy(normCode: string): string | null {
+    if (!normCode) return null;
+    const ids = new Set<string>();
+    try {
+      for (const d of licenseService.getBoundDeviceIds()) ids.add(d);
+    } catch {}
+    try {
+      for (const d of deviceService.getAllDeviceIds()) ids.add(d);
+    } catch {}
+    for (const id of ids) {
+      const hex = deviceIdToHex(id);
+      if (hex.length < INVITE_TAIL_HEX) continue;
+      if (hex.slice(-INVITE_TAIL_HEX) === normCode) return id;
+    }
+    return null;
   }
 
   /** 本机邀请状态（客户端「邀请有礼」标签页展示） */
@@ -256,6 +320,10 @@ export class InviteService {
     if (ownInvite && normalizeInviteCodeInput(ownInvite) === normCode) {
       return { success: false, message: '不能填写自己的邀请码，快去邀请好友填写你的邀请码吧！' };
     }
+    // 旧码自检：老版邀请码（设备码后 12 位 hex）同样不允许填自己的
+    if (deriveInviteCodeLegacyKey(invitee) === normCode) {
+      return { success: false, message: '不能填写自己的邀请码，快去邀请好友填写你的邀请码吧！' };
+    }
 
     const lowerInvitee = invitee.toLowerCase();
     if (this.records.some(r => r.inviteeDeviceId.toLowerCase() === lowerInvitee)) {
@@ -270,7 +338,8 @@ export class InviteService {
       }
     } catch {}
 
-    const inviter = this.resolveInviter(normCode);
+    // 先按新 HMAC 邀请码匹配；失败再按旧算法（设备码尾部 hex）兼容已发出的旧邀请码
+    const inviter = this.resolveInviter(normCode) || this.resolveInviterLegacy(normCode);
     if (!inviter) {
       return { success: false, message: '邀请码不存在或邀请人设备尚未注册，请核对后重试。' };
     }
