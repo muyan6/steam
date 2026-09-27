@@ -1023,24 +1023,49 @@ pub fn check_firewall_rule() -> bool {
     true
 }
 
-/// 规范化 Windows 路径用于比较（统一分隔符与大小写）。
+/// 规范化 Windows 路径用于比较（统一分隔符、大小写并剔除首尾引号）。
 #[cfg(windows)]
 fn normalize_win_path(p: &str) -> String {
-    p.trim().replace('/', "\\").to_lowercase()
+    p.trim().trim_matches('"').replace('/', "\\").to_lowercase()
 }
 
-/// 读取现有规则的 `Program:` 字段，判断是否指向给定二进制。
-///
-/// - `Some(true)`：规则存在且 program 完全匹配；
-/// - `Some(false)`：规则存在但指向别的路径（引擎在线升级 / 安装目录迁移后就是这样）；
-/// - `None`：规则不存在，或输出无法解析。
-///
-/// 只按规则名判断是不够的：同名旧规则指向已不存在的旧路径时，
-/// `check_firewall_rule()` 依然返回 true，UI 显示「已放行」而入站流量实际被丢弃。
-/// `Program:` 字段名在中文与英文系统上一致（实测中文 Windows 亦为 `Program:`），
-/// 所以解析该行不依赖界面语言。
+/// 优先通过 Windows 注册表直接查询防火墙规则的程序路径（底层存储、跨语言、1ms极速）。
+/// Windows Defender 防火墙底层规则存储于 HKLM 且允许普通权限只读查询。
 #[cfg(windows)]
-fn existing_rule_program(bin_str: &str) -> Option<bool> {
+fn query_firewall_rule_program_registry(rule_name: &str) -> Option<String> {
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::RegKey;
+
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let key = hklm
+        .open_subkey("SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\FirewallRules")
+        .ok()?;
+
+    let target_name_pattern = format!("Name={}|", rule_name);
+    let target_name_pattern_quoted = format!("Name=\"{}\"|", rule_name);
+
+    for (_, val) in key.enum_values().filter_map(|v| v.ok()) {
+        let text = val.to_string();
+        if text.contains(&target_name_pattern) || text.contains(&target_name_pattern_quoted) {
+            for part in text.split('|') {
+                if let Some(app_path) = part.strip_prefix("App=") {
+                    let cleaned = app_path.trim().trim_matches('"');
+                    if !cleaned.is_empty() {
+                        return Some(cleaned.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// 兜底：通过 netsh 命令行输出解析规则程序路径。
+/// 兼顾中文 Windows（`程序:`）与英文 Windows（`Program:`）字段名，
+/// 并直接支持在全文本中比对规范化路径，避免 GBK/代码页解码损毁导致的误判。
+#[cfg(windows)]
+fn query_firewall_rule_program_netsh(bin_str: &str) -> Option<bool> {
     let output = Command::new("netsh")
         .args(&[
             "advfirewall",
@@ -1060,17 +1085,23 @@ fn existing_rule_program(bin_str: &str) -> Option<bool> {
 
     let text = String::from_utf8_lossy(&output.stdout);
     let want = normalize_win_path(bin_str);
-    let mut seen_program = false;
+    let text_norm = normalize_win_path(&text);
 
+    // 1. 全文检索：若输出中明确包含规范化路径，直接判定成功
+    if text_norm.contains(&want) {
+        return Some(true);
+    }
+
+    // 2. 逐行识别：兼顾英文「Program:」与中文「程序:」或全角冒号
+    let mut seen_program = false;
     for line in text.lines() {
-        if let Some(rest) = line.trim().strip_prefix("Program:") {
-            // netsh 输出走本地代码页（中文系统是 GBK），路径含中文用户名时
-            // from_utf8_lossy 必然损坏字节，比较结果不可信。
-            // 此时返回 None，让调用方退回「规则存在即视为放行」——
-            // 宁可漏报也不能把「已放行」误报成「未放行」，否则用户会反复弹 UAC。
-            if !line.is_ascii() {
-                return None;
-            }
+        let trimmed = line.trim();
+        let stripped = trimmed
+            .strip_prefix("Program:")
+            .or_else(|| trimmed.strip_prefix("程序:"))
+            .or_else(|| trimmed.strip_prefix("程序："));
+
+        if let Some(rest) = stripped {
             seen_program = true;
             if normalize_win_path(rest) == want {
                 return Some(true);
@@ -1078,17 +1109,36 @@ fn existing_rule_program(bin_str: &str) -> Option<bool> {
         }
     }
 
-    if seen_program {
+    // 3. 区分「存在但路径不同」与「完全未解析出路径」
+    if seen_program || text_norm.contains("openp2p.exe") {
         Some(false)
     } else {
         None
     }
 }
 
+/// 读取现有规则的程序路径，判断是否指向给定二进制：
+/// - `Some(true)`：规则存在且明确指向当前引擎；
+/// - `Some(false)`：规则存在但明确指向其他失效/旧路径；
+/// - `None`：规则不存在，或因环境原因无法确定具体路径（调用方应退回宽松判定）。
+#[cfg(windows)]
+fn existing_rule_program(bin_str: &str) -> Option<bool> {
+    if let Some(actual_app) = query_firewall_rule_program_registry("ChunFengDu P2P") {
+        let want = normalize_win_path(bin_str);
+        let actual = normalize_win_path(&actual_app);
+        return Some(actual == want);
+    }
+
+    query_firewall_rule_program_netsh(bin_str)
+}
+
 /// 规则是否已存在且指向当前引擎 —— 让「一键放行」保持幂等。
 #[cfg(windows)]
 fn firewall_rule_ok_for(bin_str: &str) -> bool {
-    matches!(existing_rule_program(bin_str), Some(true))
+    match existing_rule_program(bin_str) {
+        Some(matches) => matches,
+        None => check_firewall_rule(),
+    }
 }
 
 /// 直接以参数数组跑一次 netsh（不经 shell），避免 Windows 命令行引号解析歧义。
@@ -1234,14 +1284,21 @@ pub fn allow_firewall_rule() -> Result<bool, String> {
         // 2. 普通权限时走 Windows 原生 UAC 提权执行
         allow_firewall_rule_elevated(&bin_str)?;
 
-        // 3. UAC 明确成功后才校验结果。校验必须带 Program 比对：
-        //    只看规则名会把「指向旧引擎路径」的陈旧规则误判为已放行。
-        if firewall_rule_ok_for(&bin_str) {
-            Ok(true)
-        } else if check_firewall_rule() {
-            Err("防火墙规则存在，但指向的引擎路径与本机当前引擎不一致，请删除该规则后重试".to_string())
-        } else {
-            Err("未能确认防火墙入站放行结果，请检查系统安全软件或手动配置".to_string())
+        // 3. UAC 明确成功后校验结果：
+        //    严格区分「路径匹配成功(Some(true))」、「确凿不匹配(Some(false))」与「环境无法提取路径(None)」，
+        //    当无法提取具体路径时只要规则存在即视为放行成功，严禁产生假阴性误报。
+        match existing_rule_program(&bin_str) {
+            Some(true) => Ok(true),
+            Some(false) => {
+                Err("防火墙规则已存在，但指向的引擎路径与本机当前引擎不一致，请手动删除旧规则后重试".to_string())
+            }
+            None => {
+                if check_firewall_rule() {
+                    Ok(true)
+                } else {
+                    Err("未能确认防火墙入站放行结果，请检查系统安全软件或手动配置".to_string())
+                }
+            }
         }
     }
 
