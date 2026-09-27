@@ -1877,6 +1877,16 @@ fn p2p_allow_firewall() -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn is_app_elevated() -> bool {
+    p2p::is_elevated()
+}
+
+#[tauri::command]
+fn restart_as_admin() -> Result<(), String> {
+    p2p::restart_as_admin()
+}
+
+#[tauri::command]
 async fn check_openp2p_sync() -> serde_json::Value {
     tauri::async_runtime::spawn_blocking(move || {
         let info = p2p::check_openp2p_sync();
@@ -2043,6 +2053,8 @@ pub fn run() {
             p2p_parse_code,
             p2p_check_firewall,
             p2p_allow_firewall,
+            is_app_elevated,
+            restart_as_admin,
             check_openp2p_sync,
             sync_openp2p_latest
         ])

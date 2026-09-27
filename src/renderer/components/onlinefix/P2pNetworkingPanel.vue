@@ -81,19 +81,32 @@
     <!-- 防火墙未放行提示：被系统防火墙拦截时打洞会静默失败，需给出可见提示与一键放行 -->
     <div
       v-if="firewallOk === false"
-      class="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-300/80 dark:border-amber-500/30 text-xs flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200"
+      class="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-300/80 dark:border-amber-500/30 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200"
     >
       <div class="flex items-center gap-2 min-w-0">
         <AlertTriangle class="w-4 h-4 text-amber-500 shrink-0" />
-        <span>未检测到本程序的 Windows 防火墙入站放行规则，好友可能无法连上你的房间。</span>
+        <span>未检测到本程序与联机引擎的 Windows 防火墙入站放行规则，好友可能无法连上你的房间。</span>
       </div>
-      <button
-        @click="handleAllowFirewall"
-        :disabled="firewallBusy"
-        class="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold transition cursor-pointer text-xs shrink-0 disabled:opacity-50"
-      >
-        {{ firewallBusy ? '正在放行...' : '一键放行' }}
-      </button>
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          @click="handleAllowFirewall"
+          :disabled="firewallBusy"
+          class="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold transition cursor-pointer text-xs shrink-0 disabled:opacity-50 flex items-center gap-1 shadow-2xs"
+          title="点击发起 Windows 管理员授权 (UAC)，放行后即时生效，无需重启客户端"
+        >
+          <ShieldAlert v-if="!firewallBusy" class="w-3.5 h-3.5" />
+          <RotateCw v-else class="w-3.5 h-3.5 animate-spin" />
+          <span>{{ firewallBusy ? '正在授权放行...' : '一键放行' }}</span>
+        </button>
+        <button
+          @click="handleRestartAdmin"
+          class="px-2.5 py-1 rounded-lg bg-slate-200/80 hover:bg-slate-300 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-300 font-medium transition cursor-pointer text-xs shrink-0 flex items-center gap-1"
+          title="以管理员身份重新启动本软件"
+        >
+          <ShieldCheck class="w-3.5 h-3.5 text-sky-500" />
+          <span>以管理员重启</span>
+        </button>
+      </div>
     </div>
 
     <!-- 剪贴板快速导入悬浮提示 -->
@@ -594,7 +607,9 @@ import {
   ExternalLink,
   Activity,
   Layers,
-  Trash2
+  Trash2,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-vue-next';
 import {
   p2pGetNodeId,
@@ -608,6 +623,7 @@ import {
   p2pParseCode,
   p2pCheckFirewall,
   p2pAllowFirewall,
+  restartAsAdmin,
   openExternalUrl,
   getJson,
   formatIpcError
@@ -771,11 +787,25 @@ const handleAllowFirewall = async () => {
   try {
     await p2pAllowFirewall();
     await refreshFirewallState();
-    emit('toast', firewallOk.value ? '已添加防火墙入站放行规则' : '未能确认放行结果，请检查系统防火墙设置');
+    if (firewallOk.value) {
+      emit('toast', '已成功添加 Windows 防火墙入站放行规则！无需重启软件即可生效。');
+    } else {
+      emit('toast', '未能确认放行结果，请检查系统安全软件或尝试以管理员身份重启');
+    }
   } catch (err: any) {
-    emit('toast', `防火墙放行失败: ${formatIpcError(err)}`);
+    const errorMsg = formatIpcError(err);
+    emit('toast', `防火墙放行失败: ${errorMsg}`);
   } finally {
     firewallBusy.value = false;
+  }
+};
+
+const handleRestartAdmin = async () => {
+  try {
+    emit('toast', '正在请求管理员权限重启客户端，请在系统提示中点击确认...');
+    await restartAsAdmin();
+  } catch (err: any) {
+    emit('toast', `以管理员重启失败: ${formatIpcError(err)}`);
   }
 };
 

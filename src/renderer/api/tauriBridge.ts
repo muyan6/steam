@@ -1969,6 +1969,20 @@ export async function p2pAllowFirewall(): Promise<boolean> {
   return await invoke<boolean>('p2p_allow_firewall');
 }
 
+export async function isAppElevated(): Promise<boolean> {
+  if (!isTauriEnvironment()) return false;
+  try {
+    return await invoke<boolean>('is_app_elevated');
+  } catch {
+    return false;
+  }
+}
+
+export async function restartAsAdmin(): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  await invoke('restart_as_admin');
+}
+
 export async function openExternalUrl(url: string): Promise<void> {
   if (isTauriEnvironment()) {
     try {

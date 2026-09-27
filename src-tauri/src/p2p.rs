@@ -1005,11 +1005,88 @@ pub fn check_firewall_rule() -> bool {
     }
 }
 
+#[cfg(windows)]
+fn fallback_powershell_allow(bin_str: &str) -> Result<(), String> {
+    let script = format!(
+        "Start-Process netsh -ArgumentList 'advfirewall firewall add rule name=\"ChunFengDu P2P\" dir=in action=allow program=\"{}\" enable=yes' -Verb RunAs -Wait -WindowStyle Hidden",
+        bin_str.replace('\'', "''")
+    );
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("启动提权进程失败: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let err = String::from_utf8_lossy(&output.stderr);
+        Err(format!("PowerShell 提权配置防火墙失败: {}", err.trim()))
+    }
+}
+
+#[cfg(windows)]
+fn allow_firewall_rule_elevated(bin_str: &str) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_CANCELLED, GetLastError, FALSE};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+    use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+
+    let verb: Vec<u16> = OsStr::new("runas").encode_wide().chain(std::iter::once(0)).collect();
+    let file: Vec<u16> = OsStr::new("netsh.exe").encode_wide().chain(std::iter::once(0)).collect();
+    let params_str = format!(
+        "advfirewall firewall add rule name=\"ChunFengDu P2P\" dir=in action=allow program=\"{}\" enable=yes",
+        bin_str
+    );
+    let params: Vec<u16> = OsStr::new(&params_str).encode_wide().chain(std::iter::once(0)).collect();
+
+    let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS;
+    info.lpVerb = verb.as_ptr();
+    info.lpFile = file.as_ptr();
+    info.lpParameters = params.as_ptr();
+    info.nShow = SW_HIDE as i32;
+
+    let success = unsafe { ShellExecuteExW(&mut info) };
+    if success == FALSE {
+        let err = unsafe { GetLastError() };
+        if err == ERROR_CANCELLED {
+            return Err("已取消管理员权限授权 (UAC)，防火墙放行未完成".to_string());
+        }
+        // 如果系统某些受限策略拦截了直接调起 netsh，使用 PowerShell 兜底
+        return fallback_powershell_allow(bin_str);
+    }
+
+    if !info.hProcess.is_null() {
+        unsafe {
+            // 等待 netsh 执行完成，最多等待 15 秒
+            let _ = WaitForSingleObject(info.hProcess, 15000);
+            let mut exit_code: u32 = 0;
+            let _ = GetExitCodeProcess(info.hProcess, &mut exit_code);
+            CloseHandle(info.hProcess);
+
+            if exit_code != 0 {
+                // 如果退出码非 0，可能系统已有同名规则或有轻微告警，用 check_firewall_rule 最终确认
+                if check_firewall_rule() {
+                    return Ok(());
+                }
+                return Err(format!("防火墙配置未成功 (netsh 退出代码: {})", exit_code));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// 自动向 Windows 防火墙添加入站规则放行 openp2p
 pub fn allow_firewall_rule() -> Result<bool, String> {
     let bin = locate_openp2p_bin().ok_or_else(|| "未找到 openp2p 可执行文件".to_string())?;
     let bin_str = bin.to_string_lossy();
 
+    // 1. 如果当前进程已经是管理员权限，直接以子进程执行（无须弹窗，极速完成）
     let output = Command::new("netsh")
         .args(&[
             "advfirewall",
@@ -1023,15 +1100,109 @@ pub fn allow_firewall_rule() -> Result<bool, String> {
             "enable=yes",
         ])
         .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map_err(|e| format!("执行防火墙放行失败: {}", e))?;
+        .output();
 
-    if output.status.success() {
-        Ok(true)
-    } else {
-        let err = String::from_utf8_lossy(&output.stderr);
-        Err(format!("防火墙配置未成功: {}", err))
+    if let Ok(out) = output {
+        if out.status.success() {
+            return Ok(true);
+        }
     }
+
+    // 2. 当前为普通权限时，必须通过 Windows 原生 UAC 请求提升管理员权限执行
+    #[cfg(windows)]
+    {
+        allow_firewall_rule_elevated(&bin_str)?;
+        if check_firewall_rule() {
+            Ok(true)
+        } else {
+            Err("未能确认防火墙入站放行结果，请检查系统安全软件或手动配置".to_string())
+        }
+    }
+
+    #[cfg(not(windows))]
+    Err("仅支持 Windows 平台防火墙配置".to_string())
+}
+
+/// 检测当前春风度进程是否以管理员权限运行
+pub fn is_elevated() -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+        unsafe {
+            let mut token: HANDLE = std::ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return false;
+            }
+
+            let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+            let mut size = std::mem::size_of::<TOKEN_ELEVATION>() as u32;
+
+            let success = GetTokenInformation(
+                token,
+                TokenElevation,
+                &mut elevation as *mut _ as *mut _,
+                size,
+                &mut size,
+            );
+
+            CloseHandle(token);
+
+            success != 0 && elevation.TokenIsElevated != 0
+        }
+    }
+
+    #[cfg(not(windows))]
+    false
+}
+
+/// 以管理员权限重新启动当前软件客户端
+pub fn restart_as_admin() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Foundation::{ERROR_CANCELLED, GetLastError, FALSE};
+        use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW};
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOW;
+
+        let exe_path = std::env::current_exe().map_err(|e| format!("获取程序路径失败: {}", e))?;
+        let exe_wide: Vec<u16> = exe_path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let verb: Vec<u16> = OsStr::new("runas").encode_wide().chain(std::iter::once(0)).collect();
+
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let args_str = args.join(" ");
+        let params_wide: Vec<u16> = OsStr::new(&args_str).encode_wide().chain(std::iter::once(0)).collect();
+
+        let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        info.lpVerb = verb.as_ptr();
+        info.lpFile = exe_wide.as_ptr();
+        if !args.is_empty() {
+            info.lpParameters = params_wide.as_ptr();
+        }
+        info.nShow = SW_SHOW as i32;
+
+        let success = unsafe { ShellExecuteExW(&mut info) };
+        if success == FALSE {
+            let err = unsafe { GetLastError() };
+            if err == ERROR_CANCELLED {
+                return Err("用户取消了管理员权限授权 (UAC)".to_string());
+            }
+            return Err(format!("以管理员权限重启失败 (错误代码: {})", err));
+        }
+
+        // 清理 P2P 子进程
+        shutdown_p2p_once();
+
+        // 提权新实例启动成功后，退出当前进程
+        std::process::exit(0);
+    }
+
+    #[cfg(not(windows))]
+    Err("该功能仅支持 Windows 系统".to_string())
 }
 
 // ==================== OpenP2P 联机引擎在线同步 ====================

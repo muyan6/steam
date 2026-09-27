@@ -46,6 +46,10 @@ windows-sys = { version = "0.59", features = [
     # 而退出路径与状态轮询都不该付这个代价。
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 notify = "6.1.1"
 
