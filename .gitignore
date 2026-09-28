@@ -40,6 +40,9 @@ server/data/manifests/*
 # 它是诊断输出、不是源码，入库只会污染提交历史（已误入过一次）。
 warmed_report.txt
 
+# 个人本机环境脚本（杀进程/复制个人目录），与项目无关，绝不入库
+恢复所有项目记录.bat
+
 # OS & Editor files
 .DS_Store
 Thumbs.db
