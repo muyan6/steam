@@ -131,8 +131,10 @@ export const matchTrainer = async (req: Request, res: Response) => {
   // 游戏名先截断再参与正则清洗与缓存键拼接：防止超长 name 污染缓存键
   const rawName = req.query.name ? String(req.query.name).trim().slice(0, TRAINER_NAME_MAX_LEN) : '';
 
-  if (!rawName && !appId) {
-    return res.status(400).json({ success: false, message: '请提供游戏名称或 AppID' });
+  if (!rawName) {
+    // 仅 AppID 无法检索：空名称会以空 search 打上游 API，返回的最新文章与该游戏无关，
+    // 客户端会把无关修改器误当成该游戏的修改器。宁缺毋滥，明确要求名称。
+    return res.status(400).json({ success: false, message: '请提供游戏名称以检索修改器（仅 AppID 无法定位风灵月影页面）' });
   }
 
   // 清洗游戏英文名称：过滤掉特殊注册商标符号

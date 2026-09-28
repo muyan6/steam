@@ -118,6 +118,21 @@ pm2 save
 echo -e "\n${BLUE}[5/5] 服务健康状态检查...${NC}"
 sleep 2
 
+# 真实健康探测：PM2 启动失败时脚本不能仍打印"部署成功"误导运维
+HEALTH_OK=0
+for i in 1 2 3 4 5; do
+  if curl -sf --max-time 3 http://127.0.0.1:1257/api/health > /dev/null 2>&1; then
+    HEALTH_OK=1
+    break
+  fi
+  sleep 2
+done
+if [ "$HEALTH_OK" = "1" ]; then
+  echo -e "   -> ${GREEN}本地健康检查通过 (/api/health)${NC}"
+else
+  echo -e "   -> ${RED}本地健康检查未通过，请执行 pm2 logs steammaster-server 排查${NC}"
+fi
+
 SERVER_IP=$(curl -s --max-time 3 ifconfig.me || curl -s --max-time 3 ipinfo.io/ip || echo "127.0.0.1")
 
 echo -e "${GREEN}${BOLD}"

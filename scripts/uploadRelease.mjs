@@ -121,8 +121,12 @@ function findInstaller(version) {
     // （例如修复后又出一次同版本包），此时 standardName 是上一次的旧产物，
     // 新构建的 春风渡_<ver>_x64-setup.exe 会被忽略，导致「编译成功、上传的却是旧包」。
     // 这种错误完全静默：Release 页面上二进制更新了，内容却还是旧的。
+    //
+    // 版本号必须按 "_<ver>_" 边界匹配：裸 includes("2.8.2") 会把 2.8.28 的安装包
+    // 也当成 2.8.2 的候选，把错误版本的二进制当成本版本发布。
+    const versionSegment = `_${version}_`;
     const candidates = files
-      .filter(f => f.includes(version) && f.toLowerCase().endsWith('.exe'))
+      .filter(f => f.includes(versionSegment) && f.toLowerCase().endsWith('.exe'))
       .map(f => {
         const p = path.join(dir, f);
         try {
@@ -151,8 +155,13 @@ function findInstaller(version) {
       fs.copyFileSync(newest.path, standardPath);
       console.log(`[Package] 已从 ${newest.name} 覆盖规范命名为 ${standardName}`);
       return { filePath: standardPath, fileName: standardName };
-    } catch {
-      return { filePath: newest.path, fileName: newest.name };
+    } catch (err) {
+      // 禁止回退到非规范文件名上传：客户端更新走的 downloadUrl 文件名由
+      // syncVersion 按规范名生成，名字不一致 = 更新直链 404。失败必须显式暴露。
+      throw new Error(
+        `[Package] 规范化命名失败（${newest.name} → ${standardName}）: ${err.message}。` +
+        `上传文件名必须与 downloadUrl 一致，请检查目标目录写入权限后重试`
+      );
     }
   }
 
@@ -228,10 +237,15 @@ async function uploadToGitHub({ version, title, changelog, filePath, fileName, t
     for (const asset of release.assets) {
       if (asset.name === fileName) {
         console.log(`[GitHub] 发现同名资源 #${asset.id} (${asset.name})，正在覆盖清理...`);
-        await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/assets/${asset.id}`, {
+        const delRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/assets/${asset.id}`, {
           method: 'DELETE',
           headers,
         });
+        // 清理失败必须暴露：同名旧资源残留会让后续上传被 422 already_exists 拒绝，
+        // 新包没传上去、旧包留在页面上，而错误此前会被外层 catch 静默吞掉
+        if (!delRes.ok && delRes.status !== 404) {
+          throw new Error(`[GitHub] 清理同名旧资源 #${asset.id} 失败 (${delRes.status})，后续同名上传将被拒绝`);
+        }
       }
     }
   }
@@ -274,7 +288,7 @@ async function uploadToGitee({ version, title, changelog, filePath, fileName, to
 
   console.log(`[Gitee] 正在检索 Release 标签: ${tag}...`);
   let release = null;
-  const listRes = await fetch(`https://gitee.com/api/v5/repos/${owner}/${repo}/releases?access_token=${token}`);
+  const listRes = await fetch(`https://gitee.com/api/v5/repos/${owner}/${repo}/releases?access_token=${token}&per_page=100&page=1`);
 
   if (listRes.ok) {
     const list = await listRes.json();
@@ -435,6 +449,18 @@ async function main() {
     console.log(`⚠️ Gitee Release 待确认或已存在`);
   }
   console.log('====================================================\n');
+
+  // 退出码必须反映发布结果，否则 CI/调度方会把「半发布」当成功（绿灯假象）：
+  // 而客户端更新走的 versions.json 首选 Gitee 直链，双端全失败还 exit 0 会直接造成更新直链 404。
+  if (!ghUrl && !giteeUrl) {
+    console.error('[Error] GitHub 与 Gitee 均未完成发布，判定本次发布失败');
+    process.exit(1);
+  }
+  // --strict 模式：任一端未完成即判定失败（供流水线在两端 Token 齐备时收紧校验）
+  if (process.argv.includes('--strict') && (!ghUrl || !giteeUrl)) {
+    console.error('[Error] --strict 模式下任一端 Release 未完成均判定失败');
+    process.exit(1);
+  }
 }
 
 main().catch(err => {

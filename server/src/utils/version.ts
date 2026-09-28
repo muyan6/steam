@@ -19,9 +19,17 @@ export const normalizeVersion = (v: string): string => (v || '0').replace(/^v/i,
 /** 是否属于历史误发布、应按「早于所有正式版本」对待的退役版本 */
 export const isRetiredVersion = (v: string): boolean => RETIRED_VERSIONS.has(normalizeVersion(v));
 
+/** 拆出语义化版本的预发布后缀："2.8.2-beta" → ["2.8.2", "beta"]；无后缀 → [原串, ""] */
+const splitPrerelease = (v: string): [string, string] => {
+  const idx = v.indexOf('-');
+  return idx === -1 ? [v, ''] : [v.slice(0, idx), v.slice(idx + 1)];
+};
+
 /**
  * 语义化版本号比较：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0。
  * 退役版本恒低于任何非退役版本；两个退役版本之间仍按语义化比较。
+ * 预发布后缀（如 2.8.2-beta）按 Semver 规则独立比较：核心号相同时预发布低于正式版
+ * （旧实现 parseInt("2-beta")===2 会把预发布与正式版判等）。
  */
 export function compareVersions(v1: string, v2: string): number {
   const clean1 = normalizeVersion(v1);
@@ -33,8 +41,11 @@ export function compareVersions(v1: string, v2: string): number {
     return retired1 ? -1 : 1;
   }
 
-  const parts1 = clean1.split('.').map((n) => parseInt(n, 10) || 0);
-  const parts2 = clean2.split('.').map((n) => parseInt(n, 10) || 0);
+  const [core1, pre1] = splitPrerelease(clean1);
+  const [core2, pre2] = splitPrerelease(clean2);
+
+  const parts1 = core1.split('.').map((n) => parseInt(n, 10) || 0);
+  const parts2 = core2.split('.').map((n) => parseInt(n, 10) || 0);
   const len = Math.max(parts1.length, parts2.length);
 
   for (let i = 0; i < len; i++) {
@@ -42,6 +53,11 @@ export function compareVersions(v1: string, v2: string): number {
     const p2 = parts2[i] || 0;
     if (p1 > p2) return 1;
     if (p1 < p2) return -1;
+  }
+  if (pre1 !== pre2) {
+    if (!pre1) return 1; // 正式版 > 预发布
+    if (!pre2) return -1;
+    return pre1 < pre2 ? -1 : 1;
   }
   return 0;
 }

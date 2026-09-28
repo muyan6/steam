@@ -117,6 +117,14 @@ async function run() {
   }
   console.log(`[Sync] 双榜去重后累计独立热门应用: ${mergedApps.size} 款`);
 
+  // 防缩水覆盖：双榜上游全部拉取失败（或返回结构变化导致解析为空）时，
+  // 落盘结果会退化为仅含 curated 内置规则，直接覆盖上一份全量数据等于"静默降级"。
+  // 此时放弃落盘并以非零退出，让调度方（crontab/pm2）能感知失败。
+  if (mergedApps.size === 0) {
+    console.error('[Sync] 双榜上游全部拉取失败，放弃落盘以避免用缩水数据覆盖全量规则库');
+    process.exit(1);
+  }
+
   const finalRules = new Map(curatedMap);
   const uncachedAppIds = [];
 
@@ -244,4 +252,7 @@ async function run() {
   console.log(`[Sync] 成功将 ${resultList.length} 款规则落盘到 ${outputPath}！`);
 }
 
-run().catch(console.error);
+run().catch((err) => {
+  console.error('[Sync] 同步失败:', err);
+  process.exit(1);
+});
