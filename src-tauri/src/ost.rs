@@ -561,7 +561,8 @@ pub fn ensure_toml_optimized(steam_path: &Path) -> Result<(), String> {
 /// 原子写入文本文件（临时文件 + rename）。
 /// Lua 规则是 Steam 直接加载的文件，写到一半崩溃/磁盘满会留下截断脚本，
 /// 导致部分规则生效、部分丢失；rename 在 Windows 上是原子的覆盖语义。
-fn write_text_atomically(path: &Path, content: &str) -> std::io::Result<()> {
+/// pub(crate)：lua_manager 的 append_game_dlcs 等规则写入方共用同一标准。
+pub(crate) fn write_text_atomically(path: &Path, content: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("lua.tmp");
     fs::write(&tmp, content)?;
     match fs::rename(&tmp, path) {

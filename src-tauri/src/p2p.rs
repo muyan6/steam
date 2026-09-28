@@ -168,7 +168,12 @@ pub struct P2pRealtimeState {
 }
 
 fn get_p2p_dir() -> PathBuf {
-    let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
+    // APPDATA 缺失时绝不能回退 "."（相对路径）：引擎与日志会落进进程 CWD
+    // （安装目录/源码目录），正是"引擎不得从安装/源码目录运行"要杜绝的场景。
+    // 兜底也必须用确定的绝对路径。
+    let base = std::env::var("APPDATA")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
     let dir = PathBuf::from(base).join("com.chunfengdu.app").join("openp2p");
     let _ = fs::create_dir_all(&dir);
     dir
@@ -897,8 +902,6 @@ pub fn get_realtime_state() -> P2pRealtimeState {
 
     let lines: Vec<&str> = content.lines().rev().take(30).collect();
     let mut nat = "检测中".to_string();
-    let mut stage = "starting".to_string();
-    let mut detail = "服务已启动，节点已上线".to_string();
 
     // 逆序查找 NAT 类型
     for line in &lines {
@@ -920,37 +923,55 @@ pub fn get_realtime_state() -> P2pRealtimeState {
         }
     }
 
-    // 逆序查找最新隧道连接状态
-    for line in &lines {
-        if line.contains("Punch ok") || line.contains("TCP4 Punch ok") || line.contains("UDP Punch ok") {
-            stage = "direct".to_string();
-            detail = "P2P 隧道已成功直连！(Direct Connected)".to_string();
-            break;
-        } else if line.contains("relay") || line.contains("Relay") || line.contains("share node") {
-            stage = "relay".to_string();
-            detail = "已自动切换为公网共享节点中继转发".to_string();
-            break;
-        } else if line.contains("try TCP4 Punch") || line.contains("try UDP Punch") || line.contains("punching") {
-            stage = "punching".to_string();
-            detail = "正在与对端节点打洞握手中...".to_string();
-            break;
-        } else if line.contains("read msg error") || line.contains("connect error") {
-            // 注意：不要把裸 "timeout" 判为错误 —— 中继/共享节点的正常心跳日志里
-            // 也会出现 timeout，会把「已在中继转发」误报成「握手失败」。
-            stage = "error".to_string();
-            detail = "打洞握手暂时超时，正在自动重试...".to_string();
-            break;
-        } else if line.contains("login ok") {
-            stage = "starting".to_string();
-            detail = "节点已登录公网信令网络，随时可被连接".to_string();
-        }
-    }
+    let (stage, detail) = match_tunnel_stage(&lines);
 
     P2pRealtimeState {
         stage,
         nat_type: nat,
         detail,
     }
+}
+
+/// 逆序（新→旧）扫描日志行，返回最新的隧道连接状态 (stage, detail)。
+/// 独立成纯函数以便按真实日志格式做回归测试（见 p2p_peer_parse_tests）。
+fn match_tunnel_stage(lines: &[&str]) -> (String, String) {
+    let mut stage = "starting".to_string();
+    let mut detail = "服务已启动，节点已上线".to_string();
+    for line in lines {
+        if line.contains("Punch ok") || line.contains("TCP4 Punch ok") || line.contains("UDP Punch ok") {
+            return ("direct".to_string(), "P2P 隧道已成功直连！(Direct Connected)".to_string());
+        }
+        // 失败行必须先于 relay/punching 判定：openp2p 打洞失败日志形如
+        // "buildRelayTunnel <peer> init error:peer offline"，行内含 "Relay" 字样，
+        // 若先匹配 relay 会把「对端离线连接失败」误报成「已切换中继转发」。
+        // 注意：不要把裸 "timeout" 判为错误 —— 中继/共享节点的正常心跳日志里
+        // 也会出现 timeout，会把「已在中继转发」误报成「握手失败」。
+        if line.contains("error") || line.contains("offline") {
+            return if line.contains("peer offline") {
+                (
+                    "error".to_string(),
+                    "对端节点离线（对方未开机或未登录联机节点）".to_string(),
+                )
+            } else {
+                (
+                    "error".to_string(),
+                    "打洞握手暂时超时，正在自动重试...".to_string(),
+                )
+            };
+        }
+        if line.contains("relay") || line.contains("Relay") || line.contains("share node") {
+            return ("relay".to_string(), "已自动切换为公网共享节点中继转发".to_string());
+        }
+        if line.contains("try TCP4 Punch") || line.contains("try UDP Punch") || line.contains("punching") {
+            return ("punching".to_string(), "正在与对端节点打洞握手中...".to_string());
+        }
+        if line.contains("login ok") {
+            // login ok 是最弱的信号：不返回，继续向更新的行找具体隧道状态
+            stage = "starting".to_string();
+            detail = "节点已登录公网信令网络，随时可被连接".to_string();
+        }
+    }
+    (stage, detail)
 }
 
 /// 解析 openp2p.log，提取"当前已连接的对端"列表（房主/客机共用）。
@@ -2205,6 +2226,39 @@ mod p2p_peer_parse_tests {
 2026/09/12 11:43:25.707317 25276 WARN appid:1118230660862154015 buildDirectTunnel localhost-f2JXbjPp requestPeerInfo error:peer offline\n\
 2026/09/12 11:43:49.955012 25276 WARN appid:3359568779749662663 buildRelayTunnel firefly8-IgjCkPKp init error:peer offline\n";
         assert!(parse_p2p_peers(log).is_empty());
+    }
+
+    #[test]
+    fn realtime_stage_relay_failure_not_misreported() {
+        // 对端离线是最常见的失败场景：buildRelayTunnel 行内含 "Relay" 字样，
+        // 失败判定必须先于 relay 关键字，否则会被误报成「已切换中继转发」
+        let log = "\
+2026/09/12 11:43:49.955012 25276 WARN appid:3359568779749662663 buildRelayTunnel firefly8-IgjCkPKp init error:peer offline\n\
+2026/09/12 11:40:00.000000 25276 INFO login ok\n";
+        let lines: Vec<&str> = log.lines().rev().collect();
+        let (stage, detail) = match_tunnel_stage(&lines);
+        assert_eq!(stage, "error");
+        assert!(detail.contains("离线"), "detail 应说明对端离线: {}", detail);
+    }
+
+    #[test]
+    fn realtime_stage_relay_success_still_detected() {
+        // 真正的中继/共享节点日志（不含 error 字样）仍应识别为 relay
+        let log = "2026/09/12 11:45:00.000000 25276 INFO relay to peer-abc via share node ok\n";
+        let lines: Vec<&str> = log.lines().rev().collect();
+        let (stage, _) = match_tunnel_stage(&lines);
+        assert_eq!(stage, "relay");
+    }
+
+    #[test]
+    fn realtime_stage_direct_and_punching_still_detected() {
+        let direct = "2026/09/12 11:45:00.000000 25276 INFO UDP Punch ok\n";
+        let lines: Vec<&str> = direct.lines().rev().collect();
+        assert_eq!(match_tunnel_stage(&lines).0, "direct");
+
+        let punching = "2026/09/12 11:45:00.000000 25276 INFO try UDP Punch to peer-abc\n";
+        let lines: Vec<&str> = punching.lines().rev().collect();
+        assert_eq!(match_tunnel_stage(&lines).0, "punching");
     }
 
     #[test]

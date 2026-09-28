@@ -316,7 +316,7 @@ pub fn check_game_dlc_diff(steam_path: &Path, app_id: u32) -> Result<DlcDiffResu
 
 /// 一键向已入库游戏的规则文件中增量追加新 DLC（不破坏原有密钥与配置）
 pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Result<DlcAppendResult, String> {
-    let (lua_path, _) = find_lua_path(steam_path, app_id)
+    let (lua_path, is_disabled) = find_lua_path(steam_path, app_id)
         .ok_or_else(|| format!("未在规则目录中找到 AppID {} 的规则文件", app_id))?;
 
     let content = fs::read_to_string(&lua_path)
@@ -399,8 +399,22 @@ pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Re
         new_content.push_str(&format!("addappid({})\n", id));
     }
 
-    fs::write(&lua_path, new_content)
+    // 原子写：规则文件被 Steam 直接加载，写一半崩溃/磁盘满会留下截断脚本（与 save_lua_rule 同标准）
+    crate::ost::write_text_atomically(&lua_path, &new_content)
         .map_err(|e| format!("写入规则文件失败: {}", e))?;
+
+    // 双轨兼容：把补全后的内容镜像到 st_scripts/（与 save_lua_rule 保持一致，避免双轨内容漂移）。
+    // 仅启用态镜像：config/lua/Disable 里的规则不应借旧模式目录复活。
+    if !is_disabled {
+        let legacy_dir = steam_path.join("st_scripts");
+        if !legacy_dir.exists() {
+            let _ = fs::create_dir_all(&legacy_dir);
+        }
+        let _ = crate::ost::write_text_atomically(
+            &legacy_dir.join(format!("{}.lua", app_id)),
+            &new_content,
+        );
+    }
 
     // 联动刷新 GreenLuma AppList
     crate::ost::sync_greenluma_app_list(steam_path);

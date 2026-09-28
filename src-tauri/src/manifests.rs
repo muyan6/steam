@@ -194,6 +194,11 @@ async fn race_sources(tasks: Vec<Pin<Box<dyn Future<Output = SourceResult> + Sen
     None
 }
 
+/// 全包 zip 源的并发上限：单个 zip 响应体最大可到 MAX_MANIFEST_DOWNLOAD_BYTES（256MB），
+/// read_body_limited 会把响应体全量驻留内存；4 个 zip 源在竞速中同时累积最坏可达 GB 级
+/// 内存峰值。竞速只比"谁最快"，同时保持 2 个在途已足够区分快慢，其余 zip 源排队等许可。
+static ZIP_SOURCE_LIMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
 /// 已知不在 P-ToyStore 收录范围的 AppID 负缓存（进程级）：
 /// 一个游戏可能有几十个分包，若不记住，每个分包都会重复探测全部镜像
 static PTYSTORE_ABSENT: Mutex<BTreeSet<u32>> = Mutex::new(BTreeSet::new());
@@ -1335,16 +1340,24 @@ async fn download_single_manifest(
         if target == 0 {
             continue;
         }
-        tasks.push(Box::pin(fetch_source(RemoteSource {
-            label: "全球边缘节点 A",
-            url: format!(
-                "https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip",
-                target
-            ),
-            needs_device_auth: false,
-            timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
-            zip_lookup: Some((depot_id.to_string(), manifest_gid.to_string())),
-        })));
+        let zip_depot = depot_id.to_string();
+        let zip_gid = manifest_gid.to_string();
+        tasks.push(Box::pin(async move {
+            let Ok(_permit) = ZIP_SOURCE_LIMIT.acquire().await else {
+                return None;
+            };
+            fetch_source(RemoteSource {
+                label: "全球边缘节点 A",
+                url: format!(
+                    "https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/{}.zip",
+                    target
+                ),
+                needs_device_auth: false,
+                timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+                zip_lookup: Some((zip_depot, zip_gid)),
+            })
+            .await
+        }));
     }
 
     // 3) 全球边缘节点 B 直连（全包 zip）
@@ -1352,13 +1365,21 @@ async fn download_single_manifest(
         if target == 0 {
             continue;
         }
-        tasks.push(Box::pin(fetch_source(RemoteSource {
-            label: "全球边缘节点 B",
-            url: format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", target),
-            needs_device_auth: false,
-            timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
-            zip_lookup: Some((depot_id.to_string(), manifest_gid.to_string())),
-        })));
+        let zip_depot = depot_id.to_string();
+        let zip_gid = manifest_gid.to_string();
+        tasks.push(Box::pin(async move {
+            let Ok(_permit) = ZIP_SOURCE_LIMIT.acquire().await else {
+                return None;
+            };
+            fetch_source(RemoteSource {
+                label: "全球边缘节点 B",
+                url: format!("https://d41hvr6rtvs2p.cloudfront.net/{}.zip", target),
+                needs_device_auth: false,
+                timeout_secs: ASSET_REQUEST_TIMEOUT_SECS,
+                zip_lookup: Some((zip_depot, zip_gid)),
+            })
+            .await
+        }));
     }
 
     // 4) 公共高速镜像 + 公共直连（全量游戏兜底）
