@@ -31,8 +31,10 @@ base64 = "0.22"
 ed25519-dalek = { version = "2.1", default-features = false, features = ["fast"] }
 zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots", "cookies"] }
-# 清单并发竞速需要 JoinSet（tokio 本已由 tauri/reqwest 间接引入，此处仅显式启用）
-tokio = { version = "1", features = ["rt"] }
+# 清单并发竞速需要 JoinSet；zip 源限流需要 sync::Semaphore。
+# 二者都必须显式声明：仅靠 tauri/reqwest 间接启用的话，一旦上游调整 features
+# 就会编译失败（Semaphore/JoinSet 分别受 sync / rt feature 门控）。
+tokio = { version = "1", features = ["rt", "sync"] }
 winreg = "0.52"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
