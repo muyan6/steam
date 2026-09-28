@@ -163,7 +163,7 @@
           <span class="font-bold shrink-0 text-sky-400">{{ bannerNotice.title }}:</span>
           <span class="text-slate-200 truncate">{{ bannerNotice.content }}</span>
         </div>
-        <button @click="bannerNotice = null" class="text-slate-400 hover:text-slate-200 ml-4 shrink-0 p-1 hover:bg-white/10 rounded cursor-pointer">
+        <button @click="dismissBannerNotice" class="text-slate-400 hover:text-slate-200 ml-4 shrink-0 p-1 hover:bg-white/10 rounded cursor-pointer">
           <X class="w-3.5 h-3.5" />
         </button>
       </div>
@@ -954,6 +954,18 @@ const closePopupNotice = () => {
   showQueuedNoticeIfAny();
 };
 
+// 顶部横幅的"已关闭"记忆（会话级）：checkNoticeAndVersion 每 3 分钟轮询一次，
+// 若无此记忆，用户点 X 关掉的横幅会在下一轮轮询原样复活。同类问题在弹窗公告
+// （sessionShownNotices）与更新弹窗（DISMISSED_UPDATE_KEY）均已修过，此处对齐。
+// 管理员后续下发新公告（不同 id）仍会正常展示。
+const dismissedBannerKeys = new Set<string>();
+const dismissBannerNotice = () => {
+  if (bannerNotice.value) {
+    dismissedBannerKeys.add(noticeStorageKey(bannerNotice.value));
+  }
+  bannerNotice.value = null;
+};
+
 const handleAgreeNotice = () => {
   // 仅免责声明需要持久化"已同意"状态；普通强制确认公告点同意只是关闭并按 popupOnce 记已读
   if (popupNotice.value?.kind === 'disclaimer') {
@@ -998,7 +1010,9 @@ const checkNoticeAndVersion = async () => {
       }
       popups.push(item);
     }
-    bannerNotice.value = topBanner;
+    // 被用户关闭过的横幅不再复活（按 noticeStorageKey 记会话级已关闭）；新横幅（新 id）不受影响
+    bannerNotice.value =
+      topBanner && !dismissedBannerKeys.has(noticeStorageKey(topBanner)) ? topBanner : null;
 
     // 免责声明独立于公告判断：从未同意过免责声明时必须展示（公告排队在其后）
     if (!hasAcceptedDisclaimer) {

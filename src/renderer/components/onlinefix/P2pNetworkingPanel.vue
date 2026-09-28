@@ -954,7 +954,12 @@ const copyText = async (text: string, successMsg = '已复制到剪贴板') => {
   }
 };
 
+// 重入守卫：一轮状态刷新要串行打 4 次 IPC，慢于 3 秒轮询周期时，
+// 上一轮晚到的旧响应会覆盖新一轮的数据（对端列表"回跳"）。守卫直接跳过重叠轮次。
+let fetchingStatus = false;
 const fetchStatus = async () => {
+  if (fetchingStatus) return;
+  fetchingStatus = true;
   try {
     nodeId.value = await p2pGetNodeId();
     status.value = await p2pGetStatus();
@@ -987,6 +992,8 @@ const fetchStatus = async () => {
     }
   } catch (err) {
     console.error('获取 P2P 状态失败:', err);
+  } finally {
+    fetchingStatus = false;
   }
 };
 
@@ -1026,9 +1033,6 @@ const handleStopAll = async () => {
 };
 
 const handleGenerateShareCode = async () => {
-  if (!nodeId.value) {
-    nodeId.value = await p2pGetNodeId();
-  }
   const gameName = currentPreset.value?.name || '联机游戏';
   // 远端端口 = 房主本地服务端口；本地端口 = 客机侧映射端口。
   // 若用户未改动预设端口，沿用预设的最佳客机映射端口（如帕鲁 8211→8212、星露谷 24642→24641、泰拉瑞亚 7777→7776）；
@@ -1038,6 +1042,11 @@ const handleGenerateShareCode = async () => {
       ? currentPreset.value.localPort
       : hostPort.value;
   try {
+    // 必须在 try 内：Rust 端异常（注册表读取失败等）时用户才能看到失败提示，
+    // 而不是点击后毫无反馈的 unhandled rejection
+    if (!nodeId.value) {
+      nodeId.value = await p2pGetNodeId();
+    }
     const code = await p2pGenerateCode({
       uid: nodeId.value,
       remotePort: hostPort.value,
@@ -1063,9 +1072,14 @@ const parseCode = async (str: string) => {
   }
   try {
     const res = await p2pParseCode(str.trim());
+    // 防抖只合并请求、不丢弃过期响应：输入已变化（如解析途中被清空）时，
+    // 旧解析结果不得落地，否则文本框已空却仍显示"幽灵预览"并误启用连接按钮
+    if (joinInputCode.value.trim() !== str.trim()) return;
     parsedJoinCode.value = res;
   } catch {
-    parsedJoinCode.value = null;
+    if (joinInputCode.value.trim() === str.trim()) {
+      parsedJoinCode.value = null;
+    }
   }
 };
 

@@ -995,10 +995,15 @@ const handleRefreshLocalGames = async (force = false) => {
     localGames.value = res.games || [];
     lastScanAt.value = res.scannedAt || Date.now();
 
-    // 加载本地所有已下载的修改器状态
-    for (const g of localGames.value) {
-      void checkTrainerStatus(g.appId);
-    }
+    // 加载本地所有已下载的修改器状态。
+    // 并发限流为 4 一批分批串行（与 LibraryView 的 DLC 核验同策略）：
+    // 本地几十上百款游戏时一次性全量派发 get_trainer_status 会瞬时打满 IPC
+    void (async () => {
+      const games = [...localGames.value];
+      for (let i = 0; i < games.length; i += 4) {
+        await Promise.allSettled(games.slice(i, i + 4).map((g) => checkTrainerStatus(g.appId)));
+      }
+    })();
   } catch (err: any) {
     emit('notify', `扫描本地游戏失败: ${formatIpcError(err)}`, 'error');
   } finally {

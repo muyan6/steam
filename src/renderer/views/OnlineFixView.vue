@@ -941,8 +941,11 @@
     <!-- ============================================== -->
     <!-- TAB 3: 异地联机组网 (P2P 穿透/局域网互通) -->
     <!-- ============================================== -->
+    <!-- 注意：上方两个弹窗（Steamless 修复 / 云端大厅拦截）是独立 v-if，已经打断了
+         launch→patch 的 v-if/v-else-if 链。这里必须用独立 v-if 而非 v-else-if，
+         否则渲染条件会错误配对到「云端大厅弹窗」，弹窗状态一变 P2P 面板就被整体卸载 -->
     <P2pNetworkingPanel
-      v-else-if="activeMainTab === 'p2p'"
+      v-if="activeMainTab === 'p2p'"
       @toast="(msg) => emit('notify', msg, 'info')"
     />
   </div>
