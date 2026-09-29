@@ -59,7 +59,7 @@ import {
   deleteSponsorAdmin
 } from '../controllers/sponsorController.js';
 import { getSourcesList, triggerSyncFromSources } from '../controllers/sourceController.js';
-import { getP2pConfig } from '../controllers/p2pController.js';
+import { getP2pConfig, inspectP2pLog } from '../controllers/p2pController.js';
 import { getAppLinks, updateAppLinks } from '../controllers/linksController.js';
 import { getOnlineRules, syncOnlineRulesFromCharts } from '../controllers/onlineRulesController.js';
 import {
@@ -639,6 +639,7 @@ router.post('/sources/sync', triggerSyncFromSources);
 router.get('/admin/stats', getServerStats);
 router.get('/admin/search/debug', searchDebugKeys);
 router.get('/admin/toolbox/stats', getToolboxAdminStats);
+router.post('/admin/p2p/inspect-log', inspectP2pLog);
 
 // 上游取码源体检：逐源并发探测并返回状态码/延迟/判定说明。
 // 放在 requireAdmin 之后 → 自动受保护（该中间件对注册在其后的所有路由生效）。

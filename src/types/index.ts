@@ -508,6 +508,7 @@ export interface P2pStatusInfo {
   binaryPath: string;
   message: string;
   version?: string;
+  latencyLoggingEnabled?: boolean;
 }
 
 export interface Openp2pSyncInfo {
@@ -545,6 +546,29 @@ export interface P2pPeer {
   lastSeen: string;
   /** openp2p appID（int64，字符串承载） */
   appId: string;
+  /** 对端隧道心跳的往返延迟；没有可归属样本时为 null/缺失。 */
+  latencyMs?: number | null;
+  latencyUpdatedAt?: string | null;
+  latencyStale?: boolean;
+  latencySource?: 'tunnel-heartbeat' | 'relay-heartbeat' | null;
+}
+
+export interface P2pPeerMetricsConfig {
+  source: 'local-log';
+  metric: 'rtt';
+  unit: 'ms';
+  staleAfterMs: number;
+  requiredLogLevel: number;
+  uploadsAutomatically: boolean;
+}
+
+export interface P2pConfigResponse {
+  success: boolean;
+  publicToken: string;
+  serverHost: string;
+  serverPort: number;
+  presets: Array<{ id: string; name: string; remotePort: number; localPort: number; protocol: 'tcp' | 'udp'; category: string; note?: string }>;
+  peerMetrics?: P2pPeerMetricsConfig;
 }
 
 export interface SavedP2pTunnel {

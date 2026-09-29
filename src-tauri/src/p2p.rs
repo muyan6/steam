@@ -96,7 +96,9 @@ pub struct P2pFullConfig {
     #[serde(rename = "Apps")]
     pub apps: Vec<P2pAppConfig>,
     #[serde(rename = "LogLevel")]
-    pub log_level: u32,
+    pub log_level: i32,
+    #[serde(rename = "MaxLogSize", default = "default_log_size")]
+    pub max_log_size: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +121,7 @@ pub struct P2pStatusInfo {
     pub binary_path: String,
     pub message: String,
     pub version: String,
+    pub latency_logging_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,22 +145,7 @@ pub struct ParsedShareCode {
     pub game_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct P2pPeer {
-    /// 对端标识：openp2p 里是**人类可读名称**（如 `firefly8-IgjCkPKp`、`柠檬仔ckb的PC`）
-    pub node_id: String,
-    /// 入站(别人连我) / 出站(我连别人)
-    pub direction: String,
-    /// 隧道类型：direct（直连打洞） / relay（中继）
-    pub transport: String,
-    /// 关联端口（openp2p 日志未提供时为空）
-    pub ports: Vec<u16>,
-    /// 最近一次活跃时间（日志时间戳原文）
-    pub last_seen: String,
-    /// openp2p 的 appID（int64，日志原文；未识别时为空串）
-    pub app_id: String,
-}
+pub use crate::p2p_log::P2pPeer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -386,6 +374,7 @@ pub fn get_or_generate_node_id() -> String {
 
     // 初始化写入默认配置文件
     let default_cfg = P2pFullConfig {
+        max_log_size: default_log_size(),
         network: P2pNetworkConfig {
             token: DEFAULT_PUBLIC_TOKEN,
             node: node_id.clone(),
@@ -430,8 +419,11 @@ fn read_current_config() -> P2pFullConfig {
         },
         apps: Vec::new(),
         log_level: 1,
+        max_log_size: default_log_size(),
     }
 }
+
+fn default_log_size() -> u64 { 1024 * 1024 }
 
 /// config.json 读改写的互斥锁：connect/remove 隧道都是"读配置→改→写回"，
 /// 并发调用会交错丢条目。锁保护整段读改写，配合 save_config 的原子写即可。
@@ -712,6 +704,11 @@ pub fn shutdown_p2p_once() {
 
 /// 启动 openp2p 守护模式（房主或待命监听状态）
 pub fn start_p2p_daemon() -> Result<bool, String> {
+    let _guard = CONFIG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    start_p2p_daemon_locked()
+}
+
+fn start_p2p_daemon_locked() -> Result<bool, String> {
     stop_p2p()?;
 
     let exe_path = locate_openp2p_bin().ok_or_else(|| {
@@ -729,14 +726,22 @@ pub fn start_p2p_daemon() -> Result<bool, String> {
     ensure_binary_as_invoker(&exe_path);
 
     // 确保配置文件存在
-    let _ = read_current_config();
+    // 心跳 RTT 位于 OpenP2P 的 Dev 日志等级；仅在显式启动时更新，不自动打断现有联机。
+    let mut cfg = read_current_config();
+    cfg.log_level = -1;
+    cfg.max_log_size = default_log_size();
+    save_config(&cfg)?;
 
-    let child = Command::new(&exe_path)
+    let mut child = Command::new(&exe_path)
         .arg("-d")
         .current_dir(&dir)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|e| format!("启动 openp2p 失败 (路径: {}): {}", exe_path.display(), e))?;
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    if let Some(status) = child.try_wait().map_err(|e| format!("检查引擎启动失败: {}", e))? {
+        return Err(format!("OpenP2P 启动后立即退出: {}，请检查日志与配置", status));
+    }
 
     let mut guard = ACTIVE_P2P_CHILD.lock().unwrap();
     *guard = Some(child);
@@ -789,7 +794,7 @@ pub fn connect_tunnel(payload: P2pTunnelPayload) -> Result<P2pTunnelView, String
     save_config(&cfg)?;
 
     // 重启进程以加载新隧道
-    start_p2p_daemon()?;
+    start_p2p_daemon_locked()?;
 
     Ok(P2pTunnelView::from(&new_app))
 }
@@ -804,7 +809,7 @@ pub fn remove_tunnel(local_port: u16) -> Result<bool, String> {
         save_config(&cfg)?;
         // 仅在隧道服务本来就在运行时重启加载；未运行时仅持久化配置，避免误唤醒守护进程
         if is_p2p_running() {
-            start_p2p_daemon()?;
+            start_p2p_daemon_locked()?;
         }
     }
     Ok(true)
@@ -833,6 +838,7 @@ pub fn get_status() -> P2pStatusInfo {
             "P2P 隧道服务未启动".to_string()
         },
         version: read_deployed_openp2p_tag(),
+        latency_logging_enabled: cfg.log_level == -1,
     }
 }
 
@@ -991,199 +997,69 @@ fn match_tunnel_stage(lines: &[&str]) -> (String, String) {
 /// - `buildDirectTunnel ... error:peer offline` 这类是**失败**尝试，必须排除。
 /// - 维护"连接/断开"事件流：addApp/online 记为在线，p2ptunnel close / detect ...
 ///   disconnect 记为离线；最终只输出仍在线者，绝不因格式变化而误报。
+#[cfg(test)]
 fn parse_p2p_peers(text: &str) -> Vec<P2pPeer> {
-    use std::collections::HashMap;
+    crate::p2p_log::parse_p2p_peers_at(text, peer_wall_clock_ms())
+}
 
-    #[derive(Default)]
-    struct Entry {
-        online: bool,
-        last_seen: String,
-        transport: String,
-        app_id: String,
-        outbound: bool,
-        ports: Vec<u16>,
-    }
-    let mut map: HashMap<String, Entry> = HashMap::new();
+fn peer_wall_clock_ms() -> i64 {
+    use windows_sys::Win32::Foundation::SYSTEMTIME;
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    let mut time: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe { GetLocalTime(&mut time) };
+    let wall = format!("{:04}/{:02}/{:02} {:02}:{:02}:{:02}", time.wYear,time.wMonth,time.wDay,time.wHour,time.wMinute,time.wSecond);
+    crate::p2p_log::log_time_ms(&wall).unwrap_or(0)
+}
 
-    // 取行首时间戳（"2026/09/12 11:43:25.707317"）-> "2026/09/12 11:43:25"
-    fn line_time(line: &str) -> String {
-        let t = line.trim_start();
-        if t.len() >= 19 && t.as_bytes().get(4) == Some(&b'/') && t.as_bytes().get(10) == Some(&b' ') {
-            t[..19].to_string()
-        } else {
-            String::new()
-        }
-    }
-    // 名称 token：从 start 起取到空白/冒号/逗号为止（不含空格，符合 openp2p 命名）
-    fn token_from(s: &str) -> String {
-        s.trim_start()
-            .chars()
-            .take_while(|c| !c.is_whitespace() && *c != ',' && *c != ':')
-            .collect()
-    }
-    // 过滤掉不像对端名的 token（避免把 ID/端口/路径当成人名）
-    fn looks_like_peer_name(t: &str) -> bool {
-        !t.is_empty()
-            && t.len() >= 2
-            && t != "retryApp"
-            && !t.chars().all(|c| c.is_ascii_digit())
-            && !t.contains("error")
-            && !t.contains(':')
-            && !t.contains('\\')
-            && !t.contains('/')
-            && !t.starts_with("appid")
-    }
-    // 从 `... <mark><name>` 形式取名称
-    fn after<'a>(line: &'a str, mark: &str) -> Option<String> {
-        let pos = line.find(mark)?;
-        let t = token_from(&line[pos + mark.len()..]);
-        if looks_like_peer_name(&t) { Some(t) } else { None }
-    }
-    // 取 `appid:<数字>` 原文（int64，不能当 u32 截断）
-    fn appid_of(line: &str) -> Option<String> {
-        let pos = line.find("appid:")?;
-        let d: String = line[pos + 6..].chars().take_while(|c| c.is_ascii_digit()).collect();
-        if d.is_empty() { None } else { Some(d) }
-    }
+#[derive(Default)]
+struct PeerLogState {
+    cursor: u64,
+    created: Option<std::time::SystemTime>,
+    pending: Vec<u8>,
+    tracker: crate::p2p_log::P2pPeerTracker,
+}
 
-    for line in text.lines() {
-        // 失败行一律跳过：绝不能把 "peer offline" 当成一次连接
-        if line.contains("error") || line.contains("offline") {
-            continue;
-        }
-        let ts = line_time(line);
-        let appid = appid_of(line);
-        // 传输方式提示
-        let transport = if line.contains("Relay") || line.contains("relay") {
-            Some("relay")
-        } else if line.contains("Direct") || line.contains("direct") {
-            Some("direct")
-        } else {
-            None
-        };
-
-        // 事件 1：addApp <id> to <peer>::0 end  -> 存在指向该对端的隧道（在线）
-        if let Some(peer) = after(line, " to ") {
-            if line.contains("addApp") {
-                let e = map.entry(peer).or_default();
-                e.online = true;
-                e.last_seen = ts;
-                if let Some(a) = &appid { e.app_id = a.clone(); }
-                if let Some(t) = transport { e.transport = t.to_string(); }
-                continue;
-            }
-        }
-        // 事件 2：<peer> online, retryApp
-        if line.contains(" online,") {
-            if let Some(peer) = after(line, "INFO ") {
-                let e = map.entry(peer).or_default();
-                e.online = true;
-                if !ts.is_empty() { e.last_seen = ts; }
-                continue;
-            }
-        }
-        // 事件 3：<id> p2ptunnel close <peer>  -> 断开
-        if line.contains("p2ptunnel close") {
-            if let Some(peer) = after(line, "p2ptunnel close ") {
-                if let Some(e) = map.get_mut(&peer) {
-                    e.online = false;
-                    if !ts.is_empty() { e.last_seen = ts; }
-                }
-                continue;
-            }
-        }
-        // 事件 4：... detect peer <peer> disconnect  -> 断开
-        if line.contains("disconnect") {
-            if let Some(peer) = after(line, "detect peer ") {
-                if let Some(e) = map.get_mut(&peer) {
-                    e.online = false;
-                    if !ts.is_empty() { e.last_seen = ts; }
-                }
-                continue;
-            }
-        }
-        // 事件 5：本机主动发起隧道成功（buildDirectTunnel ok / start p2pTunnel to / addRelayTunnel to）
-        if line.contains("buildDirectTunnel ok") || line.contains("start p2pTunnel to") || line.contains("addRelayTunnel to") {
-            let peer = after(line, "buildDirectTunnel ok. ")
-                .or_else(|| after(line, "start p2pTunnel to"))
-                .or_else(|| after(line, "addRelayTunnel to"));
-            if let Some(peer) = peer {
-                let e = map.entry(peer).or_default();
-                e.online = true;
-                e.outbound = true;
-                if !ts.is_empty() { e.last_seen = ts; }
-                if let Some(t) = transport { e.transport = t.to_string(); }
-            }
-            continue;
-        }
-        // 事件 6（房主侧）：`appid:%d tcp accept on port %d start` / udp accept ...
-        // 这是**入站接入**事件，但 openp2p 未在其中记录对端身份，只有本地端口。
-        // 因此以「本地端口 N 有玩家接入」的形式展示匿名连接 —— 至少让房主知道有人连进来了。
-        if (line.contains("tcp accept on port") || line.contains("udp accept on port"))
-            && line.contains("start")
-        {
-            let proto = if line.contains("udp accept on port") { "udp" } else { "tcp" };
-            // 取 "on port " 之后的端口号
-            let port: Option<u16> = line
-                .find("on port ")
-                .map(|p| {
-                    line[p + 8..]
-                        .chars()
-                        .take_while(|c| c.is_ascii_digit())
-                        .collect::<String>()
-                })
-                .and_then(|d| d.parse().ok());
-            if let Some(port) = port {
-                let key = format!("local:{}:{}", proto, port);
-                let e = map.entry(key).or_default();
-                e.online = true;
-                if !ts.is_empty() { e.last_seen = ts; }
-                if e.transport.is_empty() { e.transport = "direct".to_string(); }
-                if let Some(a) = &appid { e.app_id = a.clone(); }
-                if !e.ports.contains(&port) { e.ports.push(port); }
-            }
-        }
-    }
-
-    let mut out: Vec<P2pPeer> = map
-        .into_iter()
-        .filter(|(_, e)| e.online)
-        .map(|(name, e)| {
-            // 匿名接入条目（local:proto:port）显示为可读文案
-            let node_id = if let Some(rest) = name.strip_prefix("local:") {
-                let mut it = rest.splitn(2, ':');
-                let proto = it.next().unwrap_or("tcp").to_uppercase();
-                let port = it.next().unwrap_or("");
-                format!("有玩家接入（{} :{}）", proto, port)
-            } else {
-                name
-            };
-            P2pPeer {
-                node_id,
-                direction: if e.outbound { "out".to_string() } else { "in".to_string() },
-                transport: if e.transport.is_empty() { "direct".to_string() } else { e.transport },
-                ports: e.ports,
-                last_seen: e.last_seen,
-                app_id: e.app_id,
-            }
-        })
-        .collect();
-    // 最近活跃的排在前面
-    out.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
-    out
+fn peer_log_state() -> &'static std::sync::Mutex<PeerLogState> {
+    static STATE: std::sync::OnceLock<std::sync::Mutex<PeerLogState>> = std::sync::OnceLock::new();
+    STATE.get_or_init(|| std::sync::Mutex::new(PeerLogState::default()))
 }
 
 /// 获取当前已连接的对端列表（房主用于查看"谁连进来了"）
 pub fn get_peers() -> Vec<P2pPeer> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut state = peer_log_state().lock().unwrap_or_else(|e| e.into_inner());
     if !is_p2p_running() {
+        *state = PeerLogState::default();
         return Vec::new();
     }
     let log_file = get_p2p_dir().join("log").join("openp2p.log");
-    // 只读尾部：openp2p 按 MaxLogSize 轮转（单文件约 1MB），只读尾部足够且更省
-    let Some(text) = read_log_tail(&log_file, 256 * 1024) else {
-        return Vec::new();
-    };
-    parse_p2p_peers(&text)
+    // 增量读取并保留身份映射：轮转后的纯心跳片段不能丢掉旧的隧道→玩家关系。
+    let Ok(mut file) = fs::File::open(&log_file) else { return Vec::new(); };
+    let Ok(meta) = file.metadata() else { return Vec::new(); };
+    let created = meta.created().ok();
+    if meta.len() < state.cursor || (state.created.is_some() && state.created != created) {
+        state.cursor = 0;
+        state.pending.clear();
+    }
+    state.created = created;
+    let max_bytes = 1024 * 1024;
+    let skipped_head = state.cursor == 0 && meta.len() > max_bytes;
+    if skipped_head { state.cursor = meta.len() - max_bytes; }
+    if file.seek(SeekFrom::Start(state.cursor)).is_err() { return Vec::new(); }
+    let mut bytes = Vec::new();
+    if file.take(max_bytes).read_to_end(&mut bytes).is_err() { return Vec::new(); }
+    state.cursor += bytes.len() as u64;
+    if skipped_head {
+        if let Some(end) = bytes.iter().position(|b| *b == b'\n') { bytes.drain(..=end); }
+        else { bytes.clear(); }
+    }
+    state.pending.extend(bytes);
+    let text = if let Some(end) = state.pending.iter().rposition(|b| *b == b'\n') {
+        let complete: Vec<_> = state.pending.drain(..=end).collect();
+        String::from_utf8_lossy(&complete).into_owned()
+    } else { String::new() };
+    if state.pending.len() > max_bytes as usize { state.pending.clear(); }
+    state.tracker.feed(&text, peer_wall_clock_ms())
 }
 
 /// 生成分享联机码 (CFD://Base64)

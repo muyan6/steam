@@ -1,5 +1,21 @@
 // SteamMaster Admin Dashboard Script (TypeScript Exported, 100% ESM Safe & Standalone)
 export const ADMIN_JS = `
+async function inspectP2pLog() {
+  var target = document.getElementById('p2pLogResult');
+  var input = document.getElementById('p2pLogInput');
+  if (!target || !input) return;
+  target.textContent = '正在解析...';
+  try {
+    var response = await fetch('/api/admin/p2p/inspect-log', { method: 'POST', headers: getHeaders(), body: JSON.stringify({ log: input.value }) });
+    var json = await response.json();
+    if (!response.ok || !json.success) throw new Error(json.message || '解析失败');
+    var peers = json.data.peers || [];
+    target.innerHTML = peers.length ? '<table class="data-table"><thead><tr><th>对端</th><th>连接方式</th><th>心跳 RTT</th><th>采样时间</th></tr></thead><tbody>' + peers.map(function(p) {
+      var latency = typeof p.latencyMs !== 'number' ? '未采样' : p.latencyStale ? '已过期' : Math.round(p.latencyMs) + ' ms';
+      return '<tr><td>' + escapeHtml(p.nodeId) + '</td><td>' + escapeHtml(p.transport) + '</td><td>' + latency + '</td><td>' + escapeHtml(p.latencyUpdatedAt || '-') + '</td></tr>';
+    }).join('') + '</tbody></table>' : '日志片段中没有可识别的对端。';
+  } catch (error) { target.textContent = error.message || '解析失败'; }
+}
 var authToken = localStorage.getItem('steammaster_admin_token') || '';
 var noticesCache = [];
 var versionsCache = [];

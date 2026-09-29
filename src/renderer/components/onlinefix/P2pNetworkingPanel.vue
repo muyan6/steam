@@ -366,12 +366,12 @@
       <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2.5">
         <div class="flex items-center gap-2">
           <Users class="w-4 h-4 text-sky-500" />
-          <h3 class="text-xs font-bold text-slate-900 dark:text-slate-100">已连接对端 (Connected Peers)</h3>
+          <h3 class="text-xs font-bold text-slate-900 dark:text-slate-100">连接对端与延迟 (Peer RTT)</h3>
           <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono font-bold">
             {{ peers.length }}
           </span>
         </div>
-        <span class="text-[10px] text-slate-400">仅展示已成功打洞/中继的对端</span>
+        <span class="text-[10px] text-slate-400">日志中的对端 · 心跳 RTT 每 3 秒刷新</span>
       </div>
 
       <div v-if="peers.length === 0" class="py-6 text-center text-xs text-slate-400 leading-relaxed">
@@ -384,7 +384,7 @@
           class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-white/5"
         >
           <div class="min-w-0 flex items-center gap-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+            <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="peer.latencySource && !peer.latencyStale ? 'bg-emerald-400' : 'bg-slate-400'" :title="peer.latencySource && !peer.latencyStale ? '对端心跳已确认' : '日志接入记录，等待心跳样本'"></span>
             <span class="font-mono text-xs text-slate-700 dark:text-slate-200 truncate">{{ peer.nodeId }}</span>
             <span
               class="text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0"
@@ -396,12 +396,17 @@
             </span>
           </div>
           <div class="flex items-center gap-2 shrink-0 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+            <span class="font-semibold min-w-[64px] text-right" :class="peerLatencyClass(peer)"
+              :title="peer.latencyUpdatedAt ? `对端心跳往返延迟，采样于 ${peer.latencyUpdatedAt}${peer.latencyStale ? '（已过期）' : ''}` : '等待可归属到该对端的心跳 RTT；不使用服务器同步或握手耗时'">
+              {{ peerLatencyLabel(peer) }}
+            </span>
             <span>{{ peer.transport === 'relay' ? '中继' : '直连' }}</span>
             <span v-if="peer.ports.length">:{{ peer.ports.join('/') }}</span>
             <span v-if="peer.lastSeen" class="hidden sm:inline">{{ peer.lastSeen.slice(5, 16) }}</span>
           </div>
         </div>
       </div>
+      <p class="text-[10px] text-slate-400 leading-relaxed">延迟为隧道心跳往返时间，不等同游戏内 Ping。未采样或已过期时不显示旧数值；匿名端口接入记录没有对应身份时不推断延迟。重新启动联机服务后启用 RTT 日志。</p>
     </div>
 
     <!-- 常用联机房间与隧道看板 (纯净白底高质感卡片) -->
@@ -468,7 +473,7 @@
                   ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold'
                   : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
               >
-                {{ isTunnelActive(tunnel) ? '已连接运行中' : '待命 (可一键重连)' }}
+                {{ isTunnelActive(tunnel) ? '隧道配置已启用' : '待命 (可一键重连)' }}
               </span>
             </div>
 
@@ -684,12 +689,14 @@ import {
   formatIpcError
 } from '../../api/tauriBridge';
 import { APP_CONFIG } from '../../../config/appConfig';
+import { matchesTunnelConfig, peerLatencyLabel, peerLatencyClass } from '../../utils/p2p';
 import type {
   P2pStatusInfo,
   P2pGamePreset,
   ParsedShareCode,
   P2pRealtimeState,
   P2pPeer,
+  P2pConfigResponse,
   SavedP2pTunnel
 } from '../../../types';
 
@@ -780,7 +787,7 @@ const selectedPresetId = ref<string>('palworld');
 
 const loadServerPresets = async () => {
   try {
-    const res = await getJson<any>(`${APP_CONFIG.API_BASE_URL}/api/p2p/config`, 6000);
+    const res = await getJson<P2pConfigResponse>(`${APP_CONFIG.API_BASE_URL}/api/p2p/config`, 6000);
     const list = res?.presets;
     if (Array.isArray(list) && list.length > 0) {
       presetsList.value = list;
@@ -971,11 +978,11 @@ const fetchStatus = async () => {
     if (status.value.running && status.value.activeTunnels && status.value.activeTunnels.length > 0) {
       let changed = false;
       for (const app of status.value.activeTunnels) {
-        if (!savedTunnels.value.some((t) => t.localPort === app.srcPort || (t.peerUid === app.peerNode && t.remotePort === app.dstPort))) {
+        if (!savedTunnels.value.some((t) => matchesTunnelConfig(app, t))) {
           const matchedPreset = presetsList.value.find((p) => p.remotePort === app.dstPort && p.protocol === app.protocol);
           const friendlyName = matchedPreset ? matchedPreset.name : (app.appName || '联机游戏');
           savedTunnels.value.unshift({
-            id: `${app.peerNode}_${app.dstPort}`,
+            id: `${app.peerNode}_${app.dstPort}_${app.protocol}_${app.srcPort}`,
             gameName: friendlyName,
             peerUid: app.peerNode,
             remotePort: app.dstPort,
@@ -1033,6 +1040,8 @@ const handleStopAll = async () => {
 };
 
 const handleGenerateShareCode = async () => {
+  if (isOperating.value) return;
+  isOperating.value = true;
   const gameName = currentPreset.value?.name || '联机游戏';
   // 远端端口 = 房主本地服务端口；本地端口 = 客机侧映射端口。
   // 若用户未改动预设端口，沿用预设的最佳客机映射端口（如帕鲁 8211→8212、星露谷 24642→24641、泰拉瑞亚 7777→7776）；
@@ -1054,14 +1063,17 @@ const handleGenerateShareCode = async () => {
       protocol: hostProtocol.value,
       gameName,
     });
-    latestGeneratedCode.value = code;
     // 房主生成联机码时自动确保后台监听已启动
     if (!status.value.running) {
-      void p2pStartDaemon().then(fetchStatus);
+      if (!await p2pStartDaemon()) throw new Error('联机服务未启动，请检查引擎后重试');
+      await fetchStatus();
     }
+    latestGeneratedCode.value = code;
     await copyText(code, '联机码已生成并复制！快发给基友吧');
   } catch (err: any) {
     emit('toast', `生成失败: ${formatIpcError(err)}`);
+  } finally {
+    isOperating.value = false;
   }
 };
 
@@ -1145,7 +1157,8 @@ const saveTunnelsToStorage = () => {
 
 const addOrUpdateSavedTunnel = (item: SavedP2pTunnel) => {
   const idx = savedTunnels.value.findIndex(
-    (t) => t.id === item.id || (t.peerUid === item.peerUid && t.remotePort === item.remotePort)
+    (t) => t.id === item.id || (t.peerUid.trim().toLowerCase() === item.peerUid.trim().toLowerCase()
+      && t.remotePort === item.remotePort && t.localPort === item.localPort && t.protocol === item.protocol)
   );
   if (idx >= 0) {
     savedTunnels.value[idx] = { ...savedTunnels.value[idx], ...item };
@@ -1171,7 +1184,7 @@ const isTunnelActive = (tunnel: SavedP2pTunnel): boolean => {
   return (
     status.value.running &&
     (status.value.activeTunnels?.some(
-      (t) => t.srcPort === tunnel.localPort || (t.peerNode === tunnel.peerUid && t.dstPort === tunnel.remotePort)
+      (t) => matchesTunnelConfig(t, tunnel)
     ) ?? false)
   );
 };
@@ -1188,7 +1201,7 @@ const connectSavedTunnel = async (tunnel: SavedP2pTunnel) => {
     });
     await fetchStatus();
     lastConnectedAddress.value = `127.0.0.1:${tunnel.localPort}`;
-    emit('toast', `[${tunnel.gameName}] 隧道建立成功！请在游戏内连接 ${lastConnectedAddress.value}`);
+    emit('toast', `[${tunnel.gameName}] 隧道配置已应用，正在连接对端。游戏内地址：${lastConnectedAddress.value}`);
   } catch (err: any) {
     emit('toast', `连接失败: ${formatIpcError(err)}`);
   } finally {
@@ -1213,7 +1226,7 @@ const handleConnectTunnel = async () => {
 
     // 自动沉淀至常用联机房间列表
     addOrUpdateSavedTunnel({
-      id: `${codeData.uid}_${codeData.remotePort}`,
+      id: `${codeData.uid}_${codeData.remotePort}_${codeData.protocol}_${codeData.localPort}`,
       gameName: codeData.gameName || '联机游戏',
       peerUid: codeData.uid,
       remotePort: codeData.remotePort,
@@ -1222,7 +1235,7 @@ const handleConnectTunnel = async () => {
       createdAt: Date.now(),
     });
 
-    emit('toast', `隧道建立成功！请在游戏内连接 ${lastConnectedAddress.value}`);
+    emit('toast', `隧道配置已应用，正在连接对端。游戏内地址：${lastConnectedAddress.value}`);
   } catch (err: any) {
     emit('toast', `建立直连失败: ${formatIpcError(err)}`);
   } finally {

@@ -242,6 +242,20 @@ export interface P2pConfigResponse {
   serverHost: string;
   serverPort: number;
   presets: P2pGamePreset[];
+  peerMetrics?: { source: 'local-log'; metric: 'rtt'; unit: 'ms'; staleAfterMs: number; requiredLogLevel: number; uploadsAutomatically: boolean };
+}
+
+export interface P2pPeer {
+  nodeId: string;
+  direction: 'in' | 'out';
+  transport: string;
+  ports: number[];
+  lastSeen: string;
+  appId: string;
+  latencyMs: number | null;
+  latencyUpdatedAt: string | null;
+  latencyStale: boolean;
+  latencySource: 'tunnel-heartbeat' | 'relay-heartbeat' | null;
 }
 
 

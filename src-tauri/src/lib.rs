@@ -16,6 +16,8 @@ pub mod steam_worker;
 pub mod trainer;
 pub mod achievements;
 pub mod p2p;
+pub mod p2p_log;
+pub mod rule_cleanup;
 pub mod update_validation;
 
 use serde_json::json;
@@ -1846,6 +1848,7 @@ async fn p2p_get_status() -> p2p::P2pStatusInfo {
     tauri::async_runtime::spawn_blocking(p2p::get_status)
         .await
         .unwrap_or_else(|_| p2p::P2pStatusInfo {
+            latency_logging_enabled: false,
             running: false,
             node_id: String::new(),
             exe_found: false,

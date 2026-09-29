@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 server/node_modules/
+tests/native/target/
 
 # Production & Build outputs
 dist/

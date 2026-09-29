@@ -1,4 +1,5 @@
 import { P2pGamePreset, P2pConfigResponse } from '../types/index.js';
+import { P2P_PEER_METRICS, parseP2pPeers } from '../utils/p2pLogParser.js';
 
 export const P2P_DEFAULT_PRESETS: P2pGamePreset[] = [
   {
@@ -103,6 +104,9 @@ export const P2P_DEFAULT_PRESETS: P2pGamePreset[] = [
 ];
 
 export class P2pService {
+  public inspectLog(log: string) {
+    return { peers: parseP2pPeers(log), peerMetrics: P2P_PEER_METRICS };
+  }
   public getP2pConfig(): P2pConfigResponse {
     return {
       success: true,
@@ -110,6 +114,7 @@ export class P2pService {
       serverHost: 'api.openp2p.cn',
       serverPort: 27183,
       presets: P2P_DEFAULT_PRESETS,
+      peerMetrics: P2P_PEER_METRICS,
     };
   }
 }

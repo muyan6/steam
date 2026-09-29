@@ -958,6 +958,13 @@ const ADMIN_HTML = `<!DOCTYPE html>
           <div id="probeResult" style="margin-top: 16px;"></div>
         </div>
 
+        <div class="card" style="margin-bottom: 20px;">
+          <strong style="color:var(--text-strong)">P2P 对端延迟日志诊断</strong>
+          <p style="color:var(--text-mid);font-size:12px;margin:8px 0;">手动解析日志片段中的 AppID/隧道心跳 RTT。未明确归属的服务器同步与握手耗时不作为玩家延迟；日志不落库。</p>
+          <textarea id="p2pLogInput" class="input-ctrl" rows="5" placeholder="粘贴 addApp、buildDirectTunnel use tid、heartbeat RTT 日志片段，最多 64 KiB"></textarea>
+          <button class="btn btn-secondary" onclick="inspectP2pLog()" style="margin-top:8px">解析对端与 RTT</button>
+          <div id="p2pLogResult" style="margin-top:12px"></div>
+        </div>
         <div id="sourcesGrid" class="grid-2"></div>
       </div>
 

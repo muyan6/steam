@@ -1,0 +1,80 @@
+[
+  {
+    "name": "direct heartbeat is linked through app name and tunnel ID",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00.000001 1 INFO addApp cfd_room_a to room-a::0 end\n2026/09/29 12:00:01.000001 1 DEBUG appid:9001 buildDirectTunnel ok. cfd_room_a use tid 7001\n2026/09/29 12:00:10.000001 1 Dev 7001 read tunnel heartbeat ack, rtt=37ms\n",
+    "expected": [{ "nodeId": "room-a", "appId": "9001", "latencyMs": 37, "latencyStale": false, "latencySource": "tunnel-heartbeat" }]
+  },
+  {
+    "name": "two peers keep their own latency",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp a-name to room-a::0 end\n2026/09/29 12:00:01 1 DEBUG appid:9001 buildDirectTunnel ok. a-name use tid 7001\n2026/09/29 12:00:02 1 INFO addApp b-name to room-b::0 end\n2026/09/29 12:00:03 1 DEBUG appid:9002 buildDirectTunnel ok. b-name use tid 7002\n2026/09/29 12:00:10 1 Dev 7002 read tunnel heartbeat ack, rtt=194ms\n2026/09/29 12:00:11 1 Dev 7001 read tunnel heartbeat ack, rtt=21ms\n",
+    "expected": [{ "nodeId": "room-a", "latencyMs": 21 }, { "nodeId": "room-b", "latencyMs": 194 }]
+  },
+  {
+    "name": "relay end-to-end heartbeat uses AppID",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9002 to 中文测试节点::0 end\n2026/09/29 12:00:10 1 Dev appid:9002 relay heartbeat 1 store rtt 88\n",
+    "expected": [{ "nodeId": "中文测试节点", "latencyMs": 88, "transport": "relay", "latencySource": "relay-heartbeat", "latencyStale": false }]
+  },
+  {
+    "name": "unattributed server sync and handshake RTT are ignored",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9001 to room-a::0 end\n2026/09/29 12:00:10 1 Dev synctime thisdt=2ms dt=3ms rtt=4ms\n2026/09/29 12:00:11 1 INFO rtt=50000000ms\n2026/09/29 12:00:12 1 Dev 9999 read tunnel heartbeat ack, rtt=12ms\n",
+    "expected": [{ "nodeId": "room-a", "latencyMs": null, "latencySource": null }]
+  },
+  {
+    "name": "old sample is marked stale rather than displayed as live",
+    "now": "2026/09/29 12:00:41",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9001 to room-a::0 end\n2026/09/29 12:00:10 1 Dev appid:9001 relay heartbeat 1 store rtt 50\n",
+    "expected": [{ "nodeId": "room-a", "latencyMs": 50, "latencyStale": true }]
+  },
+  {
+    "name": "delayed heartbeat after close does not revive peer",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp a-name to room-a::0 end\n2026/09/29 12:00:01 1 DEBUG appid:9001 buildDirectTunnel ok. a-name use tid 7001\n2026/09/29 12:00:10 1 Dev 7001 read tunnel heartbeat ack, rtt=25ms\n2026/09/29 12:00:11 1 INFO 7001 p2ptunnel close room-a\n2026/09/29 12:00:12 1 Dev 7001 read tunnel heartbeat ack, rtt=24ms\n",
+    "expected": []
+  },
+  {
+    "name": "engine restart clears previous session",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9001 to room-a::0 end\n2026/09/29 12:00:10 1 Dev appid:9001 relay heartbeat 1 store rtt 50\n2026/09/29 12:00:11 2 INFO P2PNetwork init start\n",
+    "expected": []
+  },
+  {
+    "name": "anonymous local socket does not inherit a player RTT",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 DEBUG appid:9001 tcp accept on port 8211 start\n2026/09/29 12:00:10 1 Dev appid:9001 relay heartbeat 1 store rtt 88\n",
+    "expected": [{ "nodeId": "有玩家接入（TCP :8211）", "latencyMs": null, "latencySource": null }]
+  },
+  {
+    "name": "invalid values are discarded",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9001 to room-a::0 end\n2026/09/29 12:00:10 1 Dev appid:9001 relay heartbeat 1 store rtt -1\n2026/09/29 12:00:11 1 Dev appid:9001 relay heartbeat 1 store rtt 60001\n",
+    "expected": [{ "nodeId": "room-a", "latencyMs": null }]
+  },
+  {
+    "name": "measured zero is distinct from missing sample",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9001 to room-a::0 end\n2026/09/29 12:00:10 1 Dev appid:9001 relay heartbeat 1 store rtt 0\n",
+    "expected": [{ "nodeId": "room-a", "latencyMs": 0, "latencyStale": false }]
+  },
+  {
+    "name": "numeric host-side app name still resolves the tunnel identity",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9003 to room-c::0 end\n2026/09/29 12:00:01 1 DEBUG appid:9003 buildDirectTunnel ok. 9003 use tid 7003\n2026/09/29 12:00:10 1 Dev 7003 read tunnel heartbeat ack, rtt=44ms\n",
+    "expected": [{ "nodeId": "room-c", "latencyMs": 44, "latencySource": "tunnel-heartbeat" }]
+  },
+  {
+    "name": "late relay heartbeat after close cannot revive a peer",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9002 to room-b::0 end\n2026/09/29 12:00:10 1 Dev appid:9002 relay heartbeat 1 store rtt 90\n2026/09/29 12:00:11 1 INFO 7002 p2ptunnel close room-b\n2026/09/29 12:00:12 1 Dev appid:9002 relay heartbeat 1 store rtt 88\n",
+    "expected": []
+  },
+  {
+    "name": "all-numeric 16-digit node UID is a valid peer identity",
+    "now": "2026/09/29 12:00:20",
+    "log": "2026/09/29 12:00:00 1 INFO addApp 9004 to 0123456789012345::0 end\n2026/09/29 12:00:10 1 Dev appid:9004 relay heartbeat 1 store rtt 33\n",
+    "expected": [{ "nodeId": "0123456789012345", "latencyMs": 33 }]
+  }
+]
