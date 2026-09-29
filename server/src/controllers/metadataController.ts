@@ -326,6 +326,136 @@ const metadataCache = new Map<number, CachedMetadata>();
 const METADATA_TTL_MS = 10 * 60 * 1000; // 10 分钟
 const METADATA_CACHE_MAX = 500;
 
+// ==================== DLC 内容分包补全（冷路径一次性） ====================
+//
+// 背景：主游戏的 SteamCMD `depots{}` 只列出主游戏自己的分包；某些 DLC 的内容分包
+// （如《真·三国无双 起源》DLC 3319850 = 1.1GB、4038930 = 5.8GB）**不在其中**，
+// 服务端因此既拿不到它们的密钥也拿不到 GID。而客户端会把 dlcIds 里"不在 depots 中"
+// 的 id 当作普通 DLC 以 `addappid(id)` 无密钥挂载 —— Steam 随即去下载该 DLC 的内容
+// 分包却解不开，整局游戏报「内容仍然处于加密状态」并卡死下载队列。
+//
+// 修法：冷路径（索引未命中）时为"缺内容映射"的 DLC 补一次 SteamCMD，把其真实内容
+// 分包并入 depots（含密钥/GID）。结果随 dlc_index.json 持久化，**每个游戏只抓一次**。
+//
+// 成本护栏（对齐"服务器带宽小、用户多"的部署条件）：
+//   1) 只在**冷路径**执行（索引命中零上游，见 skipUpstream）；
+//   2) 单次最多补 DLC_BACKFILL_MAX 个；
+//   3) 并发上限 DLC_BACKFILL_CONCURRENCY，不瞬时打满上游；
+//   4) 负缓存：确认"无内容"记长 TTL、"抓取失败"记短 TTL，避免反复重试；
+//   5) 只拉"尚无内容映射"的 DLC，已有的跳过。
+// 实测单个 SteamCMD 响应仅 2~11KB，单游戏补全通常几十 KB 出站、一次性。
+/** dlcAppId -> 负缓存到期时间戳 */
+const dlcBackfillNeg = new Map<string, number>();
+/** 确认"该 DLC 无内容分包"（纯授权标记）的负缓存 TTL */
+const DLC_NO_CONTENT_NEG_TTL_MS = 6 * 60 * 60 * 1000;
+/** "抓取失败"的短负缓存 TTL：上游抖动不该把该 DLC 固化 6 小时 */
+const DLC_FETCH_FAIL_NEG_TTL_MS = 60 * 1000;
+/** 单次请求最多补拉的 DLC 数：防 DLC 超多的游戏把冷路径拖到几十秒 */
+const DLC_BACKFILL_MAX = 30;
+/** 补拉并发：小 JSON，4 路足够且不压垮上游 */
+const DLC_BACKFILL_CONCURRENCY = 4;
+
+/**
+ * 从某个 App（主游戏或 DLC）的 SteamCMD 数据里提取"内容分包"。
+ * 过滤与主游戏同口径：共享再发行组件 / 占位空分包 / 非数字键 / redist 等。
+ */
+function extractContentDepots(
+  appRaw: any,
+  needGid: boolean
+): Array<{ depotId: string; manifestGid?: string }> {
+  const out: Array<{ depotId: string; manifestGid?: string }> = [];
+  const depotsData = appRaw?.depots;
+  if (!depotsData || typeof depotsData !== 'object') return out;
+  const skipPatterns = ['config', 'sharedinstall', 'shareddepot', 'redist'];
+  for (const [dId, info] of Object.entries(depotsData)) {
+    if (!/^\d+$/.test(dId)) continue;
+    if (!info || typeof info !== 'object') continue;
+    if ((info as any).sharedinstall === '1' || (info as any).depotfromapp) continue;
+    const pub = (info as any).manifests?.public;
+    if (pub && pub.download === '0' && pub.size === '0') continue;
+    const name = ((info as any).name || '').toString().toLowerCase();
+    if (skipPatterns.some((p) => name.includes(p))) continue;
+    let gid: string | undefined;
+    if (needGid && (info as any).manifests && typeof (info as any).manifests === 'object') {
+      const branchEntries = Object.entries((info as any).manifests) as Array<[string, any]>;
+      const chosen =
+        branchEntries.find(([b, v]) => b === 'public' && v && v.gid) ||
+        branchEntries.find(([, v]) => v && v.gid);
+      if (chosen && chosen[1].gid) gid = chosen[1].gid.toString();
+    }
+    out.push({ depotId: dId, manifestGid: gid });
+  }
+  return out;
+}
+
+/**
+ * 为"缺内容映射"的 DLC 补全其内容分包（就地修改 `depots` 与 `dlcDepotMap`）。
+ * 仅应在冷路径调用；失败/无内容均写负缓存，不阻塞主流程（异常一律吞掉并降级）。
+ */
+async function backfillDlcContentDepots(
+  dlcIds: string[],
+  dlcDepotMap: Map<string, Set<string>>,
+  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean }>,
+  needGid: boolean
+): Promise<void> {
+  const now = Date.now();
+  const pending = dlcIds
+    .filter((d) => {
+      const mapped = dlcDepotMap.get(d);
+      if (mapped && mapped.size > 0) return false; // 已有内容映射
+      const negUntil = dlcBackfillNeg.get(d);
+      if (negUntil && now < negUntil) return false; // 负缓存未到期
+      return true;
+    })
+    .slice(0, DLC_BACKFILL_MAX);
+  if (pending.length === 0) return;
+
+  const known = new Set(depots.map((x) => x.depotId));
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < pending.length) {
+      const dlcId = pending[cursor++];
+      let raw: any = null;
+      try {
+        const r = await axios.get(`https://api.steamcmd.net/v1/info/${dlcId}`, {
+          httpsAgent,
+          timeout: 5000,
+          headers: { 'User-Agent': 'Mozilla/5.0 SteamMaster-Server/1.0' }
+        });
+        raw = r.data?.data?.[dlcId] || null;
+      } catch {
+        raw = null;
+      }
+      if (!raw) {
+        // 瞬时失败：短 TTL，下次冷路径可重试
+        dlcBackfillNeg.set(dlcId, Date.now() + DLC_FETCH_FAIL_NEG_TTL_MS);
+        continue;
+      }
+      const contentDepots = extractContentDepots(raw, needGid);
+      if (contentDepots.length === 0) {
+        // 确认为"无内容 DLC"（纯授权标记，如 Castle Crashers 的服装包）：长 TTL
+        dlcBackfillNeg.set(dlcId, Date.now() + DLC_NO_CONTENT_NEG_TTL_MS);
+        continue;
+      }
+      if (!dlcDepotMap.has(dlcId)) dlcDepotMap.set(dlcId, new Set());
+      for (const cd of contentDepots) {
+        dlcDepotMap.get(dlcId)!.add(cd.depotId);
+        if (!known.has(cd.depotId)) {
+          known.add(cd.depotId);
+          // 密钥留空，由后续"内存密钥库高精度匹配"步骤补；补不到则被标记 keyMissing，
+          // 客户端会跳过该分包（宁缺此 DLC，也不让无密钥分包拖垮整局下载）
+          depots.push({ depotId: cd.depotId, depotKey: undefined, manifestGid: cd.manifestGid });
+        } else if (cd.manifestGid) {
+          const ex = depots.find((x) => x.depotId === cd.depotId);
+          if (ex && !ex.manifestGid) ex.manifestGid = cd.manifestGid;
+        }
+      }
+    }
+  };
+  const workers = Math.min(DLC_BACKFILL_CONCURRENCY, pending.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+}
+
 function readMetadataCache(appId: number, needGid: boolean): CachedMetadata | null {
   const entry = metadataCache.get(appId);
   if (!entry) return null;
@@ -730,6 +860,21 @@ export const getGameMetadata = async (req: Request, res: Response) => {
         if (steamCmdDepotAccepted > 0) authoritativeDepotSource = true;
       } catch {}
 
+      // 3.9 冷路径专属：为"缺内容映射"的 DLC 补全其真实内容分包。
+      //
+      // 必须放在**写索引之前**：补全后的 depots / dlcDepotMap 要一并落盘，
+      // 否则命中索引时又拿不到这些分包，缺陷在缓存命中期复现。
+      // 本段只在冷路径执行（索引命中时 skipUpstream=true，整块被跳过），
+      // 并带负缓存与并发/数量上限，故"每个游戏一次性、几十 KB 出站"。
+      if (dlcIds.length > 0) {
+        try {
+          await backfillDlcContentDepots(dlcIds, dlcDepotMap, depots, needGid);
+        } catch (e) {
+          // 补全失败绝不能影响主流程：主游戏本身必须能正常入库
+          console.warn(`[MetadataController] DLC 内容分包补全失败 (${appId}):`, (e as Error).message);
+        }
+      }
+
       // 把本次从 SteamCMD 拿到的「稳定数据」落盘，下次同 AppID 即可零上游返回。
       //
       // 关键守卫 `if (appRaw)`：SteamCMD 超时/失败时 appRaw 为 null，此时
@@ -897,6 +1042,39 @@ export const getGameMetadata = async (req: Request, res: Response) => {
             depot: { depotId: d.depotId, depotKey: d.depotKey, manifestGid: d.manifestGid, keyMissing: d.keyMissing }
           });
         }
+      }
+    }
+
+    // 6.5 安全网：剔除"有内容分包但全部无解密密钥"的 DLC。
+    //
+    // 为什么必须剔除：客户端会把 dlcIds 里每一项都 `addappid(id)` 挂载。若该 DLC
+    // 有真实内容分包而密钥缺失，Steam 会去下载它的内容却解不开 —— 整局游戏报
+    // 「内容仍然处于加密状态」且下载队列卡死（多款 DLC 同时无密钥时更严重）。
+    // 剔除后该 DLC 不会被标记拥有，Steam 自然不去下载它，主游戏恢复正常；
+    // 代价仅是这一个 DLC 不可用 —— 比整局游戏下不动小得多。
+    // 注意：无任何内容分包记录的 DLC（纯授权标记，如服装包）**不剔除**，
+    // 它们不触发下载、挂着也无害（保持原有可用性）。
+    {
+      const contentDepotsOf = new Map<string, Array<{ keyMissing?: boolean }>>();
+      for (const x of dlcDepots) {
+        if (!contentDepotsOf.has(x.dlcAppId)) contentDepotsOf.set(x.dlcAppId, []);
+        contentDepotsOf.get(x.dlcAppId)!.push(x.depot);
+      }
+      const dropped: string[] = [];
+      dlcIds = dlcIds.filter((dlcId) => {
+        const dp = contentDepotsOf.get(dlcId);
+        if (!dp || dp.length === 0) return true; // 无内容分包：保留
+        const anyUsable = dp.some((d) => !d.keyMissing); // 至少一个分包有密钥
+        if (!anyUsable) {
+          dropped.push(dlcId);
+          return false;
+        }
+        return true;
+      });
+      if (dropped.length > 0) {
+        console.warn(
+          `[MetadataController] AppID ${appId}: 剔除 ${dropped.length} 个无密钥内容 DLC（避免"内容仍处于加密状态"拖垮下载）: ${dropped.join(', ')}`
+        );
       }
     }
 
