@@ -1,5 +1,33 @@
 [
   {
+    "version": "2.8.3",
+    "channel": "stable",
+    "releaseDate": "2026-09-29",
+    "title": "春风渡 v2.8.3 对端延迟与稳定性修复版",
+    "changelog": [
+      "联机面板新增连接人心跳 RTT 显示，按对端显示毫秒延迟，每 3 秒刷新；缺失和过期样本分别显示「未采样」「已过期」。",
+      "通过 AppID、App 名称和隧道 ID 精确关联延迟，保留日志轮转前的身份映射，不混用服务器同步或握手耗时。",
+      "修复同端口不同房间被误标为已连接，以及房主启动失败仍复制成功联机码的问题。",
+      "修复停用游戏移除、清空后的规则残留，并继续保留第三方规则保护。",
+      "修复每日配额计数与并发预留、授权写入失败回滚、邀请奖励可靠补发及幂等性问题。",
+      "修复聚合搜索漏项、带参数安装包链接解析、更新 SHA256 传递及切换 Steam 路径后监听未迁移的问题。",
+      "服务端同步新增对端 RTT 诊断接口与管理页面，客户端日志不会自动上传或落库。",
+      "移除仓库遗留默认管理员凭据，撤销历史泄漏的授权签名密钥；自部署实例须配套部署新版服务端和匹配的签名密钥，既有卡密绑定及有效期保留。",
+      "更新客户端后重新启动联机服务以启用心跳 RTT 采样；心跳 RTT 不等同游戏内 Ping。",
+      "增加前后端隔离回归与可实际运行的原生测试入口，覆盖日志关联、断开与过期样本、规则清理、更新校验等流程。"
+    ],
+    "downloadUrl": "https://gitee.com/muyan6/steam/releases/download/2.8.3/ChunFengDu_2.8.3_x64-setup.exe",
+    "downloadUrlBackup": "https://github.com/muyan6/steam/releases/download/v2.8.3/ChunFengDu_2.8.3_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-29T13:50:52.821Z",
+    "updatedAt": "2026-09-29T13:50:52.821Z",
+    "sha256": "9340bb1aca804619b0bf09499d47cc8e74fe931859aa8530b21776122a5c44f5",
+    "fileSize": "8.39 MB"
+  },
+  {
     "version": "2.8.2",
     "channel": "stable",
     "releaseDate": "2026-09-27",

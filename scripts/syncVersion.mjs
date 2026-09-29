@@ -397,6 +397,8 @@ if (hasVersionsJson && versionsList.length > 0) {
     changelog: normalizeChangelog(latest.changelog),
     downloadUrl: latest.downloadUrl,
     downloadUrlBackup: latest.downloadUrlBackup,
+    fileSize: latest.fileSize || '',
+    sha256: latest.sha256 || '',
     forceUpdate: Boolean(latest.forceUpdate),
     minSupportedVersion: latest.minSupportedVersion || '1.0.0',
     enabled: latest.enabled !== false,
