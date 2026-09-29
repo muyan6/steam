@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter};
 /// 因 watcher.watch() 失败（目录被删、权限不足等）立刻退出，任何重试都会在
 /// 入口处直接 return，监听再也不可能恢复；而 stop_signal 也永远没有机会被置位。
 /// 用 Mutex<Option<..>> 才能在「确实有线程在跑」与「曾经跑过但已退出」之间区分。
-static WATCHER_RUNNING: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+static WATCHER_RUNNING: Mutex<Option<(PathBuf, Arc<AtomicBool>)>> = Mutex::new(None);
 
 /// 启动 config/lua 目录的后台防抖监听服务（优化 2）
 ///
@@ -39,12 +39,13 @@ pub fn start_lua_watcher(app_handle: AppHandle, steam_path: &Path) {
         };
         // 已有线程在跑（其 stop 标记尚未置位）→ 避免重复启动多个监听线程。
         // 若标记存在但线程已置位退出，则视为「已结束」，允许本次重新拉起。
-        if let Some(existing) = guard.as_ref() {
-            if !existing.load(Ordering::Relaxed) {
+        if let Some((watched_dir, existing)) = guard.as_ref() {
+            if *watched_dir == lua_dir && !existing.load(Ordering::Relaxed) {
                 return;
             }
+            existing.store(true, Ordering::Relaxed);
         }
-        *guard = Some(Arc::clone(&stop_signal));
+        *guard = Some((lua_dir.clone(), Arc::clone(&stop_signal)));
     }
 
     let dir_to_watch = lua_dir.clone();
@@ -91,13 +92,14 @@ pub fn start_lua_watcher(app_handle: AppHandle, steam_path: &Path) {
                     let mut last_event_time = Instant::now();
 
                     // 平息窗口内持续排空后续涌入的事件
-                    while last_event_time.elapsed() < debounce_duration {
+                    while !thread_stop.load(Ordering::Relaxed) && last_event_time.elapsed() < debounce_duration {
                         let remaining = debounce_duration.saturating_sub(last_event_time.elapsed());
                         if rx.recv_timeout(remaining).is_ok() {
                             last_event_time = Instant::now();
                         }
                     }
 
+                    if thread_stop.load(Ordering::Relaxed) { break; }
                     // 变动平息，向前端推送事件
                     println!("[LuaWatcher] 检测到规则文件变动已平息，推送 lua-files-changed 事件");
                     let _ = app_handle.emit(
@@ -136,7 +138,7 @@ fn release_watcher_slot(thread_stop: &Arc<AtomicBool>) {
     };
     let is_self = guard
         .as_ref()
-        .map(|cur| Arc::ptr_eq(cur, thread_stop))
+        .map(|(_, cur)| Arc::ptr_eq(cur, thread_stop))
         .unwrap_or(false);
     if is_self {
         *guard = None;

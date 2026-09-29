@@ -322,7 +322,7 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
     (req.params && (req.params.depotId || req.params.asset || req.params.tag)) || 'ost:latest'
   ).trim();
 
-  const check = freeQuotaService.checkAllowed(deviceId, useAppId ? appId : undefined, depotId);
+  const check = freeQuotaService.reserve(deviceId, useAppId ? appId : undefined, depotId);
   if (!check.allowed) {
     quotaExhausted.message = check.message || '今日免费入库额度已用完，请激活后使用';
     return res.status(403).json(quotaExhausted);
@@ -343,7 +343,9 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
       const d = body.data;
       const hasAnyKey =
         (Array.isArray(d.depots) && d.depots.some((dp: any) => Boolean(dp.depotKey))) ||
-        Boolean(d.appLevelKey);
+        Boolean(d.appLevelKey) || Boolean(d.token) || Boolean(d.key) ||
+        (d.keys && typeof d.keys === 'object' && Object.values(d.keys).some(Boolean)) ||
+        (req.route?.path === '/depots/:appId' && typeof d === 'object' && Object.values(d).some(Boolean));
       if (useAppId && !hasAnyKey) {
         explicitFailure = true;
       }
@@ -351,10 +353,9 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
     return originalJson(body);
   };
   res.on('finish', () => {
-    if (explicitFailure) return;
-    if (res.statusCode >= 400) return;
-    freeQuotaService.commit(deviceId, useAppId ? appId : undefined, depotId);
+    check.settle(!explicitFailure && res.statusCode >= 200 && res.statusCode < 300);
   });
+  res.on('close', () => check.settle(false));
   return next();
 };
 
@@ -495,7 +496,13 @@ const manifestReportLimiter = rateLimit({
 });
 // 取码结果上报：要求已注册设备（clientDeviceId），避免匿名者灌入伪造 code
 // 污染全体客户端的码库（错误 code 会让所有人下载失败）。客户端已随请求带 x-device-id。
-router.post('/manifests/code/report', manifestReportLimiter, requireDeviceId, reportManifestCodes);
+router.post('/manifests/code/report', manifestReportLimiter, requireDeviceId, (req, res, next) => {
+  const id = String(req.headers['x-device-id'] || req.query.deviceId || '').trim();
+  if (!deviceService.hasRegisteredDevice(id)) {
+    return res.status(401).json({ success: false, message: '设备尚未注册，请先发送设备心跳' });
+  }
+  next();
+}, reportManifestCodes);
 
 router.get('/manifests/code/:gid', manifestCodeLimiter, getManifestCode);
 

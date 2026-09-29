@@ -6,7 +6,7 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 /// 云端权威公钥 Hex 指纹（对应 server/data/license_ed25519_public.hex）
-pub const DEFAULT_PUBKEY_HEX: &str = "34c2a8ab59b1d134bd32091c62525aa392c6bada97d4480f9d21abf0b9eae5a4";
+pub const DEFAULT_PUBKEY_HEX: &str = "78ceb862c1850049fd914c67454f47ed0dbe7e6b4103c31dd7ba8a71f09e6297";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -26,6 +26,10 @@ export interface DeviceStats {
 }
 
 export class DeviceService {
+  public hasRegisteredDevice(deviceId: string): boolean {
+    const normalized = deviceId.trim().toLowerCase();
+    return [...this.devicesMap.keys()].some(id => id.trim().toLowerCase() === normalized);
+  }
   private devicesMap: Map<string, DeviceRecord> = new Map();
   private filePath: string;
   private degraded: boolean = false;

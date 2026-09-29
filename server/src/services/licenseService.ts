@@ -32,6 +32,8 @@ export interface LicenseKey {
   expiresAt?: string | null;
   remark?: string;
   createdBy?: string;
+  /** 与授权变更同一文件原子保存的邀请奖励幂等账本。 */
+  inviteRewardGrants?: Record<string, number>;
 }
 
 export interface ClientLicenseInfo {
@@ -197,6 +199,13 @@ export class LicenseService {
       console.error('[LicenseService] 保存激活码数据失败:', e.message);
       return false;
     }
+  }
+
+  private saveKeyChange(code: string, previous: LicenseKey): boolean {
+    if (this.saveKeys()) return true;
+    this.keysCache.set(code, previous);
+    this.deviceIndex = null;
+    return false;
   }
 
   /**
@@ -440,7 +449,7 @@ export class LicenseService {
    *
    * 该方法由邀请服务在「绑定邀请码成功」后调用（邀请人与被邀请人各调用一次）。
    */
-  public grantInviteDays(deviceId: string, days: number, remark?: string): {
+  public grantInviteDays(deviceId: string, days: number, remark?: string, rewardId?: string): {
     success: boolean;
     message: string;
     grantedDays: number;
@@ -456,6 +465,12 @@ export class LicenseService {
     const grantDays = Math.min(3650, Math.max(1, isNaN(n) || n <= 0 ? 3 : Math.floor(n)));
 
     const boundCodes = this.getDeviceIndex().get(cleanDeviceId.toLowerCase()) || [];
+    if (rewardId) {
+      for (const code of boundCodes) {
+        const prior = this.keysCache.get(code)?.inviteRewardGrants?.[rewardId];
+        if (prior !== undefined) return { success: true, message: '邀请奖励已到账', grantedDays: prior };
+      }
+    }
     const actives: LicenseKey[] = [];
     for (const code of boundCodes) {
       const key = this.keysCache.get(code);
@@ -485,6 +500,7 @@ export class LicenseService {
       const key = actives[0];
       const prevExpiresAt = key.expiresAt;
       const prevDuration = key.durationDays;
+      const prevGrants = key.inviteRewardGrants;
       const baseMs =
         key.expiresAt && new Date(key.expiresAt).getTime() > Date.now()
           ? new Date(key.expiresAt).getTime()
@@ -492,11 +508,13 @@ export class LicenseService {
       key.expiresAt = new Date(baseMs + grantDays * 24 * 60 * 60 * 1000).toISOString();
       key.durationDays = (key.durationDays || 0) + grantDays;
       key.status = 'active';
+      if (rewardId) key.inviteRewardGrants = { ...key.inviteRewardGrants, [rewardId]: grantDays };
 
       if (!this.saveKeys()) {
         // 落盘失败必须回滚内存态，避免"重启后奖励消失"的静默数据不一致
         key.expiresAt = prevExpiresAt;
         key.durationDays = prevDuration;
+        key.inviteRewardGrants = prevGrants;
         return { success: false, message: '数据保存失败，请稍后重试', grantedDays: 0 };
       }
       console.log(`[LicenseService] 邀请奖励已发放：设备 [${cleanDeviceId}] 顺延 ${grantDays} 天 (卡密 ${key.code})`);
@@ -526,7 +544,8 @@ export class LicenseService {
       boundAt: nowStr,
       expiresAt: new Date(nowMs + grantDays * 24 * 60 * 60 * 1000).toISOString(),
       remark: remark || '邀请有礼奖励',
-      createdBy: 'invite'
+      createdBy: 'invite',
+      ...(rewardId ? { inviteRewardGrants: { [rewardId]: grantDays } } : {})
     };
     this.keysCache.set(code, keyItem);
 
@@ -873,6 +892,7 @@ export class LicenseService {
     const clean = code.trim().toUpperCase();
     const key = this.keysCache.get(clean);
     if (!key) return { success: false, message: '激活码不存在' };
+    const previous = { ...key };
 
     const oldDevice = key.deviceId || '无';
     const oldDevId = key.deviceId;
@@ -888,7 +908,7 @@ export class LicenseService {
     // 保留 expiresAt（未过期时）：重新激活将复用该到期时间，防止解绑变相续期。
     // 已过期的卡密本身就会在激活时被状态判定拦截，无需清除。
 
-    if (!this.saveKeys()) {
+    if (!this.saveKeyChange(clean, previous)) {
       return { success: false, message: '数据保存失败，请稍后重试' };
     }
     console.log(`[LicenseService] 成功解除卡密 ${clean} 与设备 [${oldDevice}] 的绑定`);
@@ -907,6 +927,7 @@ export class LicenseService {
     const clean = code.trim().toUpperCase();
     const key = this.keysCache.get(clean);
     if (!key) return { success: false, message: '激活码不存在' };
+    const previous = { ...key };
 
     if (disabled) {
       key.status = 'disabled';
@@ -921,7 +942,7 @@ export class LicenseService {
       }
     }
 
-    if (!this.saveKeys()) {
+    if (!this.saveKeyChange(clean, previous)) {
       return { success: false, message: '数据保存失败，请稍后重试' };
     }
     return {
@@ -937,11 +958,12 @@ export class LicenseService {
   public deleteKey(code: string): { success: boolean; message: string } {
     if (!code) return { success: false, message: '请指定激活码' };
     const clean = code.trim().toUpperCase();
-    if (!this.keysCache.has(clean)) {
+    const previous = this.keysCache.get(clean);
+    if (!previous) {
       return { success: false, message: '卡密不存在或已被删除' };
     }
     this.keysCache.delete(clean);
-    if (!this.saveKeys()) {
+    if (!this.saveKeyChange(clean, previous)) {
       return { success: false, message: '数据保存失败，请稍后重试' };
     }
     return { success: true, message: `卡密 ${clean} 已成功删除！` };
@@ -955,6 +977,7 @@ export class LicenseService {
     const clean = code.trim().toUpperCase();
     const key = this.keysCache.get(clean);
     if (!key) return { success: false, message: '激活码不存在' };
+    const previous = { ...key };
     if (key.type === 'lifetime') {
       return { success: true, message: '永久卡无需延期', key };
     }
@@ -973,7 +996,7 @@ export class LicenseService {
       if (!isNaN(carried)) {
         key.expiresAt = new Date(carried + addDays * 24 * 60 * 60 * 1000).toISOString();
       }
-      if (!this.saveKeys()) {
+      if (!this.saveKeyChange(clean, previous)) {
         return { success: false, message: '数据保存失败，请稍后重试' };
       }
       return { success: true, message: `卡密尚未绑定设备，已将可用时长增加 ${addDays} 天`, key };
@@ -992,7 +1015,7 @@ export class LicenseService {
     key.durationDays = (key.durationDays || 0) + days;
     key.status = 'active';
 
-    if (!this.saveKeys()) {
+    if (!this.saveKeyChange(clean, previous)) {
       return { success: false, message: '数据保存失败，请稍后重试' };
     }
     return {

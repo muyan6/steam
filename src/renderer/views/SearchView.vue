@@ -561,7 +561,7 @@ const handleSearch = async (page = 1) => {
 
       if (requestId !== searchRequestId) return; // 已有更新的请求，丢弃过期结果
 
-      // 桥接层会就地扩充传入的 seenBefore（含被 pageSize 截断的条目）。
+      // 桥接层只把实际显示的条目并入 seenBefore，未显示的溢出条目不标记。
       // 相对 passed 新增的那些即"本页本轮贡献的 id"，记到该页名下；
       // 全部并回 sessionSeenIds 以保持跨页去重累积语义。
       const contributed = new Set<number>(pageOwn ?? []);

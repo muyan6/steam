@@ -27,9 +27,7 @@
 - `server/src/services/licenseSignService.ts:16-18`
 
 ```ts
-const DEFAULT_PRIVATE_KEY_PEM = `-----BEGIN PRIVATE KEY-----
-MC4CAQAwBQYDK2VwBCIEIPMnembY+F7yq+HpTfNcUCF7VpcjTdN9gHV87FK5//Ez
------END PRIVATE KEY-----`;
+const DEFAULT_PRIVATE_KEY_PEM = `[私钥已删除；该历史密钥已撤销，请勿重新使用]`;
 ```
 
 - 使用点：同文件 `:50` `process.env.LICENSE_PRIVATE_KEY || DEFAULT_PRIVATE_KEY_PEM`

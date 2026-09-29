@@ -44,6 +44,41 @@ class FreeQuotaService {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   // 同 IP 每日独立设备数限制表（纯内存，跨天自动清零）
   private ipDevices: Map<string, IpDailyDevices> = new Map();
+  private pending = new Map<string, { date: string; apps: Map<number, number>; depots: Map<string, number> }>();
+
+  private pendingFor(deviceId: string) {
+    const id = this.normalizeId(deviceId);
+    let pending = this.pending.get(id);
+    if (!pending || pending.date !== this.today()) {
+      pending = { date: this.today(), apps: new Map<number, number>(), depots: new Map<string, number>() };
+      this.pending.set(id, pending);
+    }
+    return pending;
+  }
+
+  /** 原子预留在途名额；同一 AppID 共享名额，失败或断流释放。 */
+  public reserve(deviceId: string, appId?: number, depotId?: string) {
+    const check = this.checkAllowed(deviceId, appId, depotId);
+    if (!check.allowed) return { ...check, settle: (_success: boolean) => {} };
+    const pending = this.pendingFor(deviceId);
+    const key = appId && appId > 0 ? appId : String(depotId || '').trim();
+    const refs: Map<any, number> = typeof key === 'number' ? pending.apps : pending.depots;
+    refs.set(key, (refs.get(key) || 0) + 1);
+    let settled = false;
+    return {
+      ...check,
+      settle: (success: boolean) => {
+        if (settled) return;
+        settled = true;
+        const count = (refs.get(key) || 1) - 1;
+        if (count > 0) refs.set(key, count); else refs.delete(key);
+        if (success && pending.date === this.today()) this.commit(deviceId, appId, depotId);
+        if (!pending.apps.size && !pending.depots.size && this.pending.get(this.normalizeId(deviceId)) === pending) {
+          this.pending.delete(this.normalizeId(deviceId));
+        }
+      }
+    };
+  }
 
   constructor() {
     // 退出前落盘：配额为 30 秒防抖写，重启会丢掉窗口内已扣减的计数，
@@ -189,24 +224,32 @@ class FreeQuotaService {
       if (q.appIds.includes(appId)) {
         return { allowed: true, remaining: Math.max(0, this.limit - q.used) };
       }
-      if (q.used >= this.limit) {
+      const pending = this.pendingFor(deviceId);
+      if (pending.apps.has(appId)) {
+        return { allowed: true, remaining: Math.max(0, this.limit - q.used - pending.apps.size) };
+      }
+      const reserved = [...pending.apps.keys()].filter(id => !q.appIds.includes(id)).length;
+      if (q.used + reserved >= this.limit) {
         return {
           allowed: false,
           remaining: 0,
           message: `今日免费入库额度已用完（每日 ${this.limit} 款游戏，含全部 DLC），请激活后不限次使用`
         };
       }
-      return { allowed: true, remaining: Math.max(0, this.limit - q.used - 1) };
+      return { allowed: true, remaining: Math.max(0, this.limit - q.used - reserved - 1) };
     }
     const normalizedDepot = String(depotId || '').trim();
     const keyIds = q.keyIds || (q.keyIds = []);
     if (keyIds.includes(normalizedDepot)) {
       return { allowed: true, remaining: 0 };
     }
-    if (keyIds.length >= 100) {
+    const pending = this.pendingFor(deviceId);
+    if (pending.depots.has(normalizedDepot)) return { allowed: true, remaining: 0 };
+    const reserved = [...pending.depots.keys()].filter(id => !keyIds.includes(id)).length;
+    if (keyIds.length + reserved >= 100) {
       return { allowed: false, remaining: 0, message: '今日免费获取的分包数已达上限，请激活后使用' };
     }
-    return { allowed: true, remaining: 100 - keyIds.length - 1 };
+    return { allowed: true, remaining: 100 - keyIds.length - reserved - 1 };
   }
 
   /**

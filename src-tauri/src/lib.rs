@@ -16,6 +16,7 @@ pub mod steam_worker;
 pub mod trainer;
 pub mod achievements;
 pub mod p2p;
+pub mod update_validation;
 
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -111,12 +112,16 @@ async fn get_steam_info(custom_path: Option<String>) -> SteamEnvironmentInfo {
 
 #[tauri::command]
 async fn set_steam_path(path: String) -> Result<SteamEnvironmentInfo, String> {
+    let app_handle = APP_HANDLE.get().cloned();
     tauri::async_runtime::spawn_blocking(move || {
         let p = PathBuf::from(&path);
         if !p.join("steam.exe").exists() {
             return Err(format!("所选目录下未找到 steam.exe: {}", path));
         }
-        steam::save_custom_steam_path(&path);
+        steam::save_custom_steam_path(&path)?;
+        if let Some(app) = app_handle {
+            lua_watcher::start_lua_watcher(app, &p);
+        }
         Ok(steam::get_steam_info(Some(&path)))
     })
     .await
@@ -1603,10 +1608,8 @@ async fn download_update(app: tauri::AppHandle, url: String, sha256: Option<Stri
     if clean_url.is_empty() || clean_url.len() > 1024 || !clean_url.starts_with("https://") {
         return Err("无效的下载地址（仅支持 https 直链）".to_string());
     }
-    // 摘要校验参数规范化：空串/非 64 位 hex 一律忽略（向后兼容无摘要的服务端）
-    let expected_sha256 = sha256
-        .map(|s| s.trim().to_ascii_lowercase())
-        .filter(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()));
+    let safe_name = update_validation::installer_filename(&clean_url)?;
+    let expected_sha256 = update_validation::expected_digest(sha256.as_deref())?;
 
     tauri::async_runtime::spawn_blocking(move || {
         use sha2::{Digest, Sha256};
@@ -1622,11 +1625,6 @@ async fn download_update(app: tauri::AppHandle, url: String, sha256: Option<Stri
         }
 
         // 安装包文件名取自 URL 末段，仅保留安全字符；非 exe 一律按非法直链拒绝
-        let raw_name = clean_url.split(['/', '?']).rev().find(|s| !s.is_empty()).unwrap_or("");
-        let safe_name: String = raw_name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '_' || *c == '-').collect();
-        if !safe_name.to_ascii_lowercase().ends_with(".exe") {
-            return Err("下载地址必须是安装包 (.exe) 直链，请在后台「版本与推送」中配置安装版直链".to_string());
-        }
         let target = std::env::temp_dir().join(&safe_name);
 
         let total = resp.content_length();

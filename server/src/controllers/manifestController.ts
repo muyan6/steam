@@ -165,7 +165,7 @@ export const getManifestCode = async (req: Request, res: Response) => {
  * 客户端上报取码结果 —— 码库最重要的数据来源。
  *
  * 设计要点：
- * - **幂等且只增不减**：同一 (depot, gid) 重复上报只刷新时间戳，不产生副作用。
+ * - 上报只进入有界待核验索引，码值不直接进入全局正缓存。
  * - **不信任任何字段**：逐条校验纯数字，脏数据丢弃而不是整批失败。
  * - **不覆盖更新的码**：客户端可能跑了几分钟才上报，期间服务端已取到更晚的码；
  *   那种情况下保留服务端自己的（更新），丢弃上报的（更旧）。
@@ -205,4 +205,3 @@ export const getManifestCodeStats = async (_req: Request, res: Response) => {
     res.status(500).json({ success: false, message: '服务器内部错误' });
   }
 };
-

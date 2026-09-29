@@ -521,6 +521,9 @@ interface SteamSearchItem {
   description?: string;
 }
 
+// 聚合分页保持同一搜索快照，翻页只补取尚未加载的云端前缀。
+const hybridSnapshots = new Map<string, { at: number; cloud: any; official: any; items: SteamSearchItem[] }>();
+
 async function searchCloud(q: string, source: string, page: number, pageSize: number): Promise<any | null> {
   const json = await getJson(`${API}/api/games/search?q=${encodeURIComponent(q)}&source=${source}&page=${page}&pageSize=${pageSize}`, 3500);
   if (json?.success && json?.data) {
@@ -807,30 +810,53 @@ export const createTauriBridge = () => {
         return await searchLocal(q, page, pageSize);
       }
       if (source === 'hybrid') {
-        const [cloud, official] = await Promise.all([
-          q ? searchCloud(q, 'cloud_db', page, pageSize) : null,
-          q ? searchSteamOfficial(q, page, pageSize, 'schinese') : null
+        const snapshotKey = `${q}|${pageSize}`;
+        let snapshot = hybridSnapshots.get(snapshotKey);
+        if (snapshot && Date.now() - snapshot.at > 5 * 60 * 1000) {
+          hybridSnapshots.delete(snapshotKey);
+          snapshot = undefined;
+        }
+        // 稳定分页：先把官方结果作为固定前缀，再用云端从首条开始填充。
+        // 不按云端页偏移拼接后截断；否则官方前缀挤掉的云端尾项会永久丢失。
+        const [cloud, official] = snapshot ? [snapshot.cloud, snapshot.official] : await Promise.all([
+          q ? searchCloud(q, 'cloud_db', 1, 100) : null,
+          q ? searchSteamOfficial(q, 1, 200, 'schinese') : null
         ]);
         if (cloud && official) {
-          // 去重集合支持调用方跨页传入， Steam 官方结果不再随翻页重复
-          const seen: Set<number> = params?.seenIds instanceof Set ? params.seenIds : new Set<number>();
+          const seen = new Set<number>();
           const merged: SteamSearchItem[] = [];
-          for (const item of [...official.items, ...cloud.items]) {
+          const cloudItems = [...(snapshot?.items || cloud.items)];
+          // 云端每页最大 200，深分页按连续页补齐前缀，不漏掉任何云端偏移。
+          const chunkSize = cloud.pageSize || Math.min(100, page * pageSize);
+          for (let cloudPage = Math.floor(cloudItems.length / chunkSize) + 1; cloudItems.length < page * pageSize && cloudItems.length < cloud.total; cloudPage++) {
+            const next = await searchCloud(q, 'cloud_db', cloudPage, chunkSize);
+            if (!next?.items?.length) break;
+            cloudItems.push(...next.items);
+          }
+          for (const item of [...official.items, ...cloudItems]) {
             if (!seen.has(item.appId)) {
               seen.add(item.appId);
               merged.push(item);
             }
           }
-          // 与分页语义对齐：只返回当前页大小的去重结果，统计沿用云端总数
+          const items = merged.slice((page - 1) * pageSize, page * pageSize);
+          if (hybridSnapshots.size >= 50 && !hybridSnapshots.has(snapshotKey)) {
+            hybridSnapshots.delete(hybridSnapshots.keys().next().value!);
+          }
+          hybridSnapshots.set(snapshotKey, { at: snapshot?.at || Date.now(), cloud, official, items: cloudItems });
+          if (params?.seenIds instanceof Set) items.forEach(item => params.seenIds.add(item.appId));
+          const cloudIds = new Set(cloudItems.map(item => item.appId));
+          const complete = cloudItems.length >= cloud.total;
+          const total = complete ? merged.length : cloud.total + official.items.filter((item: SteamSearchItem) => !cloudIds.has(item.appId)).length;
           return {
             ...cloud,
-            items: merged.slice(0, pageSize),
+            items, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)),
             source: 'hybrid',
             sourceName: '全域智能聚合源'
           };
         }
-        if (cloud) return { ...cloud, source: 'hybrid', sourceName: '全域智能聚合源' };
-        if (official) return { ...official, source: 'hybrid', sourceName: '全域智能聚合源' };
+        if (cloud) return { ...(await searchCloud(q, 'cloud_db', page, pageSize) || cloud), source: 'hybrid', sourceName: '全域智能聚合源' };
+        if (official) return { ...official, items: official.items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, totalPages: Math.max(1, Math.ceil(official.total / pageSize)), source: 'hybrid', sourceName: '全域智能聚合源' };
         return await searchLocal(q, page, pageSize);
       }
       // cloud_db 与其他未知源：云端优先，回退本地
@@ -981,7 +1007,7 @@ export const createTauriBridge = () => {
     },
     // 应用内更新：下载进度经 update-download-progress 事件上报（Rust 端流式下载），
     // 完成返回安装包临时路径；拉起安装器后应用自动退出
-    downloadUpdate: async (url: string): Promise<string> => invoke('download_update', { url }),
+    downloadUpdate: async (url: string, sha256?: string): Promise<string> => invoke('download_update', { url, sha256: sha256 || null }),
     launchInstaller: async (path: string): Promise<void> => invoke('launch_installer', { path }),
     // 原生窗口背景色 (#rrggbb)：主题切换时同步，覆盖 WebView 边缘原生缝隙的默认白底
     setWindowBackground: async (hex: string): Promise<void> => invoke('set_window_background', { hex }),

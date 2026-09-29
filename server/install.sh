@@ -101,6 +101,7 @@ else
 fi
 
 echo -e "   -> 正在执行 TypeScript 生产构建..."
+node scripts/prepareDeployment.mjs
 npm run build
 
 echo -e "\n${BLUE}[4/5] 启动 PM2 守护服务...${NC}"
@@ -117,6 +118,7 @@ pm2 save
 
 echo -e "\n${BLUE}[5/5] 服务健康状态检查...${NC}"
 sleep 2
+curl -fsS --retry 5 --retry-delay 2 --max-time 3 http://127.0.0.1:1257/api/health > /dev/null || exit 1
 
 SERVER_IP=$(curl -s --max-time 3 ifconfig.me || curl -s --max-time 3 ipinfo.io/ip || echo "127.0.0.1")
 

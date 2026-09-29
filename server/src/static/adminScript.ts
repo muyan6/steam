@@ -1060,7 +1060,7 @@ async function loadInviteData(page) {
           '<td><strong style="color:var(--text-strong);font-family:monospace;font-size:12px;">' + escapeHtml(item.inviteCodeDisplay || item.inviteCode || '-') + '</strong></td>' +
           '<td><code style="color:var(--c-blue);font-size:11px;word-break:break-all;">' + escapeHtml(item.inviterDeviceId || '-') + '</code></td>' +
           '<td><code style="color:var(--c-green);font-size:11px;word-break:break-all;">' + escapeHtml(item.inviteeDeviceId || '-') + '</code></td>' +
-          '<td><span class="badge badge-blue">+' + (item.inviterDays || 0) + ' 天</span></td>' +
+          '<td><span class="badge badge-blue">+' + (item.inviterDays || 0) + ' 天</span>' + (item.inviterRewardStatus === 'pending' ? '<span class="badge badge-amber">待补发</span>' : '') + '</td>' +
           '<td><span class="badge badge-green">+' + (item.inviteeDays || 0) + ' 天</span></td>' +
           '<td style="color:var(--text-dim);white-space:nowrap;">' + formatTime(item.createdAt) + '</td>' +
         '</tr>';

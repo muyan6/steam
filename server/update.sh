@@ -106,6 +106,7 @@ else
 fi
 
 echo -e "\n${BLUE}[3/4] 重新构建编译生产代码 (tsc)...${NC}"
+node scripts/prepareDeployment.mjs
 npm run build
 echo -e "   -> 编译完成: ${GREEN}dist/ 输出就绪${NC}"
 
@@ -113,13 +114,13 @@ echo -e "\n${BLUE}[4/4] 正在重载 PM2 服务...${NC}"
 # --update-env：ecosystem.config.cjs 的 JWT_SECRET/TRUST_PROXY 取自 process.env，
 # 不带该参数重启会沿用 PM2 缓存的旧环境，改了 .env 也不生效
 if pm2 describe steammaster-server &> /dev/null; then
-    pm2 restart steammaster-server --update-env
+    pm2 restart ecosystem.config.cjs --update-env
 else
     pm2 start ecosystem.config.cjs --update-env
 fi
 
 sleep 1
-HEALTH_CHECK=$(curl -s --max-time 3 http://127.0.0.1:1257/api/health 2>/dev/null || echo "failed")
+HEALTH_CHECK=$(curl -fsS --retry 5 --retry-delay 2 --max-time 3 http://127.0.0.1:1257/api/health) || exit 1
 
 echo -e "\n${GREEN}${BOLD}"
 echo "======================================================================"

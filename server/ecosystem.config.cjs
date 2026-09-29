@@ -1,7 +1,9 @@
+const localEnv = require('dotenv').config({ path: require('path').join(__dirname, '.env') }).parsed || {};
 module.exports = {
   apps: [
     {
       name: 'steammaster-server',
+      cwd: __dirname,
       script: './dist/server.js',
       instances: 1, // 云端数据引擎单实例；密钥库+游戏库常驻约 130-180MB
       autorestart: true,
@@ -13,13 +15,14 @@ module.exports = {
       // 避免低负载下堆长期缓慢膨胀（RSS 稳定在 ~200MB 内）
       node_args: '--max-old-space-size=384',
       env: {
+        ...localEnv,
         NODE_ENV: 'production',
         PORT: 1257,
         // 密钥从环境注入；服务端启动时 dotenv 也会自动读取 server/.env。
         // 生成方式见 update.sh 第 3 步提示（一次性写入 server/.env 即可，无需手动 export）
-        JWT_SECRET: process.env.JWT_SECRET,
+        JWT_SECRET: localEnv.JWT_SECRET || process.env.JWT_SECRET,
         // 反向代理部署时配置（true / 1 / 代理层数 / IP），限流与审计才能取到真实客户端 IP
-        TRUST_PROXY: process.env.TRUST_PROXY
+        TRUST_PROXY: localEnv.TRUST_PROXY || process.env.TRUST_PROXY
       }
     }
   ]

@@ -12,6 +12,7 @@ import { sourceRegistryService } from './services/sourceRegistryService.js';
 import { noticeService } from './services/noticeService.js';
 import { versionService } from './services/versionService.js';
 import { authService } from './services/authService.js';
+import { inviteService } from './services/inviteService.js';
 import { ADMIN_JS } from './static/adminScript.js';
 import { LANDING_HTML } from './static/landingPage.js';
 import { CFD_LOGO_DATA_URI } from './static/logoAsset.js';
@@ -1456,6 +1457,7 @@ const server = app.listen(CONFIG.PORT, CONFIG.HOST, () => {
 
   // 启动定时自动同步引擎（Token 数据库已由 tokenService 构造函数加载，无需重复加载）
   syncService.startScheduledDailySync();
+  inviteService.startRewardRetryLoop();
   // 启动 SteamDB / Steam 双榜热门游戏联机规则同步引擎
   onlineRulesSyncService.startScheduledSync();
   // 启动低频清单码补全循环。

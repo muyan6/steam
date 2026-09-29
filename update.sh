@@ -110,6 +110,7 @@ else
 fi
 
 echo -e "\n${BLUE}[3/5] 校验必需的环境变量...${NC}"
+node scripts/prepareDeployment.mjs
 
 # 自动加载 server/.env（若存在），免去手动 export
 if [ -f "$SERVER_DIR/.env" ]; then
@@ -136,13 +137,13 @@ echo -e "   -> 编译完成: ${GREEN}dist/ 输出就绪${NC}"
 
 echo -e "\n${BLUE}[5/5] 正在重载 PM2 服务...${NC}"
 if pm2 describe steammaster-server &> /dev/null; then
-    pm2 restart steammaster-server --update-env
+    pm2 restart ecosystem.config.cjs --update-env
 else
     pm2 start ecosystem.config.cjs --update-env
 fi
 
 sleep 1
-HEALTH_CHECK=$(curl -s --max-time 3 http://127.0.0.1:1257/api/health 2>/dev/null || echo "failed")
+HEALTH_CHECK=$(curl -fsS --retry 5 --retry-delay 2 --max-time 3 http://127.0.0.1:1257/api/health) || exit 1
 
 echo -e "\n${GREEN}${BOLD}"
 echo "======================================================================"

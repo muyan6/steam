@@ -31,6 +31,7 @@ RUN npm install --only=production
 # 复制编译产物与数据仓储
 COPY --from=builder /app/dist ./dist
 COPY data ./data
+COPY scripts/prepareDeployment.mjs ./scripts/prepareDeployment.mjs
 
 EXPOSE 1257
 

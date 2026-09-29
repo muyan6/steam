@@ -37,6 +37,10 @@ export interface InviteRecord {
   /** 被邀请人实际到账天数 */
   inviteeDays: number;
   createdAt: string;
+  rewardDays?: number;
+  inviterRewardStatus?: 'pending' | 'delivered' | 'skipped';
+  inviteeRewardStatus?: 'pending' | 'delivered';
+  lastRewardError?: string;
 }
 
 export interface InviteStatus {
@@ -139,6 +143,7 @@ export class InviteService {
   private filePath: string;
   private records: InviteRecord[] = [];
   private degraded = false;
+  private rewardRetryTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.filePath = path.join(CONFIG.DATA_DIR, 'invite_records.json');
@@ -160,7 +165,11 @@ export class InviteService {
               inviteeDeviceId: String(r.inviteeDeviceId),
               inviterDays: Number(r.inviterDays) || 0,
               inviteeDays: Number(r.inviteeDays) || 0,
-              createdAt: String(r.createdAt || new Date().toISOString())
+              createdAt: String(r.createdAt || new Date().toISOString()),
+              rewardDays: Number(r.rewardDays) || undefined,
+              inviterRewardStatus: ['pending', 'delivered', 'skipped'].includes(r.inviterRewardStatus) ? r.inviterRewardStatus : undefined,
+              inviteeRewardStatus: ['pending', 'delivered'].includes(r.inviteeRewardStatus) ? r.inviteeRewardStatus : undefined,
+              lastRewardError: typeof r.lastRewardError === 'string' ? r.lastRewardError : undefined
             });
           }
         }
@@ -196,6 +205,50 @@ export class InviteService {
 
   private getRecords(): InviteRecord[] {
     return this.records;
+  }
+
+  /** 发奖和幂等账本在 LicenseService 内一起落盘，记录写失败后重试也不重复到账。 */
+  private deliverInviterReward(record: InviteRecord): boolean {
+    if (record.inviteeRewardStatus === 'pending') {
+      const grant = licenseService.grantInviteDays(record.inviteeDeviceId, record.rewardDays || appSettingsService.getInviteRewardDays(), `邀请奖励 ${record.id}`, `${record.id}:invitee`);
+      if (!grant.success) {
+        record.lastRewardError = grant.message.slice(0, 256);
+        this.saveRecords();
+        return false;
+      }
+      record.inviteeDays = grant.grantedDays;
+      record.inviteeRewardStatus = 'delivered';
+      if (!this.saveRecords()) return false;
+    }
+    if (record.inviterRewardStatus !== 'pending') return true;
+    const grant = licenseService.grantInviteDays(
+      record.inviterDeviceId, record.rewardDays || record.inviteeDays,
+      `邀请奖励 ${record.id}`, `${record.id}:inviter`
+    );
+    if (grant.success) {
+      record.inviterDays = grant.grantedDays;
+      record.inviterRewardStatus = grant.alreadyLifetime ? 'skipped' : 'delivered';
+      record.lastRewardError = undefined;
+    } else {
+      record.lastRewardError = grant.message.slice(0, 256);
+    }
+    return this.saveRecords() && grant.success;
+  }
+
+  public retryPendingRewards(): number {
+    if (this.degraded) return 0;
+    let delivered = 0;
+    for (const record of this.records.filter(r => r.inviterRewardStatus === 'pending').slice(0, 20)) {
+      if (this.deliverInviterReward(record)) delivered++;
+    }
+    return delivered;
+  }
+
+  public startRewardRetryLoop(): void {
+    if (this.rewardRetryTimer) clearInterval(this.rewardRetryTimer);
+    this.retryPendingRewards();
+    this.rewardRetryTimer = setInterval(() => this.retryPendingRewards(), 60 * 1000);
+    this.rewardRetryTimer.unref?.();
   }
 
   /**
@@ -326,7 +379,12 @@ export class InviteService {
     }
 
     const lowerInvitee = invitee.toLowerCase();
-    if (this.records.some(r => r.inviteeDeviceId.toLowerCase() === lowerInvitee)) {
+    const priorRecord = this.records.find(r => r.inviteeDeviceId.toLowerCase() === lowerInvitee);
+    if (priorRecord?.inviteCode === normCode && priorRecord.inviterRewardStatus === 'pending') {
+      const delivered = this.deliverInviterReward(priorRecord);
+      return { success: true, message: delivered ? '绑定已生效，邀请人奖励已补发' : '绑定已生效，邀请人奖励等待自动补发', rewardDays: priorRecord.inviteeDays, status: this.getStatus(invitee) };
+    }
+    if (priorRecord) {
       return { success: false, message: '本设备已绑定过邀请码，每个设备仅能绑定一次。' };
     }
 
@@ -356,7 +414,10 @@ export class InviteService {
       inviteeDeviceId: invitee,
       inviterDays: 0,
       inviteeDays: 0,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      rewardDays,
+      inviterRewardStatus: 'pending',
+      inviteeRewardStatus: 'pending'
     };
 
     // 先落盘绑定记录：确保「每设备仅一次」约束先于发奖生效，避免并发/重启重复领取
@@ -369,29 +430,20 @@ export class InviteService {
     const inviteeGrant = licenseService.grantInviteDays(
       invitee,
       rewardDays,
-      `绑定邀请码 ${record.inviteCodeDisplay} 奖励`
+      `绑定邀请码 ${record.inviteCodeDisplay} 奖励`,
+      `${record.id}:invitee`
     );
     if (!inviteeGrant.success) {
-      // 发奖失败则回滚绑定记录，允许用户稍后重试（不吞掉这一次机会）
-      const idx = this.records.findIndex(r => r.id === record.id);
-      if (idx >= 0) this.records.splice(idx, 1);
+      // 保留可靠作业：重试和重启按幂等账本恢复，不吞掉绑定机会。
+      record.lastRewardError = inviteeGrant.message.slice(0, 256);
       this.saveRecords();
       return { success: false, message: inviteeGrant.message || '奖励发放失败，请稍后重试。' };
     }
     record.inviteeDays = inviteeGrant.grantedDays;
+    record.inviteeRewardStatus = 'delivered';
 
-    // 邀请人奖励：尽力而为，失败不回滚被邀请人已到账的奖励
-    const inviterGrant = licenseService.grantInviteDays(
-      inviter,
-      rewardDays,
-      `邀请设备 ${invitee} 奖励`
-    );
-    if (inviterGrant.success) {
-      record.inviterDays = inviterGrant.grantedDays;
-    } else {
-      console.warn(`[InviteService] 邀请人 [${inviter}] 奖励发放失败: ${inviterGrant.message}`);
-    }
-    this.saveRecords();
+    // 保留已到账奖励；邀请人失败保留 pending 作业，重启/重试自动补发。
+    this.deliverInviterReward(record);
 
     console.log(
       `[InviteService] 邀请绑定成功: 邀请码 ${record.inviteCodeDisplay} · 邀请人 ${inviter} +${record.inviterDays}天 · 被邀请人 ${invitee} +${record.inviteeDays}天`
@@ -399,9 +451,9 @@ export class InviteService {
 
     return {
       success: true,
-      message: inviterGrant.success && inviterGrant.grantedDays > 0
+      message: record.inviterRewardStatus === 'delivered' && record.inviterDays > 0
         ? `绑定成功！已获得 ${record.inviteeDays} 天赞助版，邀请人同步获得 ${record.inviterDays} 天奖励。`
-        : `绑定成功！已获得 ${record.inviteeDays} 天赞助版。`,
+        : `绑定成功！已获得 ${record.inviteeDays} 天赞助版。${record.inviterRewardStatus === 'pending' ? '邀请人奖励等待自动补发。' : ''}`,
       rewardDays: record.inviteeDays,
       status: this.getStatus(invitee)
     };

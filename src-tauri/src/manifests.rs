@@ -2079,7 +2079,7 @@ fn report_codes_to_relay(pairs: &[(u32, String)], codes: &BTreeMap<String, Strin
         let ok = block_on(async move {
             client
                 .post(&url)
-                // 服务端要求已注册设备：防止匿名灌入伪造 code 污染全体客户端码库
+                // 服务端要求已注册设备；上报仅提供待核验索引，不直接写入全局码缓存
                 .header("x-device-id", device_id)
                 .header("User-Agent", "ChunFengDu/1.0")
                 .json(&json!({ "codes": items }))

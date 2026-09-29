@@ -833,7 +833,7 @@ const updateProgress = ref({ downloaded: 0, total: 0 });
 // 否则退回浏览器下载
 const canInlineUpdate = computed(() => {
   const u: string = versionModal.value?.latest?.downloadUrl || '';
-  return /^https?:\/\//i.test(u) && /\.exe(\?|#|$)/i.test(u.trim());
+    return /^https:\/\//i.test(u.trim()) && /\.exe(\?|#|$)/i.test(u.trim());
 });
 const updatePercent = computed(() => {
   const { downloaded, total } = updateProgress.value;
@@ -850,7 +850,7 @@ const installUpdateInPlace = async () => {
     unlisten = await listen<{ downloaded: number; total?: number | null }>('update-download-progress', (e) => {
       updateProgress.value = { downloaded: e.payload.downloaded, total: e.payload.total ?? 0 };
     });
-    const installerPath = await window.electronAPI.downloadUpdate(versionModal.value.latest.downloadUrl);
+    const installerPath = await window.electronAPI.downloadUpdate(versionModal.value.latest.downloadUrl, versionModal.value.latest.sha256);
     // 拉起安装器后 Rust 端会自动退出应用，无需再提示
     await window.electronAPI.launchInstaller(installerPath);
   } catch (e) {

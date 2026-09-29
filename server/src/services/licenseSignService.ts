@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { CONFIG } from '../config/index.js';
+import { REVOKED_LICENSE_PUBLIC_KEYS } from '../config/licenseTrust.js';
 
 export interface SignedLicensePayload {
   deviceId: string;
@@ -24,6 +25,13 @@ export class LicenseSignService {
 
   constructor() {
     this.initKeys();
+    const privateKey = crypto.createPrivateKey(this.privateKeyPem);
+    if (privateKey.asymmetricKeyType !== 'ed25519') throw new Error('授权签名必须使用 Ed25519 密钥');
+    const derived = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'der' }).subarray(-32).toString('hex');
+    if (derived !== this.publicKeyRawHex) throw new Error('授权私钥、公钥文件不匹配，请修复部署密钥');
+    if (REVOKED_LICENSE_PUBLIC_KEYS.has(derived)) throw new Error('已公开的授权签名密钥已撤销，请执行配套密钥迁移');
+    const expected = (process.env.LICENSE_PUBLIC_KEY_HEX || '').trim().toLowerCase();
+    if (expected && derived !== expected) throw new Error('授权签名密钥与本次客户端发行公钥不匹配');
   }
 
   private initKeys(): void {

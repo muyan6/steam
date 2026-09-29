@@ -135,6 +135,8 @@ export interface AppManifestResult {
 
 export class ManifestService {
   private manifestDir: string;
+  // 用户上报只作为待核验索引，不保存或下发客户端提供的码值。
+  private reportedCandidates = new Map<string, { depotId: string; gid: string; retryAt: number }>();
 
   constructor() {
     this.manifestDir = path.join(CONFIG.DATA_DIR, 'manifests');
@@ -1704,9 +1706,12 @@ export class ManifestService {
       if (!fs.existsSync(this.manifestCodeStorePath)) return;
       const raw = fs.readFileSync(this.manifestCodeStorePath, 'utf-8');
       const parsed = JSON.parse(raw) as {
+        schemaVersion?: number;
         codes?: Record<string, { code: string; fetchedAt: number; depotId?: string }>;
         depots?: Record<string, string[]>;
       };
+      // 旧缓存混合了用户上报和权威获取，无法判定来源，整体停止信任旧码。
+      if (parsed.schemaVersion !== 2) return;
       // 兼容旧格式（顶层直接就是 gid -> entry 的扁平对象）。
       // 显式标注类型而不是靠 ?? 推导：两个分支的元素类型不同（旧格式没有 depotId），
       // 推导出来是联合类型，后面读 entry.depotId 会报 TS2339。
@@ -1792,7 +1797,7 @@ export class ManifestService {
       // 临时文件名必须唯一：固定 `.tmp` 在并发/多进程 flush 时会互相截断，
       // 把半截 JSON rename 成正式码库。带 pid + 随机串后 rename 是原子的。
       const tmp = `${this.manifestCodeStorePath}.${process.pid}.${Date.now()}.${crypto.randomBytes(3).toString('hex')}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ codes, depots }), 'utf-8');
+      fs.writeFileSync(tmp, JSON.stringify({ schemaVersion: 2, codes, depots }), 'utf-8');
       fs.renameSync(tmp, this.manifestCodeStorePath);
       this.codeStoreDirty = false;
     } catch (e) {
@@ -1860,10 +1865,10 @@ export class ManifestService {
    */
   public reportManifestCodes(
     entries: Array<{ depotId: string; gid: string; code: string }>
-  ): { accepted: number; rejected: number } {
-    let accepted = 0;
+  ): { accepted: number; rejected: number; queued: number } {
+    const accepted = 0;
     let rejected = 0;
-    const now = Date.now();
+    let queued = 0;
     for (const e of entries) {
       const depotId = String(e?.depotId ?? '').trim();
       const gid = String(e?.gid ?? '').trim();
@@ -1881,33 +1886,18 @@ export class ManifestService {
         rejected++;
         continue;
       }
-      this.indexDepotGid(depotId, gid);
-      const cur = this.manifestCodeCache.get(gid);
-      if (cur) {
-        // 同码重复上报：纯 no-op，不刷新时间戳也不做无谓写
-        if (cur.code === code) continue;
-        // 不覆盖「刚刚由权威源取到」的码。
-        //
-        // 旧实现写的是 `if (cur && cur.fetchedAt >= now) continue;` —— 而 cur.fetchedAt
-        // 必然 ≤ now（都是 Date.now()），该条件恒假，注释承诺的「不覆盖更新的码」
-        // 从未生效：客户端跑了几分钟后上报的**旧码**会以 fetchedAt=now 覆盖服务端
-        // 刚取到的新码，并被当作新鲜码下发给全体客户端。
-        //
-        // 上报请求不带采集时间戳（客户端会跑很久才回传），无法精确比较新旧，
-        // 因此采用保守判据：60 秒内写入的条目视为权威新码，不接受客户端覆盖。
-        if (now - cur.fetchedAt < 60 * 1000) continue;
+      if (this.hasFreshCode(gid)) continue;
+      const candidateId = `${depotId}:${gid}`;
+      if (!this.reportedCandidates.has(candidateId) && this.reportedCandidates.size >= 1000) {
+        rejected++;
+        continue;
       }
-      // 必须走 setManifestCodeCache：它带 MANIFEST_CODE_CACHE_MAX 容量检查。
-      // 旧实现直接 manifestCodeCache.set()，绕过了唯一的容量上限 ——
-      // 而这里是 /manifests/code/report 这条公开写入口的**主写路径**，
-      // 持续上报不同 (depotId,gid,code) 即可让 Map 无界增长直至 OOM。
-      this.setManifestCodeCache(gid, code, depotId);
-      // 上报是对「确认存在」的正向证据，清掉可能存在的负缓存
-      this.negativeCodeCache.delete(gid);
-      accepted++;
+      if (!this.reportedCandidates.has(candidateId)) {
+        this.reportedCandidates.set(candidateId, { depotId, gid, retryAt: 0 });
+        queued++;
+      }
     }
-    if (accepted > 0) this.markCodeStoreDirty();
-    return { accepted, rejected };
+    return { accepted, rejected, queued };
   }
 
   /** 该 gid 当前是否只有过期码（供 controller 决定是否加 stale 响应头） */
@@ -2362,12 +2352,22 @@ export class ManifestService {
    */
   public async backfillStaleCodes(): Promise<number> {
     if (this.backfillRunning) return 0;
-    const targets = this.listStaleCodeTargets(ManifestService.BACKFILL_BATCH);
-    if (targets.length === 0) return 0;
+    const candidateEntries = [...this.reportedCandidates.entries()]
+      .filter(([, candidate]) => candidate.retryAt <= Date.now()).slice(0, ManifestService.BACKFILL_BATCH);
+    const targets = this.listStaleCodeTargets(ManifestService.BACKFILL_BATCH - candidateEntries.length);
+    if (targets.length === 0 && candidateEntries.length === 0) return 0;
 
     this.backfillRunning = true;
     let filled = 0;
     try {
+      for (const [id, candidate] of candidateEntries) {
+        // 只信任服务端自己从权威取码链得到的结果，完全忽略上报码值。
+        const result = await this.getManifestCode(candidate.gid, candidate.depotId);
+        if (result.code || result.definitiveMiss) this.reportedCandidates.delete(id);
+        else candidate.retryAt = Date.now() + ManifestService.BACKFILL_MISS_RETRY_MS;
+        if (result.code) filled++;
+        await new Promise(resolve => setTimeout(resolve, ManifestService.BACKFILL_GAP_MS));
+      }
       for (const t of targets) {
         let got = false;
         // 两个同源端点轮流当备份：古韵有缓存层（热 0.15 秒）优先，

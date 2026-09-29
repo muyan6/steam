@@ -101,6 +101,7 @@ else
 fi
 
 echo -e "   -> 正在执行 TypeScript 生产构建..."
+node scripts/prepareDeployment.mjs
 npm run build
 
 echo -e "\n${BLUE}[4/5] 启动 PM2 守护服务...${NC}"
@@ -131,6 +132,7 @@ if [ "$HEALTH_OK" = "1" ]; then
   echo -e "   -> ${GREEN}本地健康检查通过 (/api/health)${NC}"
 else
   echo -e "   -> ${RED}本地健康检查未通过，请执行 pm2 logs steammaster-server 排查${NC}"
+  exit 1
 fi
 
 SERVER_IP=$(curl -s --max-time 3 ifconfig.me || curl -s --max-time 3 ipinfo.io/ip || echo "127.0.0.1")

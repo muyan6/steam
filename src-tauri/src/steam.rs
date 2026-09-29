@@ -37,14 +37,13 @@ pub fn load_custom_steam_path() -> Option<PathBuf> {
     }
 }
 
-pub fn save_custom_steam_path(path: &str) {
-    if let Some(file) = custom_path_file() {
-        if let Some(dir) = file.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let payload = serde_json::json!({ "steamPath": path });
-        let _ = std::fs::write(file, payload.to_string());
+pub fn save_custom_steam_path(path: &str) -> Result<(), String> {
+    let file = custom_path_file().ok_or_else(|| "无法读取 APPDATA，Steam 路径未保存".to_string())?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("创建路径配置目录失败: {}", e))?;
     }
+    let payload = serde_json::json!({ "steamPath": path });
+    crate::ost::write_text_atomically(&file, &payload.to_string()).map_err(|e| format!("保存 Steam 路径失败: {}", e))
 }
 
 pub fn detect_steam_path() -> Option<PathBuf> {
