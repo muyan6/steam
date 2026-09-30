@@ -28,7 +28,7 @@ cd /data/steam/server
 bash update.sh
 ```
 
-脚本从 `origin/main` 只提取 `server` 源码，在隔离目录安装依赖和编译；检查现有 Ed25519 私钥、公钥与该版本客户端内置公钥一致后，才切换 PM2。健康检查失败会恢复上一个服务端版本。不会 `git reset --hard`、更新前端、重建签名密钥或改写 `server/data`、`server/.env`。旧版代码保存在 `/data/steam/.server-backups/`。
+脚本从 `origin/main` 只提取 `server` 源码，在隔离目录安装依赖和编译；检查现有 Ed25519 私钥、公钥与该版本客户端内置公钥一致后，才切换 PM2。重启后最多等待约 60 秒供服务监听端口，持续不健康才恢复上一个服务端版本。不会 `git reset --hard`、更新前端、重建签名密钥或改写 `server/data`、`server/.env`。旧版代码保存在 `/data/steam/.server-backups/`。如仍失败，执行 `pm2 logs steammaster-server --lines 80 --nostream` 查看启动错误。
 
 如果线上仍是旧版更新脚本，只需首次引入新版脚本，再按上述方式使用：
 ```bash

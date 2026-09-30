@@ -90,7 +90,14 @@ else
 fi
 `);
   write(fakeBin, 'pm2', '#!/usr/bin/env bash\necho "$*" >> "$CALL_LOG"\nexit 0\n');
-  write(fakeBin, 'curl', '#!/usr/bin/env bash\nif [[ "${FAIL_HEALTH:-0}" == 1 ]]; then exit 22; fi\nprintf \'{"status":"ok"}\'\n');
+  write(fakeBin, 'curl', `#!/usr/bin/env bash
+count=0
+if [[ -f "$CURL_CALL_COUNT_FILE" ]]; then count=$(cat "$CURL_CALL_COUNT_FILE"); fi
+count=$((count+1))
+printf '%s' "$count" > "$CURL_CALL_COUNT_FILE"
+if [[ "\${FAIL_HEALTH:-0}" == 1 || "$count" -le "\${FAIL_FIRST_HEALTH:-0}" ]]; then exit 7; fi
+printf '{"status":"ok"}'
+`);
   for (const command of ['npm', 'pm2', 'curl']) fs.chmodSync(path.join(fakeBin, command), 0o755);
   return { root, fakeBin, temp, publicHex };
 }
@@ -99,7 +106,11 @@ function invoke(f, env = {}) {
   const command = `export PATH='${posix(f.fakeBin)}':"$PATH"; exec bash '${posix(path.join(f.root, 'server/update.sh'))}'`;
   return spawnSync(bash, ['-c', command], {
     cwd: f.root, encoding: 'utf8', timeout: 120000,
-    env: { ...process.env, CALL_LOG: path.join(f.temp, 'pm2.log'), ...env }
+    env: {
+      ...process.env, CALL_LOG: path.join(f.temp, 'pm2.log'),
+      CURL_CALL_COUNT_FILE: path.join(f.temp, 'curl-count'),
+      UPDATE_HEALTH_ATTEMPTS: '3', UPDATE_HEALTH_INTERVAL: '0', ...env
+    }
   });
 }
 
@@ -125,6 +136,15 @@ test('failed health check restores old server and root wrapper', t => {
   assert.equal(fs.readFileSync(path.join(f.root, 'update.sh'), 'utf8'), 'old-root-script');
   assert.equal(fs.readFileSync(path.join(f.root, 'server/data/license_keys.json'), 'utf8'), '{"members":"unchanged"}');
   assert.match(result.stdout, /旧代码已恢复/);
+});
+
+test('connection refused during startup is retried before declaring failure', t => {
+  const f = fixture(t);
+  const result = invoke(f, { FAIL_FIRST_HEALTH: '2' });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(fs.readFileSync(path.join(f.temp, 'curl-count'), 'utf8'), '3');
+  assert.equal(fs.readFileSync(path.join(f.root, 'server/src/server.ts'), 'utf8'), 'new-server-source');
+  assert.match(result.stdout, /健康检查通过（第 3 次）/);
 });
 
 test('mismatched signing key stops before promotion', t => {

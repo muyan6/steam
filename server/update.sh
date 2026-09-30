@@ -7,6 +7,8 @@ ROOT="$(cd "$SERVER_DIR/.." && pwd -P)"
 APP=steammaster-server
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:1257/api/health}"
 BRANCH="${UPDATE_BRANCH:-main}"
+HEALTH_ATTEMPTS="${UPDATE_HEALTH_ATTEMPTS:-60}"
+HEALTH_INTERVAL="${UPDATE_HEALTH_INTERVAL:-1}"
 STAGE=''
 BACKUP=''
 PROMOTING=0
@@ -18,11 +20,25 @@ log() { printf '[服务端更新] %s\n' "$*"; }
 for dependency in git node npm pm2 curl tar mktemp; do
     command -v "$dependency" >/dev/null 2>&1 || fail "缺少命令：$dependency"
 done
+[[ "$HEALTH_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] && (( HEALTH_ATTEMPTS <= 120 )) || fail 'UPDATE_HEALTH_ATTEMPTS 必须是 1–120 的整数'
+[[ "$HEALTH_INTERVAL" =~ ^(0|[1-9][0-9]*)$ ]] && (( HEALTH_INTERVAL <= 10 )) || fail 'UPDATE_HEALTH_INTERVAL 必须是 0–10 的整数'
 [[ "$(git -C "$ROOT" rev-parse --is-inside-work-tree 2>/dev/null)" == true ]] || fail '未找到项目 Git 仓库'
 [[ -z "$(git -C "$ROOT" rev-parse --show-prefix 2>/dev/null)" ]] || fail '服务端不在项目 Git 仓库根目录内'
 [[ -f "$SERVER_DIR/.env" ]] || fail '缺少 server/.env；不会自动生成 JWT 或签名密钥'
 
 SERVER_ITEMS=(src scripts dist node_modules package.json package-lock.json tsconfig.json ecosystem.config.cjs update.sh)
+wait_for_health() {
+    local limit="$1" attempt response
+    for (( attempt=1; attempt<=limit; attempt++ )); do
+        if response="$(curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null)" \
+            && printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",x=>s+=x).on("end",()=>{try{process.exit(JSON.parse(s).status==="ok"?0:1)}catch{process.exit(1)}})' >/dev/null 2>&1; then
+            log "健康检查通过（第 $attempt 次）"
+            return 0
+        fi
+        if (( attempt < limit )); then sleep "$HEALTH_INTERVAL"; fi
+    done
+    return 1
+}
 restore_previous() {
     local name
     log '新版本未通过，恢复上一个服务端版本……'
@@ -42,7 +58,9 @@ restore_previous() {
     fi
     if [[ "$HAD_PROCESS" == 1 ]]; then
         pm2 restart "$SERVER_DIR/ecosystem.config.cjs" --update-env || true
-        curl -fsS --retry 5 --retry-delay 2 --max-time 3 "$HEALTH_URL" >/dev/null || true
+        if ! wait_for_health "$HEALTH_ATTEMPTS"; then
+            log '旧版恢复后仍未通过健康检查；请查看 pm2 logs steammaster-server --lines 80 --nostream'
+        fi
     else
         pm2 delete "$APP" >/dev/null 2>&1 || true
     fi
@@ -108,8 +126,8 @@ if [[ "$HAD_PROCESS" == 1 ]]; then
 else
     pm2 start "$SERVER_DIR/ecosystem.config.cjs" --update-env
 fi
-HEALTH="$(curl -fsS --retry 5 --retry-delay 2 --max-time 3 "$HEALTH_URL")"
-printf '%s' "$HEALTH" | node -e 'let s="";process.stdin.on("data",x=>s+=x).on("end",()=>{try{process.exit(JSON.parse(s).status==="ok"?0:1)}catch{process.exit(1)}})' || fail '健康检查异常'
+log "等待服务就绪（最多 $HEALTH_ATTEMPTS 次，每次间隔 $HEALTH_INTERVAL 秒）……"
+wait_for_health "$HEALTH_ATTEMPTS" || fail '服务持续未就绪；请查看 pm2 logs steammaster-server --lines 80 --nostream'
 DONE=1
 log "更新成功：$COMMIT；健康状态 ok；server/data 和 server/.env 未改动"
 log "旧版备份：$BACKUP"
