@@ -899,56 +899,8 @@ pub fn write_steam_appid_txt_all_locations(game_path: &Path, app_id: u32) {
 /// 清理游戏目录下所有残留的 steam_appid.txt（若有备份则还原，无备份则删除）
 /// Open 内核联机模式必须以游戏真实身份运行，严禁残留 480 的 steam_appid.txt，
 /// 否则游戏底层与 Steam 会话 AppID 不一致会导致创建大厅/对战失败（如《城堡毁灭者》报“不能作成对战”）
-fn clean_steam_appid_txt_all_locations(game_path: &Path) {
-    fn collect_dirs(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
-        if depth > 3 {
-            return;
-        }
-        let Ok(entries) = fs::read_dir(dir) else { return };
-        let mut has_target_file = false;
-        let mut subdirs = Vec::new();
-        for entry in entries.filter_map(|e| e.ok()) {
-            let p = entry.path();
-            if p.is_dir() {
-                let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-                if !["_redist", "directx", "support", "redist", ".git", "node_modules"].contains(&name.as_str()) {
-                    subdirs.push(p);
-                }
-            } else if p.is_file() {
-                let name = p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-                if name.ends_with(".exe") || name.starts_with("steam_api") || name == "steam_appid.txt" {
-                    has_target_file = true;
-                }
-            }
-        }
-        if has_target_file && !out.contains(&dir.to_path_buf()) {
-            out.push(dir.to_path_buf());
-        }
-        for sub in subdirs {
-            collect_dirs(&sub, depth + 1, out);
-        }
-    }
-
-    let mut dirs = Vec::new();
-    collect_dirs(game_path, 0, &mut dirs);
-    for d in dirs {
-        let appid_file = d.join("steam_appid.txt");
-        let bak = d.join("steam_appid.txt.cfd_bak");
-        if bak.exists() {
-            let _ = fs::copy(&bak, &appid_file);
-            let _ = fs::remove_file(&bak);
-        } else if appid_file.exists() {
-            // 无备份时**只能**删除本工具 Spacewar 模式写入的 480。
-            // 旧实现无条件删除，而本函数在每次「Open 内核联机」启动前都会跑，
-            // 会把游戏自带或玩家自建的 steam_appid.txt 一并抹掉（不可恢复）。
-            let is_ours = fs::read_to_string(&appid_file)
-                .map(|c| c.trim() == "480")
-                .unwrap_or(false);
-            if is_ours {
-                let _ = fs::remove_file(&appid_file);
-            }
-        }
-    }
+fn clean_steam_appid_txt_all_locations(game_path: &Path) -> Result<(), String> {
+    crate::file_restore::restore_appid_tree(game_path)
 }
 
 /// 确保 HKCU\Software\Valve\Steam\Apps\<AppID> 注册表项具有 Installed 标记（古韵同款机制）
@@ -1033,7 +985,7 @@ pub fn launch_game_online(
             // 关键：Open 内核模式绝对不能留 steam_appid.txt=480！
             // 会话已是真实 AppID，内核在内部自动做 Spacewar 映射；
             // 目录里残留 480 文件会导致游戏内的 Matchmaking/Lobby 校验 AppID 失败（如《城堡毁灭者》报“不能作成对战”）
-            clean_steam_appid_txt_all_locations(&gp_open);
+            clean_steam_appid_txt_all_locations(&gp_open)?;
         }
         let sp_launch = steam::detect_steam_path()
             .ok_or("未找到 Steam 安装路径，无法使用 Open 内核联机模式启动游戏")?;

@@ -1,3 +1,4 @@
+import { setShutdownServer, isShuttingDown } from './utils/shutdown.js';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
@@ -18,6 +19,10 @@ import { LANDING_HTML } from './static/landingPage.js';
 import { CFD_LOGO_DATA_URI } from './static/logoAsset.js';
 
 const app = express();
+app.use((_req, res, next) => {
+  if (isShuttingDown()) { res.status(503).json({ success: false, message: '服务正在重启，请稍后重试' }); return; }
+  next();
+});
 
 // 反向代理支持：TRUST_PROXY 未配置时不信任任何代理头（直连部署）；
 // 配置后 express-rate-limit 与审计日志才能拿到真实客户端 IP
@@ -1475,6 +1480,8 @@ const server = app.listen(CONFIG.PORT, CONFIG.HOST, () => {
   // 封了沉淀管道就断了。主力始终是客户端上报，这里只补长尾。
   manifestService.startBackfillLoop(10 * 60 * 1000);
 });
+
+setShutdownServer(server);
 
 // 端口占用等启动错误给出友好提示
 server.on('error', (err: any) => {

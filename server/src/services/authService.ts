@@ -1,3 +1,4 @@
+import { registerShutdownHook } from '../utils/shutdown.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -25,6 +26,12 @@ export class AuthService {
     this.credFilePath = path.join(CONFIG.DATA_DIR, 'admin_credentials.json');
     this.auditFilePath = path.join(CONFIG.DATA_DIR, 'admin_audit.json');
     this.ensureCredentials();
+    registerShutdownHook('audit-logs', () => {
+      if (this.auditFlushTimer) clearTimeout(this.auditFlushTimer);
+      this.auditFlushTimer = null;
+      this.flushAuditLogs();
+      if (this.auditDirty) throw new Error('审计日志尚未持久化');
+    });
   }
 
   private hashPassword(password: string, salt: string, iterations: number = AuthService.PBKDF2_ITERATIONS): string {
@@ -313,6 +320,17 @@ export class AuthService {
       return { success: false, message: '账号或密码错误' };
     }
     const computedHash = await this.hashPasswordAsync(cleanPass, creds.salt, iterations);
+    // 哈希计算让出事件循环期间，改密/注销可能已提交新凭据。
+    // 旧快照既不能签发新会话，也不能通过登录时间写回覆盖新的密码或吊销版本。
+    const latestCreds = this.getCredentials();
+    if (
+      (latestCreds.tokenVersion ?? 1) !== (creds.tokenVersion ?? 1) ||
+      latestCreds.username !== creds.username ||
+      latestCreds.passwordHash !== creds.passwordHash ||
+      latestCreds.salt !== creds.salt
+    ) {
+      return { success: false, message: '登录期间账号状态已更新，请重新登录' };
+    }
     const hashBuf = Buffer.from(computedHash);
     const storedBuf = Buffer.from(creds.passwordHash);
     const isPassValid =
@@ -327,7 +345,7 @@ export class AuthService {
         try {
           const newSalt = crypto.randomBytes(16).toString('hex');
           this.saveCredentials({
-            ...creds,
+            ...latestCreds,
             passwordHash: this.hashPassword(cleanPass, newSalt),
             salt: newSalt,
             pbkdf2Iterations: AuthService.PBKDF2_ITERATIONS,
@@ -342,7 +360,7 @@ export class AuthService {
       } else {
         // 持久化真实登录时间/IP，供管理端"最后登录"展示
         try {
-          this.saveCredentials({ ...creds, lastLoginAt: loginAt, lastLoginIp: ip });
+          this.saveCredentials({ ...latestCreds, lastLoginAt: loginAt, lastLoginIp: ip });
         } catch (e) {
           console.error('[AuthService] 记录登录时间失败（不影响本次登录）:', e);
         }

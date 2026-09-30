@@ -1,3 +1,4 @@
+import { registerShutdownHook } from '../utils/shutdown.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -75,12 +76,15 @@ export class ToolboxService {
   constructor() {
     this.logFilePath = path.join(CONFIG.DATA_DIR, 'toolbox_repair_logs.json');
     this.ensureDataFiles();
-    // 退出前同步落盘：修复日志为 3 秒防抖写，而 flushLogs 是异步的 ——
-    // 进程若在 await 完成前退出就会丢失这批日志，故退出走同步写。
-    const flushOnExit = () => this.flushLogsNow();
-    process.once('beforeExit', flushOnExit);
-    process.once('SIGINT', () => { flushOnExit(); process.exit(0); });
-    process.once('SIGTERM', () => { flushOnExit(); process.exit(0); });
+    registerShutdownHook('toolbox-logs', () => this.flushForShutdown());
+  }
+
+  public async flushForShutdown(): Promise<void> {
+    if (this.logsFlushTimer) clearTimeout(this.logsFlushTimer);
+    this.logsFlushTimer = null;
+    await this.logsSaveChain;
+    this.flushLogsNow();
+    if (this.logsDirty) throw new Error('修复日志尚未持久化');
   }
 
   /** 立即同步落盘修复日志（供退出钩子使用） */

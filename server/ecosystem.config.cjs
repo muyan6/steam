@@ -7,6 +7,7 @@ module.exports = {
       script: './dist/server.js',
       instances: 1, // 云端数据引擎单实例；密钥库+游戏库常驻约 130-180MB
       autorestart: true,
+      kill_timeout: 15000, // 大于应用的 10 秒统一退出上限，留足刷盘时间
       watch: false,
       // 数据稳定占用 ~130MB，每日定时同步解析 18MB 密钥库时存在瞬时尖峰，
       // 阈值过低会把同步中的进程强杀（表现为服务随机重启），给足一倍余量

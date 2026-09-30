@@ -1,3 +1,4 @@
+import { registerShutdownHook } from '../utils/shutdown.js';
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
@@ -63,16 +64,7 @@ export class DlcIndexService {
   constructor() {
     this.filePath = path.join(CONFIG.DATA_DIR, 'dlc_index.json');
     this.load();
-    // 进程退出前落盘：索引只在 2 秒防抖窗口结束后写盘，
-    // 若在此期间崩溃/重启，本次采集到的 DLC 与分包集合会全部丢失
-    // 注意：这里必须用**同步**落盘。flush() 是 async 的，其内部 await 写盘
-    // 尚未完成时紧随其后的 process.exit(0) 就已终止进程 —— 防抖窗口内的索引
-    // 每次 Ctrl+C / 容器 SIGTERM 都会静默丢失。beforeExit 无 exit 调用，
-    // 仍可走异步路径，但为一致性与可预测性统一用同步版本。
-    const flushOnExit = () => this.flushSync();
-    process.once('beforeExit', flushOnExit);
-    process.once('SIGINT', () => { flushOnExit(); process.exit(0); });
-    process.once('SIGTERM', () => { flushOnExit(); process.exit(0); });
+    registerShutdownHook('dlc-index', () => this.flushForShutdown());
   }
 
   private load(): void {
@@ -208,7 +200,7 @@ export class DlcIndexService {
     (this.flushTimer as any).unref?.();
   }
 
-  private flushing = false;
+  private flushTask: Promise<void> | null = null;
 
   /** 超限时按插入序淘汰最旧，防止被脚本灌海量 AppID 撑爆内存与磁盘 */
   private trimToMax(): void {
@@ -226,41 +218,32 @@ export class DlcIndexService {
     return JSON.stringify(obj);
   }
 
-  /**
-   * 同步落盘：仅供进程退出路径使用。
-   * 退出处理器后面紧跟 process.exit，异步写会被直接打断，因此这里用同步 IO。
-   */
-  private flushSync(): void {
-    if (!this.dirty || this.saveBlocked || this.flushing) return;
-    try {
-      this.trimToMax();
-      const tmp = `${this.filePath}.${process.pid}.exit.tmp`;
-      fs.writeFileSync(tmp, this.serialize(), 'utf-8');
-      fs.renameSync(tmp, this.filePath);
-      this.dirty = false;
-    } catch (e) {
-      console.error('[DlcIndex] 退出前同步保存索引失败:', (e as Error).message);
-    }
+  /** 退出时先等已有异步写完成，再提交等待期间产生的新状态。 */
+  public async flushForShutdown(): Promise<void> {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    await this.flushTask;
+    await this.flush();
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    if (this.dirty) throw new Error('DLC 索引尚未持久化');
   }
 
-  /** 立即落盘（进程退出前可由调用方触发）。异步实现：不阻塞事件循环 */
-  public async flush(): Promise<void> {
-    if (!this.dirty || this.saveBlocked || this.flushing) return;
-    this.flushing = true;
-    // 先清脏标记再写盘：await 期间 set() 新置的 dirty 不会被写完后那句
-    // `this.dirty = false` 抹掉（否则这些新条目既不落盘，也再无定时器触发重试，
-    // 因为它们已被本次写盘「覆盖」成已落盘状态）。
+  public flush(): Promise<void> {
+    if (this.flushTask) return this.flushTask;
+    if (!this.dirty || this.saveBlocked) return Promise.resolve();
+    this.flushTask = this.persist().finally(() => { this.flushTask = null; });
+    return this.flushTask;
+  }
+
+  private async persist(): Promise<void> {
     this.dirty = false;
     try {
       this.trimToMax();
       await writeStringAtomicAsync(this.filePath, this.serialize());
     } catch (e) {
       console.error('[DlcIndex] 保存索引失败:', (e as Error).message);
-      // 写失败必须重新排定时器：flushTimer 已被 markDirty 清空，
-      // 不重排的话索引要等到下一次 set() 才可能落盘（可能永远等不到）
       this.markDirty();
-    } finally {
-      this.flushing = false;
     }
   }
 

@@ -1,3 +1,4 @@
+import { registerShutdownHook } from '../utils/shutdown.js';
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
@@ -81,12 +82,10 @@ class FreeQuotaService {
   }
 
   constructor() {
-    // 退出前落盘：配额为 30 秒防抖写，重启会丢掉窗口内已扣减的计数，
-    // 变相给用户"重启服务端即可重置当日免费额度"的绕过口子。同步写以防被打断。
-    const flushOnExit = () => this.flushNow();
-    process.once('beforeExit', flushOnExit);
-    process.once('SIGINT', () => { flushOnExit(); process.exit(0); });
-    process.once('SIGTERM', () => { flushOnExit(); process.exit(0); });
+    registerShutdownHook('free-quota', () => {
+      this.flushNow();
+      if (this.dirty) throw new Error('free-quota 数据尚未持久化');
+    });
   }
 
   /** 立即同步落盘（供退出钩子使用） */

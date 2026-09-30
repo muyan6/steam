@@ -1,3 +1,4 @@
+pub mod file_restore;
 pub mod steam;
 pub mod ost;
 pub mod device;

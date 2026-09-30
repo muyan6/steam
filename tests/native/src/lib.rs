@@ -5,3 +5,6 @@ pub mod p2p_log;
 pub mod update_validation;
 #[path = "../../../src-tauri/src/rule_cleanup.rs"]
 pub mod rule_cleanup;
+
+#[path = "../../../src-tauri/src/file_restore.rs"]
+pub mod file_restore;

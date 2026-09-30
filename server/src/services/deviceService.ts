@@ -1,3 +1,4 @@
+import { registerShutdownHook } from '../utils/shutdown.js';
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config/index.js';
@@ -41,12 +42,10 @@ export class DeviceService {
     this.filePath = path.join(CONFIG.DATA_DIR, 'devices.json');
     this.loadDevices();
     this.startDailyCleanup();
-    // 退出前落盘：设备档案为 10 秒防抖写，重启/崩溃会丢掉窗口内的心跳更新。
-    // 同步写，确保紧随其后的 process.exit 不会打断落盘（参照 dlcIndexService）。
-    const flushOnExit = () => this.flushNow();
-    process.once('beforeExit', flushOnExit);
-    process.once('SIGINT', () => { flushOnExit(); process.exit(0); });
-    process.once('SIGTERM', () => { flushOnExit(); process.exit(0); });
+    registerShutdownHook('devices', () => {
+      this.flushNow();
+      if (this.devicesDirty) throw new Error('devices 数据尚未持久化');
+    });
   }
 
   /** 立即同步落盘（供退出钩子使用）：清掉待触发定时器后立刻写 */

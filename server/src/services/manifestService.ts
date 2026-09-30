@@ -1,3 +1,4 @@
+import { registerShutdownHook } from '../utils/shutdown.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -1773,6 +1774,12 @@ export class ManifestService {
    * 写盘用「临时文件 + rename」：进程在写一半时被杀不会留下半个损坏的 JSON，
    * 否则下次启动整个码库都读不出来，白白损失全部积累。
    */
+  public flushForShutdown(): void {
+    this.stopBackfillLoop();
+    this.flushCodeStore();
+    if (this.codeStoreDirty) throw new Error('清单码缓存尚未持久化');
+  }
+
   public flushCodeStore(): void {
     if (!this.codeStoreDirty) return;
     try {
@@ -2757,19 +2764,5 @@ export class ManifestService {
 
 export const manifestService = new ManifestService();
 
-// 码库落盘钩子：正常退出与 SIGINT/SIGTERM 都要刷一次，
-// 否则最近的取码成果会随进程一起丢掉（定时器最长 30 秒才落一次盘）。
-// 与 dlcIndexService 同样的模式，保证 pm2 restart 不丢数据。
-const flushCodeStoreOnExit = () => {
-  manifestService.stopBackfillLoop();
-  manifestService.flushCodeStore();
-};
-process.once('beforeExit', flushCodeStoreOnExit);
-process.once('SIGINT', () => {
-  flushCodeStoreOnExit();
-  process.exit(0);
-});
-process.once('SIGTERM', () => {
-  flushCodeStoreOnExit();
-  process.exit(0);
-});
+// 与其他服务共同完成落盘后，由统一协调器退出。
+registerShutdownHook('manifest-codes', () => manifestService.flushForShutdown());
