@@ -1,5 +1,31 @@
 [
   {
+    "version": "2.8.4",
+    "channel": "stable",
+    "releaseDate": "2026-10-01",
+    "title": "春风渡 v2.8.4 入库筛选与稳定性修复版",
+    "changelog": [
+      "部署提示：请先更新配套服务端，再升级客户端；新客户端会拒绝写入未经服务端完整校验的入库规则。",
+      "修复 Windows 与 macOS 分包混用：保留有清单编号的零字节分包，缺少当前平台密钥的 DLC 不再拖累整款游戏下载。",
+      "统一入库、版本更新与 DLC 追加的最终可用集合，避免过滤掉的 DLC 被旧数据重新加入；本体数据不完整时保留原规则并明确提示。",
+      "入库结果改为规则写入状态，列出跳过的 DLC，不再承诺首次下载或重启必然成功；已有问题游戏更新后请重新入库。",
+      "修复并发登录覆盖新密码、退出提前终止落盘、文件恢复失败删除备份等问题，并补齐子目录配置恢复。",
+      "修复版本与公告保存失败后的缓存污染、注销结果误报、强制更新与预发布版本比较问题。",
+      "修复页面卸载后的轮询与监听残留、切换 Steam 路径后的扫描缓存串用、字典解析溢出和中文缓存构建遗漏。",
+      "修复免费额度为零的配置、QQ群链接协议一致性，并保护运行数据不进入源码提交；新增前后端及原生隔离回归测试。"
+    ],
+    "downloadUrl": "https://gitee.com/muyan6/steam/releases/download/2.8.4/ChunFengDu_2.8.4_x64-setup.exe",
+    "downloadUrlBackup": "https://github.com/muyan6/steam/releases/download/v2.8.4/ChunFengDu_2.8.4_x64-setup.exe",
+    "forceUpdate": false,
+    "minSupportedVersion": "1.0.0",
+    "enabled": true,
+    "downloadCount": 0,
+    "createdAt": "2026-09-30T22:33:38.256Z",
+    "updatedAt": "2026-09-30T22:38:51.943Z",
+    "sha256": "860985dae1b6cbfd1d738f6488888dd77a43e47ee30ee31afebc00d2a7d4ac8e",
+    "fileSize": "8.41 MB"
+  },
+  {
     "version": "2.8.3",
     "channel": "stable",
     "releaseDate": "2026-09-29",
