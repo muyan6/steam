@@ -24,7 +24,7 @@ npm run tauri:build
 
 ## PM2
 
-部署脚本先运行 `prepareDeployment.mjs`，检查/准备必需的 JWT 与签名文件；发现已撤销的旧密钥时中止，不自动以不匹配的密钥重启线上服务。仓库遗留的固定初始管理员密码会在预检中被替换，已独立改密的管理员凭据保留。随机初始密码保存在服务器本地 `.env`，不输出到构建日志。
+首次部署的 `prepareDeployment.mjs` 用于准备 JWT 与签名文件；发现已撤销的旧密钥时中止。仓库遗留的固定初始管理员密码会在迁移时被替换，已独立改密的管理员凭据保留。随机初始密码保存在服务器本地 `.env`，不输出到构建日志。日常 `server/update.sh` **不调用** `prepareDeployment.mjs`，只读校验既有密钥，避免意外轮换。
 
 ```sh
 cd server
@@ -35,6 +35,8 @@ curl -fsS http://127.0.0.1:1257/api/health
 ```
 
 PM2 配置指定 `cwd`，显式读取本地 `.env`；更新使用配置文件重载，避免旧进程缓存环境覆盖新配置。健康检查失败时安装/更新脚本返回非零退出码。
+
+日常 PM2 更新运行 `cd /data/steam/server && bash update.sh`。脚本仅从 `origin/main` 归档服务端源码进行隔离编译，检查签名密钥与当前客户端公钥后切换服务，失败自动恢复旧代码。`server/data` 与 `.env` 原地保留，前端工作区不被重置；备份在 `/data/steam/.server-backups/`。
 
 Docker 用户先准备服务器本地 `.env`，Compose 显式加载该文件。私钥使用持久化的 `data` 目录或私钥环境变量注入，不使用源码默认密钥。
 

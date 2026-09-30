@@ -21,12 +21,24 @@ bash install.sh
 ```
 > **脚本会自动执行**：系统环境检测 -> Node.js 20 LTS 安装 -> 全局 PM2 安装 -> NPM 依赖安装 -> TypeScript 编译构建 -> PM2 后台守护启动 (端口 1257) -> 开机自启保存 -> 端口与健康检查。
 
-### 2. 后续更新代码 (自动从 Gitee 同步并一键极速重载)
-下次需要更新服务器代码时，**只需一条命令**：
+### 2. 后续更新服务端（PM2）
+在 `/data/steam/server` 内只需运行：
 ```bash
+cd /data/steam/server
 bash update.sh
 ```
-> **更新脚本会自动执行**：从 Gitee 远程仓库拉取最新代码 (`git pull`) -> 增量 NPM 依赖更新 -> TypeScript 重新编译 -> PM2 服务无缝热重载 -> 健康检查状态回显。
+
+脚本从 `origin/main` 只提取 `server` 源码，在隔离目录安装依赖和编译；检查现有 Ed25519 私钥、公钥与该版本客户端内置公钥一致后，才切换 PM2。健康检查失败会恢复上一个服务端版本。不会 `git reset --hard`、更新前端、重建签名密钥或改写 `server/data`、`server/.env`。旧版代码保存在 `/data/steam/.server-backups/`。
+
+如果线上仍是旧版更新脚本，只需首次引入新版脚本，再按上述方式使用：
+```bash
+cd /data/steam
+git fetch origin main
+git show FETCH_HEAD:server/update.sh > server/update.sh
+bash server/update.sh
+```
+
+这一步不会建立额外的密钥暂存目录。签名私钥仍需事先与 `server/data/license_ed25519_public.hex` 及当前客户端公钥匹配；普通版本更新不轮换密钥。
 
 
 ---

@@ -1,140 +1,115 @@
 #!/usr/bin/env bash
+# Update only the PM2 backend. Runtime data and signing keys are never copied or generated here.
+set -Eeuo pipefail
 
-# ==============================================================================
-# SteamMaster 云端后端服务 一键极速更新脚本 (update.sh)
-# Gitee 官方仓库: https://gitee.com/muyan6/steam.git
-# 用途: 自动拉取 Gitee 最新代码、增量安装依赖、重新编译并秒级无缝重载服务
-# ==============================================================================
+SERVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd "$SERVER_DIR/.." && pwd -P)"
+APP=steammaster-server
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:1257/api/health}"
+BRANCH="${UPDATE_BRANCH:-main}"
+STAGE=''
+BACKUP=''
+PROMOTING=0
+DONE=0
+HAD_PROCESS=0
 
-set -e
-# 管道中任一环失败即整体失败（原脚本只 set -e，`git log | head` 这类管道会吞掉左侧错误）
-set -o pipefail
+fail() { printf '更新失败：%s\n' "$*" >&2; exit 1; }
+log() { printf '[服务端更新] %s\n' "$*"; }
+for dependency in git node npm pm2 curl tar mktemp; do
+    command -v "$dependency" >/dev/null 2>&1 || fail "缺少命令：$dependency"
+done
+[[ "$(git -C "$ROOT" rev-parse --is-inside-work-tree 2>/dev/null)" == true ]] || fail '未找到项目 Git 仓库'
+[[ -z "$(git -C "$ROOT" rev-parse --show-prefix 2>/dev/null)" ]] || fail '服务端不在项目 Git 仓库根目录内'
+[[ -f "$SERVER_DIR/.env" ]] || fail '缺少 server/.env；不会自动生成 JWT 或签名密钥'
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-echo -e "${CYAN}${BOLD}"
-echo "======================================================================"
-echo "    🔄 SteamMaster - 云端后端数据引擎 一键增量更新脚本"
-echo "    📦 源码仓库: https://gitee.com/muyan6/steam"
-echo "======================================================================"
-echo -e "${NC}"
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-if [ -d "$SCRIPT_DIR/server" ]; then
-    PROJECT_ROOT="$SCRIPT_DIR"
-    SERVER_DIR="$SCRIPT_DIR/server"
-elif [ -f "$SCRIPT_DIR/package.json" ] && grep -q "steammaster-server" "$SCRIPT_DIR/package.json" 2>/dev/null; then
-    SERVER_DIR="$SCRIPT_DIR"
-    PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-else
-    SERVER_DIR="$SCRIPT_DIR"
-    PROJECT_ROOT="$SCRIPT_DIR"
-fi
-
-echo -e "${BLUE}[1/4] 拉取 Gitee 远程仓库最新代码...${NC}"
-cd "$PROJECT_ROOT"
-
-if [ -d ".git" ]; then
-    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-    # detached HEAD 时 --abbrev-ref 返回字面量 HEAD，拿去 fetch 必然失败，回退到 main
-    if [ "$CURRENT_BRANCH" = "HEAD" ]; then
-        CURRENT_BRANCH="main"
+SERVER_ITEMS=(src scripts dist node_modules package.json package-lock.json tsconfig.json ecosystem.config.cjs update.sh)
+restore_previous() {
+    local name
+    log '新版本未通过，恢复上一个服务端版本……'
+    for name in "${SERVER_ITEMS[@]}"; do
+        # Every name is a fixed, audited entry immediately under SERVER_DIR.
+        rm -rf -- "$SERVER_DIR/$name"
+        if [[ -e "$BACKUP/server/$name" ]]; then
+            mv -- "$BACKUP/server/$name" "$SERVER_DIR/$name"
+        fi
+    done
+    rm -f -- "$ROOT/update.sh" "$ROOT/.gitignore"
+    if [[ -f "$BACKUP/update.sh" ]]; then
+        mv -- "$BACKUP/update.sh" "$ROOT/update.sh"
     fi
-    echo -e "   -> 当前分支: ${CYAN}$CURRENT_BRANCH${NC}"
-
-    # 远端切换默认关闭：仓库主远端是 GitHub，静默改写 origin 会让后续推送落到意外仓库。
-    # 需要走 Gitee 镜像时以 AUTO_SWITCH_REMOTE=1 显式开启。
-    CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
-    if [[ "$CURRENT_REMOTE" =~ "github.com" && "${AUTO_SWITCH_REMOTE:-0}" = "1" ]]; then
-        echo -e "   -> 检测到 GitHub 远端，AUTO_SWITCH_REMOTE=1 已开启，切换为 Gitee 镜像加速源..."
-        git remote set-url origin https://gitee.com/muyan6/steam.git 2>/dev/null || true
+    if [[ -f "$BACKUP/.gitignore" ]]; then
+        mv -- "$BACKUP/.gitignore" "$ROOT/.gitignore"
     fi
-
-    # 运行时数据备份：admin_credentials.json / steam_depot_keys.json / steam_tokens.json /
-    # steam_all_games.json 等虽在 .gitignore 中，但历史上曾被提交过，git 跟踪状态可能残留。
-    # 原实现用 `git stash` + `git pull`，且从未 stash pop —— 线上真实运行数据会被仓库旧快照
-    # 覆盖后永久滞留 stash，表现为管理员密码、密钥库、游戏库集体回退。
-    # 现改为显式备份 → reset --hard 对齐远端 → 恢复运行时数据（不含版本发布数据）。
-    DATA_DIR="server/data"
-    BACKUP_DIR=$(mktemp -d)
-    mkdir -p "$DATA_DIR"
-    cp -a "$DATA_DIR"/*.json "$BACKUP_DIR"/ 2>/dev/null || true
-    # 版本发布数据默认跟随仓库：version.json / versions.json 随每次发版一起提交，
-    # 若被本地旧副本盖回，会出现「代码已最新、云端下发的仍是旧版本号」，
-    # 用户永远收不到更新提示。
-    # 若发布流程完全依赖后台控制台写库，以 KEEP_LOCAL_VERSION_DATA=1 保留旧行为。
-    if [ "${KEEP_LOCAL_VERSION_DATA:-0}" = "1" ]; then
-        echo -e "   -> ${YELLOW}KEEP_LOCAL_VERSION_DATA=1，版本数据保留本地副本${NC}"
+    if [[ "$HAD_PROCESS" == 1 ]]; then
+        pm2 restart "$SERVER_DIR/ecosystem.config.cjs" --update-env || true
+        curl -fsS --retry 5 --retry-delay 2 --max-time 3 "$HEALTH_URL" >/dev/null || true
     else
-        rm -f "$BACKUP_DIR/version.json" "$BACKUP_DIR/versions.json"
+        pm2 delete "$APP" >/dev/null 2>&1 || true
     fi
-    # 用 find 而非 ls | wc：空目录时 ls 返回非 0，配合刚开启的 pipefail + set -e 会直接中断
-    BACKUP_COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -name '*.json' | wc -l)
-    echo -e "   -> 已备份 ${GREEN}${BACKUP_COUNT}${NC} 个运行时数据文件"
-
-    # fetch + reset：服务器不产生本地提交，强制与远端对齐，避免分叉历史导致 pull 冲突
-    git fetch origin "$CURRENT_BRANCH"
-    git reset --hard "origin/$CURRENT_BRANCH"
-    git clean -fd server/src server/dist 2>/dev/null || true
-
-    if [ "$BACKUP_COUNT" -gt 0 ]; then
-        cp -a "$BACKUP_DIR"/*.json "$DATA_DIR"/ 2>/dev/null || true
-        echo -e "   -> 已恢复 ${GREEN}${BACKUP_COUNT}${NC} 个运行时数据文件"
+    log "旧代码已恢复；备份目录：$BACKUP"
+}
+on_exit() {
+    local status=$?
+    trap - EXIT
+    if [[ "$PROMOTING" == 1 && "$DONE" == 0 ]]; then
+        restore_previous
     fi
-    rm -rf "$BACKUP_DIR"
+    if [[ -n "$STAGE" && -d "$STAGE" ]]; then
+        rm -rf -- "$STAGE"
+    fi
+    exit "$status"
+}
+trap on_exit EXIT
 
-    LATEST_COMMIT=$(git log -1 --format="%h - %s (%cr)" 2>/dev/null || echo "未知版本")
-    echo -e "   -> 最新提交: ${GREEN}$LATEST_COMMIT${NC}"
+log "获取 origin/$BRANCH（不重置工作区）……"
+git -C "$ROOT" fetch origin "$BRANCH"
+COMMIT="$(git -C "$ROOT" rev-parse FETCH_HEAD)"
+STAGE="$(mktemp -d "$ROOT/.server-update.XXXXXXXX")"
+mkdir -p "$STAGE/server"
+# Explicit allow-list: never check out frontend, server/data, .env or depot keys.
+git -C "$ROOT" archive "$COMMIT" -- \
+    server/src server/scripts server/package.json server/package-lock.json \
+    server/tsconfig.json server/ecosystem.config.cjs server/update.sh update.sh .gitignore \
+    | tar -xf - -C "$STAGE"
+[[ -f "$STAGE/server/scripts/verifyDeployment.mjs" ]] || fail '远端版本缺少部署校验脚本'
+
+log '在隔离目录安装依赖并编译服务端……'
+(cd "$STAGE/server" && npm ci --include=dev --no-audit --no-fund && npm run build)
+[[ -f "$STAGE/server/dist/server.js" ]] || fail '编译未生成 dist/server.js'
+
+# Read the public key baked into this commit's client without changing any frontend file.
+CLIENT_KEY="$(git -C "$ROOT" show "$COMMIT:src-tauri/src/license_verify.rs" \
+    | sed -n '/DEFAULT_PUBKEY_HEX: &str = /{s/.*DEFAULT_PUBKEY_HEX: &str = "\([0-9a-f]*\)".*/\1/p;q;}')"
+[[ "$CLIENT_KEY" =~ ^[0-9a-f]{64}$ ]] || fail '无法读取该版本客户端内置的授权公钥'
+log '核对现有会员签名私钥、公钥和客户端公钥（不改写密钥）……'
+EXPECTED_LICENSE_PUBLIC_KEY_HEX="$CLIENT_KEY" node "$STAGE/server/scripts/verifyDeployment.mjs" "$SERVER_DIR"
+
+if pm2 describe "$APP" >/dev/null 2>&1; then HAD_PROCESS=1; fi
+mkdir -p "$ROOT/.server-backups"
+BACKUP="$(mktemp -d "$ROOT/.server-backups/server-XXXXXXXX")"
+mkdir -p "$BACKUP/server"
+log "切换服务端代码；原版备份：$BACKUP"
+PROMOTING=1
+for name in "${SERVER_ITEMS[@]}"; do
+    if [[ -e "$SERVER_DIR/$name" ]]; then
+        mv -- "$SERVER_DIR/$name" "$BACKUP/server/$name"
+    fi
+    if [[ -e "$STAGE/server/$name" ]]; then
+        mv -- "$STAGE/server/$name" "$SERVER_DIR/$name"
+    fi
+done
+if [[ -f "$ROOT/update.sh" ]]; then mv -- "$ROOT/update.sh" "$BACKUP/update.sh"; fi
+mv -- "$STAGE/update.sh" "$ROOT/update.sh"
+if [[ -f "$ROOT/.gitignore" ]]; then mv -- "$ROOT/.gitignore" "$BACKUP/.gitignore"; fi
+mv -- "$STAGE/.gitignore" "$ROOT/.gitignore"
+
+if [[ "$HAD_PROCESS" == 1 ]]; then
+    pm2 restart "$SERVER_DIR/ecosystem.config.cjs" --update-env
 else
-    echo -e "${YELLOW}   -> 未检测到 .git 仓库，跳过 git pull（采用本地现有代码编译）...${NC}"
+    pm2 start "$SERVER_DIR/ecosystem.config.cjs" --update-env
 fi
-
-echo -e "\n${BLUE}[2/4] 更新后端依赖包...${NC}"
-cd "$SERVER_DIR"
-
-if [ -f "package-lock.json" ]; then
-    npm install --prefer-offline --no-audit
-else
-    npm install --no-audit
-fi
-
-echo -e "\n${BLUE}[3/4] 重新构建编译生产代码 (tsc)...${NC}"
-node scripts/prepareDeployment.mjs
-npm run build
-echo -e "   -> 编译完成: ${GREEN}dist/ 输出就绪${NC}"
-
-echo -e "\n${BLUE}[4/4] 正在重载 PM2 服务...${NC}"
-# --update-env：ecosystem.config.cjs 的 JWT_SECRET/TRUST_PROXY 取自 process.env，
-# 不带该参数重启会沿用 PM2 缓存的旧环境，改了 .env 也不生效
-if pm2 describe steammaster-server &> /dev/null; then
-    pm2 restart ecosystem.config.cjs --update-env
-else
-    pm2 start ecosystem.config.cjs --update-env
-fi
-
-sleep 1
-HEALTH_CHECK=$(curl -fsS --retry 5 --retry-delay 2 --max-time 3 http://127.0.0.1:1257/api/health) || exit 1
-
-echo -e "\n${GREEN}${BOLD}"
-echo "======================================================================"
-echo "    🎉 SteamMaster 云端后端服务已成功从 Gitee 更新并热重载！"
-echo "======================================================================"
-echo -e "${NC}"
-
-echo -e "📌 ${BOLD}更新总结:${NC}"
-if [[ "$HEALTH_CHECK" =~ "online" ]] || [[ "$HEALTH_CHECK" =~ "true" ]] || [[ "$HEALTH_CHECK" =~ "ok" ]]; then
-    echo -e "   • 健康状态:    ${GREEN}● 正常在线 (HTTP 200 OK)${NC}"
-else
-    echo -e "   • 健康状态:    ${YELLOW}● 服务已启动，正在初始化索引${NC}"
-fi
-
-echo -e "   • PM2 进程名:  ${CYAN}steammaster-server${NC}"
-echo -e "   • 查看实时日志: ${CYAN}pm2 logs steammaster-server --lines 30${NC}"
-echo -e "======================================================================\n"
+HEALTH="$(curl -fsS --retry 5 --retry-delay 2 --max-time 3 "$HEALTH_URL")"
+printf '%s' "$HEALTH" | node -e 'let s="";process.stdin.on("data",x=>s+=x).on("end",()=>{try{process.exit(JSON.parse(s).status==="ok"?0:1)}catch{process.exit(1)}})' || fail '健康检查异常'
+DONE=1
+log "更新成功：$COMMIT；健康状态 ok；server/data 和 server/.env 未改动"
+log "旧版备份：$BACKUP"

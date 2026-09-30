@@ -130,7 +130,9 @@ try {
   });
   await check('R07: fresh deployment generates persistent secrets, migrates default credentials, reload is idempotent', () => {
     assert(read('server/docker-compose.yml').includes('env_file:'));
-    for (const file of ['install.sh', 'server/install.sh', 'update.sh', 'server/update.sh']) assert(read(file).includes('node scripts/prepareDeployment.mjs'));
+    for (const file of ['install.sh', 'server/install.sh']) assert(read(file).includes('node scripts/prepareDeployment.mjs'));
+    for (const file of ['update.sh', 'server/update.sh']) assert(!read(file).includes('node scripts/prepareDeployment.mjs'));
+    assert(read('server/update.sh').includes('verifyDeployment.mjs'));
     assert(read('server/ecosystem.config.cjs').includes('cwd: __dirname'));
     const sandbox = path.join(data, 'deployment', 'server');
     fs.mkdirSync(path.join(sandbox, 'scripts'), { recursive: true });

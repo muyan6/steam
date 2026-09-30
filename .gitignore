@@ -34,6 +34,8 @@ server/data/toolbox_logs.json
 server/data/dlc_index.json
 server/data/dlc_index.json.corrupt
 server/data/license_ed25519_*
+.server-update.*/
+.server-backups/
 server/data/manifests/*
 !server/data/manifests/.gitkeep
 
