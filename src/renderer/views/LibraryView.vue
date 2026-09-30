@@ -666,7 +666,7 @@ const handleSetVersionStrategy = async (appId: number, name: string, lock: boole
     emit('notify', lock ? `正在将「${name}」锁定到当前官方最新版本...` : `正在将「${name}」切换为跟随官方最新版...`, 'info');
     const res = await window.electronAPI.updateGame(appId, name, undefined, lock);
     if (res && res.success) {
-      emit('notify', res.message || '操作成功！', 'success');
+      emit('notify', res.message || '规则已更新', res.skippedDlcIds?.length || res.missingManifests ? 'warning' : 'success');
       delete updateStatuses[appId];
       await loadLibrary();
     } else {
@@ -771,9 +771,11 @@ const handleAppendDlc = async (appId: number) => {
 };
 
 let unlistenWatcher: UnlistenFn | null = null;
+let disposed = false;
 
 onMounted(async () => {
   await loadLibrary();
+  if (disposed) return;
   // 静默预检版本更新：仅在确有更新时提示，不打扰日常使用
   if (unlockedGames.value.length > 0) {
     handleCheckUpdates(true);
@@ -781,16 +783,20 @@ onMounted(async () => {
 
   // 监听 Rust 后台防抖目录变动事件（优化 2：规则变动秒级自动静默同步）
   try {
-    unlistenWatcher = await listen('lua-files-changed', () => {
+    const release = await listen('lua-files-changed', () => {
+      if (disposed) return;
       console.log('[LibraryView] 接收到规则目录变动通知，正在静默同步已入库列表...');
       loadLibrary();
     });
+    if (disposed) release(); else unlistenWatcher = release;
   } catch (e) {
     console.warn('[LibraryView] 注册 lua-files-changed 监听器失败:', e);
   }
 });
 
 onUnmounted(() => {
+  disposed = true;
+  loadRequestId++;
   if (unlistenWatcher) {
     unlistenWatcher();
     unlistenWatcher = null;

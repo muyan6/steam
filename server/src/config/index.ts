@@ -10,8 +10,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 function resolveDataDir(): string {
-  if (process.env.DATA_DIR && fs.existsSync(process.env.DATA_DIR)) {
-    return process.env.DATA_DIR;
+  if (process.env.DATA_DIR?.trim()) {
+    const configured = path.resolve(process.env.DATA_DIR.trim());
+    fs.mkdirSync(configured, { recursive: true });
+    if (!fs.statSync(configured).isDirectory()) throw new Error('DATA_DIR 必须是目录');
+    return configured;
   }
 
   // 1. dist/config/../../data => server/data
@@ -117,7 +120,13 @@ export const CONFIG = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || '',
   TRUST_PROXY: resolveTrustProxy(),
   // 未激活设备每日免费入库款数（按游戏计数，同一游戏含全部 DLC 只算 1 款，不重复计数）
-  FREE_DAILY_LIMIT: process.env.FREE_DAILY_LIMIT ? parseInt(process.env.FREE_DAILY_LIMIT, 10) || 2 : 2,
+  FREE_DAILY_LIMIT: (() => {
+    const raw = process.env.FREE_DAILY_LIMIT?.trim();
+    if (!raw) return 2;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 0 || value > 999) throw new Error('FREE_DAILY_LIMIT 需为 0~999 整数');
+    return value;
+  })(),
   // 邀请有礼：邀请成功后邀请人与被邀请人各得的赞助版天数（后台可随时调整）
   INVITE_REWARD_DAYS: process.env.INVITE_REWARD_DAYS ? parseInt(process.env.INVITE_REWARD_DAYS, 10) || 3 : 3
 };

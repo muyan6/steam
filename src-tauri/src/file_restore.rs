@@ -32,7 +32,7 @@ pub fn restore_appid_tree(root: &Path) -> Result<(), String> {
             let kind = entry.file_type().map_err(|e| format!("读取文件类型失败: {}", e))?;
             let name = entry.file_name().to_string_lossy().to_lowercase();
             if kind.is_dir() && !kind.is_symlink()
-                && !["_redist", "directx", "support", "redist", ".git", "node_modules"].contains(&name.as_str()) {
+                && !["_redist", "directx", "support", "redist", ".git", "node_modules", ".cfd_patch_backup"].contains(&name.as_str()) {
                 walk(&entry.path(), depth + 1)?;
             }
         }

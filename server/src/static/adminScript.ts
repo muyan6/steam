@@ -123,11 +123,20 @@ async function handleLoginSubmit() {
   }
 }
 
-function handleLogout() {
-  authToken = '';
-  authInitialized = false;
-  localStorage.removeItem('steammaster_admin_token');
-  checkAuth();
+async function handleLogout(remote = true) {
+  try {
+    if (!remote) return;
+    var response = await fetch('/api/auth/logout', { method: 'POST', headers: getHeaders() });
+    var result = await response.json();
+    if (!response.ok || !result.success) alert(result.message || '退出确认失败，请联系管理员检查服务');
+  } catch (e) {
+    alert('退出请求未获得服务端确认，请稍后检查账号会话');
+  } finally {
+    authToken = '';
+    authInitialized = false;
+    localStorage.removeItem('steammaster_admin_token');
+    checkAuth();
+  }
 }
 
 // ==================== 白天 / 黑夜模式切换 ====================
@@ -168,7 +177,7 @@ function switchTab(tabId, el) {
 async function loadStats() {
   try {
     var resp = await fetch('/api/admin/stats', { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     if (res && res.success) {
       var d = res.data;
@@ -182,7 +191,7 @@ async function loadStats() {
     }
 
     var devResp = await fetch('/api/admin/devices/stats', { headers: getHeaders() });
-    if (devResp.status === 401) { handleLogout(); return; }
+    if (devResp.status === 401) { handleLogout(false); return; }
     var devRes = await devResp.json();
     if (devRes && devRes.success && devRes.data) {
       var ds = devRes.data;
@@ -226,7 +235,7 @@ async function loadLicensesData(page) {
   try {
     var url = '/api/admin/license/list?page=' + currentLicPage + '&limit=20&search=' + q + '&type=' + t + '&status=' + s;
     var resp = await fetch(url, { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     if (res && res.success && res.data) {
       var d = res.data;
@@ -516,7 +525,7 @@ async function loadDevicesData(page) {
   try {
     var url = '/api/admin/devices/list?page=' + currentDevPage + '&limit=20&search=' + q + '&status=' + s;
     var resp = await fetch(url, { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     if (res && res.success && res.data) {
       var d = res.data;
@@ -627,7 +636,7 @@ function changeDevicePage(delta) {
 async function loadNotices() {
   try {
     var resp = await fetch('/api/admin/notices', { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     var tbody = document.getElementById('noticeTableBody');
     if (res && res.success && tbody) {
@@ -658,7 +667,7 @@ async function loadNotices() {
 async function loadVersions() {
   try {
     var resp = await fetch('/api/admin/versions', { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     var tbody = document.getElementById('versionTableBody');
     if (res && res.success && tbody) {
@@ -684,7 +693,7 @@ async function loadVersions() {
 async function loadSources() {
   try {
     var resp = await fetch('/api/sources', { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     var grid = document.getElementById('sourcesGrid');
     if (res && res.success && grid) {
@@ -732,7 +741,7 @@ async function pingManifestSources() {
 
   try {
     var resp = await fetch('/api/admin/manifests/sources?type=ping', { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var json = await resp.json();
     if (!json || !json.success) {
       out.innerHTML = '<div style="color:var(--c-rose);font-size:12px;">连通测试失败：' + escapeHtml((json && json.message) || '未知错误') + '</div>';
@@ -814,7 +823,7 @@ async function checkManifestSources() {
 
   try {
     var resp = await fetch(url, { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var json = await resp.json();
     if (!json || !json.success) {
       out.innerHTML = '<div style="color:var(--c-rose);font-size:12px;">体检失败：' + escapeHtml((json && json.message) || '未知错误') + '</div>';
@@ -880,7 +889,7 @@ async function checkManifestSources() {
 async function loadAuditLogs() {
   try {
     var resp = await fetch('/api/auth/audit-logs', { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     var tbody = document.getElementById('auditTableBody');
     if (res && res.success && tbody) {
@@ -909,7 +918,7 @@ async function loadAuditLogs() {
 async function loadAdminSettings() {
   try {
     var resp = await fetch('/api/admin/settings', { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     if (res && res.success && res.data) {
       var links = res.data.links || {};
@@ -1051,7 +1060,7 @@ async function loadInviteData(page) {
   if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px;">正在载入邀请记录...</td></tr>';
   try {
     var resp = await fetch('/api/admin/invite/overview?page=' + currentInvitePage + '&limit=20&search=' + q, { headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     if (!res || !res.success || !res.data) return;
     var d = res.data;
@@ -1321,7 +1330,7 @@ async function handlePushSubmit() {
 async function toggleNotice(id, enable) {
   try {
     var resp = await fetch('/api/admin/notices/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ enabled: enable }) });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     if (res && res.success) {
       loadNotices();
@@ -1335,7 +1344,7 @@ async function deleteNotice(id) {
   if (!confirm('确定删除此公告？')) return;
   try {
     var resp = await fetch('/api/admin/notices/' + encodeURIComponent(id), { method: 'DELETE', headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     if (res && res.success) {
       loadNotices();
@@ -1349,7 +1358,7 @@ async function deleteVersion(ver) {
   if (!confirm('确定删除版本 v' + ver + ' 记录？')) return;
   try {
     var resp = await fetch('/api/admin/versions/' + encodeURIComponent(ver), { method: 'DELETE', headers: getHeaders() });
-    if (resp.status === 401) { handleLogout(); return; }
+    if (resp.status === 401) { handleLogout(false); return; }
     var res = await resp.json();
     if (res && res.success) {
       loadVersions();

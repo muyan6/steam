@@ -1,7 +1,9 @@
+import { compareVersions as compareSemver, isRetiredVersion } from '../../../server/src/utils/version';
 import { invoke } from '@tauri-apps/api/core';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
 import type {
   SteamGame,
+  UnlockGameResult,
   SteamEnvironmentInfo,
   ToolboxActionResult,
   LocalGamesScanResult,
@@ -87,41 +89,8 @@ export async function getText(url: string, timeoutMs = 8000, headers?: Record<st
   }
 }
 
-/** 历史误发布的退役客户端版本（对应服务端 utils/version.ts 的 RETIRED_VERSIONS） */
-const RETIRED_CLIENT_VERSIONS = new Set<string>(['5.6.0']);
-
-/** 是否为历史误发布、应无条件拉回正式序列的退役版本 */
-export function isRetiredVersion(v: string): boolean {
-  return RETIRED_CLIENT_VERSIONS.has((v || '').replace(/^v/i, '').trim());
-}
-
-/**
- * 语义化版本号比较：v1 > v2 返回 1，v1 < v2 返回 -1，相等返回 0。
- * 仅将显式登记的退役版本（历史误发布的 5.6.0）视为早于任何正式版本，
- * 不再粗暴地把整个 5.x 主版本判为旧版。
- */
-export function compareSemver(v1: string, v2: string): number {
-  const clean1 = (v1 || '0').replace(/^v/i, '').trim();
-  const clean2 = (v2 || '0').replace(/^v/i, '').trim();
-
-  const retired1 = RETIRED_CLIENT_VERSIONS.has(clean1);
-  const retired2 = RETIRED_CLIENT_VERSIONS.has(clean2);
-  if (retired1 !== retired2) {
-    return retired1 ? -1 : 1;
-  }
-
-  const parts1 = clean1.split('.').map((n) => parseInt(n, 10) || 0);
-  const parts2 = clean2.split('.').map((n) => parseInt(n, 10) || 0);
-  const len = Math.max(parts1.length, parts2.length);
-
-  for (let i = 0; i < len; i++) {
-    const p1 = parts1[i] || 0;
-    const p2 = parts2[i] || 0;
-    if (p1 > p2) return 1;
-    if (p1 < p2) return -1;
-  }
-  return 0;
-}
+// 与服务端共用纯函数，预发布与退役版本的语义保持一致。
+export { compareVersions as compareSemver, isRetiredVersion } from '../../../server/src/utils/version';
 
 /** 网络 POST 请求统一走 Tauri Rust 通道（无 CORS 限制）；失败返回 null */
 export async function postJson<T = any>(url: string, body?: any, timeoutMs = 8000): Promise<T | null> {
@@ -734,7 +703,7 @@ export const createTauriBridge = () => {
         customApiUrl: options?.customApiUrl,
         restartSteam: options?.restartSteam ?? true
       }),
-    unlockGame: async (game: SteamGame, explicitLockVersion?: boolean): Promise<{ success: boolean; message: string; scriptPath?: string; keyCount?: number; manifestCount?: number; warmedCodes?: number; metadataOk?: boolean; metadataMessage?: string | null }> => {
+    unlockGame: async (game: SteamGame, explicitLockVersion?: boolean): Promise<UnlockGameResult> => {
       const depots = game.depots ? Object.entries(game.depots).map(([k, v]) => ({
         depotId: parseInt(k, 10),
         depotKey: v
@@ -777,7 +746,7 @@ export const createTauriBridge = () => {
       invoke<any[]>('check_game_updates', { appIds }),
     // 版本策略切换：lockVersion=true 锁定到当前官方最新 GID（联机对版本）；
     // false 重写为"跟随官方最新版"规则（不写 setManifestid），此后自动跟进官方更新
-    updateGame: async (appId: number, name: string, nameZh?: string, lockVersion?: boolean): Promise<{ success: boolean; message: string; keyCount?: number }> =>
+    updateGame: async (appId: number, name: string, nameZh?: string, lockVersion?: boolean): Promise<UnlockGameResult> =>
       invoke('update_game_rules', { appId, name, nameZh: nameZh || name, lockVersion: lockVersion ?? false }),
 
       // 搜索服务：多数据源（云端/官方/聚合/本地）
@@ -996,7 +965,8 @@ export const createTauriBridge = () => {
 
         if (isRetired || isClientLower) {
           data.hasUpdate = true;
-          data.forceUpdate = Boolean(data.latest.forceUpdate || isRetired);
+          data.forceUpdate = Boolean(data.forceUpdate || data.latest.forceUpdate || isRetired ||
+            (data.latest.minSupportedVersion && compareSemver(data.latest.minSupportedVersion, current) > 0));
         } else {
           data.hasUpdate = false;
           data.forceUpdate = false;
@@ -1099,17 +1069,9 @@ export const createTauriBridge = () => {
       }
 
       // 按语义化版本降序排列，确保 v2.7.0 永远在首位
-      const result = Array.from(logMap.values()).map(sanitizeChangelogItem).sort((a, b) => {
-        const parseVer = (v: string) => (v || '0').replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
-        const pA = parseVer(a.version);
-        const pB = parseVer(b.version);
-        for (let i = 0; i < Math.max(pA.length, pB.length); i++) {
-          const numA = pA[i] || 0;
-          const numB = pB[i] || 0;
-          if (numB !== numA) return numB - numA;
-        }
-        return (b.releaseDate || '').localeCompare(a.releaseDate || '');
-      });
+      const result = Array.from(logMap.values()).map(sanitizeChangelogItem).sort((a, b) =>
+        compareSemver(b.version, a.version) || (b.releaseDate || '').localeCompare(a.releaseDate || '')
+      );
 
       try {
         localStorage.setItem('cfd_changelogs_cache', JSON.stringify(result));

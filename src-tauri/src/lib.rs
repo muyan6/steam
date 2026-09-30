@@ -1,4 +1,6 @@
 pub mod file_restore;
+pub mod scan_cache;
+pub mod content_selection;
 pub mod steam;
 pub mod ost;
 pub mod device;
@@ -34,10 +36,10 @@ use crate::toolbox::ToolboxActionResult;
 pub fn open_url_cmd(url: &str) -> Result<(), String> {
     // 协议白名单：拒绝 file:// / ms-msdt: / search-ms: 等曾被滥用的
     // handler，防止 webview 内的注入内容借此逃逸执行
-    const ALLOWED_PREFIXES: [&str; 3] = ["steam://", "http://", "https://"];
+    const ALLOWED_PREFIXES: [&str; 4] = ["steam://", "http://", "https://", "tencent://"];
     let lowered = url.to_ascii_lowercase();
     if !ALLOWED_PREFIXES.iter().any(|p| lowered.starts_with(p)) {
-        return Err(format!("不支持的链接协议，仅允许 steam:// 或 http(s)://: {}", url));
+        return Err(format!("不支持的链接协议，仅允许 steam://、tencent:// 或 http(s)://: {}", url));
     }
     // AppHandle::current() 仅在命令/事件回调线程中可用；此处通过全局句柄兜底
     match APP_HANDLE.get() {
@@ -318,6 +320,7 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
                             }
                         }
                         Err(panic) => {
+                            missing_manifests = true;
                             let msg = manifests::panic_message(&panic);
                             manifests::log_diag(&format!("precache 整体 panic: {}", msg));
                             precache_text = "，清单预缓存异常（可在库中重试预缓存）".to_string();
@@ -327,64 +330,22 @@ fn execute_unlock(steam_path: &std::path::PathBuf, payload: UnlockGamePayload) -
             }
             let name = payload.name_zh.clone().unwrap_or_else(|| payload.name.clone());
 
-            // 只有真正注入了分包密钥才提示"可直接下载"；
-            // 仅有清单 GID（如 SteamCMD 降级数据）时如实警告下载可能 0 字节
-            let message = if res.metadata_ok && res.key_count > 0 {
-                let version_text = if lock_mode && res.manifest_count > 0 {
-                    format!("已锁定 {} 条清单 GID", res.manifest_count)
-                } else {
-                    "版本跟随官方最新".to_string()
-                };
-                if !lock_mode {
-                    // 官方清单优先：清单由 Steam 动态获取，无需任何本地实体文件。
-                    // warmed_codes > 0 说明清单请求码已随规则预置，首次点击下载时
-                    // 取码零网络往返（此前首次必报「无网络」、第二次才正常的根因）。
-                    let code_text = if res.warmed_codes > 0 {
-                        format!("已预置 {} 个分包的清单请求码，首次点击下载即可直接开始", res.warmed_codes)
-                    } else {
-                        "清单请求码将在首次下载时按需获取".to_string()
-                    };
-                    format!(
-                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC，{}）！清单由 Steam 动态获取官方最新版本，天然支持实时更新与创意工坊；若下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
-                        name, res.key_count, version_text, res.dlc_count, code_text
-                    )
-                } else if precache_ok_count > 0 && precache_ok_count == precache_total {
-                    format!(
-                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！若 Steam 下载提示内容处于加密状态，点击左下角【重启 Steam】即可生效！",
-                        name, res.key_count, version_text, res.dlc_count, precache_text
-                    )
-                } else if precache_ok_count > 0 {
-                    format!(
-                        "为「{}」写入入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC{}）！【提示】部分扩展分包清单未收录，核心内容已就绪；若 Steam 提示加密，点击左下角【重启 Steam】即可生效！",
-                        name, res.key_count, version_text, res.dlc_count, precache_text
-                    )
-                } else {
-                    format!(
-                        "成功为「{}」写入标准入库规则（已注入 {} 个分包密钥、{}，含 {} 个 DLC）！【提示】云端物理清单库暂未收录该版本离线清单实体，若 Steam 提示缺少清单，可尝试直接在 Steam 点击下载（由动态清单调度），或通过群文件/第三方将清单导入 depotcache 文件夹。",
-                        name, res.key_count, version_text, res.dlc_count
-                    )
-                }
-            } else if res.metadata_ok && res.manifest_count > 0 {
-                format!(
-                    "【入库受限】已为「{}」写入基础规则（已同步 {} 条清单 GID，但服务端与社区暂无可用分包密钥{}），Steam 直接下载可能为 0 字节或提示内容加密！建议等待社区收录密钥后重新入库。",
-                    name, res.manifest_count, precache_text
-                )
-            } else if res.metadata_ok {
-                format!(
-                    "【入库受限】已为「{}」写入基础授权（服务器与社区暂无该游戏的密钥/清单数据，共 {} 个分包{}），暂无法正常解密下载。建议稍后重试入库。",
-                    name, res.depot_count, precache_text
-                )
-            } else {
-                format!(
-                    "【入库受限】已为「{}」写入本地规则（离线模式），未获取到云端密钥与清单数据。若下载提示无许可，请联网后重试入库！",
-                    name
-                )
+            let skipped_text = if res.skipped_dlc_ids.is_empty() { String::new() } else {
+                format!(" 已跳过 {} 个缺少当前平台密钥或归属未确认的 DLC：{}。", res.skipped_dlc_ids.len(),
+                    res.skipped_dlc_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", "))
             };
+            let message = format!(
+                "已为「{}」写入规则（{} 个选定密钥，{} 个可用 DLC{}）。{} 此结果仅确认规则写入，尚未验证 Steam 实际下载；重启也不会补齐缺失密钥。",
+                name, res.key_count, res.dlc_count, precache_text, skipped_text
+            );
             json!({
                 "success": true,
                 "message": message,
                 "scriptPath": res.lua_path.to_string_lossy(),
                 "keyCount": res.key_count,
+                "contentReady": true,
+                "downloadVerified": false,
+                "skippedDlcIds": res.skipped_dlc_ids,
                 "manifestCount": res.manifest_count,
                 "warmedCodes": res.warmed_codes,
                 "metadataOk": res.metadata_ok,
@@ -449,18 +410,9 @@ async fn update_game_rules(
         };
         let mut res = execute_unlock(&steam_path, payload);
         if res.get("success").and_then(|v| v.as_bool()) == Some(true) {
-            let key_count = res.get("keyCount").and_then(|v| v.as_i64()).unwrap_or(0);
-            res["message"] = json!(if lock {
-                format!(
-                    "已将「{}」锁定到当前官方最新版本（{} 个分包密钥）！官方出新版本后不会自动跟进，需再次执行更新；联机对完版本后建议切回「跟随最新」。",
-                    name_display, key_count
-                )
-            } else {
-                format!(
-                    "「{}」已切换为跟随官方最新版（{} 个分包密钥）！以后每次下载都会自动获取官方最新清单，无须任何手动更新。",
-                    name_display, key_count
-                )
-            });
+            let detail = res.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let strategy = if lock { "固定当前清单版本" } else { "跟随官方清单版本" };
+            res["message"] = json!(format!("「{}」版本策略已设置为{}。{}", name_display, strategy, detail));
         }
         res
     })
@@ -2121,4 +2073,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

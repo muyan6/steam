@@ -409,7 +409,7 @@
           </div>
           <div class="min-w-0 flex-1">
             <h3 class="text-sm font-bold text-slate-100">
-              {{ unlockResult.level === 'success' ? '入库完成' : unlockResult.level === 'warning' ? '入库受限（暂缺密钥）' : '入库未成功' }}
+              {{ unlockResult.level === 'success' ? '规则已写入' : unlockResult.level === 'warning' ? '入库提醒（部分内容受限）' : '入库未成功' }}
             </h3>
             <p class="text-xs text-slate-400 leading-relaxed mt-1 whitespace-pre-line break-words">{{ unlockResult.message }}</p>
           </div>

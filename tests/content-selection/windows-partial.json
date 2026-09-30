@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "platform": "windows",
+  "baseReady": true,
+  "eligibleDlcIds": ["990300", "990400"],
+  "skippedDlcIds": ["990200", "990500"],
+  "missingBaseDepotIds": [],
+  "selectedDepotIds": ["990101", "990400"],
+  "dlcDepotIds": { "990300": [], "990400": ["990400"] }
+}

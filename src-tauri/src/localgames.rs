@@ -514,23 +514,9 @@ pub fn restore_original_game(dir_path: &Path) -> Result<String, String> {
     for f in ["OnlineFix.ini", "OnlineFix64.dll", "OnlineFix.url", "Launch_Online_Fix.bat"] {
         let _ = fs::remove_file(dir_path.join(f));
     }
-    // steam_appid.txt：仅当内容是本工具 Spacewar 模式写入的 480 时才删除，
-    // 避免误删游戏自带或用户自建的同名文件
-    let appid_file = dir_path.join("steam_appid.txt");
-    if appid_file.exists() {
-        if fs::read_to_string(&appid_file).map(|c| c.trim() == "480").unwrap_or(false) {
-            let _ = fs::remove_file(&appid_file);
-        }
-    }
-    // Spacewar 启动前备份的 steam_appid.txt.cfd_bak 还原并清理，避免残留
-    let appid_bak = dir_path.join("steam_appid.txt.cfd_bak");
-    if appid_bak.exists() {
-        match fs::copy(&appid_bak, &appid_file) {
-            Ok(_) => {
-                let _ = fs::remove_file(&appid_bak);
-            }
-            Err(e) => failed.push(format!("steam_appid.txt.cfd_bak（{}）", e)),
-        }
+    // 与启动前清理共用递归恢复；复制失败必须保留备份并明确报告。
+    if let Err(e) = crate::file_restore::restore_appid_tree(dir_path) {
+        failed.push(e);
     }
     // steam_settings：**只**在带有本工具写入的归属标记时才整体删除，
     // 保留用户自建的 Goldberg 配置。
@@ -613,6 +599,7 @@ const SKIP_APP_IDS: [u32; 5] = [228980, 1070560, 1391110, 1628350, 223750];
 /// 扫描结果缓存：内存 TTL 内重复请求（切换页面/再次进入联机中心）直接复用；
 /// 磁盘缓存让应用重启后无需重扫即可秒开列表，超过 24h 由前端判定为陈旧并后台静默重扫
 struct ScanCacheEntry {
+    steam_path: String,
     games: std::sync::Arc<Vec<LocalInstalledGame>>,
     at: Instant,
     at_ms: u64,
@@ -625,6 +612,8 @@ pub const SCAN_STALE_MS: u64 = 24 * 60 * 60 * 1000;
 
 #[derive(Serialize, Deserialize)]
 struct DiskScanCache {
+    #[serde(default)]
+    steam_path: String,
     scanned_at_ms: u64,
     games: Vec<LocalInstalledGame>,
 }
@@ -652,11 +641,12 @@ pub fn scan_installed_games_cached(
     force: bool,
     cache_path: Option<&Path>,
 ) -> CachedScan {
+    let path_key = crate::scan_cache::path_key(steam_path);
     if !force {
         // 一级：进程内存缓存（60s），挡住同会话内的高频重复请求
         if let Ok(guard) = SCAN_CACHE.lock() {
             if let Some(entry) = guard.as_ref() {
-                if entry.at.elapsed() < SCAN_CACHE_TTL {
+                if entry.steam_path == path_key && entry.at.elapsed() < SCAN_CACHE_TTL {
                     return CachedScan { games: entry.games.clone(), scanned_at_ms: entry.at_ms, from_cache: true };
                 }
             }
@@ -666,10 +656,10 @@ pub fn scan_installed_games_cached(
             if let Ok(text) = fs::read_to_string(cp) {
                 if let Ok(c) = serde_json::from_str::<DiskScanCache>(&text) {
                     // 空列表不入缓存也不读缓存：Steam 路径异常时的空扫描不允许污染缓存
-                    if c.scanned_at_ms > 0 && !c.games.is_empty() {
+                    if c.steam_path == path_key && c.scanned_at_ms > 0 && !c.games.is_empty() {
                         let games = std::sync::Arc::new(c.games);
                         if let Ok(mut guard) = SCAN_CACHE.lock() {
-                            *guard = Some(ScanCacheEntry { games: games.clone(), at: Instant::now(), at_ms: c.scanned_at_ms });
+                            *guard = Some(ScanCacheEntry { steam_path: path_key.clone(), games: games.clone(), at: Instant::now(), at_ms: c.scanned_at_ms });
                         }
                         return CachedScan { games, scanned_at_ms: c.scanned_at_ms, from_cache: true };
                     }
@@ -680,11 +670,11 @@ pub fn scan_installed_games_cached(
     let games = std::sync::Arc::new(scan_installed_games(steam_path));
     let now = now_ms();
     if let Ok(mut guard) = SCAN_CACHE.lock() {
-        *guard = Some(ScanCacheEntry { games: games.clone(), at: Instant::now(), at_ms: now });
+        *guard = Some(ScanCacheEntry { steam_path: path_key.clone(), games: games.clone(), at: Instant::now(), at_ms: now });
     }
     if let Some(cp) = cache_path {
         if !games.is_empty() {
-            let cache = DiskScanCache { scanned_at_ms: now, games: (*games).clone() };
+            let cache = DiskScanCache { steam_path: path_key, scanned_at_ms: now, games: (*games).clone() };
             if let Ok(text) = serde_json::to_string(&cache) {
                 // 临时文件 + 原子替换，避免写一半被进程退出截断成损坏 JSON
                 let tmp = cp.with_extension("json.tmp");

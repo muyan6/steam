@@ -8,3 +8,9 @@ pub mod rule_cleanup;
 
 #[path = "../../../src-tauri/src/file_restore.rs"]
 pub mod file_restore;
+#[path = "../../../src-tauri/src/scan_cache.rs"]
+pub mod scan_cache;
+#[path = "../../../src-tauri/src/dict_parser.rs"]
+pub mod dict_parser;
+#[path = "../../../src-tauri/src/content_selection.rs"]
+pub mod content_selection;

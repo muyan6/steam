@@ -52,7 +52,7 @@ pub fn parse_binary_dict(data: &[u8]) -> Vec<DictEntry> {
     }
     let count = u32::from_le_bytes([data[5], data[6], data[7], data[8]]) as usize;
     // 条目数做上限防御，防止损坏文件触发巨型预分配
-    if count > 4_000_000 {
+    if count > 4_000_000 || count > (data.len() - 9) / 5 {
         return Vec::new();
     }
     let mut out: Vec<DictEntry> = Vec::with_capacity(count);
@@ -82,7 +82,8 @@ pub fn parse_binary_dict(data: &[u8]) -> Vec<DictEntry> {
                 return Vec::new();
             }
         }
-        let app_id = prev.wrapping_add(delta as u32);
+        if delta == 0 || delta > u32::MAX as u64 { return Vec::new(); }
+        let Some(app_id) = prev.checked_add(delta as u32) else { return Vec::new(); };
         prev = app_id;
 
         // u16 LE 原名长度 + UTF-8 字节
@@ -94,7 +95,8 @@ pub fn parse_binary_dict(data: &[u8]) -> Vec<DictEntry> {
         if pos + name_len > data.len() {
             return Vec::new();
         }
-        let name = String::from_utf8_lossy(&data[pos..pos + name_len]).into_owned();
+        let Ok(name) = std::str::from_utf8(&data[pos..pos + name_len]) else { return Vec::new(); };
+        let name = name.to_owned();
         pos += name_len;
 
         // u16 LE 中文名长度 + UTF-8 字节（可为 0 长）
@@ -106,11 +108,13 @@ pub fn parse_binary_dict(data: &[u8]) -> Vec<DictEntry> {
         if pos + zh_len > data.len() {
             return Vec::new();
         }
-        let name_zh = String::from_utf8_lossy(&data[pos..pos + zh_len]).into_owned();
+        let Ok(name_zh) = std::str::from_utf8(&data[pos..pos + zh_len]) else { return Vec::new(); };
+        let name_zh = name_zh.to_owned();
         pos += zh_len;
 
         out.push(DictEntry::new(app_id, name, name_zh));
     }
+    if pos != data.len() { return Vec::new(); }
     out
 }
 

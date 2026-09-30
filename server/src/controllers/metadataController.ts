@@ -1,3 +1,4 @@
+import { applyContentSelection, validContentKey, type ContentSelection } from '../utils/contentSelection.js';
 import { Request, Response } from 'express';
 import axios from 'axios';
 import https from 'https';
@@ -312,9 +313,9 @@ async function fetchManifestHub3(appId: number): Promise<ManifestHub3Data | null
 interface CachedMetadata {
   appId: number;
   name: string;
-  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean }>;
+  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean; osList?: string; requiresKey?: boolean }>;
   dlcIds: string[];
-  dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean } }>;
+  dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean; osList?: string; requiresKey?: boolean } }>;
   appLevelKey?: string;
   accessToken?: string;
   /** 是否包含社区对齐后的清单 GID（仅 needGid=true 的完整链路为 true） */
@@ -357,13 +358,13 @@ const DLC_BACKFILL_CONCURRENCY = 4;
 
 /**
  * 从某个 App（主游戏或 DLC）的 SteamCMD 数据里提取"内容分包"。
- * 过滤与主游戏同口径：共享再发行组件 / 占位空分包 / 非数字键 / redist 等。
+ * 过滤与主游戏同口径：共享再发行组件 / 非数字键 / redist 等；零字节清单不作为删除依据。
  */
 function extractContentDepots(
   appRaw: any,
   needGid: boolean
-): Array<{ depotId: string; manifestGid?: string }> {
-  const out: Array<{ depotId: string; manifestGid?: string }> = [];
+): Array<{ depotId: string; manifestGid?: string; osList?: string; requiresKey?: boolean }> {
+  const out: Array<{ depotId: string; manifestGid?: string; osList?: string; requiresKey?: boolean }> = [];
   const depotsData = appRaw?.depots;
   if (!depotsData || typeof depotsData !== 'object') return out;
   const skipPatterns = ['config', 'sharedinstall', 'shareddepot', 'redist'];
@@ -372,7 +373,7 @@ function extractContentDepots(
     if (!info || typeof info !== 'object') continue;
     if ((info as any).sharedinstall === '1' || (info as any).depotfromapp) continue;
     const pub = (info as any).manifests?.public;
-    if (pub && pub.download === '0' && pub.size === '0') continue;
+    // 0 字节但带 GID 的清单仍可能要求密钥，不能从归属列表删除。
     const name = ((info as any).name || '').toString().toLowerCase();
     if (skipPatterns.some((p) => name.includes(p))) continue;
     let gid: string | undefined;
@@ -383,7 +384,9 @@ function extractContentDepots(
         branchEntries.find(([, v]) => v && v.gid);
       if (chosen && chosen[1].gid) gid = chosen[1].gid.toString();
     }
-    out.push({ depotId: dId, manifestGid: gid });
+    out.push({ depotId: dId, manifestGid: gid,
+      osList: typeof (info as any).config?.oslist === 'string' ? (info as any).config.oslist : undefined,
+      requiresKey: !!(info as any).manifests || !!(info as any).encryptedmanifests });
   }
   return out;
 }
@@ -395,7 +398,7 @@ function extractContentDepots(
 async function backfillDlcContentDepots(
   dlcIds: string[],
   dlcDepotMap: Map<string, Set<string>>,
-  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean }>,
+  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean; osList?: string; requiresKey?: boolean }>,
   needGid: boolean
 ): Promise<void> {
   const now = Date.now();
@@ -444,7 +447,7 @@ async function backfillDlcContentDepots(
           known.add(cd.depotId);
           // 密钥留空，由后续"内存密钥库高精度匹配"步骤补；补不到则被标记 keyMissing，
           // 客户端会跳过该分包（宁缺此 DLC，也不让无密钥分包拖垮整局下载）
-          depots.push({ depotId: cd.depotId, depotKey: undefined, manifestGid: cd.manifestGid });
+          depots.push({ ...cd, depotKey: undefined });
         } else if (cd.manifestGid) {
           const ex = depots.find((x) => x.depotId === cd.depotId);
           if (ex && !ex.manifestGid) ex.manifestGid = cd.manifestGid;
@@ -529,13 +532,14 @@ function computeManifestInfo(
 
 /** 元数据响应体的结构（检视投影与完整响应共用） */
 interface MetadataPayloadLike {
+  contentSelection?: ContentSelection;
   appId: number;
   name: string;
-  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean }>;
+  depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean; osList?: string; requiresKey?: boolean }>;
   dlcIds: string[];
   dlcDepots: Array<{
     dlcAppId: string;
-    depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean };
+    depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean; osList?: string; requiresKey?: boolean };
   }>;
   appLevelKey?: string;
   accessToken?: string;
@@ -560,7 +564,7 @@ function projectInspectionPayload(payload: MetadataPayloadLike) {
       depotId: d.depotId,
       manifestGid: d.manifestGid,
       size: d.size,
-      keyMissing: d.keyMissing
+      keyMissing: d.keyMissing, osList: d.osList, requiresKey: d.requiresKey
     })),
     dlcIds: [...payload.dlcIds],
     dlcDepots: payload.dlcDepots.map((x) => ({
@@ -568,12 +572,13 @@ function projectInspectionPayload(payload: MetadataPayloadLike) {
       depot: {
         depotId: x.depot.depotId,
         manifestGid: x.depot.manifestGid,
-        keyMissing: x.depot.keyMissing
+        keyMissing: x.depot.keyMissing, osList: x.depot.osList, requiresKey: x.depot.requiresKey
       }
     })),
     // 显式置空而非省略：让调用方能明确区分「检视模式无密钥」与「该游戏本来就没有密钥」
     appLevelKey: undefined,
     accessToken: undefined,
+    contentSelection: payload.contentSelection,
     manifestInfo: payload.manifestInfo
   };
 }
@@ -644,14 +649,14 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       };
       return res.json({
         success: true,
-        data: inspect ? projectInspectionPayload(cachedPayload) : cachedPayload
+        data: inspect ? projectInspectionPayload(applyContentSelection(cachedPayload)) : applyContentSelection(cachedPayload)
       });
     }
 
     let gameName = hintName;
     let dlcIds: string[] = [];
-    let depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean }> = [];
-    let dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean } }> = [];
+    let depots: Array<{ depotId: string; depotKey?: string; manifestGid?: string; size?: number; keyMissing?: boolean; osList?: string; requiresKey?: boolean }> = [];
+    let dlcDepots: Array<{ dlcAppId: string; depot: { depotId: string; depotKey?: string; manifestGid?: string; keyMissing?: boolean; osList?: string; requiresKey?: boolean } }> = [];
     // SteamCMD 分包元数据的 dlcappid 是权威的「DLC → 分包」关联，
     // 先记录映射，待分包密钥/GID 全部补全后再生成 dlcDepots
     const dlcDepotMap = new Map<string, Set<string>>();
@@ -670,7 +675,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
     let authoritativeDepotSource = false;
 
     // 1. 检查预设热门游戏库
-    const isValidKey = (k?: string) => Boolean(k && k.length >= 32 && !/^0+$/.test(k));
+    const isValidKey = validContentKey;
 
     // 元数据链路不需要头图：跳过 Store API 图片查询，避免白等 4 秒超时
     const preset = await gameService.getGameByAppId(appId, { skipRemoteHeader: true });
@@ -724,7 +729,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
       const known = new Set(depots.map((d) => d.depotId));
       for (const d of indexEntry.depots) {
         if (known.has(d.depotId)) continue;
-        depots.push({ depotId: d.depotId, depotKey: d.depotKey });
+        depots.push({ ...d });
         known.add(d.depotId);
       }
       // 索引里的分包是首次采集时从 SteamCMD 落盘的，同样属权威归属
@@ -816,10 +821,10 @@ export const getGameMetadata = async (req: Request, res: Response) => {
               dlcIds.push(associatedDlc);
             }
 
-            // 过滤非内容分包：共享再发行组件（DirectX / VC++ 等）、0 字节虚拟占位分包
+            // 过滤非内容分包：共享再发行组件（DirectX / VC++ 等）；带 GID 的零字节分包仍保留
             if ((info as any).sharedinstall === '1' || (info as any).depotfromapp) continue;
             const pubManifest = (info as any).manifests?.public;
-            if (pubManifest && pubManifest.download === '0' && pubManifest.size === '0') continue;
+            // 保留 0 字节但有清单的分包；Steam 仍会初始化并请求其密钥。
 
             const name = ((info as any).name || '').toString().toLowerCase();
             if (skipPatterns.some((p) => name.includes(p))) continue;
@@ -842,12 +847,17 @@ export const getGameMetadata = async (req: Request, res: Response) => {
               }
             }
 
+            const platformFields = {
+              osList: typeof (info as any).config?.oslist === 'string' ? (info as any).config.oslist : undefined,
+              requiresKey: !!(info as any).manifests || !!(info as any).encryptedmanifests
+            };
             const existing = depots.find((d) => d.depotId === dId);
             if (existing) {
+              Object.assign(existing, platformFields);
               if (manifestGid && !existing.manifestGid) existing.manifestGid = manifestGid;
               if (depotKey && (!existing.depotKey || !isValidKey(existing.depotKey))) existing.depotKey = depotKey;
             } else {
-              depots.push({ depotId: dId, manifestGid, depotKey: depotKey || undefined });
+              depots.push({ depotId: dId, manifestGid, depotKey: depotKey || undefined, ...platformFields });
             }
             steamCmdDepotAccepted++;
             // 记录权威 DLC→分包关联（仅记入实际保留的内容分包）
@@ -894,7 +904,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
             dlcIds: dlcIds.filter((d) => d !== sAppId),
             dlcDepots: dlcDepotRecord,
             // 只存 depotId 与密钥：manifestGid 随官方更新变化，绝不入索引
-            depots: depots.map((d) => ({ depotId: d.depotId, depotKey: d.depotKey }))
+            depots: depots.map((d) => ({ depotId: d.depotId, depotKey: d.depotKey, osList: d.osList, requiresKey: d.requiresKey }))
           });
         } catch (e) {
           console.warn(`[MetadataController] 写入 DLC 索引失败 (${appId}):`, (e as Error).message);
@@ -1039,44 +1049,13 @@ export const getGameMetadata = async (req: Request, res: Response) => {
         if (d) {
           dlcDepots.push({
             dlcAppId,
-            depot: { depotId: d.depotId, depotKey: d.depotKey, manifestGid: d.manifestGid, keyMissing: d.keyMissing }
+            depot: { ...d }
           });
         }
       }
     }
 
-    // 6.5 安全网：剔除"有内容分包但全部无解密密钥"的 DLC。
-    //
-    // 为什么必须剔除：客户端会把 dlcIds 里每一项都 `addappid(id)` 挂载。若该 DLC
-    // 有真实内容分包而密钥缺失，Steam 会去下载它的内容却解不开 —— 整局游戏报
-    // 「内容仍然处于加密状态」且下载队列卡死（多款 DLC 同时无密钥时更严重）。
-    // 剔除后该 DLC 不会被标记拥有，Steam 自然不去下载它，主游戏恢复正常；
-    // 代价仅是这一个 DLC 不可用 —— 比整局游戏下不动小得多。
-    // 注意：无任何内容分包记录的 DLC（纯授权标记，如服装包）**不剔除**，
-    // 它们不触发下载、挂着也无害（保持原有可用性）。
-    {
-      const contentDepotsOf = new Map<string, Array<{ keyMissing?: boolean }>>();
-      for (const x of dlcDepots) {
-        if (!contentDepotsOf.has(x.dlcAppId)) contentDepotsOf.set(x.dlcAppId, []);
-        contentDepotsOf.get(x.dlcAppId)!.push(x.depot);
-      }
-      const dropped: string[] = [];
-      dlcIds = dlcIds.filter((dlcId) => {
-        const dp = contentDepotsOf.get(dlcId);
-        if (!dp || dp.length === 0) return true; // 无内容分包：保留
-        const anyUsable = dp.some((d) => !d.keyMissing); // 至少一个分包有密钥
-        if (!anyUsable) {
-          dropped.push(dlcId);
-          return false;
-        }
-        return true;
-      });
-      if (dropped.length > 0) {
-        console.warn(
-          `[MetadataController] AppID ${appId}: 剔除 ${dropped.length} 个无密钥内容 DLC（避免"内容仍处于加密状态"拖垮下载）: ${dropped.join(', ')}`
-        );
-      }
-    }
+    // 最终筛选在响应投影中统一执行，缓存保留原始归属，避免过滤后又从 dlcDepots 复活。
 
     // 7. 【已移除】此前的 `if (needGid)` 批量实体清单沉淀循环。
     //
@@ -1127,7 +1106,7 @@ export const getGameMetadata = async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      data: inspect ? projectInspectionPayload(fullPayload) : fullPayload
+      data: inspect ? projectInspectionPayload(applyContentSelection(fullPayload)) : applyContentSelection(fullPayload)
     });
   } catch (e: any) {
     console.error('[MetadataController] 获取游戏元数据异常:', e);
@@ -1278,6 +1257,9 @@ export const checkDlcDiff = async (req: Request, res: Response) => {
     }
 
     const existingSet = new Set(existingDlcIds);
+    const available = readMetadataCache(appId, false);
+    const selected = available ? applyContentSelection(available) : null;
+    remoteDlcIds = selected ? selected.contentSelection.eligibleDlcIds.map(Number) : [];
     const missingDlcIds = remoteDlcIds.filter((id) => !existingSet.has(id));
 
     // 分包归属一并返回：客户端在增量补全前要用它构造「分包白名单」，
@@ -1298,6 +1280,8 @@ export const checkDlcDiff = async (req: Request, res: Response) => {
         existingCount: existingDlcIds.length,
         missingDlcIds,
         missingCount: missingDlcIds.length,
+        selectionVerified: !!selected,
+        skippedDlcIds: selected?.contentSelection.skippedDlcIds.map(Number) || [],
         depotIds
       }
     });

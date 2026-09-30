@@ -15,7 +15,10 @@ fn regenerate_game_dict() {
         let bin_time = fs::metadata(&bin).and_then(|m| m.modified()).ok();
         let src_time = fs::metadata(&src_main).and_then(|m| m.modified()).ok();
         if let (Some(b), Some(s)) = (bin_time, src_time) {
-            if b >= s {
+            let other_inputs = ["../server/data/chinese_games_cache.json", "../server/scripts/build-game-dict.mjs"];
+            let others_current = other_inputs.iter().all(|p| !std::path::Path::new(p).exists()
+                || fs::metadata(p).and_then(|m| m.modified()).map(|time| time <= b).unwrap_or(false));
+            if b >= s && others_current {
                 println!("[build.rs] data/game_dict.bin 已是最新，跳过字典再生成");
                 return;
             }
@@ -51,6 +54,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../server/data/steam_all_games.json");
     println!("cargo:rerun-if-changed=../server/data/chinese_games_cache.json");
     println!("cargo:rerun-if-changed=data/game_dict.bin");
+    println!("cargo:rerun-if-changed=../server/scripts/build-game-dict.mjs");
 
     // 拷贝图标至纯英文 Temp 路径，彻底解决 MinGW windres 中文工作区路径报错
     let temp_ico = std::env::temp_dir().join("chunfengdu_app_icon.ico");

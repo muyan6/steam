@@ -1269,24 +1269,29 @@ const checkClipboardForCode = async () => {
 };
 
 let statusTimer: any = null;
+let disposed = false;
 
 onMounted(async () => {
   loadSavedTunnels();
   await fetchStatus();
+  if (disposed) return;
   await loadServerPresets();
+  if (disposed) return;
   void refreshFirewallState();
   await checkClipboardForCode();
+  if (disposed) return;
   handlePresetChange();
 
   // 定时轮询隧道运行状态与打洞实时日志 (每 3 秒刷新一次实时打洞状态)。
   // 窗口隐藏时跳过，避免最小化后仍每 3 秒打 3 次 IPC 并唤醒进程。
   statusTimer = setInterval(() => {
-    if (typeof document !== 'undefined' && document.hidden) return;
+    if (disposed || (typeof document !== 'undefined' && document.hidden)) return;
     void fetchStatus();
   }, 3000);
 });
 
 onUnmounted(() => {
+  disposed = true;
   if (statusTimer) {
     clearInterval(statusTimer);
   }

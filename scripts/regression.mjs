@@ -24,7 +24,7 @@ write('steam_tokens.json', { '990003': 'fixture-token' });
 write('steam_depot_keys.json', {});
 const require = createRequire(path.join(root, 'package.json'));
 const serverRequire = createRequire(path.join(root, 'server/package.json'));
-const axios = serverRequire('axios').default;
+const axios = (await import(pathToFileURL(path.join(root, 'server/node_modules/axios/index.js')).href)).default;
 axios.get = async () => { throw new Error('Unexpected upstream access blocked by regression fixture'); };
 const load = file => import(pathToFileURL(path.join(root, 'server/dist', file)).href);
 const { default: router } = await load('routes/index.js');
@@ -37,6 +37,7 @@ const { depotService } = await load('services/depotService.js');
 const { manifestService, ManifestService } = await load('services/manifestService.js');
 const { inviteService, InviteService, deriveInviteCode } = await load('services/inviteService.js');
 const { CONFIG } = await load('config/index.js');
+const versionUtils = await load('utils/version.js');
 assert.equal(path.resolve(CONFIG.DATA_DIR), data);
 const app = serverRequire('express')();
 app.use(serverRequire('express').json());
@@ -67,6 +68,7 @@ const context = { exports: {}, console, setTimeout, clearTimeout, setInterval, c
     if (name === '@tauri-apps/plugin-http') return { fetch: (...args) => http(...args) };
     if (name.endsWith('/data/gamesData')) return { POPULAR_GAMES_DATABASE: [] };
     if (name.endsWith('/config/appConfig')) return { APP_CONFIG: { API_BASE_URL: 'https://fixture.invalid', VERSION: '2.8.2' } };
+    if (name.endsWith('/utils/version')) return versionUtils;
     if (name === 'node-unrar-js') return {};
     throw new Error('Unexpected import ' + name);
   }

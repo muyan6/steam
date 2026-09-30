@@ -93,17 +93,19 @@ export class NoticeService {
         // mtime 缓存：公告文件读多写少，内容未变化时避免每次请求同步读盘
         const stat = fs.statSync(this.noticesFilePath);
         if (this.readCache && this.readCacheMtimeMs === stat.mtimeMs) {
-          return this.readCache;
+          return structuredClone(this.readCache);
         }
         const content = fs.readFileSync(this.noticesFilePath, 'utf-8');
         const list: Announcement[] = JSON.parse(content);
-        const result = Array.isArray(list) ? list : [];
+        if (!Array.isArray(list)) throw new Error('持久化列表格式无效');
+        const result = list;
         this.readCache = result;
         this.readCacheMtimeMs = stat.mtimeMs;
-        return result;
+        return structuredClone(result);
       }
     } catch (e) {
       console.error('[NoticeService] 读取公告列表失败:', e);
+      throw e;
     }
     return [];
   }

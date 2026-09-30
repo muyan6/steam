@@ -225,6 +225,9 @@ export interface AppManifestStatus {
 
 /** 一键入库结果（与 Rust 侧 execute_unlock 的 JSON 响应字段一一对应） */
 export interface UnlockGameResult {
+  contentReady?: boolean;
+  downloadVerified?: boolean;
+  skippedDlcIds?: number[];
   success: boolean;
   message: string;
   scriptPath?: string;
@@ -233,7 +236,7 @@ export interface UnlockGameResult {
   /**
    * 已随 Lua 规则预置的清单请求码数量（仅「跟随官方最新」模式可能 > 0）。
    * 每个已预置的码都消除一次 Steam 首次下载时 2~7 秒的冷路径取码，
-   * 是「首次点击下载不再报无网络」的直接依据。
+   * 仅表示预取数量，不代表 Steam 实际下载已经验证。
    */
   warmedCodes?: number;
   metadataOk?: boolean;

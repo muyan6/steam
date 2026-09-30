@@ -79,7 +79,13 @@ export const logout = (req: Request, res: Response) => {
   const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
   // 真正吊销：递增 tokenVersion，使该 token（及本会话全部 token）立即失效。
   // 原实现只记审计，token 仍可用到 7 天过期，拷贝出去的凭据在"已退出"后依然有效。
-  authService.revokeAllTokens();
+  try { authService.revokeAllTokens(); }
+  catch (e) {
+    console.error('[AuthController] 吊销持久化失败:', e);
+    authService.recordAuditLog({ action: 'LOGOUT_FAILED', operator, ip, success: false, details: '本进程会话已失效，吊销状态持久化失败' });
+    res.status(503).json({ success: false, message: '当前会话已失效，但退出状态保存失败，请联系管理员检查存储' });
+    return;
+  }
   authService.recordAuditLog({
     action: 'LOGOUT',
     operator,

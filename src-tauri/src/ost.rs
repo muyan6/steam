@@ -586,7 +586,8 @@ pub fn ensure_lua_dir(steam_path: &Path) -> Result<PathBuf, String> {
 /// 与 manifests::is_valid_key 保持同一严格标准（长度≥32 且纯 hex 且非全 0）：
 /// 两侧标准不一致时，同一密钥在合并阶段与 Lua 生成阶段结论可能不同
 fn is_valid_key(key: &str) -> bool {
-    key.len() >= 32
+    let key = key.trim();
+    key.len() == 64
         && key.chars().all(|c| c.is_ascii_hexdigit())
         && !key.chars().all(|c| c == '0')
 }
@@ -702,6 +703,7 @@ pub fn generate_lua_script(payload: &UnlockGamePayload, codes: &BTreeMap<String,
     if payload.lock_version == Some(true) {
         if let Some(depots) = &payload.depots {
             for depot in depots {
+                if !depot.depot_key.as_deref().map(|k| is_valid_key(k.trim())).unwrap_or(false) { continue; }
                 if let Some(man) = depot.manifest_id.as_deref() {
                     let man = man.trim();
                     if !man.is_empty() && man != "0" && man.chars().all(|c| c.is_ascii_digit()) {
@@ -769,6 +771,7 @@ pub fn generate_lua_script(payload: &UnlockGamePayload, codes: &BTreeMap<String,
 }
 
 pub struct SaveRuleResult {
+    pub skipped_dlc_ids: Vec<u32>,
     pub lua_path: PathBuf,
     pub depot_count: usize,
     pub key_count: usize,
@@ -787,12 +790,10 @@ pub struct SaveRuleResult {
 /// 以服务端元数据为准（密钥库 + SteamCMD 清单 GID + accessToken），与前端传入数据合并
 fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload, bool, Option<crate::manifests::AppMetadata>, Option<String>) {
     let mut by_id: std::collections::BTreeMap<u32, DepotInfo> = std::collections::BTreeMap::new();
-    for d in payload.depots.iter().flatten() {
-        by_id.entry(d.depot_id).or_insert_with(|| d.clone());
-    }
-    let mut dlcs: Vec<u32> = payload.dlcs.clone().unwrap_or_default();
-    let mut app_level_key = payload.app_level_key.clone();
-    let mut access_token = payload.access_token.clone();
+    // 搜索结果中的旧密钥/DLC 不能覆盖新服务端的最终筛选集合。
+    let mut dlcs: Vec<u32> = Vec::new();
+    let mut app_level_key: Option<String> = None;
+    let mut access_token: Option<String> = None;
     let mut metadata_ok = false;
     let mut metadata = None;
     let mut metadata_message: Option<String> = None;
@@ -877,6 +878,18 @@ fn merge_with_server_metadata(payload: &UnlockGamePayload) -> (UnlockGamePayload
 
 pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<SaveRuleResult, String> {
     let (merged, metadata_ok, metadata, metadata_message) = merge_with_server_metadata(payload);
+    let plan = metadata.as_ref().and_then(|m| m.selection.as_ref())
+        .ok_or_else(|| metadata_message.clone().unwrap_or_else(|| "分包归属尚未完成校验，请更新服务端后重试；现有规则保持不变".to_string()))?;
+    plan.require_base()?;
+    // 分包集合本身与每个实际写入的密钥再次核对，绝不以某个其他平台的密钥代替。
+    for id in &plan.selected_depot_ids {
+        if !merged.depots.iter().flatten().any(|d| d.depot_id.to_string() == *id
+            && d.depot_key.as_deref().map(|k| is_valid_key(k.trim())).unwrap_or(false)) {
+            return Err(format!("分包 {} 缺少有效密钥，未改写现有规则", id));
+        }
+    }
+    let skipped_dlc_ids = plan.skipped_dlc_ids.iter().filter_map(|id| id.parse::<u32>().ok()).collect::<Vec<_>>();
+
     let key_count = merged
         .depots
         .iter()
@@ -975,6 +988,7 @@ pub fn save_lua_rule(steam_path: &Path, payload: &UnlockGamePayload) -> Result<S
     sync_greenluma_app_list(steam_path);
 
     Ok(SaveRuleResult {
+        skipped_dlc_ids,
         lua_path: lua_file,
         depot_count,
         key_count,

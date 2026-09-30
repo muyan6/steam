@@ -17,6 +17,7 @@ export class AuthService {
   // 凭据内存缓存：verifyToken 是每个管理请求的热点路径，避免每次同步读盘；
   // 在任何凭据写入点（初始化/改密/透明升级）失效
   private credsCache: AdminCredentials | null = null;
+  private credentialsDirty = false;
   // 审计日志内存态：加载一次 + 防抖批量落盘，避免每次失败尝试都全量读+写
   private auditLogs: AuditLog[] | null = null;
   private auditDirty = false;
@@ -27,6 +28,7 @@ export class AuthService {
     this.auditFilePath = path.join(CONFIG.DATA_DIR, 'admin_audit.json');
     this.ensureCredentials();
     registerShutdownHook('audit-logs', () => {
+      if (this.credentialsDirty && this.credsCache) this.saveCredentials(this.credsCache);
       if (this.auditFlushTimer) clearTimeout(this.auditFlushTimer);
       this.auditFlushTimer = null;
       this.flushAuditLogs();
@@ -103,6 +105,7 @@ export class AuthService {
   private saveCredentials(creds: AdminCredentials): void {
     writeJsonAtomic(this.credFilePath, creds);
     this.credsCache = creds;
+    this.credentialsDirty = false;
   }
 
   // ==================== 审计日志：内存态 + 防抖落盘 ====================
@@ -503,16 +506,12 @@ export class AuthService {
    * 在"已退出登录"后依然有效。单管理员场景下吊销全部会话是可接受的语义。
    */
   public revokeAllTokens(): void {
-    try {
-      const creds = this.getCredentials();
-      this.saveCredentials({
-        ...creds,
-        tokenVersion: (creds.tokenVersion ?? 1) + 1,
-        updatedAt: new Date().toISOString()
-      });
-    } catch (e) {
-      console.error('[AuthService] 注销时吊销令牌失败（不影响本次退出）:', e);
-    }
+    const creds = this.getCredentials();
+    const next = { ...creds, tokenVersion: (creds.tokenVersion ?? 1) + 1, updatedAt: new Date().toISOString() };
+    // 即使磁盘暂不可写，本进程也立即拒绝旧会话；调用方必须看到持久化失败。
+    this.credsCache = next;
+    this.credentialsDirty = true;
+    this.saveCredentials(next);
   }
 
   public getProfile(): AdminUser {

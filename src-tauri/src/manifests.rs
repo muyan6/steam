@@ -476,7 +476,8 @@ pub fn batch_manifest_status(steam_path: &Path, app_ids: &[u32]) -> BTreeMap<u32
 }
 
 fn is_valid_key(key: &str) -> bool {
-    key.len() >= 32 && key.chars().all(|c| c.is_ascii_hexdigit()) && !key.chars().all(|c| c == '0')
+    let key = key.trim();
+    key.len() == 64 && key.chars().all(|c| c.is_ascii_hexdigit()) && !key.chars().all(|c| c == '0')
 }
 
 /// 最小 URL query 转义（deviceId 为受限字符集，简单覆盖即可）
@@ -501,6 +502,7 @@ pub struct DepotMeta {
 /// 服务端元数据聚合结果（分包/密钥/DLC 列表）
 #[derive(Debug, Clone)]
 pub struct AppMetadata {
+    pub selection: Option<crate::content_selection::ContentSelection>,
     pub app_id: u32,
     pub depots: Vec<DepotMeta>,
     pub depot_keys: BTreeMap<String, String>,
@@ -569,7 +571,7 @@ fn parse_metadata_ex(
     inspect: bool,
 ) -> Result<AppMetadata, String> {
     match parse_metadata_from_server(app_id, with_gids, inspect) {
-        Ok(mut m) if !m.depots.is_empty() => {
+        Ok(mut m) if m.selection.is_some() || !m.depots.is_empty() => {
             if need_gid {
                 // 与 ManifestHub3 对齐真实存在的清单实体 GID（仅锁定模式需要）
                 align_manifest_gids_with_hub3(&mut m, app_id);
@@ -751,6 +753,7 @@ fn parse_lua_metadata(lua: &str, app_id: u32) -> AppMetadata {
     }
 
     AppMetadata {
+        selection: None,
         app_id,
         depots: depots_map.into_values().collect(),
         depot_keys,
@@ -1050,6 +1053,7 @@ fn parse_metadata_from_steamcmd(app_id: u32) -> Result<AppMetadata, String> {
         return Err("SteamCMD 降级查询未返回任何分包".to_string());
     }
     Ok(AppMetadata {
+        selection: None,
         app_id,
         depots,
         depot_keys,
@@ -1207,6 +1211,19 @@ fn parse_metadata_from_server(app_id: u32, with_gids: bool, inspect: bool) -> Re
         }
     }
 
+    // 只采信权威最终集合；禁止从 dlcDepots 或客户端旧 payload 复活已排除项。
+    let selection: Option<crate::content_selection::ContentSelection> = data.get("contentSelection")
+        .map(|value| serde_json::from_value(value.clone()).map_err(|e| format!("分包筛选结果无效: {}", e)))
+        .transpose()?;
+    if let Some(plan) = &selection {
+        plan.validate()?;
+        dlc_ids = plan.dlcs();
+        depots.retain(|d| plan.selected_depot_ids.contains(&d.depot_id));
+        depot_keys.retain(|id, _| plan.selected_depot_ids.contains(id));
+    } else {
+        dlc_ids.clear();
+    }
+
     // appLevelKey / accessToken（addappid 密钥挂载与 addtoken 所需）
     let app_level_key = data
         .get("appLevelKey")
@@ -1220,6 +1237,7 @@ fn parse_metadata_from_server(app_id: u32, with_gids: bool, inspect: bool) -> Re
         .map(|t| t.to_string());
 
     Ok(AppMetadata {
+        selection,
         app_id,
         depots,
         depot_keys,

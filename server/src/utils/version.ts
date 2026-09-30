@@ -14,7 +14,7 @@
 export const RETIRED_VERSIONS: ReadonlySet<string> = new Set<string>(['5.6.0']);
 
 /** 去掉前缀 v/V 与首尾空白，得到可比较的版本串 */
-export const normalizeVersion = (v: string): string => (v || '0').replace(/^v/i, '').trim();
+export const normalizeVersion = (v: string): string => (v || '0').trim().replace(/^v/i, '').split('+')[0];
 
 /** 是否属于历史误发布、应按「早于所有正式版本」对待的退役版本 */
 export const isRetiredVersion = (v: string): boolean => RETIRED_VERSIONS.has(normalizeVersion(v));
@@ -57,7 +57,20 @@ export function compareVersions(v1: string, v2: string): number {
   if (pre1 !== pre2) {
     if (!pre1) return 1; // 正式版 > 预发布
     if (!pre2) return -1;
-    return pre1 < pre2 ? -1 : 1;
+    const left = pre1.split('.'), right = pre2.split('.');
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      if (left[i] === undefined) return -1;
+      if (right[i] === undefined) return 1;
+      if (left[i] === right[i]) continue;
+      const ln = /^\d+$/.test(left[i]), rn = /^\d+$/.test(right[i]);
+      if (ln && rn) {
+        const a = BigInt(left[i]), b = BigInt(right[i]);
+        if (a !== b) return a < b ? -1 : 1;
+        continue;
+      }
+      if (ln !== rn) return ln ? -1 : 1;
+      return left[i] < right[i] ? -1 : 1;
+    }
   }
   return 0;
 }

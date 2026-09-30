@@ -709,7 +709,7 @@ const unlockGame = async (game: SteamGame) => {
     if (res.success) {
       let message = res.message;
       // 是否真正拿到可用解密密钥：只有拿到分包密钥才算真正可用入库，无密钥时不扣减免费额度
-      const usable = (res.keyCount || 0) > 0;
+      const usable = res.contentReady === true && (res.keyCount || 0) > 0;
       if (!activated && usable) {
         // 本地额度仅作展示参考，权威计数在服务端（按 AppID/游戏每日去重，DLC 不额外计次）
         try {
@@ -725,11 +725,11 @@ const unlockGame = async (game: SteamGame) => {
       // 未能预置（上游超时/未收录该 GID）时给出可行动指引 —— 否则用户首次点下载
       // 会撞上 Steam 的「无网络连接 / 0 字节下载」（见 ost.rs 的取码链路说明）
       if (usable && !(res.warmedCodes && res.warmedCodes > 0)) {
-        message += '【提示】本次未能预置清单请求码，若首次点击下载提示「无网络连接」，等 5~10 秒再点一次即可（码已缓存在内核中）。';
+        message += '【提示】清单请求码将按需获取，尚未验证 Steam 下载结果。';
       }
       // 未获取到有效解密密钥或云端拒绝时，按警告（入库受限）而非成功提示，
       // 使用全局模态框而非易转瞬即逝的 Toast，确保切换界面后仍能看到并明确知晓状态
-      const blocked = !res.keyCount || res.keyCount === 0 || !!res.metadataMessage;
+      const blocked = !usable || !!res.metadataMessage || !!res.missingManifests || !!res.skippedDlcIds?.length;
       emit('unlock-result', { message, level: blocked ? 'warning' : 'success' });
       await loadUnlockedList();
       emit('refresh-status');

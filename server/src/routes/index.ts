@@ -346,7 +346,7 @@ const requireKeyAccess = (req: Request, res: Response, next: any) => {
         Boolean(d.appLevelKey) || Boolean(d.token) || Boolean(d.key) ||
         (d.keys && typeof d.keys === 'object' && Object.values(d.keys).some(Boolean)) ||
         (req.route?.path === '/depots/:appId' && typeof d === 'object' && Object.values(d).some(Boolean));
-      if (useAppId && !hasAnyKey) {
+      if (useAppId && (!hasAnyKey || d.contentSelection?.baseReady === false)) {
         explicitFailure = true;
       }
     }

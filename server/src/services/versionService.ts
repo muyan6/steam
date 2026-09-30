@@ -89,17 +89,19 @@ export class VersionService {
         // mtime 缓存：版本文件读多写少，内容未变化时避免每次请求同步读盘
         const stat = fs.statSync(this.versionsFilePath);
         if (this.readCache && this.readCacheMtimeMs === stat.mtimeMs) {
-          return this.readCache;
+          return structuredClone(this.readCache);
         }
         const content = fs.readFileSync(this.versionsFilePath, 'utf-8');
         const list: VersionRelease[] = JSON.parse(content);
-        const result = Array.isArray(list) ? list : [];
+        if (!Array.isArray(list)) throw new Error('持久化列表格式无效');
+        const result = list;
         this.readCache = result;
         this.readCacheMtimeMs = stat.mtimeMs;
-        return result;
+        return structuredClone(result);
       }
     } catch (e) {
       console.error('[VersionService] 读取版本列表失败:', e);
+      throw e;
     }
     return [];
   }
@@ -117,6 +119,7 @@ export class VersionService {
       this.syncLegacyFile();
     } catch (e) {
       console.error('[VersionService] 保存版本列表失败:', e);
+      throw e;
     }
   }
 

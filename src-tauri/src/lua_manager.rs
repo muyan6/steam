@@ -262,7 +262,7 @@ pub fn check_game_dlc_diff(steam_path: &Path, app_id: u32) -> Result<DlcDiffResu
 
     // 本地已有的所有 AppID / DepotID（含主 AppID 及所有已挂载 DLC）
     let local_ids = crate::ost::extract_addappid_ids(&content);
-    let local_dlc_count = local_ids.iter().filter(|&&id| id != app_id).count();
+    // 数量在获得最终可用 DLC 集合后计算，不把分包 ID 计作 DLC。
 
     // 从云端/备用容灾源拉取完整元数据（包含全部最新 DLC）。
     //
@@ -273,25 +273,16 @@ pub fn check_game_dlc_diff(steam_path: &Path, app_id: u32) -> Result<DlcDiffResu
     let meta = crate::manifests::parse_metadata_inspect(app_id, false)
         .map_err(|e| format!("获取云端游戏元数据失败: {}", e))?;
 
-    // 铁律：凡是出现在 meta.depots 里的 id 一律归属「分包」管辖，绝不当 DLC 补。
-    //
-    // 事故复盘（AppID 2054970）：服务端 dlcIds 里混入过本身就是分包的 id 2757100，
-    // 它在 ost::generate_lua_script 第 2 步因无密钥被正确跳过，却因不在 seen 里
-    // 又被第 4 步当普通 DLC `addappid(2757100)` 挂了上去，Steam 随即
-    // 「Failed to initialize depot 2757100 ... (Missing decryption key)」
-    // 整个游戏被拖垮。ost.rs 为此建了 all_depot_ids 白名单（见 ost.rs:665-675）。
-    // 本链路复用同一判定，防止增量补全把同一个坑再踩一遍。
-    let depot_id_set: HashSet<u32> = meta
-        .depots
-        .iter()
-        .filter_map(|d| d.depot_id.parse::<u32>().ok())
-        .collect();
+    let plan = meta.selection.as_ref().ok_or("DLC 归属尚未校验，请更新服务端后重试")?;
+    plan.validate()?;
+    let local_dlc_count = meta.dlc_ids.iter().filter(|id| local_ids.contains(id)).count();
+    let skipped_count = plan.skipped_dlc_ids.len();
 
     // 差集计算：云端存在但本地 Lua 尚未添加、且确认不是分包的 DLC
     let mut missing_dlc_ids: Vec<u32> = meta
         .dlc_ids
         .into_iter()
-        .filter(|id| *id > 0 && *id != app_id && !local_ids.contains(id) && !depot_id_set.contains(id))
+        .filter(|id| *id > 0 && *id != app_id && !local_ids.contains(id))
         .collect();
     missing_dlc_ids.sort_unstable();
     missing_dlc_ids.dedup();
@@ -299,7 +290,7 @@ pub fn check_game_dlc_diff(steam_path: &Path, app_id: u32) -> Result<DlcDiffResu
     let total_remote_dlcs = local_dlc_count + missing_dlc_ids.len();
 
     let message = if missing_dlc_ids.is_empty() {
-        "已拥有该游戏的全部最新 DLC，无需补全！".to_string()
+        format!("当前源可用 DLC 已同步；另有 {} 个 DLC 因数据不完整被跳过。", skipped_count)
     } else {
         format!("发现 {} 个尚未入库的新 DLC，支持一键智能补全！", missing_dlc_ids.len())
     };
@@ -324,26 +315,13 @@ pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Re
 
     let local_ids = crate::ost::extract_addappid_ids(&content);
 
-    // 二次防御：即便上游/前端把分包 id 混进来，也绝不以裸 addappid 形式写入。
-    // 重新拉一次元数据构造分包白名单（与 ost::generate_lua_script 的 all_depot_ids 同源）；
-    // 拉取失败时退化为空集合（只影响过滤强度，不影响用户明确点选的正常 DLC）。
-    //
-    // 同样走 inspect 链路：这里只取 depot_id 做白名单，不需要任何密钥，
-    // 免配额也意味着「补全 DLC」不会额外吃掉用户的入库额度。
-    let depot_id_set: HashSet<u32> = match crate::manifests::parse_metadata_inspect(app_id, false) {
-        Ok(meta) => meta
-            .depots
-            .iter()
-            .filter_map(|d| d.depot_id.parse::<u32>().ok())
-            .collect(),
-        Err(e) => {
-            eprintln!(
-                "[LuaManager] 追加 DLC 前拉取元数据失败，跳过分包白名单过滤 ({}): {}",
-                app_id, e
-            );
-            HashSet::new()
-        }
-    };
+    // 真正追加必须取完整授权元数据并写入内容分包密钥；只读 inspect 不足以完成追加。
+    let meta = crate::manifests::parse_metadata(app_id, false)
+        .map_err(|e| format!("DLC 校验失败，现有规则未改动: {}", e))?;
+    let plan = meta.selection.as_ref().ok_or("DLC 归属尚未确认，现有规则未改动")?;
+    plan.require_base()?;
+    let allowed: HashSet<u32> = plan.dlcs().into_iter().collect();
+    let depot_id_set: HashSet<u32> = meta.depots.iter().filter_map(|d| d.depot_id.parse().ok()).collect();
 
     let mut skipped_depot_ids: Vec<u32> = Vec::new();
 
@@ -354,7 +332,7 @@ pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Re
             if *id == 0 || *id == app_id || local_ids.contains(id) {
                 return false;
             }
-            if depot_id_set.contains(id) {
+            if !allowed.contains(id) {
                 skipped_depot_ids.push(*id);
                 return false;
             }
@@ -371,7 +349,7 @@ pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Re
             "所选 DLC 均已在当前入库规则中，无需重复添加".to_string()
         } else {
             format!(
-                "已跳过 {} 个属于分包（depot）的 ID：{}。分包必须由入库规则按密钥挂载，不能作为 DLC 补写",
+                "已跳过 {} 个不在当前来源可用 DLC 集合中的 ID：{}。未确认的内容不会补写到规则",
                 skipped_depot_ids.len(),
                 skipped_depot_ids
                     .iter()
@@ -381,7 +359,7 @@ pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Re
             )
         };
         return Ok(DlcAppendResult {
-            success: true,
+            success: skipped_depot_ids.is_empty(),
             app_id,
             added_count: 0,
             added_dlc_ids: vec![],
@@ -396,7 +374,15 @@ pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Re
 
     new_content.push_str("\n-- ==================== [CFD] 一键增量补全新 DLC ====================\n");
     for id in &to_add {
-        new_content.push_str(&format!("addappid({})\n", id));
+        let depot_ids = plan.dlc_depot_ids.get(&id.to_string()).ok_or("DLC 分包映射缺失")?;
+        for depot_id in depot_ids {
+            let d = meta.depots.iter().find(|d| d.depot_id == *depot_id).ok_or("DLC 内容分包缺失")?;
+            let key = d.depot_key.as_deref().filter(|k| k.len() == 64 && k.chars().all(|c| c.is_ascii_hexdigit()) && !k.chars().all(|c| c == '0'))
+                .ok_or("DLC 内容分包缺少有效密钥，现有规则未改动")?;
+            // 已有 addappid 不代表已有密钥；显式写入已验证的同一分包密钥。
+            new_content.push_str(&format!("addappid({}, 1, \"{}\")\nsetDepotKey({}, \"{}\")\n", depot_id, key, depot_id, key));
+        }
+        if !depot_id_set.contains(id) { new_content.push_str(&format!("addappid({})\n", id)); }
     }
 
     // 原子写：规则文件被 Steam 直接加载，写一半崩溃/磁盘满会留下截断脚本（与 save_lua_rule 同标准）
@@ -427,4 +413,3 @@ pub fn append_game_dlcs(steam_path: &Path, app_id: u32, dlc_ids: Vec<u32>) -> Re
         message: format!("成功为游戏增量追加 {} 个新 DLC 到入库规则！", to_add.len()),
     })
 }
-

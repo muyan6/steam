@@ -25,11 +25,14 @@ import { writeStringAtomicAsync } from '../utils/atomicJson.js';
 
 /** 索引中记录的单个分包（不含 manifestGid：它随官方更新变化） */
 export interface IndexedDepot {
+  osList?: string;
+  requiresKey?: boolean;
   depotId: string;
   depotKey?: string;
 }
 
 export interface DlcIndexEntry {
+  selectionSchemaVersion?: number;
   /** 游戏名（SteamCMD common.name），仅用于兜底回显 */
   name?: string;
   /** DLC 的 AppID 列表（SteamCMD extended.listofdlc） */
@@ -84,6 +87,8 @@ export class DlcIndexService {
         const appId = parseInt(k, 10);
         if (isNaN(appId) || !v || typeof v !== 'object') continue;
         const e = v as any;
+        // 旧索引曾删掉 0 字节清单并丢失平台信息，必须重新采集。
+        if (e.selectionSchemaVersion !== 1) continue;
 
         const dlcIds = Array.isArray(e.dlcIds)
           ? e.dlcIds.map((x: any) => String(x)).filter((x: string) => /^\d+$/.test(x))
@@ -108,11 +113,14 @@ export class DlcIndexService {
             const key = (d as any).depotKey;
             const depotKey =
               typeof key === 'string' && key.length >= 32 && !/^0+$/.test(key) ? key : undefined;
-            depots.push({ depotId: id, depotKey });
+            depots.push({ depotId: id, depotKey,
+              osList: typeof d.osList === 'string' ? d.osList : undefined,
+              requiresKey: typeof d.requiresKey === 'boolean' ? d.requiresKey : undefined });
           }
         }
 
         this.index.set(appId, {
+          selectionSchemaVersion: 1,
           name: typeof e.name === 'string' ? e.name : undefined,
           dlcIds,
           dlcDepots,
@@ -163,7 +171,9 @@ export class DlcIndexService {
       const old = depotMap.get(d.depotId);
       depotMap.set(d.depotId, {
         depotId: d.depotId,
-        depotKey: d.depotKey || old?.depotKey
+        depotKey: d.depotKey || old?.depotKey,
+        osList: d.osList ?? old?.osList,
+        requiresKey: d.requiresKey ?? old?.requiresKey
       });
     }
 
@@ -181,6 +191,7 @@ export class DlcIndexService {
     // 热点 AppID 会因「插入早」被优先淘汰。这里先删后插把它移到队尾。
     this.index.delete(appId);
     this.index.set(appId, {
+      selectionSchemaVersion: 1,
       name: entry.name || prev?.name,
       dlcIds: Array.from(new Set([...(prev?.dlcIds || []), ...entry.dlcIds])),
       dlcDepots: mergedDlcDepots,

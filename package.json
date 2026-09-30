@@ -13,7 +13,7 @@
     "typecheck": "vue-tsc --noEmit",
     "test:regression": "npm --prefix server run build && node scripts/regression.mjs && node --test server/tests/updateScript.test.mjs",
     "test:p2p": "npm --prefix server run build && node scripts/p2pRegression.mjs && cargo test --manifest-path tests/native/Cargo.toml --locked",
-    "test": "npm run test:regression && npm run test:p2p && npm run test:critical",
+    "test": "npm run test:regression && npm run test:p2p && npm run test:critical && npm run test:review",
     "pretauri:dev": "node scripts/syncVersion.mjs",
     "tauri:dev": "tauri dev",
     "pretauri:build": "node scripts/syncVersion.mjs",
@@ -25,7 +25,8 @@
     "server:dev": "npm --prefix server run dev",
     "server:build": "npm --prefix server run build",
     "server:start": "npm --prefix server run start",
-    "test:critical": "npm --prefix server run build && node scripts/criticalRegression.mjs && node --test server/tests/shutdown.test.mjs"
+    "test:critical": "npm --prefix server run build && node scripts/criticalRegression.mjs && node --test server/tests/shutdown.test.mjs",
+    "test:review": "npm --prefix server run build && node scripts/reviewFixesRegression.mjs && node scripts/nativeReviewRegression.mjs"
   },
   "keywords": [
     "steam",

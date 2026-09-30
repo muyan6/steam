@@ -19,6 +19,13 @@ out/
 .env.*.local
 
 # Server runtime data (卡密/凭据/设备档案等，绝不入库)
+server/data/*
+!server/data/*.example.json
+!server/data/steam_all_games.json
+!server/data/online_rules_db.json
+!server/data/version.json
+!server/data/versions.json
+!server/data/manifests/
 server/data/admin_credentials.json
 server/data/admin_credentials.json.corrupt
 server/data/admin_audit.json
